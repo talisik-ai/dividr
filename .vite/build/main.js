@@ -533,13 +533,14 @@ function handleReplaceAudio(job, cmd) {
   cmd.args.push("-i", job.operations.replaceAudio);
   cmd.args.push("-map", "0:v", "-map", `${job.inputs.length}:a`, "-shortest");
 }
-function buildFfmpegCommand(job) {
+function buildFfmpegCommand(job, location) {
   const cmd = { args: [], filters: [] };
   for (const step of steps) step(job, cmd);
   if (cmd.filters.length > 0 && !(job.operations.concat && job.inputs.length > 1)) {
     cmd.args.push("-vf", cmd.filters.join(","));
   }
-  cmd.args.push(job.output);
+  const outputFilePath = location.endsWith("/") ? location + job.output : location + "/" + job.output;
+  cmd.args.push(outputFilePath);
   return cmd.args;
 }
 function timeToSeconds(time) {
@@ -592,7 +593,8 @@ async function runFfmpegWithProgress(job, callbacks) {
       reject(new Error("Another FFmpeg process is already running. Please cancel it first."));
       return;
     }
-    const baseArgs = buildFfmpegCommand(job);
+    const location = "public/output/";
+    const baseArgs = buildFfmpegCommand(job, location);
     const args = ["-progress", "pipe:1", "-y", ...baseArgs];
     const commandString = `"${ffmpegPath}" ${args.join(" ")}`;
     console.log("Running FFmpeg with progress:", commandString);

@@ -168,8 +168,10 @@ export async function runFfmpegWithProgress(
       return;
     }
 
+    const location = "public/output/"
+
     // Add progress reporting to FFmpeg args
-    const baseArgs = buildFfmpegCommand(job);
+    const baseArgs = buildFfmpegCommand(job, location);
     const args = ['-progress', 'pipe:1', '-y', ...baseArgs];
 
     // Command string for manual debugging

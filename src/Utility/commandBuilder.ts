@@ -17,7 +17,6 @@ import { VideoEditJob } from '../Schema/ffmpegConfig';
     handleReplaceAudio,
   ];
 
-  const location = "public/output/"
   
   // Handle inputs & concat
   function handleInputs(job: VideoEditJob, cmd: CommandParts) {
@@ -97,7 +96,7 @@ import { VideoEditJob } from '../Schema/ffmpegConfig';
   // -------------------------
   // Main builder
   // -------------------------
-  export function buildFfmpegCommand(job: VideoEditJob): string[] {
+  export function buildFfmpegCommand(job: VideoEditJob, location?: string): string[] {
     const cmd: CommandParts = { args: [], filters: [] };
   
     // Run all step handlers
@@ -108,8 +107,10 @@ import { VideoEditJob } from '../Schema/ffmpegConfig';
       cmd.args.push("-vf", cmd.filters.join(","));
     }
   
+    const outputFilePath = location ? (location.endsWith('/') ? location + job.output : location + '/' + job.output) : job.output;
+
     // Output file
-    cmd.args.push(job.output);
+    cmd.args.push(outputFilePath);
     return cmd.args;
   }
   
