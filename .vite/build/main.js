@@ -1,13 +1,14 @@
 "use strict";
-const require$$3$1 = require("electron");
-const path$1 = require("path");
 const require$$1$1 = require("child_process");
+const require$$3$1 = require("electron");
+const require$$0$1 = require("path");
 const require$$0 = require("tty");
 const require$$1 = require("util");
 const require$$3 = require("fs");
 const require$$4 = require("net");
 const ffmpegPath = require("ffmpeg-static");
-require("ffprobe-static");
+const ffprobePath = require("ffprobe-static");
+const path$1 = require("node:path");
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
@@ -441,7 +442,7 @@ if (typeof process !== "undefined" && process.type === "renderer") {
   src.exports = requireNode();
 }
 var srcExports = src.exports;
-var path = path$1;
+var path = require$$0$1;
 var spawn = require$$1$1.spawn;
 var debug = srcExports("electron-squirrel-startup");
 var app = require$$3$1.app;
@@ -474,98 +475,15 @@ var check = function() {
 };
 var electronSquirrelStartup = check();
 const started = /* @__PURE__ */ getDefaultExportFromCjs(electronSquirrelStartup);
-const steps = [
-  handleInputs,
-  handleTrim,
-  handleCrop,
-  handleSubtitles,
-  handleAspect,
-  handleReplaceAudio
-];
-function handleInputs(job, cmd) {
-  if (job.operations.concat && job.inputs.length > 1) {
-    cmd.args.push(...job.inputs.flatMap((input) => ["-i", input]));
-    if (job.operations.normalizeFrameRate) {
-      const targetFps = job.operations.targetFrameRate || 30;
-      const fpsFilters = job.inputs.map((_, index) => `[${index}:v]fps=${targetFps}[v${index}]`).join(";");
-      const concatInputs = job.inputs.map((_, index) => `[v${index}][${index}:a]`).join("");
-      cmd.filters.push(
-        `${fpsFilters};${concatInputs}concat=n=${job.inputs.length}:v=1:a=1[outv][outa]`
-      );
-    } else {
-      const concatInputs = job.inputs.map((_, index) => `[${index}:v][${index}:a]`).join("");
-      cmd.filters.push(
-        `${concatInputs}concat=n=${job.inputs.length}:v=1:a=1[outv][outa]`
-      );
-    }
-    cmd.args.push("-filter_complex", cmd.filters.join(","));
-    cmd.args.push("-map", "[outv]", "-map", "[outa]");
-  } else {
-    job.inputs.forEach((input) => cmd.args.push("-i", input));
-  }
-}
-function handleTrim(job, cmd) {
-  const trim = job.operations.trim;
-  if (!trim) return;
-  const { start, duration, end } = trim;
-  if (start) cmd.args.unshift("-ss", start);
-  if (duration) {
-    cmd.args.push("-t", duration);
-  } else if (end && start) {
-    const dur = timeToSeconds(end) - timeToSeconds(start);
-    cmd.args.push("-t", String(dur));
-  }
-}
-function handleCrop(job, cmd) {
-  const crop = job.operations.crop;
-  if (crop) cmd.filters.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
-}
-function handleSubtitles(job, cmd) {
-  if (job.operations.subtitles) {
-    cmd.filters.push(`subtitles=${job.operations.subtitles}`);
-  }
-}
-function handleAspect(job, cmd) {
-  if (job.operations.aspect) cmd.args.push("-aspect", job.operations.aspect);
-}
-function handleReplaceAudio(job, cmd) {
-  if (!job.operations.replaceAudio) return;
-  cmd.args.push("-i", job.operations.replaceAudio);
-  cmd.args.push("-map", "0:v", "-map", `${job.inputs.length}:a`, "-shortest");
-}
-function buildFfmpegCommand(job, location) {
-  const cmd = { args: [], filters: [] };
-  for (const step of steps) step(job, cmd);
-  if (cmd.filters.length > 0 && !(job.operations.concat && job.inputs.length > 1)) {
-    cmd.args.push("-vf", cmd.filters.join(","));
-  }
-  const outputFilePath = location.endsWith("/") ? location + job.output : location + "/" + job.output;
-  cmd.args.push(outputFilePath);
-  return cmd.args;
-}
-function timeToSeconds(time) {
-  const parts = time.split(":").map(Number);
-  return parts.reduce((acc, val) => acc * 60 + val);
-}
-let currentFfmpegProcess = null;
+const isElectron = () => {
+  return typeof window !== "undefined" && window.electronAPI;
+};
 function cancelCurrentFfmpeg() {
-  if (currentFfmpegProcess) {
-    try {
-      currentFfmpegProcess.kill("SIGTERM");
-      setTimeout(() => {
-        if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
-          currentFfmpegProcess.kill("SIGKILL");
-        }
-      }, 5e3);
-      console.log("🛑 FFmpeg process cancelled");
-      return true;
-    } catch (err) {
-      console.error("❌ Failed to cancel FFmpeg process:", err);
-      return false;
-    }
+  if (!isElectron()) {
+    console.warn("FFmpeg operations require Electron main process");
+    return Promise.resolve(false);
   }
-  console.warn("⚠️ No active FFmpeg process to cancel");
-  return false;
+  return window.electronAPI.invoke("ffmpeg:cancel");
 }
 function parseFfmpegProgress(progressLine) {
   const progress = {};
@@ -587,86 +505,35 @@ function parseFfmpegProgress(progressLine) {
   return progress;
 }
 async function runFfmpegWithProgress(job, callbacks) {
+  if (!isElectron()) {
+    throw new Error("FFmpeg operations require Electron main process");
+  }
   return new Promise((resolve, reject) => {
-    var _a;
-    if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
-      reject(new Error("Another FFmpeg process is already running. Please cancel it first."));
-      return;
-    }
-    const location = "public/output/";
-    const baseArgs = buildFfmpegCommand(job, location);
-    const args = ["-progress", "pipe:1", "-y", ...baseArgs];
-    const commandString = `"${ffmpegPath}" ${args.join(" ")}`;
-    console.log("Running FFmpeg with progress:", commandString);
-    let logs = "";
-    let progressBuffer = "";
-    (_a = callbacks == null ? void 0 : callbacks.onStatus) == null ? void 0 : _a.call(callbacks, "Starting FFmpeg process...");
-    const ffmpeg = require$$1$1.spawn(ffmpegPath, args, {
-      stdio: ["ignore", "pipe", "pipe"]
-      // stdin, stdout, stderr
-    });
-    currentFfmpegProcess = ffmpeg;
-    ffmpeg.stdout.on("data", (data) => {
-      var _a2, _b, _c, _d;
-      const text = data.toString();
-      logs += `[stdout] ${text}
-`;
-      progressBuffer += text;
-      const lines = progressBuffer.split("\n");
-      progressBuffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.trim()) {
-          (_a2 = callbacks == null ? void 0 : callbacks.onLog) == null ? void 0 : _a2.call(callbacks, line, "stdout");
-          const progress = parseFfmpegProgress(line);
-          if (Object.keys(progress).length > 0) {
-            (_b = callbacks == null ? void 0 : callbacks.onProgress) == null ? void 0 : _b.call(callbacks, progress);
-          }
-          if (line.includes("progress=")) {
-            const status = (_c = line.match(/progress=(\w+)/)) == null ? void 0 : _c[1];
-            if (status) {
-              (_d = callbacks == null ? void 0 : callbacks.onStatus) == null ? void 0 : _d.call(callbacks, status === "end" ? "Processing complete" : `Processing: ${status}`);
-            }
+    const handleProgress = (event, data) => {
+      var _a, _b, _c, _d, _e;
+      if (data.type === "stdout") {
+        (_a = callbacks == null ? void 0 : callbacks.onLog) == null ? void 0 : _a.call(callbacks, data.data, "stdout");
+        const progress = parseFfmpegProgress(data.data);
+        if (Object.keys(progress).length > 0) {
+          (_b = callbacks == null ? void 0 : callbacks.onProgress) == null ? void 0 : _b.call(callbacks, progress);
+        }
+        if (data.data.includes("progress=")) {
+          const status = (_c = data.data.match(/progress=(\w+)/)) == null ? void 0 : _c[1];
+          if (status) {
+            (_d = callbacks == null ? void 0 : callbacks.onStatus) == null ? void 0 : _d.call(callbacks, status === "end" ? "Processing complete" : `Processing: ${status}`);
           }
         }
+      } else if (data.type === "stderr") {
+        (_e = callbacks == null ? void 0 : callbacks.onLog) == null ? void 0 : _e.call(callbacks, data.data, "stderr");
       }
-    });
-    ffmpeg.stderr.on("data", (data) => {
-      var _a2;
-      const text = data.toString();
-      logs += `[stderr] ${text}
-`;
-      (_a2 = callbacks == null ? void 0 : callbacks.onLog) == null ? void 0 : _a2.call(callbacks, text, "stderr");
-      console.error(`[ffmpeg stderr]: ${text}`);
-    });
-    ffmpeg.on("error", (err) => {
-      var _a2;
-      logs += `[error] ${err.message}
-`;
-      (_a2 = callbacks == null ? void 0 : callbacks.onStatus) == null ? void 0 : _a2.call(callbacks, `Error: ${err.message}`);
-      currentFfmpegProcess = null;
-      reject(new Error(`FFmpeg process error: ${err.message}
-Logs:
-${logs}`));
-    });
-    ffmpeg.on("close", (code) => {
-      var _a2, _b, _c;
-      currentFfmpegProcess = null;
-      if (code === 0) {
-        (_a2 = callbacks == null ? void 0 : callbacks.onStatus) == null ? void 0 : _a2.call(callbacks, "FFmpeg process completed successfully");
-        resolve({ command: commandString, logs });
-      } else if (code === null || code === 130 || code === 143) {
-        (_b = callbacks == null ? void 0 : callbacks.onStatus) == null ? void 0 : _b.call(callbacks, "FFmpeg process was cancelled");
-        reject(new Error(`FFmpeg process was cancelled
-Command: ${commandString}
-Logs:
-${logs}`));
-      } else {
-        (_c = callbacks == null ? void 0 : callbacks.onStatus) == null ? void 0 : _c.call(callbacks, `FFmpeg process failed with code ${code}`);
-        reject(new Error(`FFmpeg exited with code ${code}
-Command: ${commandString}
-Logs:
-${logs}`));
-      }
+    };
+    window.electronAPI.on("ffmpeg:progress", handleProgress);
+    window.electronAPI.invoke("ffmpeg:run", job).then((result) => {
+      window.electronAPI.removeListener("ffmpeg:progress", handleProgress);
+      resolve({ command: "ffmpeg-via-ipc", logs: result.logs });
+    }).catch((error) => {
+      window.electronAPI.removeListener("ffmpeg:progress", handleProgress);
+      reject(error);
     });
   });
 }
@@ -715,6 +582,99 @@ require$$3$1.ipcMain.handle("cancel-ffmpeg", async (event) => {
   } catch (error) {
     return { success: false, message: `Failed to cancel: ${error.message}` };
   }
+});
+require$$3$1.ipcMain.handle("ffmpeg:detect-frame-rate", async (event, videoPath) => {
+  return new Promise((resolve, reject) => {
+    const ffprobe = require$$1$1.spawn(ffprobePath.path, [
+      "-v",
+      "quiet",
+      "-print_format",
+      "json",
+      "-show_streams",
+      "-select_streams",
+      "v:0",
+      videoPath
+    ]);
+    let output = "";
+    ffprobe.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+    ffprobe.stderr.on("data", (data) => {
+      console.error(`ffprobe stderr: ${data}`);
+    });
+    ffprobe.on("close", (code) => {
+      if (code === 0) {
+        try {
+          const result = JSON.parse(output);
+          const videoStream = result.streams[0];
+          if (videoStream && videoStream.r_frame_rate) {
+            const [num, den] = videoStream.r_frame_rate.split("/").map(Number);
+            const frameRate = Math.round(num / den * 100) / 100;
+            resolve(frameRate);
+          } else {
+            resolve(30);
+          }
+        } catch (err) {
+          console.error("Failed to parse ffprobe output:", err);
+          resolve(30);
+        }
+      } else {
+        reject(new Error(`ffprobe failed with code ${code}`));
+      }
+    });
+    ffprobe.on("error", (err) => {
+      reject(new Error(`ffprobe error: ${err.message}`));
+    });
+  });
+});
+let currentFfmpegProcess = null;
+require$$3$1.ipcMain.handle("ffmpeg:run", async (event, job) => {
+  return new Promise((resolve, reject) => {
+    if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
+      reject(new Error("Another FFmpeg process is already running"));
+      return;
+    }
+    const args = [
+      "-progress",
+      "pipe:1",
+      "-y"
+      /* ...buildFfmpegCommand(job) */
+    ];
+    const ffmpeg = require$$1$1.spawn(ffmpegPath, args);
+    currentFfmpegProcess = ffmpeg;
+    let logs = "";
+    ffmpeg.stdout.on("data", (data) => {
+      const text = data.toString();
+      logs += `[stdout] ${text}
+`;
+      event.sender.send("ffmpeg:progress", { type: "stdout", data: text });
+    });
+    ffmpeg.stderr.on("data", (data) => {
+      const text = data.toString();
+      logs += `[stderr] ${text}
+`;
+      event.sender.send("ffmpeg:progress", { type: "stderr", data: text });
+    });
+    ffmpeg.on("close", (code) => {
+      currentFfmpegProcess = null;
+      if (code === 0) {
+        resolve({ success: true, logs });
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code}`));
+      }
+    });
+    ffmpeg.on("error", (err) => {
+      currentFfmpegProcess = null;
+      reject(err);
+    });
+  });
+});
+require$$3$1.ipcMain.handle("ffmpeg:cancel", async () => {
+  if (currentFfmpegProcess) {
+    currentFfmpegProcess.kill("SIGTERM");
+    return true;
+  }
+  return false;
 });
 const createWindow = () => {
   const mainWindow = new require$$3$1.BrowserWindow({

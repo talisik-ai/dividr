@@ -5,6 +5,11 @@ import { FfmpegEventHandlers } from './preload';
 declare global {
     interface Window {
       electronAPI: {
+        // General IPC methods
+        invoke: (channel: string, ...args: any[]) => Promise<any>;
+        on: (channel: string, listener: (...args: any[]) => void) => void;
+        removeListener: (channel: string, listener: (...args: any[]) => void) => void;
+        
         runFfmpeg: (job: VideoEditJob) => Promise<{
           success: boolean;
           result?: { command: string; logs: string };

@@ -1,6 +1,10 @@
 "use strict";
 const electron = require("electron");
 electron.contextBridge.exposeInMainWorld("electronAPI", {
+  // General IPC methods
+  invoke: (channel, ...args) => electron.ipcRenderer.invoke(channel, ...args),
+  on: (channel, listener) => electron.ipcRenderer.on(channel, listener),
+  removeListener: (channel, listener) => electron.ipcRenderer.removeListener(channel, listener),
   // Original API for backward compatibility
   runFfmpeg: (job) => electron.ipcRenderer.invoke("run-ffmpeg", job),
   // Enhanced API with progress tracking

@@ -12,6 +12,11 @@ export interface FfmpegEventHandlers {
 
 // Expose FFmpeg API to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
+  // General IPC methods
+  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+  on: (channel: string, listener: (...args: any[]) => void) => ipcRenderer.on(channel, listener),
+  removeListener: (channel: string, listener: (...args: any[]) => void) => ipcRenderer.removeListener(channel, listener),
+  
   // Original API for backward compatibility
   runFfmpeg: (job: VideoEditJob) => ipcRenderer.invoke('run-ffmpeg', job),
   
