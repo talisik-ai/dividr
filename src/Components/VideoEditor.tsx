@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback } from 'react';
 import { VideoEditJob } from '../Schema/ffmpegConfig';
 import { useVideoEditorStore } from '../store/videoEditorStore';
 import { FfmpegCallbacks, runFfmpegWithProgress } from '../Utility/ffmpegRunner';
@@ -10,14 +10,13 @@ interface VideoEditorProps {
 }
 
 export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
   const {
     tracks,
     timeline,
     preview,
     render,
-    importMedia,
+    importMediaFromDialog,
+    importMediaFromFiles,
     addTrack,
     startRender,
     updateRenderProgress,
@@ -88,17 +87,21 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
  */ 
 
-  // File import handling
+  // File import using native Electron dialog
+  const handleImportFiles = useCallback(async () => {
+    await importMediaFromDialog();
+  }, [importMediaFromDialog]);
+
+  // Legacy file import for drag & drop (will show warning)
   const handleFileImport = useCallback((files: FileList) => {
     const fileArray = Array.from(files);
-    importMedia(fileArray);
-  }, [importMedia]);
+    importMediaFromFiles(fileArray);
+  }, [importMediaFromFiles]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileImport(files);
+    if (e.dataTransfer.files) {
+      handleFileImport(e.dataTransfer.files);
     }
   }, [handleFileImport]);
 
@@ -112,7 +115,7 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
     // In a full implementation, you'd handle more complex compositions
     return {
       inputs: tracks.map(track => track.source),
-      output: 'public/output/final_video.mp4',
+      output: 'final_video.mp4',
       operations: {
         concat: tracks.length > 1,
         targetFrameRate: timeline.fps,
@@ -129,7 +132,8 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
     }
 
     const job = createFFmpegJob();
-    
+    console.log(job);
+
     const callbacks: FfmpegCallbacks = {
       onProgress: (progress) => {
         if (progress.percentage) {
@@ -225,7 +229,7 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
           
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleImportFiles}
               style={{
                 backgroundColor: '#4CAF50',
                 border: 'none',
@@ -435,16 +439,6 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
       }}>
         <Timeline />
       </div>
-
-      {/* Hidden File Input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept="video/*,audio/*,image/*"
-        style={{ display: 'none' }}
-        onChange={(e) => e.target.files && handleFileImport(e.target.files)}
-      />
 
       {/* Render Progress Overlay */}
       {render.isRendering && (

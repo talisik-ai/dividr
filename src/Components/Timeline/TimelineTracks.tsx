@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import Draggable from 'react-draggable';
 import { VideoTrack } from '../../store/videoEditorStore';
 
@@ -21,7 +21,7 @@ interface TrackItemProps {
   onMove: (newStartFrame: number) => void;
 }
 
-const TrackItem: React.FC<TrackItemProps> = ({
+export const TrackItem: React.FC<TrackItemProps> = ({
   track,
   frameWidth,
   scrollX,
@@ -29,13 +29,21 @@ const TrackItem: React.FC<TrackItemProps> = ({
   onSelect,
   onMove,
 }) => {
+  const nodeRef = useRef<HTMLDivElement>(null); // ✅ create nodeRef
+
   const width = (track.endFrame - track.startFrame) * frameWidth;
   const left = track.startFrame * frameWidth - scrollX;
 
-  const handleDrag = useCallback((_: any, data: { x: number }) => {
-    const newStartFrame = Math.max(0, Math.round((data.x + scrollX) / frameWidth));
-    onMove(newStartFrame);
-  }, [frameWidth, scrollX, onMove]);
+  const handleDrag = useCallback(
+    (_: any, data: { x: number }) => {
+      const newStartFrame = Math.max(
+        0,
+        Math.round((data.x + scrollX) / frameWidth)
+      );
+      onMove(newStartFrame);
+    },
+    [frameWidth, scrollX, onMove]
+  );
 
   const getTrackGradient = (type: VideoTrack['type']) => {
     switch (type) {
@@ -52,6 +60,7 @@ const TrackItem: React.FC<TrackItemProps> = ({
 
   return (
     <Draggable
+      nodeRef={nodeRef} // ✅ pass nodeRef to Draggable
       axis="x"
       position={{ x: left, y: 0 }}
       onDrag={handleDrag}
@@ -59,6 +68,7 @@ const TrackItem: React.FC<TrackItemProps> = ({
       disabled={track.locked}
     >
       <div
+        ref={nodeRef} // ✅ attach nodeRef to the draggable element
         style={{
           position: 'absolute',
           width: width,
@@ -79,42 +89,46 @@ const TrackItem: React.FC<TrackItemProps> = ({
           onSelect();
         }}
       >
-        <div style={{
-          color: 'white',
-          fontSize: '11px',
-          fontWeight: 'bold',
-          textShadow: '1px 1px 2px rgba(0,0,0,0.7)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
+        <div
+          style={{
+            color: 'white',
+            fontSize: '11px',
+            fontWeight: 'bold',
+            textShadow: '1px 1px 2px rgba(0,0,0,0.7)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
           {track.name}
         </div>
-        
-        {/* Volume indicator for audio tracks */}
+
         {track.type === 'audio' && track.volume !== undefined && (
-          <div style={{
-            position: 'absolute',
-            right: '4px',
-            top: '4px',
-            fontSize: '8px',
-            color: 'rgba(255,255,255,0.8)',
-          }}>
+          <div
+            style={{
+              position: 'absolute',
+              right: '4px',
+              top: '4px',
+              fontSize: '8px',
+              color: 'rgba(255,255,255,0.8)',
+            }}
+          >
             {Math.round(track.volume * 100)}%
           </div>
         )}
-        
-        {/* Lock indicator */}
+
         {track.locked && (
-          <div style={{
-            position: 'absolute',
-            right: '4px',
-            bottom: '4px',
-            width: '8px',
-            height: '8px',
-            backgroundColor: 'rgba(255,255,255,0.8)',
-            borderRadius: '2px',
-          }} />
+          <div
+            style={{
+              position: 'absolute',
+              right: '4px',
+              bottom: '4px',
+              width: '8px',
+              height: '8px',
+              backgroundColor: 'rgba(255,255,255,0.8)',
+              borderRadius: '2px',
+            }}
+          />
         )}
       </div>
     </Draggable>
@@ -130,7 +144,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
   selectedTrackIds,
   onTrackSelect,
 }) => {
-  const handleTrackSelect = useCallback((trackId: string, multiSelect: boolean = false) => {
+  const handleTrackSelect = useCallback((trackId: string, multiSelect = false) => {
     if (multiSelect) {
       const newSelection = selectedTrackIds.includes(trackId)
         ? selectedTrackIds.filter(id => id !== trackId)

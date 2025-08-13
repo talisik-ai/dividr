@@ -10,6 +10,29 @@ declare global {
         on: (channel: string, listener: (...args: any[]) => void) => void;
         removeListener: (channel: string, listener: (...args: any[]) => void) => void;
         
+        // File dialog methods
+        openFileDialog: (options?: {
+          title?: string;
+          filters?: Array<{ name: string; extensions: string[] }>;
+          properties?: Array<'openFile' | 'openDirectory' | 'multiSelections'>;
+        }) => Promise<{
+          success: boolean;
+          files?: Array<{
+            path: string;
+            name: string;
+            size: number;
+            type: 'video' | 'audio' | 'image';
+            extension: string;
+          }>;
+          canceled?: boolean;
+          error?: string;
+        }>;
+        
+        ffmpegRun: (job: VideoEditJob) => Promise<{
+          success: boolean;
+          result?: { command: string; logs: string };
+          error?: string;
+        }>;
         runFfmpeg: (job: VideoEditJob) => Promise<{
           success: boolean;
           result?: { command: string; logs: string };

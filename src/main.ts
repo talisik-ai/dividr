@@ -1,15 +1,69 @@
 import { spawn } from 'child_process';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import started from 'electron-squirrel-startup';
 import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
+import fs from 'node:fs';
 import path from 'node:path';
 import { VideoEditJob } from './Schema/ffmpegConfig';
+import { buildFfmpegCommand } from './Utility/commandBuilder';
 import { cancelCurrentFfmpeg, runFfmpeg, runFfmpegWithProgress } from './Utility/ffmpegRunner';
 
 if (started) {
   app.quit();
 }
+
+// IPC Handler for opening file dialog
+ipcMain.handle('open-file-dialog', async (event, options?: {
+  title?: string;
+  filters?: Array<{ name: string; extensions: string[] }>;
+  properties?: Array<'openFile' | 'openDirectory' | 'multiSelections'>;
+}) => {
+  try {
+    const result = await dialog.showOpenDialog({
+      title: options?.title || 'Select Media Files',
+      properties: options?.properties || ['openFile', 'multiSelections'],
+      filters: options?.filters || [
+        { name: 'Media Files', extensions: ['mp4', 'avi', 'mov', 'mkv', 'mp3', 'wav', 'aac', 'jpg', 'jpeg', 'png', 'gif'] },
+        { name: 'Video Files', extensions: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv', 'flv'] },
+        { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'] },
+        { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (!result.canceled && result.filePaths.length > 0) {
+      // Get file info for each selected file
+      const fileInfos = result.filePaths.map(filePath => {
+        const stats = fs.statSync(filePath);
+        const fileName = path.basename(filePath);
+        const ext = path.extname(fileName).toLowerCase().slice(1);
+        
+        // Determine file type based on extension
+        let type: 'video' | 'audio' | 'image' = 'video';
+        if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext)) {
+          type = 'audio';
+        } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff'].includes(ext)) {
+          type = 'image';
+        }
+
+        return {
+          path: filePath,
+          name: fileName,
+          size: stats.size,
+          type,
+          extension: ext
+        };
+      });
+
+      return { success: true, files: fileInfos };
+    } else {
+      return { success: false, canceled: true };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
 // IPC Handler for FFmpeg operations (backward compatibility)
 ipcMain.handle('run-ffmpeg', async (event, job: VideoEditJob) => {
@@ -115,15 +169,20 @@ ipcMain.handle('ffmpeg:detect-frame-rate', async (event, videoPath: string) => {
 // Global FFmpeg process tracking
 let currentFfmpegProcess: any = null;
 
-ipcMain.handle('ffmpeg:run', async (event, job: any) => {
+ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
   return new Promise((resolve, reject) => {
     if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
       reject(new Error('Another FFmpeg process is already running'));
       return;
     }
 
-    // You'll need to import buildFfmpegCommand or recreate the logic here
-    const args = ['-progress', 'pipe:1', '-y', /* ...buildFfmpegCommand(job) */];
+    const location = "public/output/";
+    
+    // Build proper FFmpeg command
+    const baseArgs = buildFfmpegCommand(job, location);
+    const args = ['-progress', 'pipe:1', '-y', ...baseArgs];
+    
+    console.log("Running FFmpeg with args:", args);
     
     const ffmpeg = spawn(ffmpegPath as string, args);
     currentFfmpegProcess = ffmpeg;
@@ -147,7 +206,7 @@ ipcMain.handle('ffmpeg:run', async (event, job: any) => {
       if (code === 0) {
         resolve({ success: true, logs });
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}`));
+        reject(new Error(`FFmpeg exited with code ${code}\nLogs:\n${logs}`));
       }
     });
 

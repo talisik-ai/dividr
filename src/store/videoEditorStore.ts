@@ -6,7 +6,9 @@ export interface VideoTrack {
   id: string;
   type: 'video' | 'audio' | 'image';
   name: string;
-  source: string;
+  source: string; // This will be a blob URL for display purposes
+  originalFile?: File; // Store the original File object for FFmpeg conversion
+  tempFilePath?: string; // Store the temporary file path when converted
   duration: number; // in frames
   startFrame: number;
   endFrame: number;
@@ -111,7 +113,8 @@ interface VideoEditorStore {
   
   // Utility Actions
   reset: () => void;
-  importMedia: (files: File[]) => Promise<void>;
+  importMediaFromDialog: () => Promise<void>; // New method using native dialog
+  importMediaFromFiles: (files: File[]) => Promise<void>; // Keep for backward compatibility
   exportProject: () => string;
   importProject: (data: string) => void;
 }
@@ -126,14 +129,14 @@ const getTrackColor = (index: number) => TRACK_COLORS[index % TRACK_COLORS.lengt
 export const useVideoEditorStore = create<VideoEditorStore>()(
   subscribeWithSelector((set, get) => ({
     // Initial State
-    tracks: [],
+    tracks: [] as VideoTrack[],
     timeline: {
       currentFrame: 0,
       totalFrames: 3000, // 100 seconds at 30fps
       fps: 30,
       zoom: 1,
       scrollX: 0,
-      selectedTrackIds: [],
+      selectedTrackIds: [] as string[],
       playheadVisible: true,
     },
     playback: {
@@ -417,23 +420,64 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         },
       }),
     
-    importMedia: async (files) => {
-      // This would integrate with your FFmpeg logic to analyze media files
+    importMediaFromDialog: async () => {
+      try {
+        // Use Electron's native file dialog
+        const result = await window.electronAPI.openFileDialog({
+          title: 'Select Media Files',
+          properties: ['openFile', 'multiSelections']
+        });
+
+        console.log(result);
+
+        if (!result.success || result.canceled || !result.files) {
+          return;
+        }
+
+        const newTracks = result.files.map((fileInfo, index) => {
+          // Estimate duration based on file type
+          const estimatedDuration = fileInfo.type === 'image' ? 150 : 1500; // 5s for images, 50s for video/audio
+          
+          return {
+            type: fileInfo.type,
+            name: fileInfo.name,
+            source: fileInfo.path, // This is the actual file system path
+            duration: estimatedDuration,
+            startFrame: index * 150, // Stagger by 5 seconds
+            endFrame: index * 150 + estimatedDuration,
+            visible: true,
+            locked: false,
+            color: getTrackColor(get().tracks.length + index),
+          };
+        });
+        
+        newTracks.forEach(track => get().addTrack(track));
+      } catch (error) {
+        console.error('Failed to import media from dialog:', error);
+      }
+    },
+    
+    importMediaFromFiles: async (files) => {
+      // Legacy method for web File objects - fallback for drag & drop
       const newTracks = await Promise.all(
         files.map(async (file, index) => {
-          const url = URL.createObjectURL(file);
+          // For regular File objects, we'll create blob URLs for preview
+          // but log a warning that this won't work with FFmpeg
+          const blobUrl = URL.createObjectURL(file);
+          console.warn('Using blob URL for file:', file.name, 'This will not work with FFmpeg. Use importMediaFromDialog instead.');
+          
           const type = file.type.startsWith('video/') ? 'video' as const : 
                       file.type.startsWith('audio/') ? 'audio' as const : 'image' as const;
           
-          // You would use FFprobe here to get actual duration
-          const estimatedDuration = type === 'image' ? 150 : 1500; // 5s for images, 50s for video/audio
+          const estimatedDuration = type === 'image' ? 150 : 1500;
           
           return {
             type,
             name: file.name,
-            source: url,
+            source: blobUrl, // This will be a blob URL - won't work with FFmpeg
+            originalFile: file,
             duration: estimatedDuration,
-            startFrame: index * 150, // Stagger by 5 seconds
+            startFrame: index * 150,
             endFrame: index * 150 + estimatedDuration,
             visible: true,
             locked: false,

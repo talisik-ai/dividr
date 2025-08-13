@@ -142,7 +142,7 @@ export async function runFfmpegWithProgress(
     window.electronAPI.on('ffmpeg:progress', handleProgress);
 
     // Start FFmpeg process
-    window.electronAPI.invoke('ffmpeg:run', job)
+    window.electronAPI.invoke('ffmpegRun', job)
       .then((result: any) => {
         // Clean up listener
         window.electronAPI.removeListener('ffmpeg:progress', handleProgress);
@@ -160,5 +160,11 @@ export async function runFfmpegWithProgress(
 export async function runFfmpeg(
   job: VideoEditJob
 ): Promise<{ command: string; logs: string }> {
-  return runFfmpegWithProgress(job);
+  const result = await window.electronAPI.ffmpegRun(job);
+  
+  if (result.success) {
+    return result.result!;
+  } else {
+    throw new Error(result.error || 'FFmpeg execution failed');
+  }
 }

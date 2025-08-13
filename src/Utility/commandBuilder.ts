@@ -28,10 +28,11 @@ import { VideoEditJob } from '../Schema/ffmpegConfig';
         const targetFps = job.operations.targetFrameRate || 30;
         
         // Generate fps filters for each video input
+    
         const fpsFilters = job.inputs
           .map((_, index) => `[${index}:v]fps=${targetFps}[v${index}]`)
           .join(";");
-        
+    
         // Generate concat inputs (normalized video + original audio)
         const concatInputs = job.inputs
           .map((_, index) => `[v${index}][${index}:a]`)
@@ -40,6 +41,7 @@ import { VideoEditJob } from '../Schema/ffmpegConfig';
         // Combine fps normalization and concatenation
         cmd.filters.push(
           `${fpsFilters};${concatInputs}concat=n=${job.inputs.length}:v=1:a=1[outv][outa]`
+
         );
       } else {
         // Original concatenation logic

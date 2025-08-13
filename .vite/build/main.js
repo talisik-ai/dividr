@@ -8,6 +8,7 @@ const require$$3 = require("fs");
 const require$$4 = require("net");
 const ffmpegPath = require("ffmpeg-static");
 const ffprobePath = require("ffprobe-static");
+const fs = require("node:fs");
 const path$1 = require("node:path");
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
@@ -399,8 +400,8 @@ function requireNode() {
           }
           break;
         case "FILE":
-          var fs = require$$3;
-          stream2 = new fs.SyncWriteStream(fd2, { autoClose: false });
+          var fs2 = require$$3;
+          stream2 = new fs2.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -475,6 +476,79 @@ var check = function() {
 };
 var electronSquirrelStartup = check();
 const started = /* @__PURE__ */ getDefaultExportFromCjs(electronSquirrelStartup);
+const steps = [
+  handleInputs,
+  handleTrim,
+  handleCrop,
+  handleSubtitles,
+  handleAspect,
+  handleReplaceAudio
+];
+function handleInputs(job, cmd) {
+  if (job.operations.concat && job.inputs.length > 1) {
+    cmd.args.push(...job.inputs.flatMap((input) => ["-i", input]));
+    if (job.operations.normalizeFrameRate) {
+      const targetFps = job.operations.targetFrameRate || 30;
+      const fpsFilters = job.inputs.map((_, index) => `[${index}:v]fps=${targetFps}[v${index}]`).join(";");
+      const concatInputs = job.inputs.map((_, index) => `[v${index}][${index}:a]`).join("");
+      cmd.filters.push(
+        `${fpsFilters};${concatInputs}concat=n=${job.inputs.length}:v=1:a=1[outv][outa]`
+      );
+    } else {
+      const concatInputs = job.inputs.map((_, index) => `[${index}:v][${index}:a]`).join("");
+      cmd.filters.push(
+        `${concatInputs}concat=n=${job.inputs.length}:v=1:a=1[outv][outa]`
+      );
+    }
+    cmd.args.push("-filter_complex", cmd.filters.join(","));
+    cmd.args.push("-map", "[outv]", "-map", "[outa]");
+  } else {
+    job.inputs.forEach((input) => cmd.args.push("-i", input));
+  }
+}
+function handleTrim(job, cmd) {
+  const trim = job.operations.trim;
+  if (!trim) return;
+  const { start, duration, end } = trim;
+  if (start) cmd.args.unshift("-ss", start);
+  if (duration) {
+    cmd.args.push("-t", duration);
+  } else if (end && start) {
+    const dur = timeToSeconds(end) - timeToSeconds(start);
+    cmd.args.push("-t", String(dur));
+  }
+}
+function handleCrop(job, cmd) {
+  const crop = job.operations.crop;
+  if (crop) cmd.filters.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
+}
+function handleSubtitles(job, cmd) {
+  if (job.operations.subtitles) {
+    cmd.filters.push(`subtitles=${job.operations.subtitles}`);
+  }
+}
+function handleAspect(job, cmd) {
+  if (job.operations.aspect) cmd.args.push("-aspect", job.operations.aspect);
+}
+function handleReplaceAudio(job, cmd) {
+  if (!job.operations.replaceAudio) return;
+  cmd.args.push("-i", job.operations.replaceAudio);
+  cmd.args.push("-map", "0:v", "-map", `${job.inputs.length}:a`, "-shortest");
+}
+function buildFfmpegCommand(job, location) {
+  const cmd = { args: [], filters: [] };
+  for (const step of steps) step(job, cmd);
+  if (cmd.filters.length > 0 && !(job.operations.concat && job.inputs.length > 1)) {
+    cmd.args.push("-vf", cmd.filters.join(","));
+  }
+  const outputFilePath = location.endsWith("/") ? location + job.output : location + "/" + job.output;
+  cmd.args.push(outputFilePath);
+  return cmd.args;
+}
+function timeToSeconds(time) {
+  const parts = time.split(":").map(Number);
+  return parts.reduce((acc, val) => acc * 60 + val);
+}
 const isElectron = () => {
   return typeof window !== "undefined" && window.electronAPI;
 };
@@ -528,7 +602,7 @@ async function runFfmpegWithProgress(job, callbacks) {
       }
     };
     window.electronAPI.on("ffmpeg:progress", handleProgress);
-    window.electronAPI.invoke("ffmpeg:run", job).then((result) => {
+    window.electronAPI.invoke("ffmpegRun", job).then((result) => {
       window.electronAPI.removeListener("ffmpeg:progress", handleProgress);
       resolve({ command: "ffmpeg-via-ipc", logs: result.logs });
     }).catch((error) => {
@@ -538,11 +612,56 @@ async function runFfmpegWithProgress(job, callbacks) {
   });
 }
 async function runFfmpeg(job) {
-  return runFfmpegWithProgress(job);
+  const result = await window.electronAPI.ffmpegRun(job);
+  if (result.success) {
+    return result.result;
+  } else {
+    throw new Error(result.error || "FFmpeg execution failed");
+  }
 }
 if (started) {
   require$$3$1.app.quit();
 }
+require$$3$1.ipcMain.handle("open-file-dialog", async (event, options) => {
+  try {
+    const result = await require$$3$1.dialog.showOpenDialog({
+      title: (options == null ? void 0 : options.title) || "Select Media Files",
+      properties: (options == null ? void 0 : options.properties) || ["openFile", "multiSelections"],
+      filters: (options == null ? void 0 : options.filters) || [
+        { name: "Media Files", extensions: ["mp4", "avi", "mov", "mkv", "mp3", "wav", "aac", "jpg", "jpeg", "png", "gif"] },
+        { name: "Video Files", extensions: ["mp4", "avi", "mov", "mkv", "webm", "wmv", "flv"] },
+        { name: "Audio Files", extensions: ["mp3", "wav", "aac", "flac", "ogg", "m4a"] },
+        { name: "Image Files", extensions: ["jpg", "jpeg", "png", "gif", "bmp", "tiff"] },
+        { name: "All Files", extensions: ["*"] }
+      ]
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      const fileInfos = result.filePaths.map((filePath) => {
+        const stats = fs.statSync(filePath);
+        const fileName = path$1.basename(filePath);
+        const ext = path$1.extname(fileName).toLowerCase().slice(1);
+        let type = "video";
+        if (["mp3", "wav", "aac", "flac", "ogg", "m4a"].includes(ext)) {
+          type = "audio";
+        } else if (["jpg", "jpeg", "png", "gif", "bmp", "tiff"].includes(ext)) {
+          type = "image";
+        }
+        return {
+          path: filePath,
+          name: fileName,
+          size: stats.size,
+          type,
+          extension: ext
+        };
+      });
+      return { success: true, files: fileInfos };
+    } else {
+      return { success: false, canceled: true };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 require$$3$1.ipcMain.handle("run-ffmpeg", async (event, job) => {
   try {
     const result = await runFfmpeg(job);
@@ -628,18 +747,16 @@ require$$3$1.ipcMain.handle("ffmpeg:detect-frame-rate", async (event, videoPath)
   });
 });
 let currentFfmpegProcess = null;
-require$$3$1.ipcMain.handle("ffmpeg:run", async (event, job) => {
+require$$3$1.ipcMain.handle("ffmpegRun", async (event, job) => {
   return new Promise((resolve, reject) => {
     if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
       reject(new Error("Another FFmpeg process is already running"));
       return;
     }
-    const args = [
-      "-progress",
-      "pipe:1",
-      "-y"
-      /* ...buildFfmpegCommand(job) */
-    ];
+    const location = "public/output/";
+    const baseArgs = buildFfmpegCommand(job, location);
+    const args = ["-progress", "pipe:1", "-y", ...baseArgs];
+    console.log("Running FFmpeg with args:", args);
     const ffmpeg = require$$1$1.spawn(ffmpegPath, args);
     currentFfmpegProcess = ffmpeg;
     let logs = "";
@@ -660,7 +777,9 @@ require$$3$1.ipcMain.handle("ffmpeg:run", async (event, job) => {
       if (code === 0) {
         resolve({ success: true, logs });
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}`));
+        reject(new Error(`FFmpeg exited with code ${code}
+Logs:
+${logs}`));
       }
     });
     ffmpeg.on("error", (err) => {

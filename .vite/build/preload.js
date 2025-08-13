@@ -5,7 +5,10 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   invoke: (channel, ...args) => electron.ipcRenderer.invoke(channel, ...args),
   on: (channel, listener) => electron.ipcRenderer.on(channel, listener),
   removeListener: (channel, listener) => electron.ipcRenderer.removeListener(channel, listener),
-  // Original API for backward compatibility
+  // File dialog methods
+  openFileDialog: (options) => electron.ipcRenderer.invoke("open-file-dialog", options),
+  // FFmpeg API
+  ffmpegRun: (job) => electron.ipcRenderer.invoke("ffmpegRun", job),
   runFfmpeg: (job) => electron.ipcRenderer.invoke("run-ffmpeg", job),
   // Enhanced API with progress tracking
   runFfmpegWithProgress: (job, handlers) => {

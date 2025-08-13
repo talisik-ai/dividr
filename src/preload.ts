@@ -17,7 +17,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   on: (channel: string, listener: (...args: any[]) => void) => ipcRenderer.on(channel, listener),
   removeListener: (channel: string, listener: (...args: any[]) => void) => ipcRenderer.removeListener(channel, listener),
   
-  // Original API for backward compatibility
+  // File dialog methods
+  openFileDialog: (options?: {
+    title?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+    properties?: Array<'openFile' | 'openDirectory' | 'multiSelections'>;
+  }) => ipcRenderer.invoke('open-file-dialog', options),
+  
+  // FFmpeg API
+  ffmpegRun: (job: VideoEditJob) => ipcRenderer.invoke('ffmpegRun', job),
   runFfmpeg: (job: VideoEditJob) => ipcRenderer.invoke('run-ffmpeg', job),
   
   // Enhanced API with progress tracking
