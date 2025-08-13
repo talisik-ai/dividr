@@ -225,53 +225,37 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      {/* Top Menu Bar */}
+      {/* Header */}
       <div style={{
-        height: '40px',
-        backgroundColor: '#2d2d2d',
-        borderBottom: '1px solid #3d3d3d',
+        backgroundColor: '#3d3d3d',
+        borderBottom: '1px solid #555',
+        padding: '12px 16px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 16px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: 0 }}>
-            Dividr Video Editor
-          </h1>
-          
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              onClick={handleImportFiles}
-              style={{
-                backgroundColor: '#4CAF50',
-                border: 'none',
-                color: '#fff',
-                fontSize: '12px',
-                cursor: 'pointer',
-                padding: '6px 12px',
-                borderRadius: '4px',
-              }}
-            >
-              Import Media
-            </button>
-            {/* 
-            <button
-              onClick={addDemoTracks}
-              style={{
-                backgroundColor: '#9C27B0',
-                border: 'none',
-                color: '#fff',
-                fontSize: '12px',
-                cursor: 'pointer',
-                padding: '6px 12px',
-                borderRadius: '4px',
-              }}
-            >
-              Add Demo
-            </button>
-            */}
-            <button
+        <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>
+          Video Editor
+        </h1>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Quick Import Button */}
+          <button
+            onClick={handleImportFiles}
+            style={{
+              backgroundColor: '#4CAF50',
+              border: 'none',
+              color: '#fff',
+              fontSize: '12px',
+              cursor: 'pointer',
+              padding: '6px 12px',
+              borderRadius: '4px',
+            }}
+            title="Import video files"
+          >
+            Import Files
+          </button>
+          <button
               onClick={handleImportProject}
               style={{
                 backgroundColor: '#2196F3',
@@ -285,7 +269,6 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
             >
               Open Project
             </button>
-            
             <button
               onClick={handleExportProject}
               style={{
@@ -300,7 +283,6 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
             >
               Save Project
             </button>
-            
             <button
               onClick={reset}
               style={{
@@ -315,17 +297,8 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
             >
               New Project
             </button>
-          </div>
-        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {/* Project Info */}
-          <div style={{ fontSize: '12px', color: '#aaa' }}>
-            {tracks.length} tracks • {timeline.fps} fps • {timeline.totalFrames} frames
-          </div>
-          
-          {/* Render Button */}
-          <button
+            <button
             onClick={handleRender}
             disabled={render.isRendering || tracks.length === 0}
             style={{
@@ -333,14 +306,24 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
               border: 'none',
               color: '#fff',
               fontSize: '12px',
-              cursor: render.isRendering ? 'not-allowed' : 'pointer',
-              padding: '6px 16px',
+              cursor: 'pointer',
+              padding: '6px 12px',
               borderRadius: '4px',
-              fontWeight: 'bold',
             }}
           >
-            {render.isRendering ? `Rendering... ${render.progress.toFixed(0)}%` : 'Render Video'}
+            {render.isRendering ? `Rendering... ${render.progress.toFixed(0)}%` : 'Export Video'}
           </button>
+          {tracks.length > 0 && (
+            <div style={{ 
+              color: '#aaa', 
+              fontSize: '12px',
+              padding: '4px 8px',
+              backgroundColor: 'rgba(255,255,255,0.1)',
+              borderRadius: '4px',
+            }}>
+              {tracks.length} track{tracks.length !== 1 ? 's' : ''} loaded
+            </div>
+          )}
         </div>
       </div>
 

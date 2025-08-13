@@ -9,6 +9,7 @@ const require$$4 = require("net");
 const ffmpegPath = require("ffmpeg-static");
 const ffprobePath = require("ffprobe-static");
 const fs = require("node:fs");
+const http = require("node:http");
 const path$1 = require("node:path");
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
@@ -760,6 +761,75 @@ async function runFfmpeg(job) {
 if (started) {
   require$$3$1.app.quit();
 }
+let mediaServer = null;
+const MEDIA_SERVER_PORT = 3001;
+function createMediaServer() {
+  mediaServer = http.createServer((req, res) => {
+    if (!req.url) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    const urlPath = decodeURIComponent(req.url.slice(1));
+    try {
+      if (!fs.existsSync(urlPath)) {
+        res.writeHead(404);
+        res.end("File not found");
+        return;
+      }
+      const stats = fs.statSync(urlPath);
+      const ext = path$1.extname(urlPath).toLowerCase();
+      let mimeType = "application/octet-stream";
+      if ([".mp4", ".webm", ".ogg"].includes(ext)) {
+        mimeType = `video/${ext.slice(1)}`;
+      } else if ([".mp3", ".wav", ".aac"].includes(ext)) {
+        mimeType = `audio/${ext.slice(1)}`;
+      } else if ([".jpg", ".jpeg"].includes(ext)) {
+        mimeType = "image/jpeg";
+      } else if (ext === ".png") {
+        mimeType = "image/png";
+      } else if (ext === ".gif") {
+        mimeType = "image/gif";
+      }
+      const range = req.headers.range;
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : stats.size - 1;
+        const chunksize = end - start + 1;
+        const stream = fs.createReadStream(urlPath, { start, end });
+        res.writeHead(206, {
+          "Content-Range": `bytes ${start}-${end}/${stats.size}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": chunksize,
+          "Content-Type": mimeType,
+          "Access-Control-Allow-Origin": "*"
+        });
+        stream.pipe(res);
+      } else {
+        res.writeHead(200, {
+          "Content-Length": stats.size,
+          "Content-Type": mimeType,
+          "Access-Control-Allow-Origin": "*"
+        });
+        fs.createReadStream(urlPath).pipe(res);
+      }
+    } catch (error) {
+      console.error("Error serving file:", error);
+      res.writeHead(500);
+      res.end("Internal server error");
+    }
+  });
+  mediaServer.listen(MEDIA_SERVER_PORT, "localhost", () => {
+    console.log(`📁 Media server started on http://localhost:${MEDIA_SERVER_PORT}`);
+  });
+  mediaServer.on("error", (error) => {
+    console.error("Media server error:", error);
+  });
+}
+require$$3$1.app.whenReady().then(() => {
+  createMediaServer();
+});
 require$$3$1.ipcMain.handle("open-file-dialog", async (event, options) => {
   try {
     const result = await require$$3$1.dialog.showOpenDialog({
@@ -838,6 +908,61 @@ require$$3$1.ipcMain.handle("cancel-ffmpeg", async (event) => {
     }
   } catch (error) {
     return { success: false, message: `Failed to cancel: ${error.message}` };
+  }
+});
+require$$3$1.ipcMain.handle("create-preview-url", async (event, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    const ext = path$1.extname(filePath).toLowerCase().slice(1);
+    if (["jpg", "jpeg", "png", "gif", "bmp", "webp"].includes(ext)) {
+      const fileBuffer = fs.readFileSync(filePath);
+      let mimeType = "image/jpeg";
+      if (["png"].includes(ext)) {
+        mimeType = "image/png";
+      } else if (["gif"].includes(ext)) {
+        mimeType = "image/gif";
+      }
+      const base64 = fileBuffer.toString("base64");
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+      return { success: true, url: dataUrl };
+    }
+    if (["mp4", "webm", "ogg", "avi", "mov", "mkv", "mp3", "wav", "aac"].includes(ext)) {
+      const encodedPath = encodeURIComponent(filePath);
+      const serverUrl = `http://localhost:${MEDIA_SERVER_PORT}/${encodedPath}`;
+      console.log(`🎬 Created server URL for media: ${serverUrl}`);
+      return { success: true, url: serverUrl };
+    }
+    return { success: false, error: "Unsupported file type" };
+  } catch (error) {
+    console.error("Failed to create preview URL:", error);
+    return { success: false, error: error.message };
+  }
+});
+require$$3$1.ipcMain.handle("get-file-stream", async (event, filePath, start, end) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    const stats = fs.statSync(filePath);
+    const fileSize = stats.size;
+    const startByte = start || 0;
+    const endByte = end || Math.min(startByte + 1024 * 1024, fileSize - 1);
+    const buffer = Buffer.alloc(endByte - startByte + 1);
+    const fd = fs.openSync(filePath, "r");
+    fs.readSync(fd, buffer, 0, buffer.length, startByte);
+    fs.closeSync(fd);
+    return {
+      success: true,
+      data: buffer.toString("base64"),
+      start: startByte,
+      end: endByte,
+      total: fileSize
+    };
+  } catch (error) {
+    console.error("Failed to get file stream:", error);
+    return { success: false, error: error.message };
   }
 });
 require$$3$1.ipcMain.handle("ffmpeg:detect-frame-rate", async (event, videoPath) => {
@@ -1010,6 +1135,10 @@ const createWindow = () => {
 };
 require$$3$1.app.on("ready", createWindow);
 require$$3$1.app.on("window-all-closed", () => {
+  if (mediaServer) {
+    mediaServer.close();
+    console.log("📁 Media server stopped");
+  }
   if (process.platform !== "darwin") {
     require$$3$1.app.quit();
   }
@@ -1017,5 +1146,11 @@ require$$3$1.app.on("window-all-closed", () => {
 require$$3$1.app.on("activate", () => {
   if (require$$3$1.BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+  }
+});
+require$$3$1.app.on("before-quit", () => {
+  if (mediaServer) {
+    mediaServer.close();
+    console.log("📁 Media server stopped");
   }
 });

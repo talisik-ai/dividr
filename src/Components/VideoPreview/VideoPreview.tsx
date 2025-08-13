@@ -6,10 +6,18 @@ interface VideoPreviewProps {
   className?: string;
 }
 
+interface VideoElement {
+  id: string;
+  element: HTMLVideoElement;
+  isLoaded: boolean;
+}
+
 export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoElementsRef = useRef<Map<string, VideoElement>>(new Map());
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [loadingTracks, setLoadingTracks] = useState<Set<string>>(new Set());
 
   const {
     preview,
@@ -19,6 +27,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     setCanvasSize,
     toggleGrid,
     toggleSafeZones,
+    playback,
   } = useVideoEditorStore();
 
   // Update container size on resize
@@ -61,14 +70,147 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     }
   }, [handleWheel]);
 
+  // Create and manage video elements for each track
+  useEffect(() => {
+    const videoElements = videoElementsRef.current;
+    const currentTrackIds = new Set(tracks.map(track => track.id));
+    
+    // Remove video elements for tracks that no longer exist
+    for (const [trackId, videoElement] of videoElements.entries()) {
+      if (!currentTrackIds.has(trackId)) {
+        videoElement.element.remove();
+        videoElements.delete(trackId);
+      }
+    }
+
+    // Create video elements for new video/image tracks
+    tracks.forEach(track => {
+      if ((track.type === 'video' || track.type === 'image') && !videoElements.has(track.id) && track.previewUrl) {
+        const videoElement = document.createElement('video');
+        videoElement.style.display = 'none';
+        videoElement.muted = false; // Enable audio
+        videoElement.preload = 'metadata';
+        videoElement.crossOrigin = 'anonymous';
+        videoElement.volume = 0.8; // Set reasonable volume level
+        
+        // Handle loading
+        const handleLoadedData = () => {
+          videoElements.set(track.id, {
+            id: track.id,
+            element: videoElement,
+            isLoaded: true
+          });
+          setLoadingTracks(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(track.id);
+            return newSet;
+          });
+          
+          // Seek to 2 seconds to avoid potential black frames at start
+          if (videoElement.duration > 2) {
+            videoElement.currentTime = 2;
+          }
+          
+          console.log(`✅ Video loaded: ${track.name}`);
+        };
+
+        const handleError = (e: Event) => {
+          console.error(`❌ Failed to load: ${track.name}`);
+          setLoadingTracks(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(track.id);
+            return newSet;
+          });
+        };
+
+        videoElement.addEventListener('loadeddata', handleLoadedData);
+        videoElement.addEventListener('error', handleError);
+
+        // Set loading state
+        setLoadingTracks(prev => new Set(prev).add(track.id));
+
+        // Use the preview URL
+        videoElement.src = track.previewUrl;
+        document.body.appendChild(videoElement);
+
+        videoElements.set(track.id, {
+          id: track.id,
+          element: videoElement,
+          isLoaded: false
+        });
+      } else if ((track.type === 'video' || track.type === 'image') && !track.previewUrl) {
+        console.warn(`⚠️ Track ${track.name} has no preview URL`);
+      }
+    });
+
+    // Cleanup on unmount
+    return () => {
+      for (const videoElement of videoElements.values()) {
+        videoElement.element.remove();
+      }
+      videoElements.clear();
+    };
+  }, [tracks]);
+
   // Get active tracks at current frame
   const getActiveTracksAtFrame = useCallback((frame: number) => {
-    return tracks.filter(track => 
+    const activeTracks = tracks.filter(track => 
       track.visible && 
       frame >= track.startFrame && 
       frame < track.endFrame
     );
+    
+    return activeTracks;
   }, [tracks]);
+
+  // Update video current time based on timeline
+  useEffect(() => {
+    const currentTimeInSeconds = timeline.currentFrame / timeline.fps;
+    const videoElements = videoElementsRef.current;
+
+    tracks.forEach(track => {
+      const videoElement = videoElements.get(track.id);
+      if (videoElement && videoElement.isLoaded) {
+        const trackTimeInSeconds = (timeline.currentFrame - track.startFrame) / timeline.fps;
+        if (trackTimeInSeconds >= 0 && trackTimeInSeconds <= track.duration / timeline.fps) {
+          // Only update time if it's significantly different to avoid constant seeking
+          const timeDiff = Math.abs(videoElement.element.currentTime - trackTimeInSeconds);
+          if (timeDiff > 0.1) { // Only seek if more than 100ms difference
+            videoElement.element.currentTime = Math.max(0, trackTimeInSeconds);
+          }
+        }
+      }
+    });
+  }, [timeline.currentFrame, timeline.fps, tracks]);
+
+  // Sync audio playback with timeline controls
+  useEffect(() => {
+    const videoElements = videoElementsRef.current;
+    
+    tracks.forEach(track => {
+      const videoElement = videoElements.get(track.id);
+      if (videoElement && videoElement.isLoaded) {
+        const trackTimeInSeconds = (timeline.currentFrame - track.startFrame) / timeline.fps;
+        const isTrackActive = track.visible && 
+          timeline.currentFrame >= track.startFrame && 
+          timeline.currentFrame < track.endFrame;
+        
+        if (isTrackActive && playback.isPlaying) {
+          videoElement.element.play().catch(e => {
+            // Handle autoplay restrictions gracefully
+            console.log('Autoplay prevented for', track.name);
+          });
+        } else {
+          videoElement.element.pause();
+        }
+        
+        // Sync volume and mute state
+        videoElement.element.volume = playback.muted ? 0 : playback.volume * 0.8;
+        videoElement.element.muted = playback.muted;
+        videoElement.element.playbackRate = playback.playbackRate;
+      }
+    });
+  }, [timeline.currentFrame, timeline.fps, tracks, playback.isPlaying, playback.volume, playback.muted, playback.playbackRate]);
 
   // Render preview
   useEffect(() => {
@@ -88,42 +230,77 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
     // Get active tracks
     const activeTracks = getActiveTracksAtFrame(timeline.currentFrame);
+    const videoElements = videoElementsRef.current;
 
-    // Render tracks (simplified preview - in real implementation you'd render actual media)
+    // Render tracks
     activeTracks.forEach((track, index) => {
       const progress = (timeline.currentFrame - track.startFrame) / (track.endFrame - track.startFrame);
       
-      // Simple placeholder rendering
-      ctx.fillStyle = track.color;
-      ctx.globalAlpha = 0.8;
-      
       if (track.type === 'video' || track.type === 'image') {
-        const width = track.width || preview.canvasWidth / 2;
-        const height = track.height || preview.canvasHeight / 2;
-        const x = track.offsetX || (preview.canvasWidth - width) / 2;
-        const y = track.offsetY || (preview.canvasHeight - height) / 2;
+        const videoElement = videoElements.get(track.id);
         
-        ctx.fillRect(x, y, width, height);
-        
-        // Add track label
-        ctx.fillStyle = 'white';
-        ctx.font = '16px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(track.name, x + width / 2, y + height / 2);
+        if (videoElement && videoElement.isLoaded) {
+          // Draw actual video frame
+          const video = videoElement.element;
+          const width = track.width || preview.canvasWidth / 2;
+          const height = track.height || preview.canvasHeight / 2;
+          const x = track.offsetX || (preview.canvasWidth - width) / 2;
+          const y = track.offsetY || (preview.canvasHeight - height) / 2;
+          
+          try {
+            ctx.drawImage(video, x, y, width, height);
+            
+          } catch (error) {
+            console.error(`❌ Failed to draw video frame for ${track.name}:`, error);
+            
+            // Fallback to placeholder if video can't be drawn
+            ctx.fillStyle = track.color;
+            ctx.globalAlpha = 0.8;
+            ctx.fillRect(x, y, width, height);
+            
+            // Add track label
+            ctx.fillStyle = 'white';
+            ctx.font = '16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(track.name, x + width / 2, y + height / 2);
+            ctx.globalAlpha = 1;
+          }
+        } else {
+          // Loading placeholder or fallback
+          const width = track.width || preview.canvasWidth / 2;
+          const height = track.height || preview.canvasHeight / 2;
+          const x = track.offsetX || (preview.canvasWidth - width) / 2;
+          const y = track.offsetY || (preview.canvasHeight - height) / 2;
+          
+          ctx.fillStyle = loadingTracks.has(track.id) ? '#444' : track.color;
+          ctx.globalAlpha = 0.8;
+          ctx.fillRect(x, y, width, height);
+          
+          // Add loading indicator or track label
+          ctx.fillStyle = 'white';
+          ctx.font = '16px sans-serif';
+          ctx.textAlign = 'center';
+          const text = loadingTracks.has(track.id) ? 'Loading...' : track.name;
+          ctx.fillText(text, x + width / 2, y + height / 2);
+          ctx.globalAlpha = 1;
+        }
       } else if (track.type === 'audio') {
         // Audio waveform placeholder
+        ctx.fillStyle = track.color;
+        ctx.globalAlpha = 0.8;
+        
         const waveHeight = 40;
         const y = preview.canvasHeight - waveHeight - 20;
         const barWidth = 2;
         const numBars = preview.canvasWidth / (barWidth + 1);
         
         for (let i = 0; i < numBars; i++) {
-          const height = Math.random() * waveHeight;
+          const height = Math.random() * waveHeight * progress;
           ctx.fillRect(i * (barWidth + 1), y + (waveHeight - height) / 2, barWidth, height);
         }
+        
+        ctx.globalAlpha = 1;
       }
-      
-      ctx.globalAlpha = 1;
     });
 
     // Draw grid if enabled
@@ -165,6 +342,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     preview,
     timeline.currentFrame,
     getActiveTracksAtFrame,
+    loadingTracks,
   ]);
 
   const effectiveScale = typeof preview.previewScale === 'number' ? preview.previewScale : calculateFitScale();
@@ -291,6 +469,27 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         }}
       />
 
+      {/* No Content Message */}
+      {tracks.length === 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          textAlign: 'center',
+          color: '#aaa',
+          zIndex: 5,
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📁</div>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>
+            No Video Files Loaded
+          </div>
+          <div style={{ fontSize: '14px', maxWidth: '300px' }}>
+            Click the "Import Files" button in the header to add video files and see them in the preview.
+          </div>
+        </div>
+      )}
+
       {/* Resolution Display */}
       <div style={{
         position: 'absolute',
@@ -305,6 +504,23 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       }}>
         {preview.canvasWidth} × {preview.canvasHeight}
       </div>
+
+      {/* Loading Indicator */}
+      {loadingTracks.size > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '16px',
+          left: '16px',
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          color: '#fff',
+          padding: '8px 12px',
+          borderRadius: '4px',
+          fontSize: '12px',
+          zIndex: 10,
+        }}>
+          Loading {loadingTracks.size} track{loadingTracks.size > 1 ? 's' : ''}...
+        </div>
+      )}
     </div>
   );
 }; 

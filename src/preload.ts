@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     properties?: Array<'openFile' | 'openDirectory' | 'multiSelections'>;
   }) => ipcRenderer.invoke('open-file-dialog', options),
   
+  // File preview methods
+  createPreviewUrl: (filePath: string) => ipcRenderer.invoke('create-preview-url', filePath),
+  getFileStream: (filePath: string, start?: number, end?: number) => ipcRenderer.invoke('get-file-stream', filePath, start, end),
+  
   // FFmpeg API
   ffmpegRun: (job: VideoEditJob) => ipcRenderer.invoke('ffmpegRun', job),
   runFfmpeg: (job: VideoEditJob) => ipcRenderer.invoke('run-ffmpeg', job),

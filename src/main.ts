@@ -4,6 +4,7 @@ import started from 'electron-squirrel-startup';
 import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { VideoEditJob } from './Schema/ffmpegConfig';
 import { buildFfmpegCommand } from './Utility/commandBuilder';
@@ -12,6 +13,91 @@ import { cancelCurrentFfmpeg, runFfmpeg, runFfmpegWithProgress } from './Utility
 if (started) {
   app.quit();
 }
+
+// Create a simple HTTP server to serve media files
+let mediaServer: http.Server | null = null;
+const MEDIA_SERVER_PORT = 3001;
+
+function createMediaServer() {
+  mediaServer = http.createServer((req, res) => {
+    if (!req.url) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+
+    // Parse the file path from the URL
+    const urlPath = decodeURIComponent(req.url.slice(1)); // Remove leading slash
+    
+    try {
+      if (!fs.existsSync(urlPath)) {
+        res.writeHead(404);
+        res.end('File not found');
+        return;
+      }
+
+      const stats = fs.statSync(urlPath);
+      const ext = path.extname(urlPath).toLowerCase();
+      
+      // Set appropriate MIME type
+      let mimeType = 'application/octet-stream';
+      if (['.mp4', '.webm', '.ogg'].includes(ext)) {
+        mimeType = `video/${ext.slice(1)}`;
+      } else if (['.mp3', '.wav', '.aac'].includes(ext)) {
+        mimeType = `audio/${ext.slice(1)}`;
+      } else if (['.jpg', '.jpeg'].includes(ext)) {
+        mimeType = 'image/jpeg';
+      } else if (ext === '.png') {
+        mimeType = 'image/png';
+      } else if (ext === '.gif') {
+        mimeType = 'image/gif';
+      }
+
+      // Handle range requests for video streaming
+      const range = req.headers.range;
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : stats.size - 1;
+        const chunksize = (end - start) + 1;
+        
+        const stream = fs.createReadStream(urlPath, { start, end });
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${stats.size}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': mimeType,
+          'Access-Control-Allow-Origin': '*',
+        });
+        stream.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': stats.size,
+          'Content-Type': mimeType,
+          'Access-Control-Allow-Origin': '*',
+        });
+        fs.createReadStream(urlPath).pipe(res);
+      }
+    } catch (error) {
+      console.error('Error serving file:', error);
+      res.writeHead(500);
+      res.end('Internal server error');
+    }
+  });
+
+  mediaServer.listen(MEDIA_SERVER_PORT, 'localhost', () => {
+    console.log(`📁 Media server started on http://localhost:${MEDIA_SERVER_PORT}`);
+  });
+
+  mediaServer.on('error', (error) => {
+    console.error('Media server error:', error);
+  });
+}
+
+// Start media server when app is ready
+app.whenReady().then(() => {
+  createMediaServer();
+});
 
 // IPC Handler for opening file dialog
 ipcMain.handle('open-file-dialog', async (event, options?: {
@@ -114,6 +200,82 @@ ipcMain.handle('cancel-ffmpeg', async (event) => {
     }
   } catch (error) {
     return { success: false, message: `Failed to cancel: ${error.message}` };
+  }
+});
+
+// IPC Handler for creating preview URLs from file paths
+ipcMain.handle('create-preview-url', async (event, filePath: string) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    
+    const ext = path.extname(filePath).toLowerCase().slice(1);
+    
+    // For images, create full data URL (they're usually small)
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext)) {
+      const fileBuffer = fs.readFileSync(filePath);
+      let mimeType = 'image/jpeg';
+      if (['png'].includes(ext)) {
+        mimeType = 'image/png';
+      } else if (['gif'].includes(ext)) {
+        mimeType = 'image/gif';
+      }
+      
+      const base64 = fileBuffer.toString('base64');
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+      
+      return { success: true, url: dataUrl };
+    }
+    
+    // For videos and other media, use the local media server
+    if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', 'mp3', 'wav', 'aac'].includes(ext)) {
+      // URL encode the file path for the media server
+      const encodedPath = encodeURIComponent(filePath);
+      const serverUrl = `http://localhost:${MEDIA_SERVER_PORT}/${encodedPath}`;
+      
+      console.log(`🎬 Created server URL for media: ${serverUrl}`);
+      return { success: true, url: serverUrl };
+    }
+    
+    // For other file types, return error
+    return { success: false, error: 'Unsupported file type' };
+    
+  } catch (error) {
+    console.error('Failed to create preview URL:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC Handler for serving files as streams (for large video files)
+ipcMain.handle('get-file-stream', async (event, filePath: string, start?: number, end?: number) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    
+    const stats = fs.statSync(filePath);
+    const fileSize = stats.size;
+    
+    // If no range specified, return small chunk for preview
+    const startByte = start || 0;
+    const endByte = end || Math.min(startByte + 1024 * 1024, fileSize - 1); // 1MB max chunk
+    
+    const buffer = Buffer.alloc(endByte - startByte + 1);
+    const fd = fs.openSync(filePath, 'r');
+    fs.readSync(fd, buffer, 0, buffer.length, startByte);
+    fs.closeSync(fd);
+    
+    return {
+      success: true,
+      data: buffer.toString('base64'),
+      start: startByte,
+      end: endByte,
+      total: fileSize
+    };
+  } catch (error) {
+    console.error('Failed to get file stream:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -322,6 +484,11 @@ const createWindow = () => {
 app.on('ready', createWindow);
 
 app.on('window-all-closed', () => {
+  if (mediaServer) {
+    mediaServer.close();
+    console.log('📁 Media server stopped');
+  }
+  
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -330,6 +497,13 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+  }
+});
+
+app.on('before-quit', () => {
+  if (mediaServer) {
+    mediaServer.close();
+    console.log('📁 Media server stopped');
   }
 });
 

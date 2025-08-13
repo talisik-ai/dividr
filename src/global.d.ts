@@ -28,6 +28,21 @@ declare global {
           error?: string;
         }>;
         
+        // File preview methods
+        createPreviewUrl: (filePath: string) => Promise<{
+          success: boolean;
+          url?: string;
+          error?: string;
+        }>;
+        getFileStream: (filePath: string, start?: number, end?: number) => Promise<{
+          success: boolean;
+          data?: string;
+          start?: number;
+          end?: number;
+          total?: number;
+          error?: string;
+        }>;
+        
         ffmpegRun: (job: VideoEditJob) => Promise<{
           success: boolean;
           result?: { command: string; logs: string };

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useVideoEditorStore } from '../../store/videoEditorStore';
+import { TimelineControls } from './TimelineControls';
 import { TimelinePlayhead } from './TimelinePlayhead';
 import { TimelineRuler } from './TimelineRuler';
 import { TimelineTracks, TRACK_ROWS } from './TimelineTracks';
@@ -25,6 +26,24 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     setOutPoint,
     setSelectedTracks,
   } = useVideoEditorStore();
+
+  // Animation loop for playback
+  useEffect(() => {
+    if (!playback.isPlaying) return;
+
+    const targetFPS = Math.min(15, timeline.fps); // Cap at 15fps for smoother performance
+    const interval = setInterval(() => {
+      const currentFrame = timeline.currentFrame;
+      const nextFrame = currentFrame + Math.max(1, Math.round(timeline.fps / targetFPS)); // Skip frames for better performance
+      if (nextFrame >= timeline.totalFrames) {
+        setCurrentFrame(playback.isLooping ? 0 : timeline.totalFrames - 1);
+      } else {
+        setCurrentFrame(nextFrame);
+      }
+    }, 1000 / targetFPS);
+
+    return () => clearInterval(interval);
+  }, [playback.isPlaying, playback.isLooping, timeline.fps, timeline.totalFrames, timeline.currentFrame, setCurrentFrame]);
 
   // Keyboard shortcuts
   useHotkeys('space', (e) => {
@@ -195,7 +214,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       </div>
 
       {/* Timeline Controls */}
-      {/* TimelineControls component removed as per edit hint */}
+      <TimelineControls />
     </div>
   );
 }; 

@@ -597,7 +597,7 @@ const VideoEditPlayer = forwardRef<VideoPlayerRef, VideoEditPlayerProps>(({
           {loadingFallback ? loadingFallback() : (
             <div className="text-white text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-              <div className="text-sm">Loading video...</div>
+              <div className="text-sm color-white">Loading video...</div>
             </div>
           )}
         </div>

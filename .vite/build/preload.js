@@ -7,6 +7,9 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   removeListener: (channel, listener) => electron.ipcRenderer.removeListener(channel, listener),
   // File dialog methods
   openFileDialog: (options) => electron.ipcRenderer.invoke("open-file-dialog", options),
+  // File preview methods
+  createPreviewUrl: (filePath) => electron.ipcRenderer.invoke("create-preview-url", filePath),
+  getFileStream: (filePath, start, end) => electron.ipcRenderer.invoke("get-file-stream", filePath, start, end),
   // FFmpeg API
   ffmpegRun: (job) => electron.ipcRenderer.invoke("ffmpegRun", job),
   runFfmpeg: (job) => electron.ipcRenderer.invoke("run-ffmpeg", job),

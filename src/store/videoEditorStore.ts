@@ -6,7 +6,8 @@ export interface VideoTrack {
   id: string;
   type: 'video' | 'audio' | 'image';
   name: string;
-  source: string; // This will be a blob URL for display purposes
+  source: string; // File path for FFmpeg processing
+  previewUrl?: string; // Preview URL for video preview component
   originalFile?: File; // Store the original File object for FFmpeg conversion
   tempFilePath?: string; // Store the temporary file path when converted
   duration: number; // in frames
@@ -519,12 +520,14 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         // Use Electron's native file dialog
         const result = await window.electronAPI.openFileDialog({
           title: 'Select Media Files',
-          properties: ['openFile', 'multiSelections']
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            { name: 'Media Files', extensions: ['mp4', 'avi', 'mov', 'mkv', 'mp3', 'wav', 'aac', 'jpg', 'jpeg', 'png', 'gif'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
         });
 
-        console.log(result);
-
-        if (!result.success || result.canceled || !result.files) {
+        if (!result.success || result.canceled || !result.files || result.files.length === 0) {
           return;
         }
 
@@ -544,11 +547,29 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             const estimatedDuration = fileInfo.type === 'image' ? 150 : 1500; // 5s for images, 50s for video/audio
             actualDuration = estimatedDuration;
           }
+
+          // Create preview URL for video and image tracks
+          let previewUrl: string | undefined;
+          if (fileInfo.type === 'video' || fileInfo.type === 'image') {
+            try {
+              console.log(`🖼️ Creating preview URL for: ${fileInfo.name}`);
+              const previewResult = await window.electronAPI.createPreviewUrl(fileInfo.path);
+              if (previewResult.success) {
+                previewUrl = previewResult.url;
+                console.log(`✅ Preview URL created for: ${fileInfo.name}`);
+              } else {
+                console.warn(`⚠️ Failed to create preview URL for ${fileInfo.name}:`, previewResult.error);
+              }
+            } catch (error) {
+              console.warn(`⚠️ Error creating preview URL for ${fileInfo.name}:`, error);
+            }
+          }
           
           return {
             type: fileInfo.type,
             name: fileInfo.name,
-            source: fileInfo.path, // This is the actual file system path
+            source: fileInfo.path, // This is the actual file system path for FFmpeg
+            previewUrl, // This is the data URL for preview display
             duration: actualDuration,
             startFrame: 0, // Start at 0, let the smart positioning handle arrangement
             endFrame: actualDuration,
