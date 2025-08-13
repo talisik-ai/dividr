@@ -484,26 +484,59 @@ const steps = [
   handleAspect,
   handleReplaceAudio
 ];
+function escapePath(filePath) {
+  return filePath;
+}
 function handleInputs(job, cmd) {
-  if (job.operations.concat && job.inputs.length > 1) {
-    cmd.args.push(...job.inputs.flatMap((input) => ["-i", input]));
-    if (job.operations.normalizeFrameRate) {
-      const targetFps = job.operations.targetFrameRate || 30;
-      const fpsFilters = job.inputs.map((_, index) => `[${index}:v]fps=${targetFps}[v${index}]`).join(";");
-      const concatInputs = job.inputs.map((_, index) => `[v${index}][${index}:a]`).join("");
-      cmd.filters.push(
-        `${fpsFilters};${concatInputs}concat=n=${job.inputs.length}:v=1:a=1[outv][outa]`
-      );
+  const inputCount = job.inputs.length;
+  if (job.operations.concat && inputCount > 1) {
+    cmd.args.push(...job.inputs.flatMap((input) => ["-i", escapePath(input)]));
+    const fpsFilters = [];
+    const concatVideoInputs = [];
+    const concatAudioInputs = [];
+    let videoCount = 0;
+    let audioCount = 0;
+    const videoInputs = [];
+    const audioInputs = [];
+    job.inputs.forEach((input, index) => {
+      const isVideo = /\.(mp4|mov|mkv|avi|webm)$/i.test(input);
+      const isAudio = /\.(mp3|wav|aac|flac)$/i.test(input);
+      if (isVideo) {
+        videoInputs.push({ index, path: input });
+      } else if (isAudio) {
+        audioInputs.push({ index, path: input });
+      }
+    });
+    videoInputs.forEach(({ index }) => {
+      videoCount++;
+      if (job.operations.normalizeFrameRate) {
+        const targetFps = job.operations.targetFrameRate || 30;
+        fpsFilters.push(`[${index}:v]fps=${targetFps}[v${index}]`);
+        concatVideoInputs.push(`[v${index}]`);
+      } else {
+        concatVideoInputs.push(`[${index}:v]`);
+      }
+    });
+    if (audioInputs.length > 0) {
+      const vf = fpsFilters.length ? fpsFilters.join(";") + ";" : "";
+      const videoOnlyFilter = `${vf}${concatVideoInputs.join("")}concat=n=${videoCount}:v=1:a=0[outv]`;
+      cmd.filters.push(videoOnlyFilter);
+      const audioIndex = audioInputs[0].index;
+      cmd.args.push("-filter_complex", cmd.filters.join(","));
+      cmd.args.push("-map", "[outv]", "-map", `${audioIndex}:a`, "-shortest");
     } else {
-      const concatInputs = job.inputs.map((_, index) => `[${index}:v][${index}:a]`).join("");
-      cmd.filters.push(
-        `${concatInputs}concat=n=${job.inputs.length}:v=1:a=1[outv][outa]`
-      );
+      videoInputs.forEach(({ index }) => {
+        audioCount++;
+        concatAudioInputs.push(`[${index}:a]`);
+      });
+      const vf = fpsFilters.length ? fpsFilters.join(";") + ";" : "";
+      const filterString = `${vf}${concatVideoInputs.join("")}${concatAudioInputs.join("")}concat=n=${videoCount}:v=${videoCount > 0 ? 1 : 0}:a=${audioCount > 0 ? 1 : 0}[outv][outa]`;
+      cmd.filters.push(filterString);
+      cmd.args.push("-filter_complex", cmd.filters.join(","));
+      cmd.args.push("-map", "[outv]", "-map", "[outa]");
     }
-    cmd.args.push("-filter_complex", cmd.filters.join(","));
-    cmd.args.push("-map", "[outv]", "-map", "[outa]");
   } else {
-    job.inputs.forEach((input) => cmd.args.push("-i", input));
+    job.inputs.forEach((input) => cmd.args.push("-i", escapePath(input)));
   }
 }
 function handleTrim(job, cmd) {
@@ -543,6 +576,8 @@ function buildFfmpegCommand(job, location) {
   }
   const outputFilePath = location.endsWith("/") ? location + job.output : location + "/" + job.output;
   cmd.args.push(outputFilePath);
+  console.log("🔧 FFmpeg Command Args:", cmd.args);
+  console.log("🎬 Full FFmpeg Command:", ["ffmpeg", ...cmd.args].join(" "));
   return cmd.args;
 }
 function timeToSeconds(time) {
