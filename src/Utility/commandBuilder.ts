@@ -1,4 +1,4 @@
-import { VideoEditJob } from '../Schema/ffmpegConfig';
+import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
 
   interface CommandParts {
     args: string[];
@@ -59,40 +59,81 @@ import { VideoEditJob } from '../Schema/ffmpegConfig';
   
   function handleInputs(job: VideoEditJob, cmd: CommandParts) {
     const inputCount = job.inputs.length;
-  
+    
+    // Helper to get path from input (string or TrackInfo)
+    const getInputPath = (input: string | TrackInfo): string => {
+      return typeof input === 'string' ? input : input.path;
+    };
+    
+    // Helper to get track info
+    const getTrackInfo = (input: string | TrackInfo): TrackInfo => {
+      return typeof input === 'string' ? { path: input } : input;
+    };
+
     if (job.operations.concat && inputCount > 1) {
-      cmd.args.push(...job.inputs.flatMap(input => ["-i", escapePath(input)]));
-  
+      // Add all inputs first
+      job.inputs.forEach(input => {
+        cmd.args.push("-i", escapePath(getInputPath(input)));
+      });
+
       const fpsFilters: string[] = [];
+      const trimFilters: string[] = [];
       const concatVideoInputs: string[] = [];
       const concatAudioInputs: string[] = [];
       let videoCount = 0;
       let audioCount = 0;
       
       // Separate video and audio-only inputs
-      const videoInputs: Array<{index: number, path: string}> = [];
-      const audioInputs: Array<{index: number, path: string}> = [];
-  
+      const videoInputs: Array<{index: number, trackInfo: TrackInfo}> = [];
+      const audioInputs: Array<{index: number, trackInfo: TrackInfo}> = [];
+
       job.inputs.forEach((input, index) => {
-        const isVideo = /\.(mp4|mov|mkv|avi|webm)$/i.test(input);
-        const isAudio = /\.(mp3|wav|aac|flac)$/i.test(input);
-  
+        const path = getInputPath(input);
+        const trackInfo = getTrackInfo(input);
+        const isVideo = /\.(mp4|mov|mkv|avi|webm)$/i.test(path);
+        const isAudio = /\.(mp3|wav|aac|flac)$/i.test(path);
+
         if (isVideo) {
-          videoInputs.push({index, path: input});
+          videoInputs.push({index, trackInfo});
         } else if (isAudio) {
-          audioInputs.push({index, path: input});
+          audioInputs.push({index, trackInfo});
         }
       });
       
       // Handle video inputs for concatenation
-      videoInputs.forEach(({index}) => {
+      videoInputs.forEach(({index, trackInfo}) => {
         videoCount++;
+        let videoStreamRef = `[${index}:v]`;
+        
+        // Apply trimming if specified
+        if (trackInfo.startTime !== undefined || trackInfo.duration !== undefined) {
+          const trimmedRef = `[v${index}_trimmed]`;
+          let trimFilter = `${videoStreamRef}trim=`;
+          
+          // Build trim parameters correctly
+          const params = [];
+          if (trackInfo.startTime !== undefined && trackInfo.startTime > 0) {
+            params.push(`start=${trackInfo.startTime}`);
+          }
+          if (trackInfo.duration !== undefined) {
+            params.push(`duration=${trackInfo.duration}`);
+          }
+          
+          if (params.length > 0) {
+            trimFilter += params.join(':') + trimmedRef;
+            trimFilters.push(trimFilter);
+            videoStreamRef = trimmedRef;
+          }
+        }
+        
+        // Apply FPS normalization
         if (job.operations.normalizeFrameRate) {
           const targetFps = job.operations.targetFrameRate || 30;
-          fpsFilters.push(`[${index}:v]fps=${targetFps}[v${index}]`);
-          concatVideoInputs.push(`[v${index}]`);
+          const fpsRef = `[v${index}_fps]`;
+          fpsFilters.push(`${videoStreamRef}fps=${targetFps}${fpsRef}`);
+          concatVideoInputs.push(fpsRef);
         } else {
-          concatVideoInputs.push(`[${index}:v]`);
+          concatVideoInputs.push(videoStreamRef);
         }
       });
       
@@ -100,30 +141,111 @@ import { VideoEditJob } from '../Schema/ffmpegConfig';
       // Otherwise, use audio from video files for concatenation
       if (audioInputs.length > 0) {
         // Video-only concatenation when we have replacement audio
-        const vf = fpsFilters.length ? fpsFilters.join(";") + ";" : "";
-        const videoOnlyFilter = `${vf}${concatVideoInputs.join("")}concat=n=${videoCount}:v=1:a=0[outv]`;
-        cmd.filters.push(videoOnlyFilter);
+        const allFilters = [...trimFilters, ...fpsFilters];
+        let filterComplex = "";
         
-        // Use the first audio file as replacement
+        if (allFilters.length > 0) {
+          filterComplex = allFilters.join(";") + ";";
+        }
+        
+        const videoOnlyFilter = `${concatVideoInputs.join("")}concat=n=${videoCount}:v=1:a=0[outv]`;
+        filterComplex += videoOnlyFilter;
+        
+        // Use the first audio file as replacement (no duration trimming for replacement audio)
+        const audioTrackInfo = audioInputs[0].trackInfo;
         const audioIndex = audioInputs[0].index;
-        cmd.args.push("-filter_complex", cmd.filters.join(","));
-        cmd.args.push("-map", "[outv]", "-map", `${audioIndex}:a`, "-shortest");
+        let audioRef = `${audioIndex}:a`;
+        
+        // Apply audio start time trimming if specified, but don't limit duration for replacement
+        if (audioTrackInfo.startTime !== undefined && audioTrackInfo.startTime > 0) {
+          const audioTrimRef = `[a${audioIndex}_trimmed]`;
+          const audioTrimFilter = `[${audioIndex}:a]atrim=start=${audioTrackInfo.startTime}${audioTrimRef}`;
+          
+          filterComplex = filterComplex + ";" + audioTrimFilter;
+          audioRef = audioTrimRef.slice(1, -1); // Remove brackets for map
+        }
+        
+        cmd.args.push("-filter_complex", filterComplex);
+        cmd.args.push("-map", "[outv]", "-map", audioRef.includes('_trimmed') ? `[${audioRef}]` : `${audioIndex}:a`, "-shortest");
       } else {
-        // No separate audio files, concat audio from video files
-        videoInputs.forEach(({index}) => {
+        // No separate audio files, concat audio from video files (with trimming)
+        const audioTrimFilters: string[] = [];
+        videoInputs.forEach(({index, trackInfo}) => {
           audioCount++;
-          concatAudioInputs.push(`[${index}:a]`);
+          const audioStreamRef = `[${index}:a]`;
+          
+          // Apply audio trimming if specified
+          if (trackInfo.startTime !== undefined || trackInfo.duration !== undefined) {
+            const audioTrimRef = `[a${index}_trimmed]`;
+            let audioTrimFilter = `${audioStreamRef}atrim=`;
+            
+            const params = [];
+            if (trackInfo.startTime !== undefined && trackInfo.startTime > 0) {
+              params.push(`start=${trackInfo.startTime}`);
+            }
+            if (trackInfo.duration !== undefined) {
+              params.push(`duration=${trackInfo.duration}`);
+            }
+            
+            if (params.length > 0) {
+              audioTrimFilter += params.join(':') + audioTrimRef;
+              audioTrimFilters.push(audioTrimFilter);
+              concatAudioInputs.push(audioTrimRef);
+            } else {
+              concatAudioInputs.push(audioStreamRef);
+            }
+          } else {
+            concatAudioInputs.push(audioStreamRef);
+          }
         });
         
-        const vf = fpsFilters.length ? fpsFilters.join(";") + ";" : "";
-        const filterString = `${vf}${concatVideoInputs.join("")}${concatAudioInputs.join("")}concat=n=${videoCount}:v=${videoCount > 0 ? 1 : 0}:a=${audioCount > 0 ? 1 : 0}[outv][outa]`;
+        const allFilters = [...trimFilters, ...fpsFilters, ...audioTrimFilters];
+        let filterComplex = "";
         
-        cmd.filters.push(filterString);
-        cmd.args.push("-filter_complex", cmd.filters.join(","));
+        if (allFilters.length > 0) {
+          filterComplex = allFilters.join(";") + ";";
+        }
+        
+        const concatFilter = `${concatVideoInputs.join("")}${concatAudioInputs.join("")}concat=n=${videoCount}:v=${videoCount > 0 ? 1 : 0}:a=${audioCount > 0 ? 1 : 0}[outv][outa]`;
+        filterComplex += concatFilter;
+        
+        cmd.args.push("-filter_complex", filterComplex);
         cmd.args.push("-map", "[outv]", "-map", "[outa]");
       }
     } else {
-      job.inputs.forEach(input => cmd.args.push("-i", escapePath(input)));
+      // Single input or non-concat mode
+      if (job.inputs.length === 1) {
+        const input = job.inputs[0];
+        const trackInfo = getTrackInfo(input);
+        
+        cmd.args.push("-i", escapePath(getInputPath(input)));
+        
+        // Apply trimming for single track if specified
+        if (trackInfo.startTime !== undefined || trackInfo.duration !== undefined) {
+          let trimFilter = "[0:v]trim=";
+          let audioTrimFilter = "[0:a]atrim=";
+          
+          const params = [];
+          if (trackInfo.startTime !== undefined && trackInfo.startTime > 0) {
+            params.push(`start=${trackInfo.startTime}`);
+          }
+          if (trackInfo.duration !== undefined) {
+            params.push(`duration=${trackInfo.duration}`);
+          }
+          
+          if (params.length > 0) {
+            const paramString = params.join(':');
+            trimFilter += paramString + "[outv]";
+            audioTrimFilter += paramString + "[outa]";
+            
+            cmd.args.push("-filter_complex", `${trimFilter};${audioTrimFilter}`);
+            cmd.args.push("-map", "[outv]", "-map", "[outa]");
+          }
+        }
+      } else {
+        // Multiple inputs but no concat - just add them
+        job.inputs.forEach(input => cmd.args.push("-i", escapePath(getInputPath(input))));
+      }
     }
   }
   
@@ -226,6 +348,46 @@ import { VideoEditJob } from '../Schema/ffmpegConfig';
     
     const command = buildFfmpegCommand(testJob);
     console.log("🎵 Test Audio Replacement Command:", command.join(" "));
+    return command;
+  }
+  
+  // Test function for track trimming
+  export function testTrackTrimmingCommand() {
+    const testJob: VideoEditJob = {
+      inputs: [
+        { path: "video1.mp4", startTime: 10, duration: 20 }, // Start at 10s, take 20s
+        { path: "video2.mp4", startTime: 5, duration: 15 },  // Start at 5s, take 15s  
+        { path: "audio1.mp3", startTime: 2 }   // Start audio at 2s, no duration limit - should span both videos (35s total)
+      ],
+      output: "trimmed_output.mp4",
+      operations: {
+        concat: true,
+        normalizeFrameRate: true,
+        targetFrameRate: 30
+      }
+    };
+    
+    console.log("✂️ Expected behavior: Audio starts at 2s and spans the entire 35s concatenated video duration");
+    const command = buildFfmpegCommand(testJob);
+    console.log("✂️ Test Track Trimming Command:", command.join(" "));
+    return command;
+  }
+  
+  // Test function for single track trimming
+  export function testSingleTrackTrimming() {
+    const testJob: VideoEditJob = {
+      inputs: [
+        { path: "video1.mp4", startTime: 5, duration: 10 } // Start at 5s, take 10s
+      ],
+      output: "single_trimmed.mp4",
+      operations: {
+        concat: false,
+        normalizeFrameRate: false
+      }
+    };
+    
+    const command = buildFfmpegCommand(testJob);
+    console.log("🎬 Single Track Trimming:", command.join(" "));
     return command;
   }
   

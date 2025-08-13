@@ -85,6 +85,7 @@ interface VideoEditorStore {
   removeTrack: (trackId: string) => void;
   updateTrack: (trackId: string, updates: Partial<VideoTrack>) => void;
   moveTrack: (trackId: string, newStartFrame: number) => void;
+  resizeTrack: (trackId: string, newStartFrame?: number, newEndFrame?: number) => void;
   duplicateTrack: (trackId: string) => string;
   splitTrack: (trackId: string, frame: number) => void;
   
@@ -242,6 +243,20 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               ...track,
               startFrame: newStartFrame,
               endFrame: newStartFrame + duration,
+            };
+          }
+          return track;
+        })
+      })),
+    
+    resizeTrack: (trackId, newStartFrame, newEndFrame) => 
+      set((state) => ({
+        tracks: state.tracks.map(track => {
+          if (track.id === trackId) {
+            return {
+              ...track,
+              startFrame: newStartFrame || track.startFrame,
+              endFrame: newEndFrame || track.endFrame,
             };
           }
           return track;

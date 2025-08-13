@@ -489,9 +489,18 @@ function escapePath(filePath) {
 }
 function handleInputs(job, cmd) {
   const inputCount = job.inputs.length;
+  const getInputPath = (input) => {
+    return typeof input === "string" ? input : input.path;
+  };
+  const getTrackInfo = (input) => {
+    return typeof input === "string" ? { path: input } : input;
+  };
   if (job.operations.concat && inputCount > 1) {
-    cmd.args.push(...job.inputs.flatMap((input) => ["-i", escapePath(input)]));
+    job.inputs.forEach((input) => {
+      cmd.args.push("-i", escapePath(getInputPath(input)));
+    });
     const fpsFilters = [];
+    const trimFilters = [];
     const concatVideoInputs = [];
     const concatAudioInputs = [];
     let videoCount = 0;
@@ -499,44 +508,125 @@ function handleInputs(job, cmd) {
     const videoInputs = [];
     const audioInputs = [];
     job.inputs.forEach((input, index) => {
-      const isVideo = /\.(mp4|mov|mkv|avi|webm)$/i.test(input);
-      const isAudio = /\.(mp3|wav|aac|flac)$/i.test(input);
+      const path2 = getInputPath(input);
+      const trackInfo = getTrackInfo(input);
+      const isVideo = /\.(mp4|mov|mkv|avi|webm)$/i.test(path2);
+      const isAudio = /\.(mp3|wav|aac|flac)$/i.test(path2);
       if (isVideo) {
-        videoInputs.push({ index, path: input });
+        videoInputs.push({ index, trackInfo });
       } else if (isAudio) {
-        audioInputs.push({ index, path: input });
+        audioInputs.push({ index, trackInfo });
       }
     });
-    videoInputs.forEach(({ index }) => {
+    videoInputs.forEach(({ index, trackInfo }) => {
       videoCount++;
+      let videoStreamRef = `[${index}:v]`;
+      if (trackInfo.startTime !== void 0 || trackInfo.duration !== void 0) {
+        const trimmedRef = `[v${index}_trimmed]`;
+        let trimFilter = `${videoStreamRef}trim=`;
+        const params = [];
+        if (trackInfo.startTime !== void 0 && trackInfo.startTime > 0) {
+          params.push(`start=${trackInfo.startTime}`);
+        }
+        if (trackInfo.duration !== void 0) {
+          params.push(`duration=${trackInfo.duration}`);
+        }
+        if (params.length > 0) {
+          trimFilter += params.join(":") + trimmedRef;
+          trimFilters.push(trimFilter);
+          videoStreamRef = trimmedRef;
+        }
+      }
       if (job.operations.normalizeFrameRate) {
         const targetFps = job.operations.targetFrameRate || 30;
-        fpsFilters.push(`[${index}:v]fps=${targetFps}[v${index}]`);
-        concatVideoInputs.push(`[v${index}]`);
+        const fpsRef = `[v${index}_fps]`;
+        fpsFilters.push(`${videoStreamRef}fps=${targetFps}${fpsRef}`);
+        concatVideoInputs.push(fpsRef);
       } else {
-        concatVideoInputs.push(`[${index}:v]`);
+        concatVideoInputs.push(videoStreamRef);
       }
     });
     if (audioInputs.length > 0) {
-      const vf = fpsFilters.length ? fpsFilters.join(";") + ";" : "";
-      const videoOnlyFilter = `${vf}${concatVideoInputs.join("")}concat=n=${videoCount}:v=1:a=0[outv]`;
-      cmd.filters.push(videoOnlyFilter);
+      const allFilters = [...trimFilters, ...fpsFilters];
+      let filterComplex = "";
+      if (allFilters.length > 0) {
+        filterComplex = allFilters.join(";") + ";";
+      }
+      const videoOnlyFilter = `${concatVideoInputs.join("")}concat=n=${videoCount}:v=1:a=0[outv]`;
+      filterComplex += videoOnlyFilter;
+      const audioTrackInfo = audioInputs[0].trackInfo;
       const audioIndex = audioInputs[0].index;
-      cmd.args.push("-filter_complex", cmd.filters.join(","));
-      cmd.args.push("-map", "[outv]", "-map", `${audioIndex}:a`, "-shortest");
+      let audioRef = `${audioIndex}:a`;
+      if (audioTrackInfo.startTime !== void 0 && audioTrackInfo.startTime > 0) {
+        const audioTrimRef = `[a${audioIndex}_trimmed]`;
+        const audioTrimFilter = `[${audioIndex}:a]atrim=start=${audioTrackInfo.startTime}${audioTrimRef}`;
+        filterComplex = filterComplex + ";" + audioTrimFilter;
+        audioRef = audioTrimRef.slice(1, -1);
+      }
+      cmd.args.push("-filter_complex", filterComplex);
+      cmd.args.push("-map", "[outv]", "-map", audioRef.includes("_trimmed") ? `[${audioRef}]` : `${audioIndex}:a`, "-shortest");
     } else {
-      videoInputs.forEach(({ index }) => {
+      const audioTrimFilters = [];
+      videoInputs.forEach(({ index, trackInfo }) => {
         audioCount++;
-        concatAudioInputs.push(`[${index}:a]`);
+        const audioStreamRef = `[${index}:a]`;
+        if (trackInfo.startTime !== void 0 || trackInfo.duration !== void 0) {
+          const audioTrimRef = `[a${index}_trimmed]`;
+          let audioTrimFilter = `${audioStreamRef}atrim=`;
+          const params = [];
+          if (trackInfo.startTime !== void 0 && trackInfo.startTime > 0) {
+            params.push(`start=${trackInfo.startTime}`);
+          }
+          if (trackInfo.duration !== void 0) {
+            params.push(`duration=${trackInfo.duration}`);
+          }
+          if (params.length > 0) {
+            audioTrimFilter += params.join(":") + audioTrimRef;
+            audioTrimFilters.push(audioTrimFilter);
+            concatAudioInputs.push(audioTrimRef);
+          } else {
+            concatAudioInputs.push(audioStreamRef);
+          }
+        } else {
+          concatAudioInputs.push(audioStreamRef);
+        }
       });
-      const vf = fpsFilters.length ? fpsFilters.join(";") + ";" : "";
-      const filterString = `${vf}${concatVideoInputs.join("")}${concatAudioInputs.join("")}concat=n=${videoCount}:v=${videoCount > 0 ? 1 : 0}:a=${audioCount > 0 ? 1 : 0}[outv][outa]`;
-      cmd.filters.push(filterString);
-      cmd.args.push("-filter_complex", cmd.filters.join(","));
+      const allFilters = [...trimFilters, ...fpsFilters, ...audioTrimFilters];
+      let filterComplex = "";
+      if (allFilters.length > 0) {
+        filterComplex = allFilters.join(";") + ";";
+      }
+      const concatFilter = `${concatVideoInputs.join("")}${concatAudioInputs.join("")}concat=n=${videoCount}:v=${videoCount > 0 ? 1 : 0}:a=${audioCount > 0 ? 1 : 0}[outv][outa]`;
+      filterComplex += concatFilter;
+      cmd.args.push("-filter_complex", filterComplex);
       cmd.args.push("-map", "[outv]", "-map", "[outa]");
     }
   } else {
-    job.inputs.forEach((input) => cmd.args.push("-i", escapePath(input)));
+    if (job.inputs.length === 1) {
+      const input = job.inputs[0];
+      const trackInfo = getTrackInfo(input);
+      cmd.args.push("-i", escapePath(getInputPath(input)));
+      if (trackInfo.startTime !== void 0 || trackInfo.duration !== void 0) {
+        let trimFilter = "[0:v]trim=";
+        let audioTrimFilter = "[0:a]atrim=";
+        const params = [];
+        if (trackInfo.startTime !== void 0 && trackInfo.startTime > 0) {
+          params.push(`start=${trackInfo.startTime}`);
+        }
+        if (trackInfo.duration !== void 0) {
+          params.push(`duration=${trackInfo.duration}`);
+        }
+        if (params.length > 0) {
+          const paramString = params.join(":");
+          trimFilter += paramString + "[outv]";
+          audioTrimFilter += paramString + "[outa]";
+          cmd.args.push("-filter_complex", `${trimFilter};${audioTrimFilter}`);
+          cmd.args.push("-map", "[outv]", "-map", "[outa]");
+        }
+      }
+    } else {
+      job.inputs.forEach((input) => cmd.args.push("-i", escapePath(getInputPath(input))));
+    }
   }
 }
 function handleTrim(job, cmd) {

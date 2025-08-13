@@ -111,10 +111,23 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
   // Convert tracks to FFmpeg job
   const createFFmpegJob = useCallback((): VideoEditJob => {
-    // Build a simple concatenation job for now
-    // In a full implementation, you'd handle more complex compositions
+    // Build a comprehensive job with per-track timing information
+    const trackInfos = tracks.map(track => {
+      // Ensure we have valid frame ranges
+      const startFrame = Math.max(0, track.startFrame);
+      const endFrame = Math.max(startFrame + 1, track.endFrame); // Ensure minimum 1 frame duration
+      const duration = (endFrame - startFrame) / timeline.fps;
+      
+      return {
+        path: track.source,
+        startTime: startFrame / timeline.fps, // Convert frames to seconds
+        duration: Math.max(0.033, duration), // Minimum 1 frame at 30fps
+        endTime: endFrame / timeline.fps
+      };
+    });
+
     return {
-      inputs: tracks.map(track => track.source),
+      inputs: trackInfos,
       output: 'final_video.mp4',
       operations: {
         concat: tracks.length > 1,
