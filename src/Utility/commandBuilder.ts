@@ -156,13 +156,24 @@ import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
         const audioIndex = audioInputs[0].index;
         let audioRef = `${audioIndex}:a`;
         
-        // Apply audio start time trimming if specified, but don't limit duration for replacement
-        if (audioTrackInfo.startTime !== undefined && audioTrackInfo.startTime > 0) {
+        // Apply audio trimming if specified (independent of video trimming)
+        if (audioTrackInfo.startTime !== undefined || audioTrackInfo.duration !== undefined) {
           const audioTrimRef = `[a${audioIndex}_trimmed]`;
-          const audioTrimFilter = `[${audioIndex}:a]atrim=start=${audioTrackInfo.startTime}${audioTrimRef}`;
+          let audioTrimFilter = `[${audioIndex}:a]atrim=`;
           
-          filterComplex = filterComplex + ";" + audioTrimFilter;
-          audioRef = audioTrimRef.slice(1, -1); // Remove brackets for map
+          const params = [];
+          if (audioTrackInfo.startTime !== undefined && audioTrackInfo.startTime > 0) {
+            params.push(`start=${audioTrackInfo.startTime}`);
+          }
+          if (audioTrackInfo.duration !== undefined) {
+            params.push(`duration=${audioTrackInfo.duration}`);
+          }
+          
+          if (params.length > 0) {
+            audioTrimFilter += params.join(':') + audioTrimRef;
+            filterComplex = filterComplex + ";" + audioTrimFilter;
+            audioRef = audioTrimRef.slice(1, -1); // Remove brackets for map
+          }
         }
         
         // Add audio padding if needed to match video length
@@ -365,7 +376,7 @@ import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
       inputs: [
         { path: "video1.mp4", startTime: 10, duration: 20 }, // Start at 10s, take 20s
         { path: "video2.mp4", startTime: 5, duration: 15 },  // Start at 5s, take 15s  
-        { path: "audio1.mp3", startTime: 2, duration: 30 }   // Audio shorter than total video (35s) - should not cut off video
+        { path: "audio1.mp3", startTime: 2, duration: 30 }   // Audio: independent timing! 2s start, 30s duration
       ],
       output: "trimmed_output.mp4",
       operations: {
@@ -377,6 +388,7 @@ import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
     
     console.log("✂️ Expected behavior: Video plays for full 35s, audio plays for 30s then silence for last 5s");
     console.log("📏 Note: Track durations should now be accurate (no more 50s estimates!)");
+    console.log("🎵 Audio trimming: Independent of video - can trim start/end separately!");
     const command = buildFfmpegCommand(testJob);
     console.log("✂️ Test Track Trimming Command:", command.join(" "));
     return command;
@@ -397,6 +409,28 @@ import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
     
     const command = buildFfmpegCommand(testJob);
     console.log("🎬 Single Track Trimming:", command.join(" "));
+    return command;
+  }
+  
+  // Test function for independent audio trimming
+  export function testIndependentAudioTrimming() {
+    const testJob: VideoEditJob = {
+      inputs: [
+        { path: "video1.mp4", startTime: 10, duration: 30 }, // Video: 10s-40s (30s duration)
+        { path: "audio1.mp3", startTime: 5, duration: 25 }   // Audio: 5s-30s (25s duration) - independent timing!
+      ],
+      output: "independent_audio_trim.mp4",
+      operations: {
+        concat: true,
+        normalizeFrameRate: false
+      }
+    };
+    
+    console.log("🎵 Independent Audio Trimming: Audio trimmed separately from video");
+    console.log("📹 Video: 10s start, 30s duration");
+    console.log("🎵 Audio: 5s start, 25s duration (completely independent!)");
+    const command = buildFfmpegCommand(testJob);
+    console.log("🎛️ Command:", command.join(" "));
     return command;
   }
   

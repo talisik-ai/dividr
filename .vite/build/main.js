@@ -557,11 +557,21 @@ function handleInputs(job, cmd) {
       const audioTrackInfo = audioInputs[0].trackInfo;
       const audioIndex = audioInputs[0].index;
       let audioRef = `${audioIndex}:a`;
-      if (audioTrackInfo.startTime !== void 0 && audioTrackInfo.startTime > 0) {
+      if (audioTrackInfo.startTime !== void 0 || audioTrackInfo.duration !== void 0) {
         const audioTrimRef = `[a${audioIndex}_trimmed]`;
-        const audioTrimFilter = `[${audioIndex}:a]atrim=start=${audioTrackInfo.startTime}${audioTrimRef}`;
-        filterComplex = filterComplex + ";" + audioTrimFilter;
-        audioRef = audioTrimRef.slice(1, -1);
+        let audioTrimFilter = `[${audioIndex}:a]atrim=`;
+        const params = [];
+        if (audioTrackInfo.startTime !== void 0 && audioTrackInfo.startTime > 0) {
+          params.push(`start=${audioTrackInfo.startTime}`);
+        }
+        if (audioTrackInfo.duration !== void 0) {
+          params.push(`duration=${audioTrackInfo.duration}`);
+        }
+        if (params.length > 0) {
+          audioTrimFilter += params.join(":") + audioTrimRef;
+          filterComplex = filterComplex + ";" + audioTrimFilter;
+          audioRef = audioTrimRef.slice(1, -1);
+        }
       }
       const audioMapRef = audioRef.includes("_trimmed") ? `[${audioRef}]` : `${audioIndex}:a`;
       cmd.args.push("-filter_complex", filterComplex);
