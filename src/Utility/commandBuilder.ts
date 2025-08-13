@@ -165,8 +165,16 @@ import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
           audioRef = audioTrimRef.slice(1, -1); // Remove brackets for map
         }
         
+        // Add audio padding if needed to match video length
+        // This extends short audio with silence to prevent cutoff
+        const audioMapRef = audioRef.includes('_trimmed') ? `[${audioRef}]` : `${audioIndex}:a`;
+        
         cmd.args.push("-filter_complex", filterComplex);
-        cmd.args.push("-map", "[outv]", "-map", audioRef.includes('_trimmed') ? `[${audioRef}]` : `${audioIndex}:a`, "-shortest");
+        cmd.args.push("-map", "[outv]", "-map", audioMapRef);
+        
+        // Add flags to handle audio/video length mismatch gracefully
+        cmd.args.push("-c:v", "libx264", "-c:a", "aac");
+        cmd.args.push("-avoid_negative_ts", "make_zero");
       } else {
         // No separate audio files, concat audio from video files (with trimming)
         const audioTrimFilters: string[] = [];
@@ -283,7 +291,7 @@ import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
   function handleReplaceAudio(job: VideoEditJob, cmd: CommandParts) {
     if (!job.operations.replaceAudio) return;
     cmd.args.push("-i", job.operations.replaceAudio);
-    cmd.args.push("-map", "0:v", "-map", `${job.inputs.length}:a`, "-shortest");
+    cmd.args.push("-map", "0:v", "-map", `${job.inputs.length}:a`);
   }
   
   // -------------------------
@@ -357,7 +365,7 @@ import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
       inputs: [
         { path: "video1.mp4", startTime: 10, duration: 20 }, // Start at 10s, take 20s
         { path: "video2.mp4", startTime: 5, duration: 15 },  // Start at 5s, take 15s  
-        { path: "audio1.mp3", startTime: 2 }   // Start audio at 2s, no duration limit - should span both videos (35s total)
+        { path: "audio1.mp3", startTime: 2, duration: 30 }   // Audio shorter than total video (35s) - should not cut off video
       ],
       output: "trimmed_output.mp4",
       operations: {
@@ -367,7 +375,8 @@ import { TrackInfo, VideoEditJob } from '../Schema/ffmpegConfig';
       }
     };
     
-    console.log("✂️ Expected behavior: Audio starts at 2s and spans the entire 35s concatenated video duration");
+    console.log("✂️ Expected behavior: Video plays for full 35s, audio plays for 30s then silence for last 5s");
+    console.log("📏 Note: Track durations should now be accurate (no more 50s estimates!)");
     const command = buildFfmpegCommand(testJob);
     console.log("✂️ Test Track Trimming Command:", command.join(" "));
     return command;

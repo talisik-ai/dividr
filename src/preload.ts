@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // FFmpeg API
   ffmpegRun: (job: VideoEditJob) => ipcRenderer.invoke('ffmpegRun', job),
   runFfmpeg: (job: VideoEditJob) => ipcRenderer.invoke('run-ffmpeg', job),
+  getDuration: (filePath: string) => ipcRenderer.invoke('ffmpeg:get-duration', filePath),
   
   // Enhanced API with progress tracking
   runFfmpegWithProgress: (job: VideoEditJob, handlers?: FfmpegEventHandlers) => {

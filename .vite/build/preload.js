@@ -10,6 +10,7 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
   // FFmpeg API
   ffmpegRun: (job) => electron.ipcRenderer.invoke("ffmpegRun", job),
   runFfmpeg: (job) => electron.ipcRenderer.invoke("run-ffmpeg", job),
+  getDuration: (filePath) => electron.ipcRenderer.invoke("ffmpeg:get-duration", filePath),
   // Enhanced API with progress tracking
   runFfmpegWithProgress: (job, handlers) => {
     if (handlers) {

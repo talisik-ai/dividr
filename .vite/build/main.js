@@ -563,8 +563,11 @@ function handleInputs(job, cmd) {
         filterComplex = filterComplex + ";" + audioTrimFilter;
         audioRef = audioTrimRef.slice(1, -1);
       }
+      const audioMapRef = audioRef.includes("_trimmed") ? `[${audioRef}]` : `${audioIndex}:a`;
       cmd.args.push("-filter_complex", filterComplex);
-      cmd.args.push("-map", "[outv]", "-map", audioRef.includes("_trimmed") ? `[${audioRef}]` : `${audioIndex}:a`, "-shortest");
+      cmd.args.push("-map", "[outv]", "-map", audioMapRef);
+      cmd.args.push("-c:v", "libx264", "-c:a", "aac");
+      cmd.args.push("-avoid_negative_ts", "make_zero");
     } else {
       const audioTrimFilters = [];
       videoInputs.forEach(({ index, trackInfo }) => {
@@ -656,7 +659,7 @@ function handleAspect(job, cmd) {
 function handleReplaceAudio(job, cmd) {
   if (!job.operations.replaceAudio) return;
   cmd.args.push("-i", job.operations.replaceAudio);
-  cmd.args.push("-map", "0:v", "-map", `${job.inputs.length}:a`, "-shortest");
+  cmd.args.push("-map", "0:v", "-map", `${job.inputs.length}:a`);
 }
 function buildFfmpegCommand(job, location) {
   const cmd = { args: [], filters: [] };
@@ -868,6 +871,66 @@ require$$3$1.ipcMain.handle("ffmpeg:detect-frame-rate", async (event, videoPath)
     });
     ffprobe.on("error", (err) => {
       reject(new Error(`ffprobe error: ${err.message}`));
+    });
+  });
+});
+require$$3$1.ipcMain.handle("ffmpeg:get-duration", async (event, filePath) => {
+  return new Promise((resolve, reject) => {
+    const ffprobe = require$$1$1.spawn(ffprobePath.path, [
+      "-v",
+      "quiet",
+      "-print_format",
+      "json",
+      "-show_format",
+      "-show_streams",
+      filePath
+    ]);
+    let output = "";
+    ffprobe.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+    ffprobe.stderr.on("data", (data) => {
+      console.error(`ffprobe stderr: ${data}`);
+    });
+    ffprobe.on("close", (code) => {
+      if (code === 0) {
+        try {
+          const result = JSON.parse(output);
+          if (result.format && result.format.duration) {
+            const duration = parseFloat(result.format.duration);
+            console.log(`📏 Duration from format: ${duration}s for ${filePath}`);
+            resolve(duration);
+            return;
+          }
+          if (result.streams && result.streams.length > 0) {
+            for (const stream of result.streams) {
+              if (stream.duration && parseFloat(stream.duration) > 0) {
+                const duration = parseFloat(stream.duration);
+                console.log(`📏 Duration from stream: ${duration}s for ${filePath}`);
+                resolve(duration);
+                return;
+              }
+            }
+          }
+          const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
+          const fallbackDuration = isImage ? 5 : 60;
+          console.warn(`⚠️ Could not determine duration for ${filePath}, using fallback: ${fallbackDuration}s`);
+          resolve(fallbackDuration);
+        } catch (err) {
+          console.error("Failed to parse ffprobe output:", err);
+          const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
+          resolve(isImage ? 5 : 60);
+        }
+      } else {
+        console.error(`ffprobe failed with code ${code} for ${filePath}`);
+        const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
+        resolve(isImage ? 5 : 60);
+      }
+    });
+    ffprobe.on("error", (err) => {
+      console.error(`ffprobe error for ${filePath}:`, err.message);
+      const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
+      resolve(isImage ? 5 : 60);
     });
   });
 });

@@ -127,6 +127,57 @@ const TRACK_COLORS = [
 
 const getTrackColor = (index: number) => TRACK_COLORS[index % TRACK_COLORS.length];
 
+// Helper function to find a non-overlapping position for a track
+function findNonOverlappingPosition(
+  desiredStartFrame: number,
+  duration: number,
+  existingTracks: VideoTrack[]
+): number {
+  const desiredEndFrame = desiredStartFrame + duration;
+  
+  // Sort existing tracks by start frame
+  const sortedTracks = [...existingTracks].sort((a, b) => a.startFrame - b.startFrame);
+  
+  // Check if desired position conflicts with any existing track
+  const hasConflict = sortedTracks.some(track => 
+    (desiredStartFrame < track.endFrame && desiredEndFrame > track.startFrame)
+  );
+  
+  if (!hasConflict) {
+    console.log(`✅ No conflict for position ${desiredStartFrame}-${desiredEndFrame}`);
+    return Math.max(0, desiredStartFrame); // No conflict, use desired position
+  }
+  
+  console.log(`⚠️ Conflict detected for position ${desiredStartFrame}-${desiredEndFrame}, finding alternative...`);
+  
+  // Find the best position to place the track
+  // Try to place it as close as possible to the desired position
+  
+  // Option 1: Try to place it before the conflicting track
+  for (const track of sortedTracks) {
+    if (track.startFrame >= desiredStartFrame) {
+      const spaceBeforeTrack = track.startFrame;
+      if (spaceBeforeTrack >= duration) {
+        const newPos = Math.max(0, track.startFrame - duration);
+        console.log(`📍 Placing before track at ${newPos}-${newPos + duration}`);
+        return newPos;
+      }
+      break;
+    }
+  }
+  
+  // Option 2: Try to place it after the conflicting tracks
+  let latestEndFrame = 0;
+  for (const track of sortedTracks) {
+    if (track.endFrame > desiredStartFrame) {
+      latestEndFrame = Math.max(latestEndFrame, track.endFrame);
+    }
+  }
+  
+  console.log(`📍 Placing after conflicts at ${latestEndFrame}-${latestEndFrame + duration}`);
+  return latestEndFrame;
+}
+
 export const useVideoEditorStore = create<VideoEditorStore>()(
   subscribeWithSelector((set, get) => ({
     // Initial State
@@ -205,9 +256,23 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     // Track Actions
     addTrack: (trackData) => {
       const id = uuidv4();
+      
+      // Get existing tracks of the same type for smart positioning
+      const existingTracks = get().tracks.filter(t => t.type === trackData.type);
+      const duration = trackData.endFrame - trackData.startFrame;
+      
+      // Find a non-overlapping position for the new track
+      const startFrame = findNonOverlappingPosition(
+        trackData.startFrame,
+        duration,
+        existingTracks
+      );
+      
       const track: VideoTrack = {
         ...trackData,
         id,
+        startFrame,
+        endFrame: startFrame + duration,
         color: getTrackColor(get().tracks.length),
       };
       
@@ -239,10 +304,24 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         tracks: state.tracks.map(track => {
           if (track.id === trackId) {
             const duration = track.endFrame - track.startFrame;
+            const newEndFrame = newStartFrame + duration;
+            
+            // Get tracks of the same type (same row)
+            const sameRowTracks = state.tracks.filter(t => 
+              t.id !== trackId && t.type === track.type
+            );
+            
+            // Check for collisions and find the best position
+            const finalStartFrame = findNonOverlappingPosition(
+              newStartFrame,
+              duration,
+              sameRowTracks
+            );
+            
             return {
               ...track,
-              startFrame: newStartFrame,
-              endFrame: newStartFrame + duration,
+              startFrame: finalStartFrame,
+              endFrame: finalStartFrame + duration,
             };
           }
           return track;
@@ -449,23 +528,37 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           return;
         }
 
-        const newTracks = result.files.map((fileInfo, index) => {
-          // Estimate duration based on file type
-          const estimatedDuration = fileInfo.type === 'image' ? 150 : 1500; // 5s for images, 50s for video/audio
+        console.log(`🎬 Analyzing ${result.files.length} files for accurate durations...`);
+
+        const newTracks = await Promise.all(result.files.map(async (fileInfo, index) => {
+          // Get accurate duration using FFprobe
+          let actualDuration: number;
+          try {
+            console.log(`🔍 Getting duration for: ${fileInfo.path}`);
+            const durationSeconds = await window.electronAPI.getDuration(fileInfo.path);
+            actualDuration = Math.round(durationSeconds * get().timeline.fps); // Convert to frames
+            console.log(`📏 Actual duration: ${durationSeconds}s (${actualDuration} frames) for ${fileInfo.name}`);
+          } catch (error) {
+            console.warn(`⚠️ Failed to get duration for ${fileInfo.name}, using fallback:`, error);
+            // Fallback to estimation
+            const estimatedDuration = fileInfo.type === 'image' ? 150 : 1500; // 5s for images, 50s for video/audio
+            actualDuration = estimatedDuration;
+          }
           
           return {
             type: fileInfo.type,
             name: fileInfo.name,
             source: fileInfo.path, // This is the actual file system path
-            duration: estimatedDuration,
-            startFrame: index * 150, // Stagger by 5 seconds
-            endFrame: index * 150 + estimatedDuration,
+            duration: actualDuration,
+            startFrame: 0, // Start at 0, let the smart positioning handle arrangement
+            endFrame: actualDuration,
             visible: true,
             locked: false,
             color: getTrackColor(get().tracks.length + index),
           };
-        });
+        }));
         
+        console.log(`✅ Successfully analyzed all files. Adding ${newTracks.length} tracks with accurate durations.`);
         newTracks.forEach(track => get().addTrack(track));
       } catch (error) {
         console.error('Failed to import media from dialog:', error);

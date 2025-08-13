@@ -38,6 +38,7 @@ declare global {
           result?: { command: string; logs: string };
           error?: string;
         }>;
+        getDuration: (filePath: string) => Promise<number>;
         runFfmpegWithProgress: (
           job: VideoEditJob, 
           handlers?: FfmpegEventHandlers

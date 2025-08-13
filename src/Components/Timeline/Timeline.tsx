@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useVideoEditorStore } from '../../store/videoEditorStore';
-import { TimelineControls } from './TimelineControls';
-import { TimelineHeader } from './TimelineHeader';
 import { TimelinePlayhead } from './TimelinePlayhead';
 import { TimelineRuler } from './TimelineRuler';
-import { TimelineTracks } from './TimelineTracks';
+import { TimelineTracks, TRACK_ROWS } from './TimelineTracks';
 
 interface TimelineProps {
   className?: string;
@@ -95,7 +93,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       }}
     >
       {/* Timeline Header with Controls */}
-      <TimelineHeader />
+      {/* TimelineHeader component removed as per edit hint */}
       
       {/* Timeline Ruler */}
       <TimelineRuler 
@@ -128,33 +126,42 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
           }}
         >
           <div style={{ height: '40px', borderBottom: '1px solid #3d3d3d' }} />
-          {tracks.map((track) => (
-            <div
-              key={track.id}
-              style={{
-                height: '60px',
-                padding: '8px',
-                borderBottom: '1px solid #3d3d3d',
-                backgroundColor: timeline.selectedTrackIds.includes(track.id) ? '#4a4a4a' : 'transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-              }}
-              onClick={() => setSelectedTracks([track.id])}
-            >
-              <div style={{ 
-                width: '12px', 
-                height: '12px', 
-                backgroundColor: track.color,
-                borderRadius: '50%',
-                marginRight: '8px'
-              }} />
-              <div>
-                <div style={{ fontSize: '12px', fontWeight: 'bold' }}>{track.name}</div>
-                <div style={{ fontSize: '10px', color: '#888' }}>{track.type}</div>
+          {TRACK_ROWS.map((row) => {
+            const rowTracks = tracks.filter(track => row.trackTypes.includes(track.type));
+            return (
+              <div
+                key={row.id}
+                style={{
+                  height: '60px',
+                  padding: '8px',
+                  borderBottom: '1px solid #3d3d3d',
+                  backgroundColor: 'transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              >
+                <div style={{ 
+                  width: '16px', 
+                  height: '16px', 
+                  backgroundColor: row.color,
+                  borderRadius: '50%',
+                  marginRight: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '8px'
+                }}>
+                  {row.icon}
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 'bold' }}>{row.name}</div>
+                  <div style={{ fontSize: '10px', color: '#888' }}>
+                    {rowTracks.length} {row.trackTypes.join('/')} track{rowTracks.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Timeline Tracks Area */}
@@ -188,7 +195,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       </div>
 
       {/* Timeline Controls */}
-      <TimelineControls />
+      {/* TimelineControls component removed as per edit hint */}
     </div>
   );
 }; 

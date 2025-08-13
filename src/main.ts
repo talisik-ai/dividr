@@ -166,6 +166,78 @@ ipcMain.handle('ffmpeg:detect-frame-rate', async (event, videoPath: string) => {
   });
 });
 
+// Get media file duration using FFprobe
+ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn(ffprobePath.path, [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-show_format',
+      '-show_streams',
+      filePath
+    ]);
+
+    let output = '';
+    
+    ffprobe.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    ffprobe.stderr.on('data', (data) => {
+      console.error(`ffprobe stderr: ${data}`);
+    });
+
+    ffprobe.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const result = JSON.parse(output);
+          
+          // Try to get duration from format first (most reliable)
+          if (result.format && result.format.duration) {
+            const duration = parseFloat(result.format.duration);
+            console.log(`📏 Duration from format: ${duration}s for ${filePath}`);
+            resolve(duration);
+            return;
+          }
+          
+          // Fallback: try to get duration from streams
+          if (result.streams && result.streams.length > 0) {
+            for (const stream of result.streams) {
+              if (stream.duration && parseFloat(stream.duration) > 0) {
+                const duration = parseFloat(stream.duration);
+                console.log(`📏 Duration from stream: ${duration}s for ${filePath}`);
+                resolve(duration);
+                return;
+              }
+            }
+          }
+          
+          // Last fallback: images get 5 seconds, others get 60 seconds
+          const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
+          const fallbackDuration = isImage ? 5 : 60;
+          console.warn(`⚠️ Could not determine duration for ${filePath}, using fallback: ${fallbackDuration}s`);
+          resolve(fallbackDuration);
+          
+        } catch (err) {
+          console.error('Failed to parse ffprobe output:', err);
+          const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
+          resolve(isImage ? 5 : 60); // Fallback
+        }
+      } else {
+        console.error(`ffprobe failed with code ${code} for ${filePath}`);
+        const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
+        resolve(isImage ? 5 : 60); // Fallback
+      }
+    });
+
+    ffprobe.on('error', (err) => {
+      console.error(`ffprobe error for ${filePath}:`, err.message);
+      const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
+      resolve(isImage ? 5 : 60); // Fallback
+    });
+  });
+});
+
 // Global FFmpeg process tracking
 let currentFfmpegProcess: any = null;
 
