@@ -4,21 +4,11 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --card-bg: #f4f4f5;
-  --card-text: #01010b;
-}
-
-html.dark {
-  --card-bg: #09090B;
-  --card-text: #a1a1aa;
-}
-
 /* body */
 
 body {
   font-family: Lato;
-  font-size: 19px;
+  font-size: 18px;
 }
 
 /* end of body*
@@ -59,113 +49,4 @@ body {
 
 .no-drag {
   -webkit-app-region: no-drag;
-}
-
-/* end of draggable*/
-
-/*Navigation*/
-
-.nav-link {
-  @apply block w-4/5 text-left px-2 md:px-3 py-[5px] rounded flex flex-row;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 20px;
-  text-align: left;
-  text-underline-position: from-font;
-  text-decoration-skip-ink: none;
-  @apply rounded w-[95%];
-}
-
-.nav-link.active {
-  @apply bg-titleBar;
-  @apply dark:bg-darkModeCompliment;
-  @apply rounded w-[95%];
-}
-
-.nav-link:not(.active):hover {
-  @apply bg-titleBar;
-  @apply dark:bg-darkModeCompliment;
-  @apply rounded w-[95%];
-}
-
-/*Navigation end*/
-
-/* buttons */
-
-.primary-custom-btn {
-  @apply bg-primary text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md flex gap-2 text-sm;
-}
-
-.primary-custom-btn:hover {
-  @apply bg-black  dark:bg-gray-100;
-}
-
-/* checkboxes */
-
-input[type='checkbox']:not(.sr-only) {
-  appearance: none;
-  background-color: white;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  padding: 1px;
-  border: 1px solid #27272ACC;
-  position: relative;
-  cursor: pointer;
-}
-
-html.dark input[type='checkbox']:not(.sr-only) {
-  appearance: none;
-  background-color: #616163cc;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  padding: 1px;
-  border: 1px solid #27272ACC;
-  position: relative;
-  cursor: pointer;
-}
-
-input[type='checkbox']:not(.sr-only):checked {
-  background-color: #f45513;
-  border-color: #f45513;
-}
-
-input[type='checkbox']:not(.sr-only):checked::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1.5px;
-  width: 5px;
-  height: 9px;
-  border: solid white;
-  border-width: 0 3px 3px 0;
-  transform: rotate(45deg);
-}
-
-html.dark input[type='checkbox']:not(.sr-only):checked {
-  background-color: #f45513;
-  border-color: #f45513;
-}
-
-html.dark input[type='checkbox']:not(.sr-only):checked::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1.5px;
-  width: 5px;
-  height: 9px;
-  border: solid #0e0e0ecc;
-  border-width: 0 3px 3px 0;
-  transform: rotate(45deg);
-}
-
-html.dark input[type='checkbox'].custom-white-checkmark:not(.sr-only):checked::after {
-  border: solid #ffffff;
-  border-width: 0 3px 3px 0;
-}
-
-input[type='checkbox']:not(.sr-only):focus {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(244, 85, 19, 0.2);
 }
