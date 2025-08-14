@@ -74,3 +74,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Cancel FFmpeg operation
   cancelFfmpeg: () => ipcRenderer.invoke('cancel-ffmpeg'),
 });
+
+contextBridge.exposeInMainWorld('appControl', {
+  showWindow: () => ipcRenderer.invoke('show-window'),
+  hideWindow: () => ipcRenderer.invoke('hide-window'),
+  setAutoLaunch: (enabled: boolean) =>
+    ipcRenderer.invoke('set-auto-launch', enabled),
+  quitApp: () => ipcRenderer.send('close-btn'),
+  minimizeApp: () => ipcRenderer.send('minimize-btn'),
+  maximizeApp: () => ipcRenderer.send('maximize-btn'),
+  getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
+
+  // Clipboard monitoring
+  getClipboardText: () => ipcRenderer.invoke('get-clipboard-text'),
+  onClipboardChange: (callback: (text: string) => void) => {
+    ipcRenderer.on('clipboard-changed', (_event, text: string) =>
+      callback(text),
+    );
+  },
+  offClipboardChange: () => {
+    ipcRenderer.removeAllListeners('clipboard-changed');
+  },
+  startClipboardMonitoring: () =>
+    ipcRenderer.invoke('start-clipboard-monitoring'),
+  stopClipboardMonitoring: () =>
+    ipcRenderer.invoke('stop-clipboard-monitoring'),
+  isClipboardMonitoringActive: () =>
+    ipcRenderer.invoke('is-clipboard-monitoring-active'),
+  isWindowFocused: () => ipcRenderer.invoke('is-window-focused'),
+  clearLastClipboardText: () => ipcRenderer.invoke('clear-last-clipboard-text'),
+  clearClipboard: () => ipcRenderer.invoke('clear-clipboard'),
+});

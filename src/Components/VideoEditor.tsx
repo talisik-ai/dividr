@@ -1,98 +1,20 @@
 import React, { useCallback } from 'react';
-import { VideoEditJob } from '../Schema/ffmpegConfig';
-import { useVideoEditorStore } from '../store/videoEditorStore';
-import { FfmpegCallbacks, runFfmpegWithProgress } from '../Utility/ffmpegRunner';
-import { Timeline } from './Timeline/Timeline';
-import { VideoPreview } from './VideoPreview/VideoPreview';
-
+import { useVideoEditorStore } from '../Store/videoEditorStore';
+import { Timeline } from './Main/Timeline/Timeline';
+import { PropertiesPanel } from './Main/VideoPreview/PropertiesPanel';
+import { VideoPreview } from './Main/VideoPreview/VideoPreview';
 interface VideoEditorProps {
   className?: string;
 }
 
 export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
   const {
-    tracks,
-    timeline,
-    preview,
     render,
-    importMediaFromDialog,
     importMediaFromFiles,
-    addTrack,
-    startRender,
-    updateRenderProgress,
-    finishRender,
     cancelRender,
-    exportProject,
-    importProject,
-    reset,
   } = useVideoEditorStore();
 
-  /*
-  // Add demo tracks for demonstration
-  const addDemoTracks = useCallback(() => {
-    // Add some sample tracks
-    addTrack({
-      type: 'video',
-      name: 'Sample Video 1',
-      source: 'demo://video1.mp4',
-      duration: 600, // 20 seconds at 30fps
-      startFrame: 0,
-      endFrame: 600,
-      width: 640,
-      height: 360,
-      visible: true,
-      locked: false,
-    });
-
-    addTrack({
-      type: 'audio',
-      name: 'Background Music',
-      source: 'demo://music.mp3',
-      duration: 900, // 30 seconds at 30fps
-      startFrame: 0,
-      endFrame: 900,
-      volume: 0.8,
-      visible: true,
-      locked: false,
-    });
-
-    addTrack({
-      type: 'video',
-      name: 'Sample Video 2',
-      source: 'demo://video2.mp4',
-      duration: 450, // 15 seconds at 30fps
-      startFrame: 300, // Start at 10 seconds
-      endFrame: 750,
-      width: 640,
-      height: 360,
-      visible: true,
-      locked: false,
-    });
-
-    addTrack({
-      type: 'image',
-      name: 'Logo Overlay',
-      source: 'demo://logo.png',
-      duration: 150, // 5 seconds at 30fps
-      startFrame: 600,
-      endFrame: 750,
-      width: 200,
-      height: 200,
-      offsetX: 50,
-      offsetY: 50,
-      visible: true,
-      locked: false,
-    });
-  }, [addTrack]);
-
- */ 
-
-  // File import using native Electron dialog
-  const handleImportFiles = useCallback(async () => {
-    await importMediaFromDialog();
-  }, [importMediaFromDialog]);
-
-  // Legacy file import for drag & drop (will show warning)
+  // Legacy fie import for drag & drop (will show warning)
   const handleFileImport = useCallback((files: FileList) => {
     const fileArray = Array.from(files);
     importMediaFromFiles(fileArray);
@@ -109,324 +31,27 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
     e.preventDefault();
   }, []);
 
-  // Convert tracks to FFmpeg job
-  const createFFmpegJob = useCallback((): VideoEditJob => {
-    // Build a comprehensive job with per-track timing information
-    const trackInfos = tracks.map(track => {
-      // Ensure we have valid frame ranges
-      const startFrame = Math.max(0, track.startFrame);
-      const endFrame = Math.max(startFrame + 1, track.endFrame); // Ensure minimum 1 frame duration
-      const duration = (endFrame - startFrame) / timeline.fps;
-      
-      return {
-        path: track.source,
-        startTime: startFrame / timeline.fps, // Convert frames to seconds
-        duration: Math.max(0.033, duration), // Minimum 1 frame at 30fps
-        endTime: endFrame / timeline.fps
-      };
-    });
-
-    return {
-      inputs: trackInfos,
-      output: 'final_video.mp4',
-      operations: {
-        concat: tracks.length > 1,
-        targetFrameRate: timeline.fps,
-        normalizeFrameRate: true,
-      },
-    };
-  }, [tracks, timeline.fps]);
-
-  // Render video using FFmpeg
-  const handleRender = useCallback(async () => {
-    if (tracks.length === 0) {
-      alert('No tracks to render');
-      return;
-    }
-
-    const job = createFFmpegJob();
-    console.log(job);
-
-    const callbacks: FfmpegCallbacks = {
-      onProgress: (progress) => {
-        if (progress.percentage) {
-          updateRenderProgress(progress.percentage, `Rendering... ${progress.percentage.toFixed(1)}%`);
-        }
-      },
-      onStatus: (status) => {
-        updateRenderProgress(render.progress, status);
-      },
-      onLog: (log, type) => {
-        console.log(`[${type}] ${log}`);
-      },
-    };
-
-    try {
-      startRender({
-        outputPath: job.output,
-        format: 'mp4',
-        quality: 'high',
-      });
-
-      await runFfmpegWithProgress(job, callbacks);
-      finishRender();
-      alert('Render completed successfully!');
-    } catch (error) {
-      console.error('Render failed:', error);
-      cancelRender();
-      alert(`Render failed: ${error}`);
-    }
-  }, [tracks, createFFmpegJob, render.progress, startRender, updateRenderProgress, finishRender, cancelRender]);
-
-  // Project management
-  const handleExportProject = useCallback(() => {
-    const projectData = exportProject();
-    const blob = new Blob([projectData], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'video-project.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [exportProject]);
-
-  const handleImportProject = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          try {
-            const data = e.target?.result as string;
-            importProject(data);
-          } catch (error) {
-            alert('Failed to import project');
-          }
-        };
-        reader.readAsText(file);
-      }
-    };
-    input.click();
-  }, [importProject]);
 
   return (
     <div 
-      className={`video-editor ${className || ''}`}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        backgroundColor: '#1a1a1a',
-        color: '#ffffff',
-      }}
+      className={`bg-secondary ${className || ''} flex flex-col h-[100vh] bg-body font-white`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      {/* Header */}
-      <div style={{
-        backgroundColor: '#3d3d3d',
-        borderBottom: '1px solid #555',
-        padding: '12px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>
-          Video Editor
-        </h1>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Quick Import Button */}
-          <button
-            onClick={handleImportFiles}
-            style={{
-              backgroundColor: '#4CAF50',
-              border: 'none',
-              color: '#fff',
-              fontSize: '12px',
-              cursor: 'pointer',
-              padding: '6px 12px',
-              borderRadius: '4px',
-            }}
-            title="Import video files"
-          >
-            Import Files
-          </button>
-          <button
-              onClick={handleImportProject}
-              style={{
-                backgroundColor: '#2196F3',
-                border: 'none',
-                color: '#fff',
-                fontSize: '12px',
-                cursor: 'pointer',
-                padding: '6px 12px',
-                borderRadius: '4px',
-              }}
-            >
-              Open Project
-            </button>
-            <button
-              onClick={handleExportProject}
-              style={{
-                backgroundColor: '#FF9800',
-                border: 'none',
-                color: '#fff',
-                fontSize: '12px',
-                cursor: 'pointer',
-                padding: '6px 12px',
-                borderRadius: '4px',
-              }}
-            >
-              Save Project
-            </button>
-            <button
-              onClick={reset}
-              style={{
-                backgroundColor: '#f44336',
-                border: 'none',
-                color: '#fff',
-                fontSize: '12px',
-                cursor: 'pointer',
-                padding: '6px 12px',
-                borderRadius: '4px',
-              }}
-            >
-              New Project
-            </button>
-
-            <button
-            onClick={handleRender}
-            disabled={render.isRendering || tracks.length === 0}
-            style={{
-              backgroundColor: render.isRendering ? '#666' : '#FF5722',
-              border: 'none',
-              color: '#fff',
-              fontSize: '12px',
-              cursor: 'pointer',
-              padding: '6px 12px',
-              borderRadius: '4px',
-            }}
-          >
-            {render.isRendering ? `Rendering... ${render.progress.toFixed(0)}%` : 'Export Video'}
-          </button>
-          {tracks.length > 0 && (
-            <div style={{ 
-              color: '#aaa', 
-              fontSize: '12px',
-              padding: '4px 8px',
-              backgroundColor: 'rgba(255,255,255,0.1)',
-              borderRadius: '4px',
-            }}>
-              {tracks.length} track{tracks.length !== 1 ? 's' : ''} loaded
-            </div>
-          )}
-        </div>
+<div className='flex overflow-hidden'>
+<div className='text-white'>
+        me side
       </div>
-
       {/* Main Content Area */}
-      <div style={{
-        display: 'flex',
-        flex: 1,
-        overflow: 'hidden',
-      }}>
-        {/* Preview Area */}
-        <div style={{
-          flex: '2',
-          display: 'flex',
-          flexDirection: 'column',
-          borderRight: '1px solid #3d3d3d',
-        }}>
-          <VideoPreview />
-        </div>
-
-        {/* Properties Panel (placeholder) */}
-        <div style={{
-          width: '300px',
-          backgroundColor: '#2d2d2d',
-          borderRight: '1px solid #3d3d3d',
-          padding: '16px',
-          overflow: 'auto',
-        }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 16px 0' }}>
-            Properties
-          </h3>
-          
-          {timeline.selectedTrackIds.length > 0 ? (
-            <div>
-              <p style={{ fontSize: '12px', color: '#aaa', margin: '0 0 8px 0' }}>
-                {timeline.selectedTrackIds.length} track(s) selected
-              </p>
-              
-              {/* Track properties would go here */}
-              <div style={{ fontSize: '12px', color: '#ccc' }}>
-                Track properties panel coming soon...
-              </div>
-            </div>
-          ) : (
-            <div style={{ fontSize: '12px', color: '#888' }}>
-              Select a track to edit properties
-            </div>
-          )}
-          
-          {/* Canvas Settings */}
-          <div style={{ marginTop: '24px' }}>
-            <h4 style={{ fontSize: '12px', fontWeight: 'bold', margin: '0 0 8px 0' }}>
-              Canvas Settings
-            </h4>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '11px', color: '#aaa' }}>Resolution:</label>
-                <span style={{ fontSize: '11px' }}>
-                  {preview.canvasWidth} × {preview.canvasHeight}
-                </span>
-              </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '11px', color: '#aaa' }}>FPS:</label>
-                <span style={{ fontSize: '11px' }}>{timeline.fps}</span>
-              </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '11px', color: '#aaa' }}>Duration:</label>
-                <span style={{ fontSize: '11px' }}>
-                  {(timeline.totalFrames / timeline.fps).toFixed(2)}s
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Demo Instructions */}
-          {tracks.length === 0 && (
-            <div style={{ 
-              marginTop: '32px', 
-              padding: '16px', 
-              backgroundColor: '#333', 
-              borderRadius: '8px',
-              border: '1px solid #555'
-            }}>
-              <h4 style={{ fontSize: '12px', fontWeight: 'bold', margin: '0 0 8px 0', color: '#4CAF50' }}>
-                🎬 Get Started
-              </h4>
-              <p style={{ fontSize: '11px', color: '#ccc', lineHeight: '1.4', margin: '0 0 12px 0' }}>
-                Click "Add Demo" to populate the timeline with sample tracks, or drag & drop your media files.
-              </p>
-              <p style={{ fontSize: '11px', color: '#999', lineHeight: '1.4', margin: 0 }}>
-                Features:
-                <br />• Timeline with zoom & scroll
-                <br />• Track selection & dragging
-                <br />• Video preview canvas
-                <br />• Keyboard shortcuts (Space, Arrow keys)
-                <br />• FFmpeg integration
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+      <div className='flex mx-12 my-6'>
+    <VideoPreview />
+  </div>
+  
+  {/* Properties Panel with Fixed Width */}
+  <div className='w-50'> {/* Fixed width */}
+    <PropertiesPanel />
+  </div>
+</div>
 
       {/* Timeline Area */}
       <div style={{
@@ -455,7 +80,7 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
             padding: '32px',
             borderRadius: '8px',
             textAlign: 'center',
-            minWidth: '300px',
+            minWidth: '200px',
           }}>
             <h3 style={{ margin: '0 0 16px 0' }}>Rendering Video</h3>
             

@@ -67,6 +67,16 @@ declare global {
           message?: string;
         }>;
       };
+      appControl: {
+        showWindow: () => Promise<boolean>;
+        hideWindow: () => Promise<boolean>;
+        quitApp: () => Promise<void>;
+        closeApp: () => void;
+        minimizeApp: () => void;
+        maximizeApp: () => void;
+        openExternalLink: (link: string) => Promise<void>;
+
+      };
     }
   }
 

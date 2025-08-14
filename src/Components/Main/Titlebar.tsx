@@ -6,12 +6,16 @@
  * @returns JSX.Element - The rendered component displaying a TitleBar
  *
  */
-import React from 'react';
+import React, { useCallback } from 'react';
 import { IoMdClose, IoMdRemove } from 'react-icons/io';
-import { PiBrowsers } from 'react-icons/pi';
+import { PiBrowsers, PiExportBold } from 'react-icons/pi';
 import { RxBox } from 'react-icons/rx';
 import logo from '../../Assets/Logo/logo.svg';
+import { VideoEditJob } from '../../Schema/ffmpegConfig';
+import { useVideoEditorStore } from '../../Store/videoEditorStore';
+import { FfmpegCallbacks, runFfmpegWithProgress } from '../../Utility/ffmpegRunner';
 import { useTheme } from '../../Utility/ThemeProvider';
+
 interface TitleBarProps {
   className?: string;
 }
@@ -19,8 +23,84 @@ interface TitleBarProps {
 const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   const { theme } = useTheme();
   const [isMaximized, setIsMaximized] = React.useState<boolean>(false);
+  const {
+    tracks,
+    timeline,
+    render,
+    startRender,
+    updateRenderProgress,
+    finishRender,
+    cancelRender,
+  } = useVideoEditorStore();
 
-
+        // Convert tracks to FFmpeg job
+        const createFFmpegJob = useCallback((): VideoEditJob => {
+          // Build a comprehensive job with per-track timing information
+          const trackInfos = tracks.map(track => {
+            // Ensure we have valid frame ranges
+            const startFrame = Math.max(0, track.startFrame);
+            const endFrame = Math.max(startFrame + 1, track.endFrame); // Ensure minimum 1 frame duration
+            const duration = (endFrame - startFrame) / timeline.fps;
+            
+            return {
+              path: track.source,
+              startTime: startFrame / timeline.fps, // Convert frames to seconds
+              duration: Math.max(0.033, duration), // Minimum 1 frame at 30fps
+              endTime: endFrame / timeline.fps
+            };
+          });
+      
+          return {
+            inputs: trackInfos,
+            output: 'final_video.mp4',
+            operations: {
+              concat: tracks.length > 1,
+              targetFrameRate: timeline.fps,
+              normalizeFrameRate: true,
+            },
+          };
+        }, [tracks, timeline.fps]);
+      
+            // Render video using FFmpeg
+            const handleRender = useCallback(async () => {
+              if (tracks.length === 0) {
+                alert('No tracks to render');
+                return;
+              }
+          
+              const job = createFFmpegJob();
+              console.log(job);
+          
+              const callbacks: FfmpegCallbacks = {
+                onProgress: (progress) => {
+                  if (progress.percentage) {
+                    updateRenderProgress(progress.percentage, `Rendering... ${progress.percentage.toFixed(1)}%`);
+                  }
+                },
+                onStatus: (status) => {
+                  updateRenderProgress(render.progress, status);
+                },
+                onLog: (log, type) => {
+                  console.log(`[${type}] ${log}`);
+                },
+              };
+          
+              try {
+                startRender({
+                  outputPath: job.output,
+                  format: 'mp4',
+                  quality: 'high',
+                });
+          
+                await runFfmpegWithProgress(job, callbacks);
+                finishRender();
+                alert('Render completed successfully!');
+              } catch (error) {
+                console.error('Render failed:', error);
+                cancelRender();
+                alert(`Render failed: ${error}`);
+              }
+            }, [tracks, createFFmpegJob, render.progress, startRender, updateRenderProgress, finishRender, cancelRender]);
   // Function to toggle maximize/restore
   const handleMaximizeRestore = () => {
     window.appControl.maximizeApp();
@@ -57,7 +137,14 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
           {/* Buttons */}
           <div className="flex space-x-2 no-drag text-white">
             {/* Help Button */}
-
+            <button
+            onClick={handleRender}
+            disabled={render.isRendering || tracks.length === 0}
+            className='bg-primary border-none font-white text-sm cursor-pointer p-4 rounded flex flex-row gap-1 items-center justify-center'
+          >
+            <PiExportBold/>
+            {render.isRendering ? `Exporting... ${render.progress.toFixed(0)}%` : 'Export'}
+          </button>
             {/*Dark Mode/Light Mode 
             <ModeToggle />
 */}

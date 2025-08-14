@@ -1122,15 +1122,36 @@ const createWindow = () => {
   const mainWindow = new require$$3$1.BrowserWindow({
     width: 800,
     height: 600,
+    frame: false,
+    autoHideMenuBar: true,
+    minWidth: 600,
+    minHeight: 400,
     webPreferences: {
+      contextIsolation: true,
       preload: path$1.join(__dirname, "preload.js"),
-      nodeIntegration: false,
-      contextIsolation: true
+      webSecurity: true,
+      nodeIntegration: true
+      // devTools: false,
     }
   });
   {
     mainWindow.loadURL("http://localhost:5173");
   }
+  require$$3$1.ipcMain.on("close-btn", () => {
+    if (!mainWindow) return;
+    require$$3$1.app.quit();
+  });
+  require$$3$1.ipcMain.on("minimize-btn", () => {
+    if (mainWindow) mainWindow.minimize();
+  });
+  require$$3$1.ipcMain.on("maximize-btn", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  });
   mainWindow.webContents.openDevTools();
 };
 require$$3$1.app.on("ready", createWindow);

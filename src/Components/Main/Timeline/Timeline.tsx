@@ -1,149 +1,166 @@
-import React, { useCallback, useRef, useState } from "react";
-import { TimeIndicators } from "./TimeIndicators";
-import { TimelineCursor, type TimelineCursorRef } from "./TimelineCursor";
-import { TimelineProvider, useTimelineWidth } from "./TimelineProvider";
-import { TimelineTracks } from "./TimelineTracks";
-
-export interface ClipData {
-  id: string;
-  startFrame: number;
-  endFrame: number;
-  track: string;
-}
+import React, { useCallback, useEffect, useRef } from 'react';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { useVideoEditorStore } from '../../../Store/videoEditorStore';
+import { TimelineControls } from './TimelineControls';
+import { TimelinePlayhead } from './TimelinePlayhead';
+import { TimelineTracks } from './TimelineTracks';
 
 interface TimelineProps {
-  clips: ClipData[];
-  totalFrames: number;
-  fps: number;
-  onCurrentFrameChange?: (frame: number) => void;
+  className?: string;
 }
 
-export const Timeline: React.FC<TimelineProps> = ({ 
-  clips: initialClips, 
-  totalFrames, 
-  fps,
-  onCurrentFrameChange 
-}) => {
-  const [clips, setClips] = useState<ClipData[]>(initialClips);
-  const [currentFrame, setCurrentFrame] = useState(0);
-  const cursorRef = useRef<TimelineCursorRef>(null);
+export const Timeline: React.FC<TimelineProps> = ({ className }) => {
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const tracksRef = useRef<HTMLDivElement>(null);
+  
+  const {
+    timeline,
+    tracks,
+    playback,
+    setCurrentFrame,
+    setScrollX,
+    setZoom,
+    togglePlayback,
+    setInPoint,
+    setOutPoint,
+    setSelectedTracks,
+  } = useVideoEditorStore();
 
-  const updateClip = useCallback((id: string, newStart: number, newEnd: number) => {
-    setClips(prev =>
-      prev.map(c =>
-        c.id === id ? { ...c, startFrame: newStart, endFrame: newEnd } : c
-      )
-    );
-  }, []);
+  // Animation loop for playback
+  useEffect(() => {
+    if (!playback.isPlaying) return;
 
-  const handleFrameChange = useCallback((frame: number) => {
-    setCurrentFrame(frame);
-    onCurrentFrameChange?.(frame);
-  }, [onCurrentFrameChange]);
+    const targetFPS = Math.min(15, timeline.fps); // Cap at 15fps for smoother performance
+    const interval = setInterval(() => {
+      const currentFrame = timeline.currentFrame;
+      const nextFrame = currentFrame + Math.max(1, Math.round(timeline.fps / targetFPS)); // Skip frames for better performance
+      if (nextFrame >= timeline.totalFrames) {
+        setCurrentFrame(playback.isLooping ? 0 : timeline.totalFrames - 1);
+      } else {
+        setCurrentFrame(nextFrame);
+      }
+    }, 1000 / targetFPS);
 
-  const handleSeek = useCallback((frame: number) => {
-    setCurrentFrame(frame);
-    onCurrentFrameChange?.(frame);
-    // Ensure the frame is visible in the viewport
-    // This will be handled by the timeline utils
-  }, [onCurrentFrameChange]);
+    return () => clearInterval(interval);
+  }, [playback.isPlaying, playback.isLooping, timeline.fps, timeline.totalFrames, timeline.currentFrame, setCurrentFrame]);
 
-  const handleZoomIn = useCallback(() => {
-    // Zoom will be handled by the TimelineProvider
-    console.log('Zoom in');
-  }, []);
+  // Keyboard shortcuts
+  useHotkeys('space', (e) => {
+    e.preventDefault();
+    togglePlayback();
+  });
 
-  const handleZoomOut = useCallback(() => {
-    // Zoom will be handled by the TimelineProvider  
-    console.log('Zoom out');
-  }, []);
+  useHotkeys('home', () => setCurrentFrame(0));
+  useHotkeys('end', () => setCurrentFrame(timeline.totalFrames - 1));
+  useHotkeys('left', () => setCurrentFrame(Math.max(0, timeline.currentFrame - 1)));
+  useHotkeys('right', () => setCurrentFrame(Math.min(timeline.totalFrames - 1, timeline.currentFrame + 1)));
+  useHotkeys('i', () => setInPoint(timeline.currentFrame));
+  useHotkeys('o', () => setOutPoint(timeline.currentFrame));
 
-  return (
-    <TimelineProvider totalFrames={totalFrames} initialZoom={2}>
-      <div className="bg-gray-900 text-white p-3 rounded-lg shadow-lg w-full select-none">
-        {/* Header with time indicators */}
-        <div className="mb-2">
-          <TimeIndicators totalFrames={totalFrames} fps={fps} zoom={2} />
-        </div>
+  // Zoom controls
+  useHotkeys('equal', () => setZoom(Math.min(timeline.zoom * 1.2, 10)));
+  useHotkeys('minus', () => setZoom(Math.max(timeline.zoom / 1.2, 0.1)));
+  useHotkeys('0', () => setZoom(1));
 
-        {/* Main timeline area */}
-        <div className="relative border border-gray-700 rounded-lg bg-gray-800 overflow-hidden">
-          {/* Timeline tracks container */}
-          <TimelineScrollableArea>
-            <TimelineTracks
-              clips={clips}
-              zoom={2}
-              totalFrames={totalFrames}
-              onUpdateClip={updateClip}
-            />
-            
-            {/* Cursor overlay */}
-            <TimelineCursor
-              ref={cursorRef}
-              currentFrame={currentFrame}
-              totalFrames={totalFrames}
-              onFrameChange={handleFrameChange}
-            />
-            
-            {/* Remove the problematic drag handler for now */}
-            {/* <TimelineDragHandler
-              totalFrames={totalFrames}
-              currentFrame={currentFrame}
-              onFrameChange={handleFrameChange}
-              onSeek={handleSeek}
-              cursorRef={cursorRef}
-            >
-              <div className="h-40" />
-            </TimelineDragHandler> */}
-          </TimelineScrollableArea>
-        </div>
+  // Handle wheel zoom
+  const handleWheel = useCallback((e: WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(Math.max(0.1, Math.min(timeline.zoom * zoomFactor, 10)));
+    } else {
+      // Horizontal scroll
+      setScrollX(Math.max(0, timeline.scrollX + e.deltaX));
+    }
+  }, [timeline.zoom, timeline.scrollX, setZoom, setScrollX]);
 
-        {/* Controls */}
-        <div className="flex justify-between items-center mt-3">
-          <div className="flex items-center space-x-3">
-            <span className="text-sm text-gray-400">
-              Frame: {currentFrame} / {totalFrames}
-            </span>
-            <span className="text-sm text-gray-400">
-              Time: {(currentFrame / fps).toFixed(2)}s
-            </span>
-          </div>
-          
-          <div className="flex space-x-2">
-            <button
-              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors text-sm"
-              onClick={handleZoomOut}
-            >
-              Zoom Out
-            </button>
-            <button
-              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors text-sm"
-              onClick={handleZoomIn}
-            >
-              Zoom In
-            </button>
-          </div>
-        </div>
-      </div>
-    </TimelineProvider>
-  );
-};
+  useEffect(() => {
+    const timelineElement = timelineRef.current;
+    if (timelineElement) {
+      timelineElement.addEventListener('wheel', handleWheel, { passive: false });
+      return () => timelineElement.removeEventListener('wheel', handleWheel);
+    }
+  }, [handleWheel]);
 
-// Scrollable area component that uses the timeline provider
-const TimelineScrollableArea: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { scrollAreaRef } = useTimelineWidth();
+  // Calculate frame width based on zoom
+  const frameWidth = 2 * timeline.zoom; // Base width * zoom factor
+  const timelineWidth = timeline.totalFrames * frameWidth;
+
+  // Handle timeline click to set current frame
+  const handleTimelineClick = useCallback((e: React.MouseEvent) => {
+    if (!tracksRef.current) return;
+    
+    const rect = tracksRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left + timeline.scrollX;
+    const frame = Math.floor(x / frameWidth);
+    const clampedFrame = Math.max(0, Math.min(frame, timeline.totalFrames - 1));
+    setCurrentFrame(clampedFrame);
+  }, [frameWidth, timeline.scrollX, timeline.totalFrames, setCurrentFrame]);
 
   return (
-    <div
-      ref={scrollAreaRef}
-      className="relative overflow-x-auto overflow-y-hidden"
+    <div 
+      ref={timelineRef}
+      className={`timeline-container ${className || ''}`}
       style={{
-        height: '160px', // Fixed height for the timeline
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        backgroundColor: '#1a1a1a',
+        color: '#ffffff',
+        overflow: 'hidden',
       }}
     >
-      <div className="relative min-w-full h-full">
-        {children}
+      {/* Timeline Header with Controls */}
+      {/* TimelineHeader component removed as per edit hint */}
+      
+      {/* Timeline Controls */}
+      <TimelineControls />
+      {/* Timeline Content Area */}
+      <div 
+        style={{
+          display: 'flex',
+          flex: 1,
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        {/* Track Names Sidebar */}
+        <div 
+        >
+          <div style={{ height: '40px', borderBottom: '1px solid #3d3d3d' }} />
+        </div>
+
+        {/* Timeline Tracks Area */}
+        <div 
+          ref={tracksRef}
+          style={{
+            flex: 1,
+            position: 'relative',
+            overflow: 'auto',
+          }}
+          onClick={handleTimelineClick}
+        >
+          <TimelineTracks 
+            tracks={tracks}
+            frameWidth={frameWidth}
+            timelineWidth={timelineWidth}
+            scrollX={timeline.scrollX}
+            currentFrame={timeline.currentFrame}
+            selectedTrackIds={timeline.selectedTrackIds}
+            onTrackSelect={setSelectedTracks}
+          />
+          
+          {/* Playhead */}
+          <TimelinePlayhead 
+            currentFrame={timeline.currentFrame}
+            frameWidth={frameWidth}
+            scrollX={timeline.scrollX}
+            visible={timeline.playheadVisible}
+          />
+        </div>
       </div>
+
+
     </div>
   );
-};
+}; 

@@ -200,8 +200,8 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       muted: false,
     },
     preview: {
-      canvasWidth: 1920,
-      canvasHeight: 1080,
+      canvasWidth: 800,
+      canvasHeight: 750,
       previewScale: 1,
       showGrid: false,
       showSafeZones: false,
