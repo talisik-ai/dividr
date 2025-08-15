@@ -12,7 +12,7 @@ interface TimelineProps {
 export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
-  
+
   const {
     timeline,
     tracks,
@@ -33,7 +33,8 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     const targetFPS = Math.min(15, timeline.fps); // Cap at 15fps for smoother performance
     const interval = setInterval(() => {
       const currentFrame = timeline.currentFrame;
-      const nextFrame = currentFrame + Math.max(1, Math.round(timeline.fps / targetFPS)); // Skip frames for better performance
+      const nextFrame =
+        currentFrame + Math.max(1, Math.round(timeline.fps / targetFPS)); // Skip frames for better performance
       if (nextFrame >= timeline.totalFrames) {
         setCurrentFrame(playback.isLooping ? 0 : timeline.totalFrames - 1);
       } else {
@@ -42,7 +43,14 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     }, 1000 / targetFPS);
 
     return () => clearInterval(interval);
-  }, [playback.isPlaying, playback.isLooping, timeline.fps, timeline.totalFrames, timeline.currentFrame, setCurrentFrame]);
+  }, [
+    playback.isPlaying,
+    playback.isLooping,
+    timeline.fps,
+    timeline.totalFrames,
+    timeline.currentFrame,
+    setCurrentFrame,
+  ]);
 
   // Keyboard shortcuts
   useHotkeys('space', (e) => {
@@ -52,8 +60,14 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
 
   useHotkeys('home', () => setCurrentFrame(0));
   useHotkeys('end', () => setCurrentFrame(timeline.totalFrames - 1));
-  useHotkeys('left', () => setCurrentFrame(Math.max(0, timeline.currentFrame - 1)));
-  useHotkeys('right', () => setCurrentFrame(Math.min(timeline.totalFrames - 1, timeline.currentFrame + 1)));
+  useHotkeys('left', () =>
+    setCurrentFrame(Math.max(0, timeline.currentFrame - 1)),
+  );
+  useHotkeys('right', () =>
+    setCurrentFrame(
+      Math.min(timeline.totalFrames - 1, timeline.currentFrame + 1),
+    ),
+  );
   useHotkeys('i', () => setInPoint(timeline.currentFrame));
   useHotkeys('o', () => setOutPoint(timeline.currentFrame));
 
@@ -63,21 +77,26 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   useHotkeys('0', () => setZoom(1));
 
   // Handle wheel zoom
-  const handleWheel = useCallback((e: WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom(Math.max(0.1, Math.min(timeline.zoom * zoomFactor, 10)));
-    } else {
-      // Horizontal scroll
-      setScrollX(Math.max(0, timeline.scrollX + e.deltaX));
-    }
-  }, [timeline.zoom, timeline.scrollX, setZoom, setScrollX]);
+  const handleWheel = useCallback(
+    (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        setZoom(Math.max(0.1, Math.min(timeline.zoom * zoomFactor, 10)));
+      } else {
+        // Horizontal scroll
+        setScrollX(Math.max(0, timeline.scrollX + e.deltaX));
+      }
+    },
+    [timeline.zoom, timeline.scrollX, setZoom, setScrollX],
+  );
 
   useEffect(() => {
     const timelineElement = timelineRef.current;
     if (timelineElement) {
-      timelineElement.addEventListener('wheel', handleWheel, { passive: false });
+      timelineElement.addEventListener('wheel', handleWheel, {
+        passive: false,
+      });
       return () => timelineElement.removeEventListener('wheel', handleWheel);
     }
   }, [handleWheel]);
@@ -87,18 +106,24 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   const timelineWidth = timeline.totalFrames * frameWidth;
 
   // Handle timeline click to set current frame
-  const handleTimelineClick = useCallback((e: React.MouseEvent) => {
-    if (!tracksRef.current) return;
-    
-    const rect = tracksRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left + timeline.scrollX;
-    const frame = Math.floor(x / frameWidth);
-    const clampedFrame = Math.max(0, Math.min(frame, timeline.totalFrames - 1));
-    setCurrentFrame(clampedFrame);
-  }, [frameWidth, timeline.scrollX, timeline.totalFrames, setCurrentFrame]);
+  const handleTimelineClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!tracksRef.current) return;
+
+      const rect = tracksRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + timeline.scrollX;
+      const frame = Math.floor(x / frameWidth);
+      const clampedFrame = Math.max(
+        0,
+        Math.min(frame, timeline.totalFrames - 1),
+      );
+      setCurrentFrame(clampedFrame);
+    },
+    [frameWidth, timeline.scrollX, timeline.totalFrames, setCurrentFrame],
+  );
 
   return (
-    <div 
+    <div
       ref={timelineRef}
       className={`timeline-container ${className || ''}`}
       style={{
@@ -112,11 +137,11 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     >
       {/* Timeline Header with Controls */}
       {/* TimelineHeader component removed as per edit hint */}
-      
+
       {/* Timeline Controls */}
       <TimelineControls />
       {/* Timeline Content Area */}
-      <div 
+      <div
         style={{
           display: 'flex',
           flex: 1,
@@ -124,14 +149,8 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
           position: 'relative',
         }}
       >
-        {/* Track Names Sidebar */}
-        <div 
-        >
-          <div style={{ height: '40px', borderBottom: '1px solid #3d3d3d' }} />
-        </div>
-
         {/* Timeline Tracks Area */}
-        <div 
+        <div
           ref={tracksRef}
           style={{
             flex: 1,
@@ -140,7 +159,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
           }}
           onClick={handleTimelineClick}
         >
-          <TimelineTracks 
+          <TimelineTracks
             tracks={tracks}
             frameWidth={frameWidth}
             timelineWidth={timelineWidth}
@@ -149,9 +168,9 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
             selectedTrackIds={timeline.selectedTrackIds}
             onTrackSelect={setSelectedTracks}
           />
-          
+
           {/* Playhead */}
-          <TimelinePlayhead 
+          <TimelinePlayhead
             currentFrame={timeline.currentFrame}
             frameWidth={frameWidth}
             scrollX={timeline.scrollX}
@@ -159,8 +178,6 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
           />
         </div>
       </div>
-
-
     </div>
   );
-}; 
+};

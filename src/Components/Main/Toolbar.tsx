@@ -10,7 +10,12 @@
  *
  */
 import { useCallback, useRef } from 'react';
-import { LuImport } from 'react-icons/lu';
+import { BiText } from 'react-icons/bi';
+import { BsCameraVideo } from 'react-icons/bs';
+import { CgSoftwareDownload } from 'react-icons/cg';
+import { LuMusic } from 'react-icons/lu';
+import { MdOutlineSettings } from 'react-icons/md';
+import { SlPicture } from 'react-icons/sl';
 import { useVideoEditorStore } from '../../Store/videoEditorStore';
 
 // import { toast } from 'react-hot-toast';
@@ -163,16 +168,22 @@ const Toolbar = ({
               title="Import video files"
               className="text-toolbarIcon"
             >
-              <LuImport size={20} />
+              <CgSoftwareDownload size={20} />
             </button>
             <button onClick={handleImportProject} className="text-toolbarIcon">
-              <LuImport size={20} />
+              <BiText size={18} />
             </button>
             <button onClick={handleExportProject} className="text-toolbarIcon">
-              <LuImport size={20} />
+              <BsCameraVideo size={16} />
             </button>
             <button onClick={reset} className="text-toolbarIcon">
-              <LuImport size={20} />
+              <SlPicture size={16} />
+            </button>
+            <button onClick={handleImportFiles} className="text-toolbarIcon">
+              <LuMusic size={16} />
+            </button>
+            <button onClick={reset} className="text-toolbarIcon">
+              <MdOutlineSettings size={18} />
             </button>
           </div>
           {/*  </TooltipWrapper> */}

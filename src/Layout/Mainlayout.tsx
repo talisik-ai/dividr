@@ -1,7 +1,9 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
+import { Timeline } from '../Components/Main/Timeline/Timeline';
 import TitleBar from '../Components/Main/Titlebar';
 import Toolbar from '../Components/Main/Toolbar';
+
 // Error Boundary component
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -46,17 +48,22 @@ const MainLayout = () => {
 
   return (
     <ErrorBoundary>
-      <div className="h-screen flex flex-col bg-black dark:bg-darkMode text-gray-900 dark:text-gray-100">
-        <TitleBar className="h-13 p-4 bg-black dark:bg-darkMode" />
+      <div className="h-screen flex flex-col bg-black dark:bg-darkMode text-gray-900 dark:text-gray-100 pb-2 pr-2">
+        <TitleBar className="h-13 py-4 px-2 bg-black dark:bg-darkMode" />
         <div className="flex flex-1 overflow-hidden h-[calc(100vh-120px)]">
-        <Toolbar
-            className={`w-[60px] bg-secondary mx-2 mb-2 overflow-y-auto h-full transition-all duration-300 rounded`}
+          <Toolbar
+            className={`w-[60px] bg-secondary mx-2 mb-4 overflow-y-auto h-full transition-all duration-300 rounded`}
           />
-          <main className="flex-1 overflow-auto">
-            <Outlet />
-          </main>
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <main className="flex-1 overflow-auto max-h-30">
+              <Outlet />
+            </main>
+            <div className="h-55 md:h-70">
+              <Timeline />
+            </div>
+          </div>
         </div>
-      </div>
+        </div>
     </ErrorBoundary>
   );
 };

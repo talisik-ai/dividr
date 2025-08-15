@@ -13,7 +13,10 @@ import { RxBox } from 'react-icons/rx';
 import logo from '../../Assets/Logo/logo.svg';
 import { VideoEditJob } from '../../Schema/ffmpegConfig';
 import { useVideoEditorStore } from '../../Store/videoEditorStore';
-import { FfmpegCallbacks, runFfmpegWithProgress } from '../../Utility/ffmpegRunner';
+import {
+  FfmpegCallbacks,
+  runFfmpegWithProgress,
+} from '../../Utility/ffmpegRunner';
 import { useTheme } from '../../Utility/ThemeProvider';
 
 interface TitleBarProps {
@@ -33,74 +36,85 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     cancelRender,
   } = useVideoEditorStore();
 
-        // Convert tracks to FFmpeg job
-        const createFFmpegJob = useCallback((): VideoEditJob => {
-          // Build a comprehensive job with per-track timing information
-          const trackInfos = tracks.map(track => {
-            // Ensure we have valid frame ranges
-            const startFrame = Math.max(0, track.startFrame);
-            const endFrame = Math.max(startFrame + 1, track.endFrame); // Ensure minimum 1 frame duration
-            const duration = (endFrame - startFrame) / timeline.fps;
-            
-            return {
-              path: track.source,
-              startTime: startFrame / timeline.fps, // Convert frames to seconds
-              duration: Math.max(0.033, duration), // Minimum 1 frame at 30fps
-              endTime: endFrame / timeline.fps
-            };
-          });
-      
-          return {
-            inputs: trackInfos,
-            output: 'final_video.mp4',
-            operations: {
-              concat: tracks.length > 1,
-              targetFrameRate: timeline.fps,
-              normalizeFrameRate: true,
-            },
-          };
-        }, [tracks, timeline.fps]);
-      
-            // Render video using FFmpeg
-            const handleRender = useCallback(async () => {
-              if (tracks.length === 0) {
-                alert('No tracks to render');
-                return;
-              }
-          
-              const job = createFFmpegJob();
-              console.log(job);
-          
-              const callbacks: FfmpegCallbacks = {
-                onProgress: (progress) => {
-                  if (progress.percentage) {
-                    updateRenderProgress(progress.percentage, `Rendering... ${progress.percentage.toFixed(1)}%`);
-                  }
-                },
-                onStatus: (status) => {
-                  updateRenderProgress(render.progress, status);
-                },
-                onLog: (log, type) => {
-                  console.log(`[${type}] ${log}`);
-                },
-              };
-          
-              try {
-                startRender({
-                  outputPath: job.output,
-                  format: 'mp4',
-                  quality: 'high',
-                });
-          
-                await runFfmpegWithProgress(job, callbacks);
-                finishRender();
-                alert('Render completed successfully!');
-              } catch (error) {
-                console.error('Render failed:', error);
-                cancelRender();
-                alert(`Render failed: ${error}`);
-              }
-            }, [tracks, createFFmpegJob, render.progress, startRender, updateRenderProgress, finishRender, cancelRender]);
+  // Convert tracks to FFmpeg job
+  const createFFmpegJob = useCallback((): VideoEditJob => {
+    // Build a comprehensive job with per-track timing information
+    const trackInfos = tracks.map((track) => {
+      // Ensure we have valid frame ranges
+      const startFrame = Math.max(0, track.startFrame);
+      const endFrame = Math.max(startFrame + 1, track.endFrame); // Ensure minimum 1 frame duration
+      const duration = (endFrame - startFrame) / timeline.fps;
+
+      return {
+        path: track.source,
+        startTime: startFrame / timeline.fps, // Convert frames to seconds
+        duration: Math.max(0.033, duration), // Minimum 1 frame at 30fps
+        endTime: endFrame / timeline.fps,
+      };
+    });
+
+    return {
+      inputs: trackInfos,
+      output: 'final_video.mp4',
+      operations: {
+        concat: tracks.length > 1,
+        targetFrameRate: timeline.fps,
+        normalizeFrameRate: true,
+      },
+    };
+  }, [tracks, timeline.fps]);
+
+  // Render video using FFmpeg
+  const handleRender = useCallback(async () => {
+    if (tracks.length === 0) {
+      alert('No tracks to render');
+      return;
+    }
+
+    const job = createFFmpegJob();
+    console.log(job);
+
+    const callbacks: FfmpegCallbacks = {
+      onProgress: (progress) => {
+        if (progress.percentage) {
+          updateRenderProgress(
+            progress.percentage,
+            `Rendering... ${progress.percentage.toFixed(1)}%`,
+          );
+        }
+      },
+      onStatus: (status) => {
+        updateRenderProgress(render.progress, status);
+      },
+      onLog: (log, type) => {
+        console.log(`[${type}] ${log}`);
+      },
+    };
+
+    try {
+      startRender({
+        outputPath: job.output,
+        format: 'mp4',
+        quality: 'high',
+      });
+
+      await runFfmpegWithProgress(job, callbacks);
+      finishRender();
+      alert('Render completed successfully!');
+    } catch (error) {
+      console.error('Render failed:', error);
+      cancelRender();
+      alert(`Render failed: ${error}`);
+    }
+  }, [
+    tracks,
+    createFFmpegJob,
+    render.progress,
+    startRender,
+    updateRenderProgress,
+    finishRender,
+    cancelRender,
+  ]);
   // Function to toggle maximize/restore
   const handleMaximizeRestore = () => {
     window.appControl.maximizeApp();
@@ -109,7 +123,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
   // Handle close button click
   const handleCloseClick = () => {
-      window.appControl.quitApp();
+    window.appControl.quitApp();
   };
 
   // Adjust downlodr logo used depending on the light/dark mode
@@ -131,25 +145,27 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
         <div className="relative flex items-center h-6 px-4 py-2">
           {/* Title */}
           <div className="text-sm drag-area">
-            <img src={logo} className='h-6'/>
+            <img src={logo} className="h-6" />
           </div>
 
           {/* Centered Title */}
-          <div className='absolute left-1/2 transform -translate-x-1/2 flex items-center justify-center'>
-            <span className='text-white'>Untitled Video</span>
+          <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center justify-center">
+            <span className="text-white">Untitled Video</span>
           </div>
 
           {/* Buttons */}
           <div className="flex space-x-2 no-drag text-white ml-auto">
             {/* Help Button */}
             <button
-            onClick={handleRender}
-            disabled={render.isRendering || tracks.length === 0}
-            className='m-2 h-8 bg-primary border-none font-white text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center'
-          >
-            {render.isRendering ? `Exporting... ${render.progress.toFixed(0)}%` : 'Export'}
-            <PiExportBold size={16}/>
-          </button>
+              onClick={handleRender}
+              disabled={render.isRendering || tracks.length === 0}
+              className="m-2 h-8 bg-primary border-none font-white text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center"
+            >
+              {render.isRendering
+                ? `Exporting... ${render.progress.toFixed(0)}%`
+                : 'Export'}
+              <PiExportBold size={16} />
+            </button>
             {/*Dark Mode/Light Mode 
             <ModeToggle />
 */}
