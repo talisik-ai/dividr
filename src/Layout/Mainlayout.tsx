@@ -46,11 +46,11 @@ const MainLayout = () => {
 
   return (
     <ErrorBoundary>
-      <div className="h-screen flex flex-col bg-white dark:bg-darkMode text-gray-900 dark:text-gray-100">
-        <TitleBar className="h-10 p-2 bg-titleBar dark:bg-darkMode border-b-2 border-gray-200 dark:border-darkModeCompliment" />
+      <div className="h-screen flex flex-col bg-black dark:bg-darkMode text-gray-900 dark:text-gray-100">
+        <TitleBar className="h-13 p-4 bg-black dark:bg-darkMode" />
         <div className="flex flex-1 overflow-hidden h-[calc(100vh-120px)]">
         <Toolbar
-            className={`w-[60px] overflow-y-auto h-full transition-all duration-300 border-solid border-r-2 border-gray-200 dark:border-darkModeCompliment `}
+            className={`w-[60px] bg-secondary mx-2 mb-2 overflow-y-auto h-full transition-all duration-300 rounded`}
           />
           <main className="flex-1 overflow-auto">
             <Outlet />

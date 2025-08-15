@@ -821,7 +821,9 @@ function createMediaServer() {
     }
   });
   mediaServer.listen(MEDIA_SERVER_PORT, "localhost", () => {
-    console.log(`📁 Media server started on http://localhost:${MEDIA_SERVER_PORT}`);
+    console.log(
+      `📁 Media server started on http://localhost:${MEDIA_SERVER_PORT}`
+    );
   });
   mediaServer.on("error", (error) => {
     console.error("Media server error:", error);
@@ -830,46 +832,73 @@ function createMediaServer() {
 require$$3$1.app.whenReady().then(() => {
   createMediaServer();
 });
-require$$3$1.ipcMain.handle("open-file-dialog", async (event, options) => {
-  try {
-    const result = await require$$3$1.dialog.showOpenDialog({
-      title: (options == null ? void 0 : options.title) || "Select Media Files",
-      properties: (options == null ? void 0 : options.properties) || ["openFile", "multiSelections"],
-      filters: (options == null ? void 0 : options.filters) || [
-        { name: "Media Files", extensions: ["mp4", "avi", "mov", "mkv", "mp3", "wav", "aac", "jpg", "jpeg", "png", "gif"] },
-        { name: "Video Files", extensions: ["mp4", "avi", "mov", "mkv", "webm", "wmv", "flv"] },
-        { name: "Audio Files", extensions: ["mp3", "wav", "aac", "flac", "ogg", "m4a"] },
-        { name: "Image Files", extensions: ["jpg", "jpeg", "png", "gif", "bmp", "tiff"] },
-        { name: "All Files", extensions: ["*"] }
-      ]
-    });
-    if (!result.canceled && result.filePaths.length > 0) {
-      const fileInfos = result.filePaths.map((filePath) => {
-        const stats = fs.statSync(filePath);
-        const fileName = path$1.basename(filePath);
-        const ext = path$1.extname(fileName).toLowerCase().slice(1);
-        let type = "video";
-        if (["mp3", "wav", "aac", "flac", "ogg", "m4a"].includes(ext)) {
-          type = "audio";
-        } else if (["jpg", "jpeg", "png", "gif", "bmp", "tiff"].includes(ext)) {
-          type = "image";
-        }
-        return {
-          path: filePath,
-          name: fileName,
-          size: stats.size,
-          type,
-          extension: ext
-        };
+require$$3$1.ipcMain.handle(
+  "open-file-dialog",
+  async (event, options) => {
+    try {
+      const result = await require$$3$1.dialog.showOpenDialog({
+        title: (options == null ? void 0 : options.title) || "Select Media Files",
+        properties: (options == null ? void 0 : options.properties) || ["openFile", "multiSelections"],
+        filters: (options == null ? void 0 : options.filters) || [
+          {
+            name: "Media Files",
+            extensions: [
+              "mp4",
+              "avi",
+              "mov",
+              "mkv",
+              "mp3",
+              "wav",
+              "aac",
+              "jpg",
+              "jpeg",
+              "png",
+              "gif"
+            ]
+          },
+          {
+            name: "Video Files",
+            extensions: ["mp4", "avi", "mov", "mkv", "webm", "wmv", "flv"]
+          },
+          {
+            name: "Audio Files",
+            extensions: ["mp3", "wav", "aac", "flac", "ogg", "m4a"]
+          },
+          {
+            name: "Image Files",
+            extensions: ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]
+          },
+          { name: "All Files", extensions: ["*"] }
+        ]
       });
-      return { success: true, files: fileInfos };
-    } else {
-      return { success: false, canceled: true };
+      if (!result.canceled && result.filePaths.length > 0) {
+        const fileInfos = result.filePaths.map((filePath) => {
+          const stats = fs.statSync(filePath);
+          const fileName = path$1.basename(filePath);
+          const ext = path$1.extname(fileName).toLowerCase().slice(1);
+          let type = "video";
+          if (["mp3", "wav", "aac", "flac", "ogg", "m4a"].includes(ext)) {
+            type = "audio";
+          } else if (["jpg", "jpeg", "png", "gif", "bmp", "tiff"].includes(ext)) {
+            type = "image";
+          }
+          return {
+            path: filePath,
+            name: fileName,
+            size: stats.size,
+            type,
+            extension: ext
+          };
+        });
+        return { success: true, files: fileInfos };
+      } else {
+        return { success: false, canceled: true };
+      }
+    } catch (error) {
+      return { success: false, error: error.message };
     }
-  } catch (error) {
-    return { success: false, error: error.message };
   }
-});
+);
 require$$3$1.ipcMain.handle("run-ffmpeg", async (event, job) => {
   try {
     const result = await runFfmpeg(job);
@@ -894,7 +923,10 @@ require$$3$1.ipcMain.handle("run-ffmpeg-with-progress", async (event, job) => {
     event.sender.send("ffmpeg-complete", { success: true, result });
     return { success: true, result };
   } catch (error) {
-    event.sender.send("ffmpeg-complete", { success: false, error: error.message });
+    event.sender.send("ffmpeg-complete", {
+      success: false,
+      error: error.message
+    });
     return { success: false, error: error.message };
   }
 });
@@ -902,7 +934,10 @@ require$$3$1.ipcMain.handle("cancel-ffmpeg", async (event) => {
   try {
     const cancelled = cancelCurrentFfmpeg();
     if (cancelled) {
-      return { success: true, message: "FFmpeg process cancelled successfully" };
+      return {
+        success: true,
+        message: "FFmpeg process cancelled successfully"
+      };
     } else {
       return { success: false, message: "No active FFmpeg process to cancel" };
     }
@@ -928,7 +963,9 @@ require$$3$1.ipcMain.handle("create-preview-url", async (event, filePath) => {
       const dataUrl = `data:${mimeType};base64,${base64}`;
       return { success: true, url: dataUrl };
     }
-    if (["mp4", "webm", "ogg", "avi", "mov", "mkv", "mp3", "wav", "aac"].includes(ext)) {
+    if (["mp4", "webm", "ogg", "avi", "mov", "mkv", "mp3", "wav", "aac"].includes(
+      ext
+    )) {
       const encodedPath = encodeURIComponent(filePath);
       const serverUrl = `http://localhost:${MEDIA_SERVER_PORT}/${encodedPath}`;
       console.log(`🎬 Created server URL for media: ${serverUrl}`);
@@ -940,31 +977,34 @@ require$$3$1.ipcMain.handle("create-preview-url", async (event, filePath) => {
     return { success: false, error: error.message };
   }
 });
-require$$3$1.ipcMain.handle("get-file-stream", async (event, filePath, start, end) => {
-  try {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`);
+require$$3$1.ipcMain.handle(
+  "get-file-stream",
+  async (event, filePath, start, end) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${filePath}`);
+      }
+      const stats = fs.statSync(filePath);
+      const fileSize = stats.size;
+      const startByte = start || 0;
+      const endByte = end || Math.min(startByte + 1024 * 1024, fileSize - 1);
+      const buffer = Buffer.alloc(endByte - startByte + 1);
+      const fd = fs.openSync(filePath, "r");
+      fs.readSync(fd, buffer, 0, buffer.length, startByte);
+      fs.closeSync(fd);
+      return {
+        success: true,
+        data: buffer.toString("base64"),
+        start: startByte,
+        end: endByte,
+        total: fileSize
+      };
+    } catch (error) {
+      console.error("Failed to get file stream:", error);
+      return { success: false, error: error.message };
     }
-    const stats = fs.statSync(filePath);
-    const fileSize = stats.size;
-    const startByte = start || 0;
-    const endByte = end || Math.min(startByte + 1024 * 1024, fileSize - 1);
-    const buffer = Buffer.alloc(endByte - startByte + 1);
-    const fd = fs.openSync(filePath, "r");
-    fs.readSync(fd, buffer, 0, buffer.length, startByte);
-    fs.closeSync(fd);
-    return {
-      success: true,
-      data: buffer.toString("base64"),
-      start: startByte,
-      end: endByte,
-      total: fileSize
-    };
-  } catch (error) {
-    console.error("Failed to get file stream:", error);
-    return { success: false, error: error.message };
   }
-});
+);
 require$$3$1.ipcMain.handle("ffmpeg:detect-frame-rate", async (event, videoPath) => {
   return new Promise((resolve, reject) => {
     const ffprobe = require$$1$1.spawn(ffprobePath.path, [
@@ -1033,7 +1073,9 @@ require$$3$1.ipcMain.handle("ffmpeg:get-duration", async (event, filePath) => {
           const result = JSON.parse(output);
           if (result.format && result.format.duration) {
             const duration = parseFloat(result.format.duration);
-            console.log(`📏 Duration from format: ${duration}s for ${filePath}`);
+            console.log(
+              `📏 Duration from format: ${duration}s for ${filePath}`
+            );
             resolve(duration);
             return;
           }
@@ -1041,7 +1083,9 @@ require$$3$1.ipcMain.handle("ffmpeg:get-duration", async (event, filePath) => {
             for (const stream of result.streams) {
               if (stream.duration && parseFloat(stream.duration) > 0) {
                 const duration = parseFloat(stream.duration);
-                console.log(`📏 Duration from stream: ${duration}s for ${filePath}`);
+                console.log(
+                  `📏 Duration from stream: ${duration}s for ${filePath}`
+                );
                 resolve(duration);
                 return;
               }
@@ -1049,7 +1093,9 @@ require$$3$1.ipcMain.handle("ffmpeg:get-duration", async (event, filePath) => {
           }
           const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filePath);
           const fallbackDuration = isImage ? 5 : 60;
-          console.warn(`⚠️ Could not determine duration for ${filePath}, using fallback: ${fallbackDuration}s`);
+          console.warn(
+            `⚠️ Could not determine duration for ${filePath}, using fallback: ${fallbackDuration}s`
+          );
           resolve(fallbackDuration);
         } catch (err) {
           console.error("Failed to parse ffprobe output:", err);

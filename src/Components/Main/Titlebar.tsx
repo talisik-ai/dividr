@@ -128,22 +128,27 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   return (
     <>
       <div className={className}>
-        <div className="flex justify-between items-center h-6 px-4 py-2">
+        <div className="relative flex items-center h-6 px-4 py-2">
           {/* Title */}
-          <div className="text-sm flex-1 drag-area">
-            <img src={logo} className='h-5'/>
+          <div className="text-sm drag-area">
+            <img src={logo} className='h-6'/>
+          </div>
+
+          {/* Centered Title */}
+          <div className='absolute left-1/2 transform -translate-x-1/2 flex items-center justify-center'>
+            <span className='text-white'>Untitled Video</span>
           </div>
 
           {/* Buttons */}
-          <div className="flex space-x-2 no-drag text-white">
+          <div className="flex space-x-2 no-drag text-white ml-auto">
             {/* Help Button */}
             <button
             onClick={handleRender}
             disabled={render.isRendering || tracks.length === 0}
-            className='bg-primary border-none font-white text-sm cursor-pointer p-4 rounded flex flex-row gap-1 items-center justify-center'
+            className='m-2 h-8 bg-primary border-none font-white text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center'
           >
-            <PiExportBold/>
             {render.isRendering ? `Exporting... ${render.progress.toFixed(0)}%` : 'Export'}
+            <PiExportBold size={16}/>
           </button>
             {/*Dark Mode/Light Mode 
             <ModeToggle />
