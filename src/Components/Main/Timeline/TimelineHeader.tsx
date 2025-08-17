@@ -5,21 +5,23 @@ export const TimelineHeader: React.FC = () => {
   const { timeline, setZoom, setFps } = useVideoEditorStore();
 
   return (
-    <div style={{
-      height: '40px',
-      backgroundColor: '#2d2d2d',
-      borderBottom: '1px solid #3d3d3d',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 16px',
-    }}>
+    <div
+      style={{
+        height: '40px',
+        backgroundColor: '#2d2d2d',
+        borderBottom: '1px solid #3d3d3d',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <span style={{ fontSize: '12px', fontWeight: 'bold' }}>Timeline</span>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <label style={{ fontSize: '11px', color: '#aaa' }}>FPS:</label>
-          <select 
+          <select
             value={timeline.fps}
             onChange={(e) => setFps(Number(e.target.value))}
             style={{
@@ -51,9 +53,11 @@ export const TimelineHeader: React.FC = () => {
             onChange={(e) => setZoom(Number(e.target.value))}
             style={{ width: '80px' }}
           />
-          <span style={{ fontSize: '11px', minWidth: '35px' }}>{timeline.zoom.toFixed(1)}x</span>
+          <span style={{ fontSize: '11px', minWidth: '35px' }}>
+            {timeline.zoom.toFixed(1)}x
+          </span>
         </div>
-        
+
         <button
           onClick={() => setZoom(1)}
           style={{
@@ -71,4 +75,4 @@ export const TimelineHeader: React.FC = () => {
       </div>
     </div>
   );
-}; 
+};

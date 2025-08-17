@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-import { colors } from 'tailwindcss/defaultTheme';
+import defaultTheme, { colors } from 'tailwindcss/defaultTheme';
 
 module.exports = {
   darkMode: 'class',
@@ -12,6 +12,8 @@ module.exports = {
   prefix: '',
   theme: {
     screens: {
+      ...defaultTheme.screens,
+
       // Height-based breakpoints
       'h-sm1': { raw: '(max-height: 630px)' },
       'h-md1': { raw: '(max-height: 800px)' },

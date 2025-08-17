@@ -639,7 +639,9 @@ function handleInputs(job, cmd) {
         }
       }
     } else {
-      job.inputs.forEach((input) => cmd.args.push("-i", escapePath(getInputPath(input))));
+      job.inputs.forEach(
+        (input) => cmd.args.push("-i", escapePath(getInputPath(input)))
+      );
     }
   }
 }
@@ -657,7 +659,8 @@ function handleTrim(job, cmd) {
 }
 function handleCrop(job, cmd) {
   const crop = job.operations.crop;
-  if (crop) cmd.filters.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
+  if (crop)
+    cmd.filters.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
 }
 function handleSubtitles(job, cmd) {
   if (job.operations.subtitles) {

@@ -32,45 +32,45 @@ export const TimelineControls: React.FC = () => {
   return (
     <div className="h-10 bg-secondary flex items-center justify-between px-4 border-t-8 border-black">
       {/* Playback Controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center">
         <button
           onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Stop"
         >
           <LuUndo2 />
         </button>
         <button
           onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Stop"
         >
           <LuRedo2 />
         </button>
         <button
           onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Stop"
         >
           <LuSquareSplitHorizontal />
         </button>
         <button
           onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Stop"
         >
           <TbScissors />
         </button>
         <button
           onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Stop"
         >
           <LuCopy />
         </button>
         <button
           onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Stop"
         >
           <LuTrash />
@@ -82,7 +82,7 @@ export const TimelineControls: React.FC = () => {
       <div className="flex items-center justify-center">
         {/* 
         <button
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Go to start"
         >
           <FaFastBackward />
@@ -92,7 +92,7 @@ export const TimelineControls: React.FC = () => {
           onClick={() =>
             setCurrentFrame(Math.max(0, timeline.currentFrame - 1))
           }
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Previous frame"
         >
           <FaBackward />
@@ -100,7 +100,7 @@ export const TimelineControls: React.FC = () => {
 
         <button
           onClick={togglePlayback}
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title={playback.isPlaying ? 'Pause' : 'Play'}
         >
           {playback.isPlaying ? <FaPause /> : <FaPlay />}
@@ -112,7 +112,7 @@ export const TimelineControls: React.FC = () => {
               Math.min(timeline.totalFrames - 1, timeline.currentFrame + 1),
             )
           }
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Next frame"
         >
           <FaForward />
@@ -120,7 +120,7 @@ export const TimelineControls: React.FC = () => {
         {/* 
         <button
           onClick={() => setCurrentFrame(timeline.totalFrames - 1)}
-          className="border-none text-toolbarIcon text-sm cursor-pointer p-2 text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Go to end"
         >
           <FaFastForward />

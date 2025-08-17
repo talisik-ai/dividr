@@ -34,21 +34,17 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
   return (
     <div
-      className={`bg-secondary ${className || ''} flex flex-col h-full bg-body font-white`}
+      className={`bg-secondary ${className || ''} flex flex-col h-full bg-body font-white p-4`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
       <div className="flex overflow-hidden">
         <div className="text-white">me side</div>
         {/* Main Content Area */}
-        <div className="flex mx-12 my-6">
-          <VideoPreview />
-        </div>
+        <VideoPreview className="mx-12" />
 
         {/* Properties Panel with Fixed Width */}
-        <div className="w-30">
-          {' '}
-          {/* Fixed width */}
+        <div className="">
           <PropertiesPanel />
         </div>
       </div>

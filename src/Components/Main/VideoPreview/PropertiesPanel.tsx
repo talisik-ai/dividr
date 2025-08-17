@@ -11,7 +11,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const { tracks, timeline, preview } = useVideoEditorStore();
 
   return (
-    <div className="bg-[#2d2d2d] p-4 overflow-auto w-50">
+    <div className="bg-[#2d2d2d] p-4 overflow-auto w-50 text-white">
       <h3
         style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 16px 0' }}
       >

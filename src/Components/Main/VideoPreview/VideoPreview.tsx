@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { FaSquarePlus } from 'react-icons/fa6';
 import { useVideoEditorStore } from '../../../Store/videoEditorStore';
 
 interface VideoPreviewProps {
@@ -270,9 +271,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           // Draw actual video frame
           const video = videoElement.element;
           const width = track.width || preview.canvasWidth;
-          const height = track.height || preview.canvasHeight / 2;
-          const x = track.offsetX || (preview.canvasWidth - width) / 2;
-          const y = track.offsetY || (preview.canvasHeight - height) / 2;
+          const height = track.height || preview.canvasHeight;
+          const x = track.offsetX || preview.canvasWidth - width;
+          const y = track.offsetY || preview.canvasHeight - height;
 
           try {
             ctx.drawImage(video, x, y, width, height);
@@ -296,8 +297,8 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           }
         } else {
           // Loading placeholder or fallback
-          const width = track.width || preview.canvasWidth / 2;
-          const height = track.height || preview.canvasHeight / 2;
+          const width = track.width || preview.canvasWidth;
+          const height = track.height || preview.canvasHeight;
           const x = track.offsetX || (preview.canvasWidth - width) / 2;
           const y = track.offsetY || (preview.canvasHeight - height) / 2;
 
@@ -339,7 +340,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
     // Draw grid if enabled
     if (preview.showGrid) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.strokeStyle = 'rgba(216, 45, 45, 0.2)';
       ctx.lineWidth = 1;
 
       const gridSize = 50;
@@ -372,18 +373,17 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     ctx.strokeRect(safeX, safeY, safeWidth, safeHeight);
   }, [preview, timeline.currentFrame, getActiveTracksAtFrame, loadingTracks]);
 
+  // Use fit scale by default, but allow manual zoom override
+  const fitScale = calculateFitScale();
   const effectiveScale =
-    typeof preview.previewScale === 'number'
-      ? preview.previewScale
-      : calculateFitScale();
+    preview.previewScale === 1 ? fitScale : preview.previewScale * fitScale;
 
   return (
     <div
       ref={containerRef}
-      className={`video-preview ${className || ''}`}
+      className={`video-preview mb-8 border border-dashed rounded h-[98%] w-[50%] md:w-[70%] ${className || ''}`}
       style={{
         display: 'flex',
-        flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: '#1a1a1a',
@@ -411,30 +411,13 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
       {/* No Content Message */}
       {tracks.length === 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            textAlign: 'center',
-            color: '#aaa',
-            zIndex: 5,
-          }}
-        >
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📁</div>
-          <div
-            style={{
-              fontSize: '18px',
-              fontWeight: 'bold',
-              marginBottom: '8px',
-            }}
-          >
-            No Video Files Loaded
-          </div>
-          <div style={{ fontSize: '14px', maxWidth: '300px' }}>
-            Click the "Import Files" button in the header to add video files and
-            see them in the preview.
+        <div className="absolute inset-0 flex items-center justify-center text-white text-center">
+          <div className="flex text-md font-bold flex-col items-center">
+            <span className="mb-4">
+              <FaSquarePlus size={36} />
+            </span>
+            <span>Click to upload</span>
+            <span>or drag and drop files here</span>
           </div>
         </div>
       )}
