@@ -27,13 +27,13 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
           top: 0,
           width: '2px',
           height: '100%',
-          backgroundColor: '#FF5722',
+          backgroundColor: 'white',
           zIndex: 100,
           pointerEvents: 'none',
-          boxShadow: '0 0 4px rgba(255, 87, 34, 0.6)',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
         }}
       />
-      
+
       {/* Playhead handle */}
       <div
         style={{
@@ -42,14 +42,14 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
           top: 0,
           width: '14px',
           height: '20px',
-          backgroundColor: '#FF5722',
+          backgroundColor: 'white',
           clipPath: 'polygon(50% 100%, 0 0, 100% 0)',
           zIndex: 101,
           pointerEvents: 'none',
           boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
         }}
       />
-      
+
       {/* Frame number indicator */}
       <div
         style={{
@@ -71,4 +71,4 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
       </div>
     </>
   );
-}; 
+};

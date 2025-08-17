@@ -349,11 +349,7 @@ const TrackRow: React.FC<TrackRowProps> = ({
         <div
           className={`absolute top-1/2 left-5 transform -translate-y-1/2 text-xs pointer-events-none
             ${isDragOver ? 'text-green-500 font-bold' : 'text-gray-500 font-normal'}`}
-        >
-          {isDragOver
-            ? `Drop ${rowDef.trackTypes.join('/')} files here!`
-            : `${rowDef.icon} Drop ${rowDef.trackTypes.join('/')} files here`}
-        </div>
+        ></div>
       )}
     </div>
   );
