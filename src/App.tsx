@@ -1,5 +1,4 @@
 import {
-  Navigate,
   Route,
   HashRouter as Router,
   Routes,
@@ -8,23 +7,24 @@ import './App.css';
 import NewProject from './Components/Pages/NewProject';
 import NotFound from './Components/Pages/NotFound';
 import { VideoEditor } from './Components/VideoEditor';
-import MainLayout from './Layout/Mainlayout';
+import VideoEditorLayout from './Layout/VideoEditorLayout';
 import { ThemeProvider } from './Utility/ThemeProvider';
+
 function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
       <Router>
         <Routes>
-          <Route path="/" element={<NewProject />}>
+          {/* Home route - Shows NewProject page with TitleBar */}
+          <Route path="/" element={<NewProject />} />
+          
+          {/* Video Editor route - Shows full VideoEditorLayout */}
+          <Route path="/video-editor" element={<VideoEditorLayout />}>
+            <Route index element={<VideoEditor />} />
           </Route>
-          <Route path="/video-editor" element={<MainLayout />}>
-            <Route index element={<Navigate to="/video-editor" replace />} />
-            <Route
-              path="/video-editor"
-              element={<VideoEditor />}
-            />
-            <Route path="*" element={<NotFound />} />
-          </Route>
+          
+          {/* Fallback for any unknown routes */}
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
     {/*  <Toaster /> */} 

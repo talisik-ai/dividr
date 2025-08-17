@@ -44,7 +44,7 @@ class ErrorBoundary extends Component<
 }
 // End of Error Detection
 
-const MainLayout = () => {
+const VideoEditorLayout = () => {
 
   return (
     <ErrorBoundary>
@@ -68,4 +68,4 @@ const MainLayout = () => {
   );
 };
 
-export default MainLayout;
+export default VideoEditorLayout;

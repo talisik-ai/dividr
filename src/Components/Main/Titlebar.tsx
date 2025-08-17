@@ -10,6 +10,7 @@ import React, { useCallback } from 'react';
 import { IoMdClose, IoMdRemove } from 'react-icons/io';
 import { PiBrowsers, PiExportBold } from 'react-icons/pi';
 import { RxBox } from 'react-icons/rx';
+import { useLocation } from 'react-router-dom';
 import logo from '../../Assets/Logo/logo.svg';
 import { VideoEditJob } from '../../Schema/ffmpegConfig';
 import { useVideoEditorStore } from '../../Store/videoEditorStore';
@@ -25,6 +26,7 @@ interface TitleBarProps {
 
 const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   const { theme } = useTheme();
+  const location = useLocation();
   const [isMaximized, setIsMaximized] = React.useState<boolean>(false);
   const {
     tracks,
@@ -35,6 +37,11 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     finishRender,
     cancelRender,
   } = useVideoEditorStore();
+
+  // Determine context based on current route
+  const isInVideoEditor = location.pathname.startsWith('/video-editor');
+  const titleText = isInVideoEditor ? 'Untitled Video' : 'Dividr';
+  const showExportButton = isInVideoEditor;
 
   // Convert tracks to FFmpeg job
   const createFFmpegJob = useCallback((): VideoEditJob => {
@@ -142,30 +149,32 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   return (
     <>
       <div className={className}>
-        <div className="relative flex items-center h-6 px-4 py-2">
+        <div className="relative flex items-center h-6 px-4 py-2 drag-area">
           {/* Title */}
-          <div className="text-sm drag-area">
+          <div className="text-sm">
             <img src={logo} className="h-6" />
           </div>
 
           {/* Centered Title */}
           <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center justify-center">
-            <span className="text-white">Untitled Video</span>
+            <span className="text-white">{titleText}</span>
           </div>
 
           {/* Buttons */}
           <div className="flex space-x-2 no-drag text-white ml-auto">
-            {/* Help Button */}
-            <button
-              onClick={handleRender}
-              disabled={render.isRendering || tracks.length === 0}
-              className="m-2 h-8 bg-primary border-none font-white text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center"
-            >
-              {render.isRendering
-                ? `Exporting... ${render.progress.toFixed(0)}%`
-                : 'Export'}
-              <PiExportBold size={16} />
-            </button>
+            {/* Export Button - Only show in video editor */}
+            {showExportButton && (
+              <button
+                onClick={handleRender}
+                disabled={render.isRendering || tracks.length === 0}
+                className="m-2 h-8 bg-primary border-none font-white text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center"
+              >
+                {render.isRendering
+                  ? `Exporting... ${render.progress.toFixed(0)}%`
+                  : 'Export'}
+                <PiExportBold size={16} />
+              </button>
+            )}
             {/*Dark Mode/Light Mode 
             <ModeToggle />
 */}
