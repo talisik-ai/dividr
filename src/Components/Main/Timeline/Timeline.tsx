@@ -3,6 +3,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { useVideoEditorStore } from '../../../Store/videoEditorStore';
 import { TimelineControls } from './TimelineControls';
 import { TimelinePlayhead } from './TimelinePlayhead';
+import { TimelineRuler } from './TimelineRuler';
 import { TimelineTracks } from './TimelineTracks';
 
 interface TimelineProps {
@@ -140,6 +141,20 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
 
       {/* Timeline Controls */}
       <TimelineControls />
+
+      {/* Timeline Ruler */}
+      <TimelineRuler
+        frameWidth={frameWidth}
+        totalFrames={timeline.totalFrames}
+        currentFrame={timeline.currentFrame}
+        scrollX={timeline.scrollX}
+        fps={timeline.fps}
+        tracks={tracks}
+        inPoint={timeline.inPoint}
+        outPoint={timeline.outPoint}
+        onClick={handleTimelineClick}
+      />
+
       {/* Timeline Content Area */}
       <div
         style={{
