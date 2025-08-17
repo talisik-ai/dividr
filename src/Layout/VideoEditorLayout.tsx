@@ -5,6 +5,7 @@ import { Outlet } from 'react-router-dom';
 import { Timeline } from '../Components/Main/Timeline/Timeline';
 import TitleBar from '../Components/Main/Titlebar';
 import Toolbar from '../Components/Main/Toolbar';
+import { useIsPanelVisible } from '../Store/PanelStore';
 // Error Boundary component
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -46,6 +47,7 @@ class ErrorBoundary extends Component<
 // End of Error Detection
 
 const VideoEditorLayout = () => {
+  const isPanelVisible = useIsPanelVisible();
 
   return (
     <ErrorBoundary>
@@ -57,11 +59,17 @@ const VideoEditorLayout = () => {
           />
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className='flex flex-row flex-1 overflow-hidden'>
-            <StylePanel/>
-            <main className="flex-1 overflow-auto">
-              <Outlet />
-            </main>
-            <PropertiesPanel/>
+              {/* Dynamic StylePanel - only shows when a panel is active */}
+              {isPanelVisible && (
+                <StylePanel className="w-80 flex-shrink-0" />
+              )}
+              
+              <main className="flex-1 overflow-auto">
+                <Outlet />
+              </main>
+              
+              {/* Properties Panel - always visible */}
+              <PropertiesPanel />
             </div>
             <div className="h-[180px] md:h-[175px] lg:h-[245px] flex-shrink-0">
                <Timeline />

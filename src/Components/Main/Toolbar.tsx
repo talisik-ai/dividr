@@ -16,6 +16,7 @@ import { CgSoftwareDownload } from 'react-icons/cg';
 import { LuMusic } from 'react-icons/lu';
 import { MdOutlineSettings } from 'react-icons/md';
 import { SlPicture } from 'react-icons/sl';
+import { usePanelStore, type PanelType } from '../../Store/PanelStore';
 import { useVideoEditorStore } from '../../Store/videoEditorStore';
 
 // import { toast } from 'react-hot-toast';
@@ -30,19 +31,9 @@ const Toolbar = ({
   collapsed?: boolean;
   toggleCollapse?: () => void;
 }) => {
-  const {
-    tracks,
-    timeline,
-    render,
-    importMediaFromDialog,
-    startRender,
-    updateRenderProgress,
-    finishRender,
-    cancelRender,
-    exportProject,
-    importProject,
-    reset,
-  } = useVideoEditorStore();
+  const { importMediaFromDialog } = useVideoEditorStore();
+
+  const { togglePanel, activePanelType } = usePanelStore();
 
   /*
       // Add demo tracks for demonstration
@@ -104,44 +95,22 @@ const Toolbar = ({
     
      */
 
+  // Panel toggle handlers
+  const handleTogglePanel = useCallback(
+    (panelType: PanelType) => {
+      togglePanel(panelType);
+    },
+    [togglePanel],
+  );
+
   // File import using native Electron dialog
   const handleImportFiles = useCallback(async () => {
     await importMediaFromDialog();
-  }, [importMediaFromDialog]);
+    // Also show the media import panel
+    togglePanel('media-import');
+  }, [importMediaFromDialog, togglePanel]);
 
-  // Project management
-  const handleExportProject = useCallback(() => {
-    const projectData = exportProject();
-    const blob = new Blob([projectData], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'video-project.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [exportProject]);
-
-  const handleImportProject = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          try {
-            const data = e.target?.result as string;
-            importProject(data);
-          } catch (error) {
-            alert('Failed to import project');
-          }
-        };
-        reader.readAsText(file);
-      }
-    };
-    input.click();
-  }, [importProject]);
+  // Note: Project management functions removed for now, but can be re-added to UI store actions
 
   const toolRef = useRef<HTMLElement>(null);
 
@@ -163,24 +132,68 @@ const Toolbar = ({
           >
             <button
               onClick={handleImportFiles}
-              title="Import video files"
-              className="text-toolbarIcon"
+              title="Import media files"
+              className={`text-toolbarIcon transition-colors duration-200 ${
+                activePanelType === 'media-import'
+                  ? 'text-blue-400'
+                  : 'text-toolbarIcon'
+              }`}
             >
               <CgSoftwareDownload size={20} />
             </button>
-            <button onClick={handleImportProject} className="text-toolbarIcon">
+            <button
+              onClick={() => handleTogglePanel('text-tools')}
+              title="Text tools"
+              className={`text-toolbarIcon transition-colors duration-200 ${
+                activePanelType === 'text-tools'
+                  ? 'text-blue-400'
+                  : 'text-toolbarIcon'
+              }`}
+            >
               <BiText size={18} />
             </button>
-            <button onClick={handleExportProject} className="text-toolbarIcon">
+            <button
+              onClick={() => handleTogglePanel('video-effects')}
+              title="Video effects"
+              className={`text-toolbarIcon transition-colors duration-200 ${
+                activePanelType === 'video-effects'
+                  ? 'text-blue-400'
+                  : 'text-toolbarIcon'
+              }`}
+            >
               <BsCameraVideo size={16} />
             </button>
-            <button onClick={reset} className="text-toolbarIcon">
+            <button
+              onClick={() => handleTogglePanel('images')}
+              title="Image tools"
+              className={`text-toolbarIcon transition-colors duration-200 ${
+                activePanelType === 'images'
+                  ? 'text-blue-400'
+                  : 'text-toolbarIcon'
+              }`}
+            >
               <SlPicture size={16} />
             </button>
-            <button onClick={handleImportFiles} className="text-toolbarIcon">
+            <button
+              onClick={() => handleTogglePanel('audio-tools')}
+              title="Audio tools"
+              className={`text-toolbarIcon transition-colors duration-200 ${
+                activePanelType === 'audio-tools'
+                  ? 'text-blue-400'
+                  : 'text-toolbarIcon'
+              }`}
+            >
               <LuMusic size={16} />
             </button>
-            <button onClick={reset} className="text-toolbarIcon">
+            <button
+              onClick={() => handleTogglePanel('settings')}
+              title="Project settings"
+              className={`text-toolbarIcon transition-colors duration-200 ${
+                activePanelType === 'settings'
+                  ? 'text-blue-400'
+                  : 'text-toolbarIcon'
+              }`}
+            >
               <MdOutlineSettings size={18} />
             </button>
           </div>

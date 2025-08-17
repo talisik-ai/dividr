@@ -175,7 +175,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
               <button
                 onClick={handleRender}
                 disabled={render.isRendering || tracks.length === 0}
-                className="m-2 h-8 bg-primary border-none text-white text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center"
+                className="m-2 h-6 lg:h-8 bg-primary border-none text-white text-xs lg:text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center"
               >
                 {render.isRendering
                   ? `Exporting... ${render.progress.toFixed(0)}%`
@@ -188,7 +188,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
             {!showExportButton && (
               <button
                 onClick={handleCreateProject}
-                className="m-2 h-8 bg-primary border-none text-white text-sm cursor-pointer px-4 py-0 rounded flex flex-row gap-1 items-center justify-center"
+                className="m-2 h-6 lg:h-8  bg-primary border-none text-white text-xs lg:text-sm cursor-pointer px-4 py-0 rounded flex flex-row gap-1 items-center justify-center"
               >
                                 <FaPlus size={16} />
                 New Project
