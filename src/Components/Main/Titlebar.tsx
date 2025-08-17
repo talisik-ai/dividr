@@ -7,10 +7,11 @@
  *
  */
 import React, { useCallback } from 'react';
+import { FaPlus } from "react-icons/fa";
 import { IoMdClose, IoMdRemove } from 'react-icons/io';
 import { PiBrowsers, PiExportBold } from 'react-icons/pi';
 import { RxBox } from 'react-icons/rx';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../Assets/Logo/logo.svg';
 import { VideoEditJob } from '../../Schema/ffmpegConfig';
 import { useVideoEditorStore } from '../../Store/videoEditorStore';
@@ -36,7 +37,9 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     updateRenderProgress,
     finishRender,
     cancelRender,
+    importMediaFromDialog,
   } = useVideoEditorStore();
+  const navigate = useNavigate();
 
   // Determine context based on current route
   const isInVideoEditor = location.pathname.startsWith('/video-editor');
@@ -122,6 +125,11 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     finishRender,
     cancelRender,
   ]);
+
+  const handleCreateProject = () => {
+    navigate('/video-editor');
+  };
+
   // Function to toggle maximize/restore
   const handleMaximizeRestore = () => {
     window.appControl.maximizeApp();
@@ -167,7 +175,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
               <button
                 onClick={handleRender}
                 disabled={render.isRendering || tracks.length === 0}
-                className="m-2 h-8 bg-primary border-none font-white text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center"
+                className="m-2 h-8 bg-primary border-none text-white text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center"
               >
                 {render.isRendering
                   ? `Exporting... ${render.progress.toFixed(0)}%`
@@ -175,9 +183,20 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
                 <PiExportBold size={16} />
               </button>
             )}
+            
+            {/* Import Media Button - Only show when not in video editor */}
+            {!showExportButton && (
+              <button
+                onClick={handleCreateProject}
+                className="m-2 h-8 bg-primary border-none text-white text-sm cursor-pointer px-4 py-0 rounded flex flex-row gap-1 items-center justify-center"
+              >
+                                <FaPlus size={16} />
+                New Project
+              </button>
+            )}
             {/*Dark Mode/Light Mode 
             <ModeToggle />
-*/}
+            */}
             {/* Minimize Button */}
             <button
               className="rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment hover:opacity-100 p-1 m-2"

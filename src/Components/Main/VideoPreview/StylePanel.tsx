@@ -5,13 +5,11 @@ interface PropertiesPanelProps {
   className?: string;
 }
 
-export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
-  className,
-}) => {
+export const StylePanel: React.FC<PropertiesPanelProps> = ({ className }) => {
   const { tracks, timeline, preview } = useVideoEditorStore();
 
   return (
-    <div className="bg-secondary p-4 overflow-auto w-50 text-white border-l-8 border-black rounded">
+    <div className="bg-secondary p-4 overflow-auto w-50 text-white border-r-8 border-black rounded">
       <h3
         style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 16px 0' }}
       >

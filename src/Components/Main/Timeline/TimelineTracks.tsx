@@ -175,7 +175,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   };
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div className="relative w-full h-full">
       {/* Main track - draggable for moving */}
       <Draggable
         nodeRef={nodeRef}
@@ -189,29 +189,16 @@ export const TrackItem: React.FC<TrackItemProps> = ({
       >
         <div
           ref={nodeRef}
+          className={`
+            absolute h-[30px] rounded flex items-center px-2 py-1 overflow-hidden select-none z-[1]
+            ${isSelected ? 'border-2 border-white' : 'border border-white/20'}
+            ${track.locked ? 'cursor-not-allowed' : isResizing ? 'cursor-ew-resize' : 'cursor-grab'}
+            ${track.visible ? (isDragging ? 'opacity-80' : 'opacity-100') : 'opacity-50'}
+            ${isDragging ? 'scale-[1.02] z-10 transition-none' : 'scale-100 transition-transform duration-100 ease-in-out'}
+          `}
           style={{
-            position: 'absolute',
             width: width,
-            height: '30px',
             background: getTrackGradient(track.type),
-            border: isSelected
-              ? '2px solid #fff'
-              : '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '4px',
-            cursor: track.locked
-              ? 'not-allowed'
-              : isResizing
-                ? 'ew-resize'
-                : 'grab',
-            display: 'flex',
-            alignItems: 'center',
-            padding: '4px 8px',
-            opacity: track.visible ? (isDragging ? 0.8 : 1) : 0.5,
-            overflow: 'hidden',
-            userSelect: 'none',
-            transform: isDragging ? 'scale(1.02)' : 'scale(1)',
-            transition: isDragging ? 'none' : 'transform 0.1s ease',
-            zIndex: isDragging ? 10 : 1,
           }}
           onClick={(e) => {
             e.stopPropagation();
@@ -219,43 +206,20 @@ export const TrackItem: React.FC<TrackItemProps> = ({
           }}
         >
           <div
-            style={{
-              color: 'white',
-              fontSize: '11px',
-              fontWeight: 'bold',
-              textShadow: '1px 1px 2px rgba(0,0,0,0.7)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
+            className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis"
+            style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
           >
             {track.name}
           </div>
 
           {track.type === 'audio' && track.volume !== undefined && (
-            <div
-              style={{
-                position: 'absolute',
-                right: '4px',
-                top: '4px',
-                fontSize: '8px',
-                color: 'rgba(255,255,255,0.8)',
-              }}
-            >
+            <div className="absolute right-1 top-1 text-[8px] text-white/80">
               {Math.round(track.volume * 100)}%
             </div>
           )}
 
           {track.locked && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '2px',
-                right: '2px',
-                fontSize: '10px',
-                color: 'rgba(255,255,255,0.6)',
-              }}
-            >
+            <div className="absolute top-0.5 right-0.5 text-[10px] text-white/60">
               🔒
             </div>
           )}
@@ -265,17 +229,9 @@ export const TrackItem: React.FC<TrackItemProps> = ({
       {/* Left resize handle */}
       {!track.locked && isSelected && (
         <div
-          style={{
-            position: 'absolute',
-            left: left - 3,
-            top: 0,
-            width: '6px',
-            height: '35px',
-            backgroundColor: isResizing === 'left' ? '#2196F3' : '#4CAF50',
-            cursor: 'ew-resize',
-            zIndex: 15,
-            borderRadius: '3px 0 0 3px',
-          }}
+          className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-[15] rounded-l
+            ${isResizing === 'left' ? 'bg-blue-500' : 'bg-green-500'}`}
+          style={{ left: left - 3 }}
           onMouseDown={(e) => handleMouseDown('left', e)}
         />
       )}
@@ -283,17 +239,9 @@ export const TrackItem: React.FC<TrackItemProps> = ({
       {/* Right resize handle */}
       {!track.locked && isSelected && (
         <div
-          style={{
-            position: 'absolute',
-            left: left + width - 3,
-            top: 0,
-            width: '6px',
-            height: '35px',
-            backgroundColor: isResizing === 'right' ? '#2196F3' : '#4CAF50',
-            cursor: 'ew-resize',
-            zIndex: 15,
-            borderRadius: '0 3px 3px 0',
-          }}
+          className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-[15] rounded-r
+            ${isResizing === 'right' ? 'bg-blue-500' : 'bg-green-500'}`}
+          style={{ left: left + width - 3 }}
           onMouseDown={(e) => handleMouseDown('right', e)}
         />
       )}
@@ -355,25 +303,18 @@ const TrackRow: React.FC<TrackRowProps> = ({
 
   return (
     <div
-      style={{
-        position: 'relative',
-        height: '40px',
-        borderBottom: '1px solid #3d3d3d',
-        backgroundColor: isDragOver ? 'rgba(76, 175, 80, 0.1)' : 'transparent',
-        borderLeft: isDragOver ? '3px solid #4CAF50' : '3px solid transparent',
-      }}
+      className={`relative h-10 lg:h-16 border-b border-[#3d3d3d] border-l-[3px]
+        ${isDragOver ? 'bg-green-500/10 border-l-green-500' : 'bg-transparent border-l-transparent'}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Row background and grid */}
       <div
+        className="absolute top-0 h-full pointer-events-none"
         style={{
-          position: 'absolute',
-          top: 0,
           left: -scrollX,
           width: timelineWidth,
-          height: '100%',
           background: `repeating-linear-gradient(
           90deg,
           transparent,
@@ -381,12 +322,11 @@ const TrackRow: React.FC<TrackRowProps> = ({
           rgba(255,255,255,0.02) ${frameWidth * 30 - 1}px,
           rgba(255,255,255,0.02) ${frameWidth * 30}px
         )`,
-          pointerEvents: 'none',
         }}
       />
 
       {/* Tracks in this row */}
-      <div style={{ padding: '5px 0', height: '100%' }}>
+      <div className="py-1.5 h-full">
         {tracks.map((track) => (
           <TrackItem
             key={track.id}
@@ -407,16 +347,8 @@ const TrackRow: React.FC<TrackRowProps> = ({
       {/* Drop hint */}
       {tracks.length === 0 && (
         <div
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '20px',
-            transform: 'translateY(-50%)',
-            color: isDragOver ? '#4CAF50' : '#666',
-            fontSize: '12px',
-            pointerEvents: 'none',
-            fontWeight: isDragOver ? 'bold' : 'normal',
-          }}
+          className={`absolute top-1/2 left-5 transform -translate-y-1/2 text-xs pointer-events-none
+            ${isDragOver ? 'text-green-500 font-bold' : 'text-gray-500 font-normal'}`}
         >
           {isDragOver
             ? `Drop ${rowDef.trackTypes.join('/')} files here!`
@@ -519,12 +451,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
 
   return (
     <div
-      style={{
-        position: 'relative',
-        width: timelineWidth,
-        minHeight: '100%',
-        backgroundColor: '#1a1a1a',
-      }}
+      className="relative min-h-full bg-[#1a1a1a]"
+      style={{ width: timelineWidth }}
     >
       {/* Render each track row */}
       {TRACK_ROWS.map((rowDef) => (

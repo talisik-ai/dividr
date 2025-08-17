@@ -19,11 +19,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   const videoElementsRef = useRef<Map<string, VideoElement>>(new Map());
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [loadingTracks, setLoadingTracks] = useState<Set<string>>(new Set());
+  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { preview, timeline, tracks, setPreviewScale, playback } =
     useVideoEditorStore();
 
-  // Update container size on resize
+  // Update container size on resize with ResizeObserver for better detection
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
@@ -32,18 +33,67 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       }
     };
 
+    const debouncedUpdateSize = () => {
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      resizeTimeoutRef.current = setTimeout(updateSize, 16); // ~60fps debounce
+    };
+
+    let resizeObserver: ResizeObserver | null = null;
+
+    // Initial size update
     updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+
+    // Use ResizeObserver for more reliable container size detection
+    if (containerRef.current && window.ResizeObserver) {
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect;
+          // Clear any pending timeout
+          if (resizeTimeoutRef.current) {
+            clearTimeout(resizeTimeoutRef.current);
+          }
+          setContainerSize({ width, height });
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+    } else {
+      // Fallback to window resize event with debouncing
+      window.addEventListener('resize', debouncedUpdateSize);
+    }
+
+    // Handle visibility changes (minimize/maximize)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // App became visible again, force size update
+        setTimeout(updateSize, 100);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      } else {
+        window.removeEventListener('resize', debouncedUpdateSize);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
-  // Calculate scale to fit canvas in container
-  const calculateFitScale = useCallback(() => {
-    if (!containerSize.width || !containerSize.height) return 1;
+  // Calculate aspect ratio for proper content scaling
+  const calculateContentScale = useCallback(() => {
+    if (!containerSize.width || !containerSize.height)
+      return { scaleX: 1, scaleY: 1 };
 
     const scaleX = containerSize.width / preview.canvasWidth;
     const scaleY = containerSize.height / preview.canvasHeight;
-    return Math.min(scaleX, scaleY, 1);
+    return { scaleX, scaleY };
   }, [containerSize, preview.canvasWidth, preview.canvasHeight]);
 
   // Handle wheel zoom
@@ -246,11 +296,24 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size
-    canvas.width = preview.canvasWidth;
-    canvas.height = preview.canvasHeight;
+    // Set canvas size to match container
+    const canvasWidth = containerSize.width || preview.canvasWidth;
+    const canvasHeight = containerSize.height || preview.canvasHeight;
 
-    // Clear canvas
+    // Only update canvas dimensions if they've actually changed
+    if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+    }
+
+    // Calculate scaling factors for content
+    const { scaleX, scaleY } = calculateContentScale();
+
+    // Scale the context to fit content properly
+    ctx.save();
+    ctx.scale(scaleX, scaleY);
+
+    // Clear canvas with scaled dimensions
     ctx.fillStyle = preview.backgroundColor;
     ctx.fillRect(0, 0, preview.canvasWidth, preview.canvasHeight);
 
@@ -360,7 +423,6 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     }
 
     // Draw safe zones if enabled
-
     ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
     ctx.lineWidth = 2;
 
@@ -371,17 +433,25 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     const safeY = preview.canvasHeight * margin;
 
     ctx.strokeRect(safeX, safeY, safeWidth, safeHeight);
-  }, [preview, timeline.currentFrame, getActiveTracksAtFrame, loadingTracks]);
 
-  // Use fit scale by default, but allow manual zoom override
-  const fitScale = calculateFitScale();
-  const effectiveScale =
-    preview.previewScale === 1 ? fitScale : preview.previewScale * fitScale;
+    // Restore context
+    ctx.restore();
+  }, [
+    preview,
+    timeline.currentFrame,
+    getActiveTracksAtFrame,
+    loadingTracks,
+    containerSize,
+    calculateContentScale,
+  ]);
+
+  // Calculate zoom scale for wheel interactions
+  const zoomScale = preview.previewScale;
 
   return (
     <div
       ref={containerRef}
-      className={`video-preview mb-8 border border-dashed rounded h-[98%] w-[50%] md:w-[70%] ${className || ''}`}
+      className={`video-preview mb-8 rounded h-[100%] w-[60%] md:w-[70%] ${className || ''}`}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -398,9 +468,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           border: '1px solid #555',
           boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
           cursor: 'grab',
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
         }}
         animate={{
-          scale: effectiveScale,
+          scale: zoomScale,
         }}
         transition={{
           type: 'spring',
@@ -411,7 +484,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
       {/* No Content Message */}
       {tracks.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-white text-center">
+        <div className="absolute inset-0 flex items-center justify-center text-white text-center border border-dashed">
           <div className="flex text-md font-bold flex-col items-center">
             <span className="mb-4">
               <FaSquarePlus size={36} />

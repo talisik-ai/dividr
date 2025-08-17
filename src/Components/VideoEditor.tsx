@@ -1,6 +1,5 @@
 import React, { useCallback } from 'react';
 import { useVideoEditorStore } from '../Store/videoEditorStore';
-import { PropertiesPanel } from './Main/VideoPreview/PropertiesPanel';
 import { VideoPreview } from './Main/VideoPreview/VideoPreview';
 interface VideoEditorProps {
   className?: string;
@@ -34,19 +33,13 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
   return (
     <div
-      className={`bg-secondary ${className || ''} flex flex-col h-full bg-body font-white p-4`}
+      className={`bg-secondary ${className || ''} flex flex-col h-full bg-body font-white p-4 rounded`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
       <div className="flex overflow-hidden">
-        <div className="text-white">me side</div>
         {/* Main Content Area */}
         <VideoPreview className="mx-12" />
-
-        {/* Properties Panel with Fixed Width */}
-        <div className="">
-          <PropertiesPanel />
-        </div>
       </div>
 
       {/* Render Progress Overlay */}

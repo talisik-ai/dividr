@@ -1,9 +1,10 @@
+import { PropertiesPanel } from '@/Components/Main/VideoPreview/PropertiesPanel';
+import { StylePanel } from '@/Components/Main/VideoPreview/StylePanel';
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Timeline } from '../Components/Main/Timeline/Timeline';
 import TitleBar from '../Components/Main/Titlebar';
 import Toolbar from '../Components/Main/Toolbar';
-
 // Error Boundary component
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -55,11 +56,15 @@ const VideoEditorLayout = () => {
             className={`w-[60px] bg-secondary mx-2 mb-4 overflow-y-auto h-full transition-all duration-300 rounded`}
           />
           <div className="flex flex-col flex-1 overflow-hidden">
-            <main className="flex-1 overflow-auto max-h-30">
+            <div className='flex flex-row flex-1 overflow-hidden'>
+            <StylePanel/>
+            <main className="flex-1 overflow-auto">
               <Outlet />
             </main>
-            <div className="h-55 md:h-70">
-              <Timeline />
+            <PropertiesPanel/>
+            </div>
+            <div className="h-[180px] md:h-[175px] lg:h-[245px] flex-shrink-0">
+               <Timeline />
             </div>
           </div>
         </div>

@@ -50,3 +50,17 @@ body {
 .no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* focus event for buttons */
+/* index.css */
+button {
+  outline: none;
+  box-shadow: none;
+}
+
+button:focus,
+button:focus-visible,
+button:focus-within {
+  outline: none;
+  box-shadow: none;
+}
