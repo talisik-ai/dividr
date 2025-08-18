@@ -1,12 +1,16 @@
 /* eslint-disable prettier/prettier */
 import React, { useCallback } from 'react';
 import {
-    usePanelContent,
-    usePanelStore,
-    type PanelItem,
-    type PanelSection,
+  useActivePanelType,
+  usePanelContent,
+  usePanelStore,
+  usePanelWidth,
+  type PanelItem,
+  type PanelSection
 } from '../../../Store/PanelStore';
 import { useVideoEditorStore } from '../../../Store/videoEditorStore';
+import { getCustomPanelComponent, hasCustomPanelComponent } from './Panels/PanelRegistry';
+import { initializePanelRegistry } from './Panels/registerPanels';
 
 interface StylePanelProps {
   className?: string;
@@ -161,10 +165,15 @@ const PanelSectionComponent: React.FC<{
   );
 };
 
+// Initialize panel registry once
+initializePanelRegistry();
+
 export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
   const { tracks, timeline, preview } = useVideoEditorStore();
   const { updatePanelItem, hidePanel } = usePanelStore();
   const panelContent = usePanelContent();
+  const activePanelType = useActivePanelType();
+  const panelWidth = usePanelWidth();
 
   const handleUpdateItem = useCallback(
     (sectionId: string, itemId: string, value: string | number | boolean) => {
@@ -177,13 +186,33 @@ export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
     hidePanel();
   }, [hidePanel]);
 
+  // Check if this panel type has a custom component
+  if (activePanelType && hasCustomPanelComponent(activePanelType)) {
+    const CustomComponent = getCustomPanelComponent(activePanelType);
+    if (CustomComponent) {
+      return (
+                <React.Suspense fallback={
+          <div className={`bg-secondary text-white border-r border-gray-700 transition-all duration-300 ${className || panelWidth} flex items-center justify-center`}>
+            <div className="text-gray-400">Loading...</div>
+          </div>
+        }>
+          <CustomComponent 
+            className={className || panelWidth}
+            onClose={handleClosePanel}
+          />
+        </React.Suspense>
+      );
+    }
+  }
+
+  // Fallback to config-based panel for panels without custom components
   if (!panelContent) {
     return null;
   }
 
   return (
     <div
-      className={`bg-secondary text-white border-r border-gray-700 transition-all duration-300 ${className || 'w-64'}`}
+      className={`bg-secondary text-white border-r border-gray-700 transition-all duration-300 ${className || panelWidth}`}
     >
       {/* Panel Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-600">

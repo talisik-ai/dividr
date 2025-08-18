@@ -1,15 +1,24 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-
+import { useVideoEditorStore } from './videoEditorStore';
 // Define the different panel types that can be shown
 export type PanelType =
-  | 'media-import' // Import/download panel
-  | 'text-tools' // Text editing tools
-  | 'video-effects' // Video effects and filters
-  | 'images' // Image tools and adjustments
-  | 'audio-tools' // Audio editing tools
-  | 'settings' // Project settings
+  | 'media-import' // Import/download panel (custom component)
+  | 'text-tools' // Text editing tools (custom component)
+  | 'video-effects' // Video effects and filters (custom component)
+  | 'images' // Image tools and adjustments (custom component)
+  | 'audio-tools' // Audio editing tools (custom component)
+  | 'settings' // Project settings (custom component)
   | null; // No panel shown
+
+// Metadata for panels
+export interface PanelMetadata {
+  title: string;
+  description?: string;
+  icon?: string;
+  hasCustomComponent: boolean;
+  width?: string; // Default width for the panel
+}
 
 // Content structure for each panel type
 export interface PanelContent {
@@ -43,13 +52,14 @@ interface PanelState {
   activePanelType: PanelType;
   isPanelVisible: boolean;
   panelContent: PanelContent | null;
+  panelWidth: string; // Current panel width
 
   // Panel History (for back/forward navigation)
   panelHistory: PanelType[];
   currentHistoryIndex: number;
 
   // Panel Actions
-  showPanel: (panelType: PanelType) => void;
+  showPanel: (panelType: PanelType, customWidth?: string) => void;
   hidePanel: () => void;
   togglePanel: (panelType: PanelType) => void;
   setPanelContent: (content: PanelContent) => void;
@@ -58,6 +68,9 @@ interface PanelState {
     itemId: string,
     value: string | number | boolean,
   ) => void;
+
+  // Metadata
+  getPanelMetadata: (panelType: PanelType) => PanelMetadata | null;
 
   // Navigation
   goBackInHistory: () => void;
@@ -68,7 +81,53 @@ interface PanelState {
   reset: () => void;
 }
 
-// Default panel content configurations
+// Panel metadata configurations
+const panelMetadata: Record<Exclude<PanelType, null>, PanelMetadata> = {
+  'media-import': {
+    title: 'Media Import',
+    description: 'Import and manage media files',
+    icon: '📁',
+    hasCustomComponent: true,
+    width: 'w-80',
+  },
+  'text-tools': {
+    title: 'Text Tools',
+    description: 'Add and edit text elements',
+    icon: '📝',
+    hasCustomComponent: true,
+    width: 'w-64',
+  },
+  'video-effects': {
+    title: 'Video Effects',
+    description: 'Apply effects and filters',
+    icon: '🎨',
+    hasCustomComponent: true,
+    width: 'w-64',
+  },
+  images: {
+    title: 'Image Tools',
+    description: 'Edit and adjust images',
+    icon: '🖼️',
+    hasCustomComponent: true,
+    width: 'w-64',
+  },
+  'audio-tools': {
+    title: 'Audio Tools',
+    description: 'Edit and enhance audio',
+    icon: '🎵',
+    hasCustomComponent: true,
+    width: 'w-64',
+  },
+  settings: {
+    title: 'Project Settings',
+    description: 'Configure project and export',
+    icon: '⚙️',
+    hasCustomComponent: true,
+    width: 'w-72',
+  },
+};
+
+// Default panel content configurations (fallback for config-based panels)
 const defaultPanelConfigs: Record<Exclude<PanelType, null>, PanelContent> = {
   'media-import': {
     title: 'Media Import',
@@ -84,7 +143,7 @@ const defaultPanelConfigs: Record<Exclude<PanelType, null>, PanelContent> = {
             type: 'button',
             label: 'Import Media Files',
             action: () => {
-              /* Will be overridden by components */
+              useVideoEditorStore.getState().importMediaFromDialog();
             },
           },
           {
@@ -412,11 +471,12 @@ export const usePanelStore = create<PanelState>()(
     activePanelType: null as PanelType,
     isPanelVisible: false,
     panelContent: null as PanelContent | null,
+    panelWidth: 'w-64', // Default width
     panelHistory: [] as PanelType[],
     currentHistoryIndex: -1,
 
     // Panel Actions
-    showPanel: (panelType) => {
+    showPanel: (panelType, customWidth) => {
       const current = get();
 
       // Don't show if already showing the same panel
@@ -435,10 +495,15 @@ export const usePanelStore = create<PanelState>()(
         newIndex = newHistory.length - 1;
       }
 
+      // Get the appropriate width for this panel
+      const metadata = panelType ? panelMetadata[panelType] : null;
+      const width = customWidth || metadata?.width || 'w-64';
+
       set({
         activePanelType: panelType,
         isPanelVisible: true,
         panelContent: panelType ? defaultPanelConfigs[panelType] : null,
+        panelWidth: width,
         panelHistory: newHistory,
         currentHistoryIndex: newIndex,
       });
@@ -464,6 +529,11 @@ export const usePanelStore = create<PanelState>()(
 
     setPanelContent: (content) => {
       set({ panelContent: content });
+    },
+
+    getPanelMetadata: (panelType) => {
+      if (panelType === null) return null;
+      return panelMetadata[panelType];
     },
 
     updatePanelItem: (sectionId, itemId, value) => {
@@ -531,6 +601,7 @@ export const usePanelStore = create<PanelState>()(
         activePanelType: null,
         isPanelVisible: false,
         panelContent: null,
+        panelWidth: 'w-64',
         panelHistory: [],
         currentHistoryIndex: -1,
       });
@@ -545,10 +616,14 @@ export const useIsPanelVisible = () =>
   usePanelStore((state) => state.isPanelVisible);
 export const usePanelContent = () =>
   usePanelStore((state) => state.panelContent);
+export const usePanelWidth = () => usePanelStore((state) => state.panelWidth);
+export const usePanelMetadata = () =>
+  usePanelStore((state) => state.getPanelMetadata);
 export const usePanelActions = () =>
   usePanelStore((state) => ({
     showPanel: state.showPanel,
     hidePanel: state.hidePanel,
     togglePanel: state.togglePanel,
     updatePanelItem: state.updatePanelItem,
+    getPanelMetadata: state.getPanelMetadata,
   }));

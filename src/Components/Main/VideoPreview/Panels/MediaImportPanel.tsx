@@ -1,0 +1,337 @@
+import React, { useCallback, useRef, useState } from 'react';
+import { useVideoEditorStore } from '../../../../Store/videoEditorStore';
+import { CustomPanelProps } from './PanelRegistry';
+
+interface FilePreview {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  url: string;
+  thumbnail?: string;
+}
+
+export const MediaImportPanel: React.FC<CustomPanelProps> = ({
+  className,
+  onClose,
+}) => {
+  const { importMediaFromDialog } = useVideoEditorStore();
+  const [dragActive, setDragActive] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
+    {},
+  );
+  const [activeTab, setActiveTab] = useState<
+    'all' | 'videos' | 'audio' | 'images'
+  >('all');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle drag events
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDragIn = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setDragActive(true);
+    }
+  }, []);
+
+  const handleDragOut = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files);
+      handleFiles(files);
+    }
+  }, []);
+
+  const handleFiles = useCallback((files: File[]) => {
+    const newPreviews: FilePreview[] = files.map((file) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      url: URL.createObjectURL(file),
+    }));
+
+    setSelectedFiles((prev) => [...prev, ...newPreviews]);
+
+    // Simulate upload progress
+    newPreviews.forEach((preview) => {
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += Math.random() * 30;
+        if (progress >= 100) {
+          progress = 100;
+          clearInterval(interval);
+        }
+        setUploadProgress((prev) => ({
+          ...prev,
+          [preview.id]: Math.min(progress, 100),
+        }));
+      }, 200);
+    });
+  }, []);
+
+  const handleFileInput = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) {
+        const files = Array.from(e.target.files);
+        handleFiles(files);
+      }
+    },
+    [handleFiles],
+  );
+
+  const removeFile = useCallback((id: string) => {
+    setSelectedFiles((prev) => prev.filter((file) => file.id !== id));
+    setUploadProgress((prev) => {
+      const newProgress = { ...prev };
+      delete newProgress[id];
+      return newProgress;
+    });
+  }, []);
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const getFileIcon = (type: string): string => {
+    if (type.startsWith('video/')) return '🎬';
+    if (type.startsWith('audio/')) return '🎵';
+    if (type.startsWith('image/')) return '🖼️';
+    return '📄';
+  };
+
+  const filteredFiles = selectedFiles.filter((file) => {
+    switch (activeTab) {
+      case 'videos':
+        return file.type.startsWith('video/');
+      case 'audio':
+        return file.type.startsWith('audio/');
+      case 'images':
+        return file.type.startsWith('image/');
+      default:
+        return true;
+    }
+  });
+
+  return (
+    <div
+      className={`bg-gray-900 text-white border-r border-gray-700 transition-all duration-300 ${className || 'w-80'}`}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-700">
+        <div>
+          <h3 className="text-lg font-bold text-white">Your uploads</h3>
+          <p className="text-sm text-gray-400">
+            Drag & drop media files to import
+          </p>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors duration-200 text-xl leading-none"
+            title="Close panel"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex border-b border-gray-700">
+        {(['all', 'videos', 'audio', 'images'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`flex-1 px-4 py-3 text-sm font-medium capitalize transition-colors duration-200 ${
+              activeTab === tab
+                ? 'text-blue-400 border-b-2 border-blue-400 bg-gray-800'
+                : 'text-gray-400 hover:text-white hover:bg-gray-800'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {/* Upload Area */}
+      <div className="p-4">
+        <div
+          className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
+            dragActive
+              ? 'border-blue-400 bg-blue-400/10'
+              : 'border-gray-600 hover:border-gray-500'
+          }`}
+          onDragEnter={handleDragIn}
+          onDragLeave={handleDragOut}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+        >
+          <div className="space-y-4">
+            <div className="mx-auto w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center">
+              <svg
+                className="w-8 h-8 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+            </div>
+
+            <div>
+              <p className="text-lg font-medium text-white mb-2">
+                Drag & drop media files here
+              </p>
+              <p className="text-sm text-gray-400 mb-4">
+                or browse to upload from your device
+              </p>
+
+              <button
+                onClick={handleFileInput}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors duration-200"
+              >
+                Upload Files
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="video/*,audio/*,image/*"
+                onChange={handleFileInputChange}
+                className="hidden"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button
+            onClick={importMediaFromDialog}
+            className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg text-sm font-medium transition-colors duration-200"
+          >
+            📁 Browse Files
+          </button>
+          <button className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg text-sm font-medium transition-colors duration-200">
+            🌐 Import from URL
+          </button>
+        </div>
+      </div>
+
+      {/* File List */}
+      {filteredFiles.length > 0 && (
+        <div className="flex-1 overflow-auto">
+          <div className="p-4 pt-0">
+            <h4 className="text-sm font-semibold text-gray-300 mb-3">
+              Uploaded Files ({filteredFiles.length})
+            </h4>
+
+            <div className="space-y-2">
+              {filteredFiles.map((file) => {
+                const progress = uploadProgress[file.id] || 0;
+                const isComplete = progress >= 100;
+
+                return (
+                  <div
+                    key={file.id}
+                    className="bg-gray-800 rounded-lg p-3 border border-gray-700"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <div className="text-2xl">{getFileIcon(file.type)}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {formatFileSize(file.size)}
+                          </p>
+
+                          {!isComplete && (
+                            <div className="mt-2">
+                              <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+                                <span>Uploading...</span>
+                                <span>{Math.round(progress)}%</span>
+                              </div>
+                              <div className="w-full bg-gray-700 rounded-full h-1">
+                                <div
+                                  className="bg-blue-500 h-1 rounded-full transition-all duration-200"
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => removeFile(file.id)}
+                        className="text-gray-400 hover:text-red-400 transition-colors duration-200 ml-2"
+                        title="Remove file"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer Stats */}
+      <div className="border-t border-gray-700 p-4">
+        <div className="flex justify-between text-xs text-gray-400">
+          <span>{selectedFiles.length} files</span>
+          <span>
+            {formatFileSize(
+              selectedFiles.reduce((total, file) => total + file.size, 0),
+            )}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};

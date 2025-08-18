@@ -17,7 +17,6 @@ import { LuMusic } from 'react-icons/lu';
 import { MdOutlineSettings } from 'react-icons/md';
 import { SlPicture } from 'react-icons/sl';
 import { usePanelStore, type PanelType } from '../../Store/PanelStore';
-import { useVideoEditorStore } from '../../Store/videoEditorStore';
 
 // import { toast } from 'react-hot-toast';
 //import TooltipWrapper from '@/Components/SubComponents/custom/TooltipWrapper';
@@ -31,8 +30,6 @@ const Toolbar = ({
   collapsed?: boolean;
   toggleCollapse?: () => void;
 }) => {
-  const { importMediaFromDialog } = useVideoEditorStore();
-
   const { togglePanel, activePanelType } = usePanelStore();
 
   /*
@@ -105,10 +102,9 @@ const Toolbar = ({
 
   // File import using native Electron dialog
   const handleImportFiles = useCallback(async () => {
-    await importMediaFromDialog();
     // Also show the media import panel
     togglePanel('media-import');
-  }, [importMediaFromDialog, togglePanel]);
+  }, [togglePanel]);
 
   // Note: Project management functions removed for now, but can be re-added to UI store actions
 
