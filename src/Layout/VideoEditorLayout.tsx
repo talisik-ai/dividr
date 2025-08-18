@@ -55,13 +55,13 @@ const VideoEditorLayout = () => {
         <TitleBar className="h-13 py-4 px-2 bg-black dark:bg-darkMode" />
         <div className="flex flex-1 overflow-hidden h-[calc(100vh-120px)]">
           <Toolbar
-            className={`w-[60px] bg-secondary mx-2 mb-4 overflow-y-auto h-full transition-all duration-300 rounded`}
+            className={`w-[55px] bg-secondary mx-2 mb-4 overflow-y-auto h-full transition-all duration-300 rounded`}
           />
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className='flex flex-row flex-1 overflow-hidden'>
               {/* Dynamic StylePanel - only shows when a panel is active */}
               {isPanelVisible && (
-                <StylePanel className="w-80 flex-shrink-0" />
+                <StylePanel className="flex-shrink-0 mr-2 rounded"/>
               )}
               
               <main className="flex-1 overflow-auto">

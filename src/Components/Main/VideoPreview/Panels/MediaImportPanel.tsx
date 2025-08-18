@@ -139,24 +139,28 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   return (
     <div className={` ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
-        <div>
-          <h3 className="text-sm font-bold text-white">Your uploads</h3>
-          <p className="text-xs text-gray-400">
-            Drag & drop media files to import
-          </p>
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-bold text-white">Your uploads</h3>
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
+              title="Close panel"
+            >
+              ×
+            </button>
+          )}
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
-            title="Close panel"
-          >
-            ×
-          </button>
-        )}
+        <button
+          onClick={importMediaFromDialog}
+          className="w-full bg-black hover:bg-gray-600 text-white p-2 rounded-lg text-xs lg:text-sm font-medium transition-colors duration-200"
+        >
+          Upload
+        </button>
       </div>
-
       {/* Tab Navigation */}
       <div className="flex border-b border-gray-700">
         {(['all', 'videos', 'audio', 'images'] as const).map((tab) => (
@@ -177,7 +181,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       {/* Upload Area */}
       <div className="p-4">
         <div
-          className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
+          className={`relative border-2 border-dashed rounded-lg p-4 lg:p-8 text-center transition-all duration-200 ${
             dragActive
               ? 'border-blue-400 bg-blue-400/10'
               : 'border-gray-600 hover:border-gray-500'
@@ -188,12 +192,14 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
           onDrop={handleDrop}
         >
           <div className="space-y-4">
-            <div className="mx-auto w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center">
+            <div className="mx-auto w-12 h-12 lg:w-16 lg:h-16 bg-gray-700 rounded-full flex items-center justify-center">
               <svg
-                className="w-8 h-8 text-gray-400"
+                xmlns="http://www.w3.org/2000/svg"
+                className="w-6 h-6 lg:w-8 lg:h-8 text-gray-400"
+                viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                viewBox="0 0 24 24"
+                preserveAspectRatio="xMidYMid meet"
               >
                 <path
                   strokeLinecap="round"
@@ -204,7 +210,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
               </svg>
             </div>
 
-            <div>
+            <div className="hidden lg:block">
               <p className="text-sm font-medium text-white mb-2">
                 Drag & drop media files here
               </p>
@@ -229,19 +235,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
               />
             </div>
           </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <button
-            onClick={importMediaFromDialog}
-            className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg text-xs font-medium transition-colors duration-200"
-          >
-            📁 Browse Files
-          </button>
-          <button className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg text-xs font-medium transition-colors duration-200">
-            🌐 Import from URL
-          </button>
         </div>
       </div>
 
@@ -318,18 +311,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
           </div>
         </div>
       )}
-
-      {/* Footer Stats */}
-      <div className="border-t border-gray-700 p-4">
-        <div className="flex justify-between text-xs text-gray-400">
-          <span>{selectedFiles.length} files</span>
-          <span>
-            {formatFileSize(
-              selectedFiles.reduce((total, file) => total + file.size, 0),
-            )}
-          </span>
-        </div>
-      </div>
     </div>
   );
 };
