@@ -17,39 +17,6 @@ const steps: ((job: VideoEditJob, cmd: CommandParts) => void)[] = [
   handleReplaceAudio,
 ];
 
-function buildConcatFilter(inputs: string[], targetFps?: number) {
-  const fpsFilters: string[] = [];
-  const concatInputs: string[] = [];
-  let hasVideo = false;
-  let hasAudio = false;
-
-  inputs.forEach((input, index) => {
-    const isVideo = /\.(mp4|mov|mkv|avi|webm)$/i.test(input);
-    const isAudioOnly = /\.(mp3|wav|aac|flac)$/i.test(input);
-
-    if (isVideo) {
-      hasVideo = true;
-      if (targetFps) {
-        fpsFilters.push(`[${index}:v]fps=${targetFps}[v${index}]`);
-        concatInputs.push(`[v${index}]`);
-      } else {
-        concatInputs.push(`[${index}:v]`);
-      }
-    }
-
-    if (!isVideo || !isAudioOnly) {
-      hasAudio = true;
-      concatInputs.push(`[${index}:a]`);
-    }
-  });
-
-  const vf = fpsFilters.length ? fpsFilters.join(';') + ';' : '';
-  const vFlag = hasVideo ? 1 : 0;
-  const aFlag = hasAudio ? 1 : 0;
-
-  return `${vf}${concatInputs.join('')}concat=n=${inputs.length}:v=${vFlag}:a=${aFlag}[outv][outa]`;
-}
-
 function escapePath(filePath: string) {
   // For Node.js spawn(), we don't need shell escaping or quotes
   // Just return the path as-is since spawn() passes arguments directly
@@ -238,7 +205,20 @@ function handleInputs(job: VideoEditJob, cmd: CommandParts) {
         filterComplex = allFilters.join(';') + ';';
       }
 
-      const concatFilter = `${concatVideoInputs.join('')}${concatAudioInputs.join('')}concat=n=${videoCount}:v=${videoCount > 0 ? 1 : 0}:a=${audioCount > 0 ? 1 : 0}[outv][outa]`;
+      // Fix: Properly interleave video and audio inputs for concat filter
+      // FFmpeg concat expects: [video0][audio0][video1][audio1]...concat=n=X:v=1:a=1[outv][outa]
+      const concatInputPairs: string[] = [];
+      for (let i = 0; i < videoCount; i++) {
+        if (i < concatVideoInputs.length) {
+          concatInputPairs.push(concatVideoInputs[i]);
+          // Add corresponding audio input
+          if (i < concatAudioInputs.length) {
+            concatInputPairs.push(concatAudioInputs[i]);
+          }
+        }
+      }
+
+      const concatFilter = `${concatInputPairs.join('')}concat=n=${videoCount}:v=${videoCount > 0 ? 1 : 0}:a=${audioCount > 0 ? 1 : 0}[outv][outa]`;
       filterComplex += concatFilter;
 
       cmd.args.push('-filter_complex', filterComplex);
@@ -466,5 +446,44 @@ export function testIndependentAudioTrimming() {
   console.log('🎵 Audio: 5s start, 25s duration (completely independent!)');
   const command = buildFfmpegCommand(testJob);
   console.log('🎛️ Command:', command.join(' '));
+  return command;
+}
+
+// Test function for the specific export error scenario
+export function testExportErrorScenario() {
+  const testJob: VideoEditJob = {
+    inputs: [
+      { path: 'uu.mp4', startTime: 0, duration: 10 },
+      { path: 'eee.mp4', startTime: 0, duration: 15 },
+    ],
+    output: 'final_video.mp4',
+    operations: {
+      concat: true,
+      normalizeFrameRate: true,
+      targetFrameRate: 30,
+    },
+  };
+
+  console.log('🐛 Testing Export Error Scenario Fix:');
+  console.log('📹 Two video clips with FPS normalization');
+  const command = buildFfmpegCommand(testJob);
+  console.log('🎬 Fixed Command:', command.join(' '));
+
+  // Validate filter complex structure
+  const filterIndex = command.indexOf('-filter_complex');
+  if (filterIndex !== -1 && filterIndex + 1 < command.length) {
+    const filterComplex = command[filterIndex + 1];
+    console.log('🎛️ Filter Complex:', filterComplex);
+
+    // Check for proper video/audio interleaving
+    if (
+      filterComplex.includes('[v0_fps][a0_trimmed][v1_fps][a1_trimmed]concat')
+    ) {
+      console.log('✅ Video/Audio interleaving looks correct!');
+    } else {
+      console.log('⚠️ Check video/audio interleaving pattern');
+    }
+  }
+
   return command;
 }

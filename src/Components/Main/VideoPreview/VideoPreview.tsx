@@ -241,11 +241,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
             return newSet;  
           });  
   
-          console.log(`✅ Video loaded: ${track.name}`);  
+         // console.log(`✅ Video loaded: ${track.name}`);  
         };  
   
         const handleError = (e: Event) => {  
-          console.error(`❌ Failed to load: ${track.name}`);  
+       //   console.error(`❌ Failed to load: ${track.name}`);  
           setLoadingTracks((prev) => {  
             const newSet = new Set(prev);  
             newSet.delete(track.id);  
@@ -260,12 +260,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   
         // Add buffering event listeners  
         const handleWaiting = () => {  
-          console.log(`⏳ Video ${track.name} started buffering`);  
+       //   console.log(`⏳ Video ${track.name} started buffering`);  
           setBufferingTracks((prev) => new Set(prev).add(track.id));  
         };  
   
         const handleCanPlay = () => {  
-          console.log(`▶️ Video ${track.name} can play`);  
+      //    console.log(`▶️ Video ${track.name} can play`);  
           setBufferingTracks((prev) => {  
             const newSet = new Set(prev);  
             newSet.delete(track.id);  
@@ -274,7 +274,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         };  
   
         const handleLoadedMetadata = () => {  
-          console.log(`📊 Video ${track.name} metadata loaded`);  
+        //  console.log(`📊 Video ${track.name} metadata loaded`);  
           setBufferingTracks((prev) => {  
             const newSet = new Set(prev);  
             newSet.delete(track.id);  
@@ -320,7 +320,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       // Debug logging for active tracks  
       activeTracks.forEach((track) => {  
         if (track.type === 'video') {  
-          console.log(`Track ${track.name}: visible=${track.visible}, frame=${frame}, start=${track.startFrame}, end=${track.endFrame}, active=true`);  
+      //    console.log(`Track ${track.name}: visible=${track.visible}, frame=${frame}, start=${track.startFrame}, end=${track.endFrame}, active=true`);  
         }  
       });  
         
@@ -378,7 +378,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         // Don't play if any video is buffering (Remotion-inspired behavior)  
         if (isTrackActive && playback.isPlaying && !anyBuffering) {  
           videoElement.element.play().catch((e) => {  
-            console.log('Autoplay prevented for', track.name);  
+           // console.log('Autoplay prevented for', track.name);  
           });  
         } else {  
           videoElement.element.pause();  
@@ -456,10 +456,10 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
            const y = track.offsetY || (preview.canvasHeight - height) / 2;
 
            // Debug logging for each track
-           console.log(`🎬 Processing track: ${track.name}, type: ${track.type}, videoElement exists: ${!!videoElement}`);
+          // console.log(`🎬 Processing track: ${track.name}, type: ${track.type}, videoElement exists: ${!!videoElement}`);
 
            if (!videoElement) {
-             console.warn(`⚠️ No video element found for track: ${track.name}`);
+           //  console.warn(`⚠️ No video element found for track: ${track.name}`);
              // Draw placeholder for missing video element
              ctx.fillStyle = track.color || '#666666';
              ctx.globalAlpha = 0.7;
@@ -469,7 +469,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
            }
 
            // More detailed logging about video element state
-           console.log(`📊 Video element state for ${track.name}:`, {
+           /*console.log(`📊 Video element state for ${track.name}:`, {
              isLoaded: videoElement.isLoaded,
              isBuffering: videoElement.isBuffering,
              readyState: videoElement.element.readyState,
@@ -478,7 +478,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
              currentTime: videoElement.element.currentTime,
              duration: videoElement.element.duration
            });
-
+           */
            // Simplified rendering conditions for debugging
            if (videoElement && videoElement.isLoaded) {
              const video = videoElement.element;
@@ -488,14 +488,14 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
                if (video.readyState >= 1) {
                  ctx.drawImage(video, x, y, width, height);
                  successfulDraws++;
-                 console.log(`✅ Successfully drew ${track.name}`);
+              //   console.log(`✅ Successfully drew ${track.name}`);
                } else {
                  // Video not ready, draw placeholder
                  ctx.fillStyle = track.color || '#444444';
                  ctx.globalAlpha = 0.6;
                  ctx.fillRect(x, y, width, height);
                  ctx.globalAlpha = 1.0;
-                 console.log(`⏳ Video ${track.name} not ready, readyState: ${video.readyState}`);
+              //   console.log(`⏳ Video ${track.name} not ready, readyState: ${video.readyState}`);
                }
              } catch (error) {
                failedDraws++;
@@ -504,7 +504,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
                ctx.globalAlpha = 0.5;
                ctx.fillRect(x, y, width, height);
                ctx.globalAlpha = 1.0;
-               console.warn(`⚠️ Draw failed for ${track.name}:`, error);
+             //  console.warn(`⚠️ Draw failed for ${track.name}:`, error);
              }
            } else {
              // Video element exists but not loaded
@@ -516,7 +516,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
              const loadStatus = videoElement ? 
                `isLoaded: ${videoElement.isLoaded}, isBuffering: ${videoElement.isBuffering}` : 
                'no video element';
-             console.log(`⏳ Video ${track.name} loading... ${loadStatus}`);
+          //   console.log(`⏳ Video ${track.name} loading... ${loadStatus}`);
            }
          }
        });
@@ -524,7 +524,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
        ctx.restore();
 
        // Performance monitoring with detailed logging
-       console.log(`🎬 Render stats: ${successfulDraws} successful, ${failedDraws} failed, ${activeTracks.length} active tracks`);
+   //    console.log(`🎬 Render stats: ${successfulDraws} successful, ${failedDraws} failed, ${activeTracks.length} active tracks`);
        
        if (failedDraws > successfulDraws && activeTracks.length > 0) {
          console.warn(

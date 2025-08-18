@@ -54,16 +54,16 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   const createFFmpegJob = useCallback((): VideoEditJob => {
     // Build a comprehensive job with per-track timing information
     const trackInfos = tracks.map((track) => {
-      // Ensure we have valid frame ranges
-      const startFrame = Math.max(0, track.startFrame);
-      const endFrame = Math.max(startFrame + 1, track.endFrame); // Ensure minimum 1 frame duration
-      const duration = (endFrame - startFrame) / timeline.fps;
+      // For concatenation, we use the track's original duration from the source file
+      // track.duration = original file duration in frames
+      // startFrame/endFrame = timeline positions (not source file positions)
+      const originalDurationSeconds = track.duration / timeline.fps;
 
       return {
         path: track.source,
-        startTime: startFrame / timeline.fps, // Convert frames to seconds
-        duration: Math.max(0.033, duration), // Minimum 1 frame at 30fps
-        endTime: endFrame / timeline.fps,
+        startTime: 0, // Always start from beginning of source file for concat
+        duration: Math.max(0.033, originalDurationSeconds), // Use original file duration
+        endTime: originalDurationSeconds, // End time relative to source file start
       };
     });
 
@@ -73,7 +73,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
       operations: {
         concat: tracks.length > 1,
         targetFrameRate: timeline.fps,
-        normalizeFrameRate: true,
+        normalizeFrameRate: tracks.length > 1, // Only normalize when concatenating
       },
     };
   }, [tracks, timeline.fps]);
@@ -86,7 +86,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     }
 
     const job = createFFmpegJob();
-    console.log(job);
+    console.log('🎬 FFmpeg Job:', job);
 
     const callbacks: FfmpegCallbacks = {
       onProgress: (progress) => {
@@ -101,7 +101,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
         updateRenderProgress(render.progress, status);
       },
       onLog: (log, type) => {
-        console.log(`[${type}] ${log}`);
+        //   console.log(`[${type}] ${log}`);
       },
     };
 
@@ -116,7 +116,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
       finishRender();
       alert('Render completed successfully!');
     } catch (error) {
-      console.error('Render failed:', error);
+      //console.error('Render failed:', error);
       cancelRender();
       alert(`Render failed: ${error}`);
     }

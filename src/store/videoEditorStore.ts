@@ -163,15 +163,11 @@ function findNonOverlappingPosition(
   );
 
   if (!hasConflict) {
-    console.log(
+    /*console.log(
       `✅ No conflict for position ${desiredStartFrame}-${desiredEndFrame}`,
-    );
+    ); */
     return Math.max(0, desiredStartFrame); // No conflict, use desired position
   }
-
-  console.log(
-    `⚠️ Conflict detected for position ${desiredStartFrame}-${desiredEndFrame}, finding alternative...`,
-  );
 
   // Find the best position to place the track
   // Try to place it as close as possible to the desired position
@@ -182,9 +178,6 @@ function findNonOverlappingPosition(
       const spaceBeforeTrack = track.startFrame;
       if (spaceBeforeTrack >= duration) {
         const newPos = Math.max(0, track.startFrame - duration);
-        console.log(
-          `📍 Placing before track at ${newPos}-${newPos + duration}`,
-        );
         return newPos;
       }
       break;
@@ -198,10 +191,6 @@ function findNonOverlappingPosition(
       latestEndFrame = Math.max(latestEndFrame, track.endFrame);
     }
   }
-
-  console.log(
-    `📍 Placing after conflicts at ${latestEndFrame}-${latestEndFrame + duration}`,
-  );
   return latestEndFrame;
 }
 
@@ -618,23 +607,15 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           return;
         }
 
-        console.log(
-          `🎬 Analyzing ${result.files.length} files for accurate durations...`,
-        );
-
         const newTracks = await Promise.all(
           result.files.map(async (fileInfo, index) => {
             // Get accurate duration using FFprobe
             let actualDuration: number;
             try {
-              console.log(`🔍 Getting duration for: ${fileInfo.path}`);
               const durationSeconds = await window.electronAPI.getDuration(
                 fileInfo.path,
               );
               actualDuration = Math.round(durationSeconds * get().timeline.fps); // Convert to frames
-              console.log(
-                `📏 Actual duration: ${durationSeconds}s (${actualDuration} frames) for ${fileInfo.name}`,
-              );
             } catch (error) {
               console.warn(
                 `⚠️ Failed to get duration for ${fileInfo.name}, using fallback:`,
@@ -649,7 +630,6 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             let previewUrl: string | undefined;
             if (fileInfo.type === 'video' || fileInfo.type === 'image') {
               try {
-                console.log(`🖼️ Creating preview URL for: ${fileInfo.name}`);
                 const previewResult = await window.electronAPI.createPreviewUrl(
                   fileInfo.path,
                 );
@@ -685,9 +665,6 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           }),
         );
 
-        console.log(
-          `✅ Successfully analyzed all files. Adding ${newTracks.length} tracks with accurate durations.`,
-        );
         newTracks.forEach((track) => get().addTrack(track));
       } catch (error) {
         console.error('Failed to import media from dialog:', error);
