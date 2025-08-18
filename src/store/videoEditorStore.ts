@@ -163,11 +163,15 @@ function findNonOverlappingPosition(
   );
 
   if (!hasConflict) {
-    /*console.log(
+    console.log(
       `✅ No conflict for position ${desiredStartFrame}-${desiredEndFrame}`,
-    ); */
+    );
     return Math.max(0, desiredStartFrame); // No conflict, use desired position
   }
+
+  console.log(
+    `⚠️ Conflict detected for position ${desiredStartFrame}-${desiredEndFrame}, finding alternative...`,
+  );
 
   // Find the best position to place the track
   // Try to place it as close as possible to the desired position
@@ -178,6 +182,9 @@ function findNonOverlappingPosition(
       const spaceBeforeTrack = track.startFrame;
       if (spaceBeforeTrack >= duration) {
         const newPos = Math.max(0, track.startFrame - duration);
+        console.log(
+          `📍 Placing before track at ${newPos}-${newPos + duration}`,
+        );
         return newPos;
       }
       break;
@@ -191,6 +198,9 @@ function findNonOverlappingPosition(
       latestEndFrame = Math.max(latestEndFrame, track.endFrame);
     }
   }
+  console.log(
+    `📍 Placing after conflicts at ${latestEndFrame}-${latestEndFrame + duration}`,
+  );
   return latestEndFrame;
 }
 
@@ -333,18 +343,30 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         tracks: state.tracks.map((track) => {
           if (track.id === trackId) {
             const duration = track.endFrame - track.startFrame;
-            const newEndFrame = newStartFrame + duration;
 
-            // Get tracks of the same type (same row)
-            const sameRowTracks = state.tracks.filter(
-              (t) => t.id !== trackId && t.type === track.type,
-            );
+            // For video tracks, prevent overlaps with other video tracks
+            // For audio/image tracks, allow them to overlap with different types but not same type
+            const conflictingTracks = state.tracks.filter((t) => {
+              if (t.id === trackId) return false;
+
+              // Video tracks can't overlap with any other video tracks
+              if (track.type === 'video' && t.type === 'video') return true;
+
+              // Non-video tracks can't overlap with same type
+              if (track.type !== 'video' && t.type === track.type) return true;
+
+              return false;
+            });
 
             // Check for collisions and find the best position
             const finalStartFrame = findNonOverlappingPosition(
               newStartFrame,
               duration,
-              sameRowTracks,
+              conflictingTracks,
+            );
+
+            console.log(
+              `🎬 Moving ${track.type} track "${track.name}" from ${track.startFrame} to ${finalStartFrame}`,
             );
 
             return {

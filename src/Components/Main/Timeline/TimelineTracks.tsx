@@ -67,6 +67,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
 }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState<'left' | 'right' | false>(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({
     x: 0,
     startFrame: 0,
@@ -98,7 +99,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (!isResizing) return;
+      if (!isResizing && !isDragging) return;
 
       const deltaX = e.clientX - dragStart.x;
       const deltaFrames = Math.round(deltaX / frameWidth);
@@ -115,18 +116,22 @@ export const TrackItem: React.FC<TrackItemProps> = ({
           dragStart.endFrame + deltaFrames,
         );
         onResize(undefined, newEndFrame);
+      } else if (isDragging) {
+        const newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
+        onMove(newStartFrame);
       }
     },
-    [isResizing, dragStart, frameWidth, onResize],
+    [isResizing, isDragging, dragStart, frameWidth, onResize, onMove],
   );
 
   const handleMouseUp = useCallback(() => {
     setIsResizing(false);
+    setIsDragging(false);
   }, []);
 
-  // Add global mouse listeners when resizing
+  // Add global mouse listeners when resizing or dragging
   React.useEffect(() => {
-    if (isResizing) {
+    if (isResizing || isDragging) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
       return () => {
@@ -134,7 +139,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isResizing, handleMouseMove, handleMouseUp]);
+  }, [isResizing, isDragging, handleMouseMove, handleMouseUp]);
 
   const getTrackGradient = (type: VideoTrack['type']) => {
     switch (type) {
@@ -157,7 +162,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
         className={`
           absolute h-[30px] rounded flex items-center px-2 py-1 overflow-hidden select-none z-[1]
           ${isSelected ? 'border-2 border-white' : 'border border-white/20'}
-          ${track.locked ? 'cursor-not-allowed' : 'cursor-grab'}
+          ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
           ${track.visible ? 'opacity-100' : 'opacity-50'}
         `}
         style={{
@@ -168,6 +173,16 @@ export const TrackItem: React.FC<TrackItemProps> = ({
         onClick={(e) => {
           e.stopPropagation();
           onSelect();
+        }}
+        onMouseDown={(e) => {
+          if (track.locked) return;
+          e.stopPropagation();
+          setIsDragging(true);
+          setDragStart({
+            x: e.clientX,
+            startFrame: track.startFrame,
+            endFrame: track.endFrame,
+          });
         }}
       >
         <div
