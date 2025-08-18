@@ -148,7 +148,7 @@ const PanelSectionComponent: React.FC<{
   onUpdateItem: (itemId: string, value: string | number | boolean) => void;
 }> = ({ section, onUpdateItem }) => {
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 bg-secondary">
       <h4 className="text-sm font-semibold text-white border-b border-gray-600 pb-1">
         {section.title}
       </h4>
@@ -189,18 +189,25 @@ export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
   // Check if this panel type has a custom component
   if (activePanelType && hasCustomPanelComponent(activePanelType)) {
     const CustomComponent = getCustomPanelComponent(activePanelType);
+    const basePanelClasses =
+  "bg-secondary text-white border-r border-gray-700 transition-all duration-300 w-[22%] text-xs";
+
     if (CustomComponent) {
       return (
-                <React.Suspense fallback={
-          <div className={`bg-secondary text-white border-r border-gray-700 transition-all duration-300 ${className || panelWidth} flex items-center justify-center`}>
+        <React.Suspense
+        fallback={
+          <div
+            className={`${basePanelClasses} ${className} flex items-center justify-center`}
+          >
             <div className="text-gray-400">Loading...</div>
           </div>
-        }>
-          <CustomComponent 
-            className={className || panelWidth}
-            onClose={handleClosePanel}
-          />
-        </React.Suspense>
+        }
+      >
+        <CustomComponent
+          className={`${basePanelClasses} ${className}`}
+          onClose={handleClosePanel}
+        />
+      </React.Suspense>
       );
     }
   }

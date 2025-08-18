@@ -6,19 +6,17 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({
   onClose,
 }) => {
   return (
-    <div
-      className={`bg-gray-900 text-white border-r border-gray-700 transition-all duration-300 ${className || 'w-64'}`}
-    >
+    <div className={` ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-700">
         <div>
-          <h3 className="text-lg font-bold text-white">Project Settings</h3>
-          <p className="text-sm text-gray-400">Configure project and export</p>
+          <h3 className="text-sm font-bold text-white">Project Settings</h3>
+          <p className="text-xs text-gray-400">Configure project and export</p>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors duration-200 text-xl leading-none"
+            className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
             title="Close panel"
           >
             ×
@@ -29,7 +27,7 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({
       {/* Content */}
       <div className="p-4 space-y-4">
         <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-white border-b border-gray-600 pb-1">
+          <h4 className="text-xs font-semibold text-white border-b border-gray-600 pb-1">
             Project Settings
           </h4>
 
@@ -53,7 +51,7 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({
         </div>
 
         <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-white border-b border-gray-600 pb-1">
+          <h4 className="text-xs font-semibold text-white border-b border-gray-600 pb-1">
             Export Settings
           </h4>
 
@@ -81,7 +79,7 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({
         </div>
 
         <div className="pt-4 border-t border-gray-700">
-          <button className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-medium transition-colors duration-200">
+          <button className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-xs font-medium transition-colors duration-200">
             Export Video
           </button>
         </div>

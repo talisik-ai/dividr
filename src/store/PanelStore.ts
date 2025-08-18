@@ -471,7 +471,7 @@ export const usePanelStore = create<PanelState>()(
     activePanelType: null as PanelType,
     isPanelVisible: false,
     panelContent: null as PanelContent | null,
-    panelWidth: 'w-64', // Default width
+    panelWidth: 'w-30', // Default width
     panelHistory: [] as PanelType[],
     currentHistoryIndex: -1,
 

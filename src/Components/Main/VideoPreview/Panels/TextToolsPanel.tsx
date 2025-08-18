@@ -6,19 +6,17 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({
   onClose,
 }) => {
   return (
-    <div
-      className={`bg-gray-900 text-white border-r border-gray-700 transition-all duration-300 ${className || 'w-64'}`}
-    >
+    <div className={` ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-700">
         <div>
-          <h3 className="text-lg font-bold text-white">Text Tools</h3>
-          <p className="text-sm text-gray-400">Add and edit text elements</p>
+          <h3 className="text-sm font-bold text-white">Text Tools</h3>
+          <p className="text-xs text-gray-400">Add and edit text elements</p>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors duration-200 text-xl leading-none"
+            className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
             title="Close panel"
           >
             ×
@@ -29,16 +27,16 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({
       {/* Content */}
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-2 gap-2">
-          <button className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg text-sm font-medium transition-colors duration-200">
+          <button className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg text-xs font-medium transition-colors duration-200">
             Add Title
           </button>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg text-sm font-medium transition-colors duration-200">
+          <button className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg text-xs font-medium transition-colors duration-200">
             Add Subtitle
           </button>
         </div>
 
         <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-white border-b border-gray-600 pb-1">
+          <h4 className="text-xs font-semibold text-white border-b border-gray-600 pb-1">
             Text Formatting
           </h4>
 

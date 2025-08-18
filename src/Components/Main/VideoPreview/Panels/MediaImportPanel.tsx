@@ -137,21 +137,19 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   });
 
   return (
-    <div
-      className={`bg-gray-900 text-white border-r border-gray-700 transition-all duration-300 ${className || 'w-80'}`}
-    >
+    <div className={` ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-700">
         <div>
-          <h3 className="text-lg font-bold text-white">Your uploads</h3>
-          <p className="text-sm text-gray-400">
+          <h3 className="text-sm font-bold text-white">Your uploads</h3>
+          <p className="text-xs text-gray-400">
             Drag & drop media files to import
           </p>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors duration-200 text-xl leading-none"
+            className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
             title="Close panel"
           >
             ×
@@ -165,7 +163,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`flex-1 px-4 py-3 text-sm font-medium capitalize transition-colors duration-200 ${
+            className={`flex-1 px-4 py-3 text-xs font-medium capitalize transition-colors duration-200 ${
               activeTab === tab
                 ? 'text-blue-400 border-b-2 border-blue-400 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-800'
@@ -207,16 +205,16 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
             </div>
 
             <div>
-              <p className="text-lg font-medium text-white mb-2">
+              <p className="text-sm font-medium text-white mb-2">
                 Drag & drop media files here
               </p>
-              <p className="text-sm text-gray-400 mb-4">
+              <p className="text-xs text-gray-400 mb-4">
                 or browse to upload from your device
               </p>
 
               <button
                 onClick={handleFileInput}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors duration-200"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-xs font-medium transition-colors duration-200"
               >
                 Upload Files
               </button>
@@ -237,11 +235,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button
             onClick={importMediaFromDialog}
-            className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg text-sm font-medium transition-colors duration-200"
+            className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg text-xs font-medium transition-colors duration-200"
           >
             📁 Browse Files
           </button>
-          <button className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg text-sm font-medium transition-colors duration-200">
+          <button className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg text-xs font-medium transition-colors duration-200">
             🌐 Import from URL
           </button>
         </div>
@@ -251,7 +249,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       {filteredFiles.length > 0 && (
         <div className="flex-1 overflow-auto">
           <div className="p-4 pt-0">
-            <h4 className="text-sm font-semibold text-gray-300 mb-3">
+            <h4 className="text-xs font-semibold text-gray-300 mb-3">
               Uploaded Files ({filteredFiles.length})
             </h4>
 
@@ -269,7 +267,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
                       <div className="flex items-center space-x-3 flex-1 min-w-0">
                         <div className="text-2xl">{getFileIcon(file.type)}</div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">
+                          <p className="text-xs font-medium text-white truncate">
                             {file.name}
                           </p>
                           <p className="text-xs text-gray-400">
