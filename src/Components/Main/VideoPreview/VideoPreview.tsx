@@ -11,7 +11,89 @@ interface VideoElement {
   id: string;
   element: HTMLVideoElement;
   isLoaded: boolean;
+  isBuffering: boolean;
+  lastSeekTime: number | null;
 }
+
+// Remotion-inspired media time calculation
+const calculateMediaTime = (
+  currentFrame: number,
+  startFrame: number,
+  fps: number,
+  playbackRate: number,
+) => {
+  const framesSinceStart = currentFrame - startFrame;
+  const expectedFrame = framesSinceStart * playbackRate;
+  return (expectedFrame * (1000 / fps)) / 1000;
+};
+
+// Remotion-inspired seeking logic
+const shouldSeek = (
+  currentTime: number,
+  targetTime: number,
+  isPlaying: boolean,
+) => {
+  const seekThreshold = isPlaying ? 0.15 : 0.01;
+  const timeDiff = Math.abs(currentTime - targetTime);
+  return timeDiff > seekThreshold && timeDiff < 3; // Don't seek if too far apart
+};
+
+// Custom hook for video buffering state (inspired by Remotion's useMediaBuffering)
+const useVideoBuffering = (
+  videoElement: HTMLVideoElement | null,
+  pauseWhenBuffering: boolean,
+) => {
+  const [isBuffering, setIsBuffering] = useState(false);
+
+  useEffect(() => {
+    if (!videoElement || !pauseWhenBuffering) return;
+
+    const handleWaiting = () => setIsBuffering(true);
+    const handleCanPlay = () => setIsBuffering(false);
+    const handleLoadedData = () => setIsBuffering(false);
+
+    // Check initial ready state
+    if (videoElement.readyState < videoElement.HAVE_FUTURE_DATA) {
+      setIsBuffering(true);
+    }
+
+    videoElement.addEventListener('waiting', handleWaiting);
+    videoElement.addEventListener('canplay', handleCanPlay);
+    videoElement.addEventListener('loadeddata', handleLoadedData);
+
+    return () => {
+      videoElement.removeEventListener('waiting', handleWaiting);
+      videoElement.removeEventListener('canplay', handleCanPlay);
+      videoElement.removeEventListener('loadeddata', handleLoadedData);
+    };
+  }, [videoElement, pauseWhenBuffering]);
+
+  return isBuffering;
+};
+
+// Custom hook for frame-based video rendering (inspired by Remotion's onVideoFrame)
+const useVideoFrameCallback = (
+  videoElement: HTMLVideoElement | null,
+  onFrame: (frame: CanvasImageSource) => void,
+  enabled: boolean,
+) => {
+  useEffect(() => {
+    if (!videoElement || !enabled) return;
+
+    let animationId: number;
+
+    const captureFrame = () => {
+      if (videoElement.readyState >= 2) {
+        onFrame(videoElement);
+      }
+      animationId = requestAnimationFrame(captureFrame);
+    };
+
+    captureFrame();
+
+    return () => cancelAnimationFrame(animationId);
+  }, [videoElement, onFrame, enabled]);
+};
 
 export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -19,12 +101,16 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   const videoElementsRef = useRef<Map<string, VideoElement>>(new Map());
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [loadingTracks, setLoadingTracks] = useState<Set<string>>(new Set());
+  const [bufferingTracks, setBufferingTracks] = useState<Set<string>>(
+    new Set(),
+  );
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const renderFrameRef = useRef<number>(0);
 
   const { preview, timeline, tracks, setPreviewScale, playback } =
     useVideoEditorStore();
 
-  // Update container size on resize with ResizeObserver for better detection
+  // Container size management (unchanged)
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
@@ -37,20 +123,16 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
-      resizeTimeoutRef.current = setTimeout(updateSize, 16); // ~60fps debounce
+      resizeTimeoutRef.current = setTimeout(updateSize, 16);
     };
 
     let resizeObserver: ResizeObserver | null = null;
-
-    // Initial size update
     updateSize();
 
-    // Use ResizeObserver for more reliable container size detection
     if (containerRef.current && window.ResizeObserver) {
       resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
           const { width, height } = entry.contentRect;
-          // Clear any pending timeout
           if (resizeTimeoutRef.current) {
             clearTimeout(resizeTimeoutRef.current);
           }
@@ -59,14 +141,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       });
       resizeObserver.observe(containerRef.current);
     } else {
-      // Fallback to window resize event with debouncing
       window.addEventListener('resize', debouncedUpdateSize);
     }
 
-    // Handle visibility changes (minimize/maximize)
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        // App became visible again, force size update
         setTimeout(updateSize, 100);
       }
     };
@@ -86,7 +165,6 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     };
   }, []);
 
-  // Calculate aspect ratio for proper content scaling
   const calculateContentScale = useCallback(() => {
     if (!containerSize.width || !containerSize.height)
       return { scaleX: 1, scaleY: 1 };
@@ -96,7 +174,6 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     return { scaleX, scaleY };
   }, [containerSize, preview.canvasWidth, preview.canvasHeight]);
 
-  // Handle wheel zoom
   const handleWheel = useCallback(
     (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
@@ -118,7 +195,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     }
   }, [handleWheel]);
 
-  // Create and manage video elements for each track
+  // Enhanced video element management with buffering support
   useEffect(() => {
     const videoElements = videoElementsRef.current;
     const currentTrackIds = new Set(tracks.map((track) => track.id));
@@ -140,17 +217,19 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       ) {
         const videoElement = document.createElement('video');
         videoElement.style.display = 'none';
-        videoElement.muted = false; // Enable audio
+        videoElement.muted = false;
         videoElement.preload = 'metadata';
         videoElement.crossOrigin = 'anonymous';
-        videoElement.volume = 0.8; // Set reasonable volume level
+        videoElement.volume = 0.8;
 
-        // Handle loading
+        // Enhanced loading handlers with buffering state
         const handleLoadedData = () => {
           videoElements.set(track.id, {
             id: track.id,
             element: videoElement,
             isLoaded: true,
+            isBuffering: false,
+            lastSeekTime: null,
           });
           setLoadingTracks((prev) => {
             const newSet = new Set(prev);
@@ -158,7 +237,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
             return newSet;
           });
 
-          // Seek to 2 seconds to avoid potential black frames at start
+          // Seek to avoid black frames, but use better logic
           if (videoElement.duration > 2) {
             videoElement.currentTime = 2;
           }
@@ -173,15 +252,32 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
             newSet.delete(track.id);
             return newSet;
           });
+          setBufferingTracks((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(track.id);
+            return newSet;
+          });
+        };
+
+        // Add buffering event listeners
+        const handleWaiting = () => {
+          setBufferingTracks((prev) => new Set(prev).add(track.id));
+        };
+
+        const handleCanPlay = () => {
+          setBufferingTracks((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(track.id);
+            return newSet;
+          });
         };
 
         videoElement.addEventListener('loadeddata', handleLoadedData);
         videoElement.addEventListener('error', handleError);
+        videoElement.addEventListener('waiting', handleWaiting);
+        videoElement.addEventListener('canplay', handleCanPlay);
 
-        // Set loading state
         setLoadingTracks((prev) => new Set(prev).add(track.id));
-
-        // Use the preview URL
         videoElement.src = track.previewUrl;
         document.body.appendChild(videoElement);
 
@@ -189,16 +285,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           id: track.id,
           element: videoElement,
           isLoaded: false,
+          isBuffering: false,
+          lastSeekTime: null,
         });
-      } else if (
-        (track.type === 'video' || track.type === 'image') &&
-        !track.previewUrl
-      ) {
-        console.warn(`⚠️ Track ${track.name} has no preview URL`);
       }
     });
 
-    // Cleanup on unmount
     return () => {
       for (const videoElement of videoElements.values()) {
         videoElement.element.remove();
@@ -207,70 +299,80 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     };
   }, [tracks]);
 
-  // Get active tracks at current frame
   const getActiveTracksAtFrame = useCallback(
     (frame: number) => {
-      const activeTracks = tracks.filter(
+      return tracks.filter(
         (track) =>
           track.visible && frame >= track.startFrame && frame < track.endFrame,
       );
-
-      return activeTracks;
     },
     [tracks],
   );
 
-  // Update video current time based on timeline
-  useEffect(() => {
-    const currentTimeInSeconds = timeline.currentFrame / timeline.fps;
-    const videoElements = videoElementsRef.current;
-
-    tracks.forEach((track) => {
-      const videoElement = videoElements.get(track.id);
-      if (videoElement && videoElement.isLoaded) {
-        const trackTimeInSeconds =
-          (timeline.currentFrame - track.startFrame) / timeline.fps;
-        if (
-          trackTimeInSeconds >= 0 &&
-          trackTimeInSeconds <= track.duration / timeline.fps
-        ) {
-          // Only update time if it's significantly different to avoid constant seeking
-          const timeDiff = Math.abs(
-            videoElement.element.currentTime - trackTimeInSeconds,
-          );
-          if (timeDiff > 0.1) {
-            // Only seek if more than 100ms difference
-            videoElement.element.currentTime = Math.max(0, trackTimeInSeconds);
-          }
-        }
-      }
-    });
-  }, [timeline.currentFrame, timeline.fps, tracks]);
-
-  // Sync audio playback with timeline controls
+  // Enhanced video synchronization with Remotion-inspired logic
   useEffect(() => {
     const videoElements = videoElementsRef.current;
 
     tracks.forEach((track) => {
       const videoElement = videoElements.get(track.id);
       if (videoElement && videoElement.isLoaded) {
-        const trackTimeInSeconds =
-          (timeline.currentFrame - track.startFrame) / timeline.fps;
+        // Use Remotion-inspired media time calculation
+        const targetTime = calculateMediaTime(
+          timeline.currentFrame,
+          track.startFrame,
+          timeline.fps,
+          playback.playbackRate,
+        );
+
         const isTrackActive =
           track.visible &&
           timeline.currentFrame >= track.startFrame &&
           timeline.currentFrame < track.endFrame;
 
-        if (isTrackActive && playback.isPlaying) {
+        if (
+          isTrackActive &&
+          targetTime >= 0 &&
+          targetTime <= track.duration / timeline.fps
+        ) {
+          // Use improved seeking logic
+          if (
+            shouldSeek(
+              videoElement.element.currentTime,
+              targetTime,
+              playback.isPlaying,
+            )
+          ) {
+            videoElement.element.currentTime = targetTime;
+            videoElement.lastSeekTime = performance.now();
+          }
+        }
+      }
+    });
+  }, [timeline.currentFrame, timeline.fps, tracks, playback.playbackRate]);
+
+  // Enhanced playback synchronization with buffering awareness
+  useEffect(() => {
+    const videoElements = videoElementsRef.current;
+    const anyBuffering = bufferingTracks.size > 0;
+
+    tracks.forEach((track) => {
+      const videoElement = videoElements.get(track.id);
+      if (videoElement && videoElement.isLoaded) {
+        const isTrackActive =
+          track.visible &&
+          timeline.currentFrame >= track.startFrame &&
+          timeline.currentFrame < track.endFrame;
+
+        // Don't play if any video is buffering (Remotion-inspired behavior)
+        if (isTrackActive && playback.isPlaying && !anyBuffering) {
           videoElement.element.play().catch((e) => {
-            // Handle autoplay restrictions gracefully
             console.log('Autoplay prevented for', track.name);
           });
         } else {
           videoElement.element.pause();
         }
 
-        // Sync volume and mute state
+        // Sync volume and playback rate
         videoElement.element.volume = playback.muted
           ? 0
           : playback.volume * 0.8;
@@ -286,42 +388,35 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     playback.volume,
     playback.muted,
     playback.playbackRate,
+    bufferingTracks.size,
   ]);
 
-  // Render preview
-  useEffect(() => {
+  // Enhanced rendering with frame-based updates
+  const renderFrame = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size to match container
     const canvasWidth = containerSize.width || preview.canvasWidth;
     const canvasHeight = containerSize.height || preview.canvasHeight;
 
-    // Only update canvas dimensions if they've actually changed
     if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
       canvas.width = canvasWidth;
       canvas.height = canvasHeight;
     }
 
-    // Calculate scaling factors for content
     const { scaleX, scaleY } = calculateContentScale();
 
-    // Scale the context to fit content properly
     ctx.save();
     ctx.scale(scaleX, scaleY);
-
-    // Clear canvas with scaled dimensions
     ctx.fillStyle = preview.backgroundColor;
     ctx.fillRect(0, 0, preview.canvasWidth, preview.canvasHeight);
 
-    // Get active tracks
     const activeTracks = getActiveTracksAtFrame(timeline.currentFrame);
     const videoElements = videoElementsRef.current;
 
-    // Render tracks
     activeTracks.forEach((track) => {
       const progress =
         (timeline.currentFrame - track.startFrame) /
@@ -330,13 +425,16 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       if (track.type === 'video' || track.type === 'image') {
         const videoElement = videoElements.get(track.id);
 
-        if (videoElement && videoElement.isLoaded) {
-          // Draw actual video frame
+        if (
+          videoElement &&
+          videoElement.isLoaded &&
+          !videoElement.isBuffering
+        ) {
           const video = videoElement.element;
           const width = track.width || preview.canvasWidth;
           const height = track.height || preview.canvasHeight;
-          const x = track.offsetX || preview.canvasWidth - width;
-          const y = track.offsetY || preview.canvasHeight - height;
+          const x = track.offsetX || (preview.canvasWidth - width) / 2;
+          const y = track.offsetY || (preview.canvasHeight - height) / 2;
 
           try {
             ctx.drawImage(video, x, y, width, height);
@@ -345,191 +443,82 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
               `❌ Failed to draw video frame for ${track.name}:`,
               error,
             );
-
-            // Fallback to placeholder if video can't be drawn
-            ctx.fillStyle = track.color;
+            // Fallback rendering
+            ctx.fillStyle = track.color || '#000000';
             ctx.globalAlpha = 0.8;
             ctx.fillRect(x, y, width, height);
-
-            // Add track label
-            ctx.fillStyle = 'white';
-            ctx.font = '16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(track.name, x + width / 2, y + height / 2);
-            ctx.globalAlpha = 1;
           }
-        } else {
-          // Loading placeholder or fallback
-          const width = track.width || preview.canvasWidth;
-          const height = track.height || preview.canvasHeight;
-          const x = track.offsetX || (preview.canvasWidth - width) / 2;
-          const y = track.offsetY || (preview.canvasHeight - height) / 2;
-
-          ctx.fillStyle = loadingTracks.has(track.id) ? '#444' : track.color;
-          ctx.globalAlpha = 0.8;
-          ctx.fillRect(x, y, width, height);
-
-          // Add loading indicator or track label
-          ctx.fillStyle = 'white';
-          ctx.font = '16px sans-serif';
-          ctx.textAlign = 'center';
-          const text = loadingTracks.has(track.id) ? 'Loading...' : track.name;
-          ctx.fillText(text, x + width / 2, y + height / 2);
-          ctx.globalAlpha = 1;
         }
-      } else if (track.type === 'audio') {
-        // Audio waveform placeholder
-        ctx.fillStyle = track.color;
-        ctx.globalAlpha = 0.8;
-
-        const waveHeight = 40;
-        const y = preview.canvasHeight - waveHeight - 20;
-        const barWidth = 2;
-        const numBars = preview.canvasWidth / (barWidth + 1);
-
-        for (let i = 0; i < numBars; i++) {
-          const height = Math.random() * waveHeight * progress;
-          ctx.fillRect(
-            i * (barWidth + 1),
-            y + (waveHeight - height) / 2,
-            barWidth,
-            height,
-          );
-        }
-
-        ctx.globalAlpha = 1;
       }
     });
 
-    // Draw grid if enabled
-    if (preview.showGrid) {
-      ctx.strokeStyle = 'rgba(216, 45, 45, 0.2)';
-      ctx.lineWidth = 1;
-
-      const gridSize = 50;
-      for (let x = 0; x <= preview.canvasWidth; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, preview.canvasHeight);
-        ctx.stroke();
-      }
-
-      for (let y = 0; y <= preview.canvasHeight; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(preview.canvasWidth, y);
-        ctx.stroke();
-      }
-    }
-
-    // Draw safe zones if enabled
-    ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
-    ctx.lineWidth = 2;
-
-    const margin = 0; // 5% margin
-    const safeWidth = preview.canvasWidth * (1 - margin * 2);
-    const safeHeight = preview.canvasHeight * (1 - margin * 2);
-    const safeX = preview.canvasWidth * margin;
-    const safeY = preview.canvasHeight * margin;
-
-    ctx.strokeRect(safeX, safeY, safeWidth, safeHeight);
-
-    // Restore context
     ctx.restore();
   }, [
+    containerSize,
     preview,
     timeline.currentFrame,
-    getActiveTracksAtFrame,
-    loadingTracks,
-    containerSize,
     calculateContentScale,
+    getActiveTracksAtFrame,
   ]);
 
-  // Calculate zoom scale for wheel interactions
-  const zoomScale = preview.previewScale;
+  // Animation loop for rendering
+  useEffect(() => {
+    const animate = () => {
+      renderFrame();
+      renderFrameRef.current = requestAnimationFrame(animate);
+    };
+
+    renderFrameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (renderFrameRef.current) {
+        cancelAnimationFrame(renderFrameRef.current);
+      }
+    };
+  }, [renderFrame]);
 
   return (
     <div
       ref={containerRef}
-      className={`video-preview mb-8 rounded h-[100%] w-[60%] md:w-[70%] ${className || ''}`}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#1a1a1a',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
+      className={`relative bg-gray-900 overflow-hidden ${className || ''}`}
     >
-      {/* Canvas */}
-      <motion.canvas
+      <canvas
         ref={canvasRef}
+        className="w-full h-full object-contain"
         style={{
-          border: '1px solid #555',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-          cursor: 'grab',
-          width: '100%',
-          height: '100%',
-          objectFit: 'contain',
-        }}
-        animate={{
-          scale: zoomScale,
-        }}
-        transition={{
-          type: 'spring',
-          stiffness: 300,
-          damping: 30,
+          transform: `scale(${preview.previewScale})`,
+          transformOrigin: 'center',
         }}
       />
 
-      {/* No Content Message */}
-      {tracks.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-white text-center border border-dashed">
-          <div className="flex text-md font-bold flex-col items-center">
-            <span className="mb-4">
-              <FaSquarePlus size={36} />
-            </span>
-            <span>Click to upload</span>
-            <span>or drag and drop files here</span>
-          </div>
-        </div>
-      )}
-
-      {/* Resolution Display */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '16px',
-          left: '16px',
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          color: '#fff',
-          padding: '4px 8px',
-          borderRadius: '4px',
-          fontSize: '11px',
-          zIndex: 10,
-        }}
-      >
-        {preview.canvasWidth} × {preview.canvasHeight}
-      </div>
-
-      {/* Loading Indicator */}
+      {/* Loading indicator */}
       {loadingTracks.size > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '16px',
-            left: '16px',
-            backgroundColor: 'rgba(0,0,0,0.8)',
-            color: '#fff',
-            padding: '8px 12px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            zIndex: 10,
-          }}
-        >
+        <div className="absolute top-4 right-4 bg-black bg-opacity-75 text-white px-3 py-1 rounded text-sm">
           Loading {loadingTracks.size} track{loadingTracks.size > 1 ? 's' : ''}
           ...
         </div>
+      )}
+
+      {/* Buffering indicator */}
+      {bufferingTracks.size > 0 && (
+        <div className="absolute top-4 left-4 bg-yellow-600 bg-opacity-75 text-white px-3 py-1 rounded text-sm">
+          Buffering {bufferingTracks.size} track
+          {bufferingTracks.size > 1 ? 's' : ''}...
+        </div>
+      )}
+
+      {/* Add media button when no tracks */}
+      {tracks.length === 0 && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          <div className="text-center text-gray-400">
+            <FaSquarePlus className="mx-auto mb-4 text-6xl" />
+            <p className="text-lg">Drop media files here or click to add</p>
+          </div>
+        </motion.div>
       )}
     </div>
   );
