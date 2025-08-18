@@ -6,20 +6,17 @@
   },
   "extends": [
     "eslint:recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
     "plugin:@typescript-eslint/recommended",
-    "plugin:react/recommended",
     "plugin:import/recommended",
+    "plugin:import/electron",
     "plugin:import/typescript",
     "plugin:import/errors",
-    "plugin:import/warnings",
-    "plugin:prettier/recommended"
+    "plugin:import/warnings"
   ],
-  "plugins": ["@typescript-eslint", "react", "prettier"],
+  "plugins": ["prettier"],
   "parser": "@typescript-eslint/parser",
   "settings": {
-    "react": {
-      "version": "detect"
-    },
     "import/resolver": {
       "node": {
         "extensions": [".js", ".jsx", ".ts", ".tsx"]
@@ -32,10 +29,12 @@
       "error",
       {
         "endOfLine": "auto",
-        "singleQuote": true
+        "singleQuote": true,
+        "import/extensions": "off"
       }
     ],
     "react/react-in-jsx-scope": "off",
+
     "import/no-extraneous-dependencies": [
       "off",
       { "devDependencies": ["**/*.config.ts"] }

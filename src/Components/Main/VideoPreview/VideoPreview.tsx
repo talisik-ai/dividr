@@ -1,10 +1,10 @@
 /* eslint-disable prettier/prettier */  
 import { motion } from 'framer-motion';
 import React, {
-    useCallback,
-    useEffect,
-    useRef,
-    useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
 } from 'react';
 import { FaSquarePlus } from 'react-icons/fa6';
 import { useVideoEditorStore } from '../../../Store/videoEditorStore';
@@ -85,35 +85,33 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   const { preview, timeline, tracks, setPreviewScale, playback } =  
     useVideoEditorStore();  
   
-  // Container size management  
+  // Enhanced container size management with better responsiveness
   useEffect(() => {  
     const updateSize = () => {  
       if (containerRef.current) {  
         const { clientWidth, clientHeight } = containerRef.current;  
-        setContainerSize({ width: clientWidth, height: clientHeight });  
+        const newSize = { width: clientWidth, height: clientHeight };
+        
+        // Only update if size has meaningfully changed (avoid micro-updates)
+        setContainerSize(prevSize => {
+          const widthDiff = Math.abs(prevSize.width - newSize.width);
+          const heightDiff = Math.abs(prevSize.height - newSize.height);
+          
+          if (widthDiff > 5 || heightDiff > 5) {
+            return newSize;
+          }
+          return prevSize;
+        });
       }  
     };  
   
-    const debouncedUpdateSize = () => {  
-      if (resizeTimeoutRef.current) {  
-        clearTimeout(resizeTimeoutRef.current);  
-      }  
-      resizeTimeoutRef.current = setTimeout(updateSize, 16);  
-    };  
+    const debouncedUpdateSize = debounce(updateSize, 100); // Increased debounce for stability
   
     let resizeObserver: ResizeObserver | null = null;  
     updateSize();  
   
     if (containerRef.current && window.ResizeObserver) {  
-      resizeObserver = new ResizeObserver((entries) => {  
-        for (const entry of entries) {  
-          const { width, height } = entry.contentRect;  
-          if (resizeTimeoutRef.current) {  
-            clearTimeout(resizeTimeoutRef.current);  
-          }  
-          setContainerSize({ width, height });  
-        }  
-      });  
+      resizeObserver = new ResizeObserver(debouncedUpdateSize);
       resizeObserver.observe(containerRef.current);  
     } else {  
       window.addEventListener('resize', debouncedUpdateSize);  
@@ -142,11 +140,22 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   
   const calculateContentScale = useCallback(() => {  
     if (!containerSize.width || !containerSize.height)  
-      return { scaleX: 1, scaleY: 1 };  
+      return { scaleX: 1, scaleY: 1, actualWidth: preview.canvasWidth, actualHeight: preview.canvasHeight };  
   
+    // Calculate scale to fit content within container while maintaining aspect ratio
     const scaleX = containerSize.width / preview.canvasWidth;  
     const scaleY = containerSize.height / preview.canvasHeight;  
-    return { scaleX, scaleY };  
+    const scale = Math.min(scaleX, scaleY); // Use uniform scale to maintain aspect ratio
+    
+    const actualWidth = preview.canvasWidth * scale;
+    const actualHeight = preview.canvasHeight * scale;
+    
+    return { 
+      scaleX: scale, 
+      scaleY: scale, 
+      actualWidth,
+      actualHeight
+    };  
   }, [containerSize, preview.canvasWidth, preview.canvasHeight]);  
   
   const handleWheel = useCallback(  
@@ -406,26 +415,32 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     if (!ctx) return;  
   
     try {  
-      const canvasWidth = containerSize.width || preview.canvasWidth;  
-      const canvasHeight = containerSize.height || preview.canvasHeight;  
+      const { scaleX, scaleY, actualWidth, actualHeight } = calculateContentScale();
+      
+      // Use actual scaled dimensions for canvas
+      const canvasWidth = Math.max(actualWidth || preview.canvasWidth, 100); // Minimum size
+      const canvasHeight = Math.max(actualHeight || preview.canvasHeight, 100);
   
       // Only resize canvas when necessary to avoid GPU resets  
       if (  
-        Math.abs(canvas.width - canvasWidth) > 1 ||  
-        Math.abs(canvas.height - canvasHeight) > 1  
+        Math.abs(canvas.width - canvasWidth) > 10 ||  
+        Math.abs(canvas.height - canvasHeight) > 10  
       ) {  
         canvas.width = canvasWidth;  
         canvas.height = canvasHeight;  
       }  
   
-      const { scaleX, scaleY } = calculateContentScale();  
-  
       ctx.save();  
-      ctx.scale(scaleX, scaleY);  
-  
-      // Clear with solid background  
+      
+      // Clear entire canvas first
       ctx.fillStyle = preview.backgroundColor;  
-      ctx.fillRect(0, 0, preview.canvasWidth, preview.canvasHeight);  
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Center the content and apply scale
+      const offsetX = (canvas.width - actualWidth) / 2;
+      const offsetY = (canvas.height - actualHeight) / 2;
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(scaleX, scaleY);  
   
       const activeTracks = getActiveTracksAtFrame(timeline.currentFrame);  
       const videoElements = videoElementsRef.current;  
@@ -571,14 +586,14 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
    return (
      <div
        ref={containerRef}
-       className={`relative bg-gray-900 overflow-hidden ${className || ''}`}
+       className={`relative overflow-hidden w-full h-full min-h-0 flex items-center justify-center ${className || ''}`}
      >
        <canvas
          ref={canvasRef}
-         className="w-full h-full object-contain"
+         className="max-w-full max-h-full object-contain"
          style={{
            transform: `scale(${preview.previewScale})`,
-           transformOrigin: 'center',
+           transformOrigin: 'center'
          }}
        />
 
@@ -596,11 +611,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
          </div>
        )}
 
-       {/* Debug info */}
+       {/* Debug info
        <div className="absolute bottom-4 left-4 bg-black bg-opacity-75 text-white px-3 py-1 rounded text-xs">
          Tracks: {tracks.length} | Active: {getActiveTracksAtFrame(timeline.currentFrame).length} | Frame: {timeline.currentFrame}
        </div>
-
+ */}
        {/* Add media button when no tracks */}
        {tracks.length === 0 && (
          <motion.div
@@ -608,9 +623,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
            animate={{ opacity: 1, scale: 1 }}
            className="absolute inset-0 flex items-center justify-center"
          >
-           <div className="text-center text-gray-400">
-             <FaSquarePlus className="mx-auto mb-4 text-6xl" />
-             <p className="text-lg">Drop media files here or click to add</p>
+           <div className="text-center text-gray-400 p-4">
+             <FaSquarePlus className="mx-auto mb-4 text-3xl lg:text-5xl" />
+             <p className="mx-auto text-sm md:text-md lg:text-lg">Drop media files here or click to add</p>
            </div>
          </motion.div>
        )}

@@ -521,12 +521,12 @@ ipcMain.handle('ffmpeg:cancel', async () => {
 
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 900,
+    height: 700,
     frame: false,
     autoHideMenuBar: true,
-    minWidth: 600,
-    minHeight: 400,
+    minWidth: 750,
+    minHeight: 500,
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),

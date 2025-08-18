@@ -37,9 +37,9 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      <div className="flex overflow-hidden">
+      <div className="flex flex-1 items-center justify-center overflow-hidden">
         {/* Main Content Area */}
-        <VideoPreview className="mx-12" />
+        <VideoPreview className="w-full h-full max-w-full max-h-full" />
       </div>
 
       {/* Render Progress Overlay */}

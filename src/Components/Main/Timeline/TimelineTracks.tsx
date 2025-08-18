@@ -267,7 +267,7 @@ const TrackRow: React.FC<TrackRowProps> = ({
 
   return (
     <div
-      className={`relative h-10 lg:h-16 border-b border-[#3d3d3d] border-l-[3px]
+      className={`relative sm:h-6 md:h-8 lg:h-12 border-b border-[#3d3d3d] border-l-[3px]
         ${isDragOver ? 'bg-green-500/10 border-l-green-500' : 'bg-transparent border-l-transparent'}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

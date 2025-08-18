@@ -71,7 +71,7 @@ const VideoEditorLayout = () => {
               {/* Properties Panel - always visible */}
               <PropertiesPanel />
             </div>
-            <div className="h-[180px] md:h-[175px] lg:h-[245px] flex-shrink-0">
+            <div className="h-[185px] md:h-[195px] lg:h-[245px] flex-shrink-0">
               <Timeline />
             </div>
           </div>

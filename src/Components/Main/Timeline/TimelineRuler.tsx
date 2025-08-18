@@ -105,8 +105,8 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
 
   return (
     <div
+      className="h-[36px] lg:h-[40px]"
       style={{
-        height: '50px',
         backgroundColor: '#1e1e1e',
         borderBottom: '1px solid #333',
         position: 'relative',

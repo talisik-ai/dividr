@@ -18,7 +18,7 @@ body {
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 7px; /* Width of the scrollbar */
-  height: 12px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {

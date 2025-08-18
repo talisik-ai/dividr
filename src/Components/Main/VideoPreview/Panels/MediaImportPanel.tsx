@@ -1,3 +1,4 @@
+import { ScrollTabs } from '@/Components/ui/scroll-tab';
 import React, { useCallback, useRef, useState } from 'react';
 import { useVideoEditorStore } from '../../../../Store/videoEditorStore';
 import { CustomPanelProps } from './PanelRegistry';
@@ -25,6 +26,35 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     'all' | 'videos' | 'audio' | 'images'
   >('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const tabs = [
+    {
+      value: 'account',
+      label: 'Account',
+      content: <div>Account Settings</div>,
+    },
+    {
+      value: 'password',
+      label: 'Password',
+      content: <div>Change Password</div>,
+    },
+    { value: 'billing', label: 'Billing', content: <div>Billing Info</div> },
+    {
+      value: 'notifications',
+      label: 'Notifications',
+      content: <div>Notification Settings</div>,
+    },
+    {
+      value: 'security',
+      label: 'Security',
+      content: <div>Security Options</div>,
+    },
+    {
+      value: 'appearance',
+      label: 'Appearance',
+      content: <div>Theme Settings</div>,
+    },
+  ];
 
   // Handle drag events
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -114,7 +144,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+  }; //
 
   const getFileIcon = (type: string): string => {
     if (type.startsWith('video/')) return '🎬';
@@ -163,19 +193,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       </div>
       {/* Tab Navigation */}
       <div className="flex border-b border-gray-700">
-        {(['all', 'videos', 'audio', 'images'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 px-4 py-3 text-xs font-medium capitalize transition-colors duration-200 ${
-              activeTab === tab
-                ? 'text-blue-400 border-b-2 border-blue-400 bg-gray-800'
-                : 'text-gray-400 hover:text-white hover:bg-gray-800'
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
+        <ScrollTabs tabs={tabs} />{' '}
       </div>
 
       {/* Upload Area */}
