@@ -23,18 +23,17 @@ export function ScrollTabs({ tabs, defaultValue, className }: ScrollTabsProps) {
 
     const { scrollLeft, scrollWidth, clientWidth } = viewport;
     setCanScrollLeft(scrollLeft > 0);
-    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1); // -1 for rounding errors
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
   }, []);
 
   const scroll = (dir: 'left' | 'right') => {
-    // Find the scroll viewport element within the ScrollArea
     const viewport = scrollViewportRef.current?.querySelector(
       '[data-slot="scroll-area-viewport"]',
     ) as HTMLElement;
     if (!viewport) return;
 
     const { scrollLeft, clientWidth, scrollWidth } = viewport;
-    const scrollDistance = Math.min(clientWidth * 0.6, 200); // Scroll 60% of visible width or max 200px
+    const scrollDistance = Math.min(clientWidth * 0.6, 200);
 
     let newScroll: number;
     if (dir === 'left') {
@@ -47,12 +46,9 @@ export function ScrollTabs({ tabs, defaultValue, className }: ScrollTabsProps) {
     }
 
     viewport.scrollTo({ left: newScroll, behavior: 'smooth' });
-
-    // Update button states after scroll animation
     setTimeout(updateScrollButtons, 300);
   };
 
-  // Update scroll button states on mount and when tabs change
   React.useEffect(() => {
     const viewport = scrollViewportRef.current?.querySelector(
       '[data-slot="scroll-area-viewport"]',
@@ -60,11 +56,9 @@ export function ScrollTabs({ tabs, defaultValue, className }: ScrollTabsProps) {
     if (!viewport) return;
 
     updateScrollButtons();
-
     const handleScroll = () => updateScrollButtons();
     viewport.addEventListener('scroll', handleScroll);
 
-    // Also listen for resize events
     const resizeObserver = new ResizeObserver(updateScrollButtons);
     resizeObserver.observe(viewport);
 
@@ -79,24 +73,22 @@ export function ScrollTabs({ tabs, defaultValue, className }: ScrollTabsProps) {
       defaultValue={defaultValue ?? tabs[0]?.value}
       className={cn('w-full', className)}
     >
-      <div className="relative flex items-center">
+      <div className="flex items-center w-full px-2">
         {/* Left Button */}
         <button
           onClick={() => scroll('left')}
           disabled={!canScrollLeft}
           className={cn(
-            'absolute left-0 z-10 h-9 w-9 flex items-center justify-center rounded-md bg-background shadow transition-opacity',
-            canScrollLeft
-              ? 'hover:bg-accent opacity-100'
-              : 'opacity-50 cursor-not-allowed',
+            'h-9 w-4 flex items-center justify-center rounded-md bg-background shadow transition-opacity',
+            canScrollLeft ? 'hover:bg-accent opacity-100' : 'hidden',
           )}
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
 
         {/* Scrollable Tabs */}
-        <ScrollArea ref={scrollViewportRef} className="w-full overflow-hidden">
-          <TabsList className="flex w-max gap-2 bg-transparent p-0 px-10">
+        <ScrollArea ref={scrollViewportRef} className="flex-1 overflow-hidden">
+          <TabsList className="flex w-max gap-1 bg-transparent p-0 !text-[8px]">
             {tabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value}>
                 {tab.label}
@@ -111,10 +103,8 @@ export function ScrollTabs({ tabs, defaultValue, className }: ScrollTabsProps) {
           onClick={() => scroll('right')}
           disabled={!canScrollRight}
           className={cn(
-            'absolute right-0 z-10 h-9 w-9 flex items-center justify-center rounded-md bg-background shadow transition-opacity',
-            canScrollRight
-              ? 'hover:bg-accent opacity-100'
-              : 'opacity-50 cursor-not-allowed',
+            'h-9 w-4 flex items-center justify-center rounded-md bg-background shadow transition-opacity',
+            canScrollRight ? 'hover:bg-accent opacity-100' : 'hidden',
           )}
         >
           <ChevronRight className="h-4 w-4" />
@@ -123,7 +113,7 @@ export function ScrollTabs({ tabs, defaultValue, className }: ScrollTabsProps) {
 
       {/* Tab Content */}
       {tabs.map((tab) => (
-        <TabsContent key={tab.value} value={tab.value} className="mt-4">
+        <TabsContent key={tab.value} value={tab.value} className="mt-4 text-sm">
           {tab.content}
         </TabsContent>
       ))}

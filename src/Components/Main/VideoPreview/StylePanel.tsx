@@ -219,7 +219,7 @@ export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
 
   return (
     <div
-      className={`bg-secondary text-white border-r border-gray-700 transition-all duration-300 ${className || panelWidth}`}
+      className={`overflow-auto bg-secondary text-white border-r border-gray-700 transition-all duration-300 ${className || panelWidth}`}
     >
       {/* Panel Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-600">
