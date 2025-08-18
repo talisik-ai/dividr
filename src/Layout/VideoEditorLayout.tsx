@@ -58,25 +58,25 @@ const VideoEditorLayout = () => {
             className={`w-[55px] bg-secondary mx-2 mb-4 overflow-y-auto h-full transition-all duration-300 rounded`}
           />
           <div className="flex flex-col flex-1 overflow-hidden">
-            <div className='flex flex-row flex-1 overflow-hidden'>
+            <div className="flex flex-row flex-1 overflow-hidden">
               {/* Dynamic StylePanel - only shows when a panel is active */}
               {isPanelVisible && (
-                <StylePanel className="flex-shrink-0 mr-2 rounded"/>
+                <StylePanel className="flex-shrink-0 mr-2 rounded" />
               )}
-              
+
               <main className="flex-1 overflow-auto">
                 <Outlet />
               </main>
-              
+
               {/* Properties Panel - always visible */}
               <PropertiesPanel />
             </div>
             <div className="h-[180px] md:h-[175px] lg:h-[245px] flex-shrink-0">
-               <Timeline />
+              <Timeline />
             </div>
           </div>
         </div>
-        </div>
+      </div>
     </ErrorBoundary>
   );
 };

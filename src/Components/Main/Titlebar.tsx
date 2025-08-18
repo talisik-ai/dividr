@@ -7,7 +7,7 @@
  *
  */
 import React, { useCallback } from 'react';
-import { FaPlus } from "react-icons/fa";
+import { FaPlus } from 'react-icons/fa';
 import { IoMdClose, IoMdRemove } from 'react-icons/io';
 import { PiBrowsers, PiExportBold } from 'react-icons/pi';
 import { RxBox } from 'react-icons/rx';
@@ -20,7 +20,7 @@ import {
   runFfmpegWithProgress,
 } from '../../Utility/ffmpegRunner';
 import { useTheme } from '../../Utility/ThemeProvider';
-
+import { Input } from '../ui/input';
 interface TitleBarProps {
   className?: string;
 }
@@ -43,7 +43,11 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
   // Determine context based on current route
   const isInVideoEditor = location.pathname.startsWith('/video-editor');
-  const titleText = isInVideoEditor ? 'Untitled Video' : 'Dividr';
+  const titleText = isInVideoEditor ? (
+    <Input className="border-none text-center text-sm p-2 h-6" />
+  ) : (
+    'Dividr'
+  );
   const showExportButton = isInVideoEditor;
 
   // Convert tracks to FFmpeg job
@@ -165,7 +169,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
           {/* Centered Title */}
           <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center justify-center">
-            <span className="text-white">{titleText}</span>
+            <span className="text-white no-drag">{titleText}</span>
           </div>
 
           {/* Buttons */}
@@ -183,14 +187,14 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
                 <PiExportBold size={16} />
               </button>
             )}
-            
+
             {/* Import Media Button - Only show when not in video editor */}
             {!showExportButton && (
               <button
                 onClick={handleCreateProject}
                 className="m-2 h-6 lg:h-8  bg-primary border-none text-white text-xs lg:text-sm cursor-pointer px-4 py-0 rounded flex flex-row gap-1 items-center justify-center"
               >
-                                <FaPlus size={16} />
+                <FaPlus size={16} />
                 New Project
               </button>
             )}
