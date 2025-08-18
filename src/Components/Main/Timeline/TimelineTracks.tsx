@@ -150,8 +150,8 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full">
-      {/* Main track - temporarily without draggable to test positioning */}
+    <>
+      {/* Main track - positioned absolutely within the shared container */}
       <div
         ref={nodeRef}
         className={`
@@ -209,7 +209,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
           onMouseDown={(e) => handleMouseDown('right', e)}
         />
       )}
-    </div>
+    </>
   );
 };
 
@@ -359,7 +359,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
 
   const handleRowDrop = useCallback(
     async (rowId: string, files: FileList) => {
-      console.log(`🎯 Dropped ${files.length} files on ${rowId} row`);
+      //console.log(`🎯 Dropped ${files.length} files on ${rowId} row`);
 
       // Filter files based on row type
       const fileArray = Array.from(files);
