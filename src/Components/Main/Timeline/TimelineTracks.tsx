@@ -1,5 +1,4 @@
 import React, { useCallback, useRef, useState } from 'react';
-import Draggable from 'react-draggable';
 import {
   VideoTrack,
   useVideoEditorStore,
@@ -43,7 +42,6 @@ interface TimelineTracksProps {
   frameWidth: number;
   timelineWidth: number;
   scrollX: number;
-  currentFrame: number;
   selectedTrackIds: string[];
   onTrackSelect: (trackIds: string[]) => void;
 }
@@ -56,7 +54,6 @@ interface TrackItemProps {
   onSelect: () => void;
   onMove: (newStartFrame: number) => void;
   onResize: (newStartFrame?: number, newEndFrame?: number) => void;
-  rowIndex: number;
 }
 
 export const TrackItem: React.FC<TrackItemProps> = ({
@@ -67,45 +64,23 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   onSelect,
   onMove,
   onResize,
-  rowIndex,
 }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState<'left' | 'right' | false>(false);
-  const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({
     x: 0,
     startFrame: 0,
     endFrame: 0,
   });
 
-  // Calculate current width based on actual track duration
-  const currentDuration = track.endFrame - track.startFrame;
-  const width = currentDuration * frameWidth;
-  const left = track.startFrame * frameWidth - scrollX;
+  // Calculate positions relative to the scrolled timeline
+  const startX = track.startFrame * frameWidth;
+  const endX = track.endFrame * frameWidth;
+  const width = endX - startX;
 
-  const handleDragStart = useCallback(() => {
-    setIsDragging(true);
-  }, []);
-
-  const handleDragStop = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  const handleDrag = useCallback(
-    (_: any, data: { x: number }) => {
-      if (isResizing) return; // Don't move while resizing
-
-      const newStartFrame = Math.max(
-        0,
-        Math.round((data.x + scrollX) / frameWidth),
-      );
-
-      // For now, just call onMove - collision detection will be handled in the store
-      onMove(newStartFrame);
-    },
-    [frameWidth, scrollX, onMove, isResizing],
-  );
-
+  // Position relative to the scrolled container
+  const left = startX;
+  const clampedWidth = Math.max(1, width);
   // Mouse handlers for resize
   const handleMouseDown = useCallback(
     (side: 'left' | 'right', e: React.MouseEvent) => {
@@ -176,55 +151,44 @@ export const TrackItem: React.FC<TrackItemProps> = ({
 
   return (
     <div className="relative w-full h-full">
-      {/* Main track - draggable for moving */}
-      <Draggable
-        nodeRef={nodeRef}
-        axis="x"
-        position={{ x: left, y: 0 }}
-        onDrag={handleDrag}
-        onStart={handleDragStart}
-        onStop={handleDragStop}
-        grid={[frameWidth, 1]}
-        disabled={track.locked || isResizing !== false}
+      {/* Main track - temporarily without draggable to test positioning */}
+      <div
+        ref={nodeRef}
+        className={`
+          absolute h-[30px] rounded flex items-center px-2 py-1 overflow-hidden select-none z-[1]
+          ${isSelected ? 'border-2 border-white' : 'border border-white/20'}
+          ${track.locked ? 'cursor-not-allowed' : 'cursor-grab'}
+          ${track.visible ? 'opacity-100' : 'opacity-50'}
+        `}
+        style={{
+          left: `${left}px`,
+          width: `${clampedWidth}px`,
+          background: getTrackGradient(track.type),
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
       >
         <div
-          ref={nodeRef}
-          className={`
-            absolute h-[30px] rounded flex items-center px-2 py-1 overflow-hidden select-none z-[1]
-            ${isSelected ? 'border-2 border-white' : 'border border-white/20'}
-            ${track.locked ? 'cursor-not-allowed' : isResizing ? 'cursor-ew-resize' : 'cursor-grab'}
-            ${track.visible ? (isDragging ? 'opacity-80' : 'opacity-100') : 'opacity-50'}
-            ${isDragging ? 'scale-[1.02] z-10 transition-none' : 'scale-100 transition-transform duration-100 ease-in-out'}
-          `}
-          style={{
-            width: width,
-            background: getTrackGradient(track.type),
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect();
-          }}
+          className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis"
+          style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
         >
-          <div
-            className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis"
-            style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
-          >
-            {track.name}
-          </div>
-
-          {track.type === 'audio' && track.volume !== undefined && (
-            <div className="absolute right-1 top-1 text-[8px] text-white/80">
-              {Math.round(track.volume * 100)}%
-            </div>
-          )}
-
-          {track.locked && (
-            <div className="absolute top-0.5 right-0.5 text-[10px] text-white/60">
-              🔒
-            </div>
-          )}
+          {track.name}
         </div>
-      </Draggable>
+
+        {track.type === 'audio' && track.volume !== undefined && (
+          <div className="absolute right-1 top-1 text-[8px] text-white/80">
+            {Math.round(track.volume * 100)}%
+          </div>
+        )}
+
+        {track.locked && (
+          <div className="absolute top-0.5 right-0.5 text-[10px] text-white/60">
+            🔒
+          </div>
+        )}
+      </div>
 
       {/* Left resize handle */}
       {!track.locked && isSelected && (
@@ -241,7 +205,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
         <div
           className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-[15] rounded-r
             ${isResizing === 'right' ? 'bg-blue-500' : 'bg-green-500'}`}
-          style={{ left: left + width - 3 }}
+          style={{ left: left + clampedWidth - 3 }}
           onMouseDown={(e) => handleMouseDown('right', e)}
         />
       )}
@@ -313,7 +277,7 @@ const TrackRow: React.FC<TrackRowProps> = ({
       <div
         className="absolute top-0 h-full pointer-events-none"
         style={{
-          left: -scrollX,
+          left: 0,
           width: timelineWidth,
           background: `repeating-linear-gradient(
           90deg,
@@ -339,7 +303,6 @@ const TrackRow: React.FC<TrackRowProps> = ({
             onResize={(newStartFrame, newEndFrame) =>
               onTrackResize(track.id, newStartFrame, newEndFrame)
             }
-            rowIndex={0}
           />
         ))}
       </div>
@@ -360,7 +323,6 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
   frameWidth,
   timelineWidth,
   scrollX,
-  currentFrame,
   selectedTrackIds,
   onTrackSelect,
 }) => {
@@ -441,14 +403,18 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
       );
     });
 
-    console.log('🎬 Tracks grouped by rows:', grouped);
+    // Tracks organized by row type for rendering
     return grouped;
   }, [tracks]);
 
   return (
     <div
       className="relative min-h-full bg-[#1a1a1a]"
-      style={{ width: timelineWidth }}
+      style={{
+        width: timelineWidth,
+        minWidth: timelineWidth,
+        overflow: 'visible',
+      }}
     >
       {/* Render each track row */}
       {TRACK_ROWS.map((rowDef) => (

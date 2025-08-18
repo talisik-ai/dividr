@@ -4,7 +4,6 @@ import { VideoTrack } from '../../../Store/videoEditorStore';
 interface TimelineRulerProps {
   frameWidth: number;
   totalFrames: number;
-  currentFrame: number;
   scrollX: number;
   fps: number;
   tracks: VideoTrack[];
@@ -16,7 +15,6 @@ interface TimelineRulerProps {
 export const TimelineRuler: React.FC<TimelineRulerProps> = ({
   frameWidth,
   totalFrames,
-  currentFrame,
   scrollX,
   fps,
   tracks,
@@ -89,12 +87,18 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
   // Calculate track content regions for visualization
   const trackRegions = tracks
     .filter((track) => track.visible)
-    .map((track) => ({
-      startX: track.startFrame * frameWidth - scrollX,
-      endX: track.endFrame * frameWidth - scrollX,
-      type: track.type,
-      color: track.color,
-    }))
+    .map((track) => {
+      const region = {
+        startX: track.startFrame * frameWidth - scrollX,
+        endX: track.endFrame * frameWidth - scrollX,
+        type: track.type,
+        color: 'green',
+      };
+
+      // Track regions for visualization
+
+      return region;
+    })
     .filter(
       (region) => region.endX > -50 && region.startX < window.innerWidth + 50,
     );
@@ -225,41 +229,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
         />
       )}
 
-      {/* Current Frame Indicator - Enhanced */}
-      <div
-        style={{
-          position: 'absolute',
-          left: currentFrame * frameWidth - scrollX,
-          top: 0,
-          width: '3px',
-          height: '100%',
-          backgroundColor: '#FF5722',
-          zIndex: 15,
-          pointerEvents: 'none',
-          boxShadow: '0 0 6px rgba(255, 87, 34, 0.7)',
-        }}
-      />
-
-      {/* Frame number indicator for current position */}
-      <div
-        style={{
-          position: 'absolute',
-          left: currentFrame * frameWidth - scrollX + 8,
-          top: '2px',
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          color: '#FF5722',
-          padding: '2px 6px',
-          borderRadius: '4px',
-          fontSize: '9px',
-          fontWeight: 'bold',
-          whiteSpace: 'nowrap',
-          zIndex: 16,
-          pointerEvents: 'none',
-          border: '1px solid rgba(255, 87, 34, 0.3)',
-        }}
-      >
-        {currentFrame}
-      </div>
+      {/* Note: Playhead is handled by TimelinePlayhead component */}
     </div>
   );
 };

@@ -85,11 +85,12 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
         const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
         setZoom(Math.max(0.1, Math.min(timeline.zoom * zoomFactor, 10)));
       } else {
-        // Horizontal scroll
-        setScrollX(Math.max(0, timeline.scrollX + e.deltaX));
+        // Horizontal scroll - let the native scroll handle this
+        // The onScroll event will update the store
+        e.stopPropagation();
       }
     },
-    [timeline.zoom, timeline.scrollX, setZoom, setScrollX],
+    [timeline.zoom, setZoom],
   );
 
   useEffect(() => {
@@ -102,9 +103,27 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     }
   }, [handleWheel]);
 
+  // Sync scrollX state with actual scroll position
+  useEffect(() => {
+    const tracksElement = tracksRef.current;
+    if (
+      tracksElement &&
+      Math.abs(tracksElement.scrollLeft - timeline.scrollX) > 1
+    ) {
+      tracksElement.scrollLeft = timeline.scrollX;
+    }
+  }, [timeline.scrollX]);
+
   // Calculate frame width based on zoom
   const frameWidth = 2 * timeline.zoom; // Base width * zoom factor
-  const timelineWidth = timeline.totalFrames * frameWidth;
+
+  // Calculate effective timeline duration based on actual track content
+  const effectiveEndFrame =
+    tracks.length > 0
+      ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
+      : timeline.totalFrames;
+
+  const timelineWidth = effectiveEndFrame * frameWidth;
 
   // Handle timeline click to set current frame
   const handleTimelineClick = useCallback(
@@ -112,7 +131,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       if (!tracksRef.current) return;
 
       const rect = tracksRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left + timeline.scrollX;
+      const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
       const frame = Math.floor(x / frameWidth);
       const clampedFrame = Math.max(
         0,
@@ -120,7 +139,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       );
       setCurrentFrame(clampedFrame);
     },
-    [frameWidth, timeline.scrollX, timeline.totalFrames, setCurrentFrame],
+    [frameWidth, timeline.totalFrames, setCurrentFrame],
   );
 
   return (
@@ -142,19 +161,6 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       {/* Timeline Controls */}
       <TimelineControls />
 
-      {/* Timeline Ruler */}
-      <TimelineRuler
-        frameWidth={frameWidth}
-        totalFrames={timeline.totalFrames}
-        currentFrame={timeline.currentFrame}
-        scrollX={timeline.scrollX}
-        fps={timeline.fps}
-        tracks={tracks}
-        inPoint={timeline.inPoint}
-        outPoint={timeline.outPoint}
-        onClick={handleTimelineClick}
-      />
-
       {/* Timeline Content Area */}
       <div
         style={{
@@ -162,8 +168,29 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
           flex: 1,
           overflow: 'hidden',
           position: 'relative',
+          flexDirection: 'column',
         }}
       >
+        {/* Timeline Ruler - Fixed at top but scrolls horizontally */}
+        <div
+          style={{
+            position: 'relative',
+            overflow: 'hidden',
+            zIndex: 10,
+          }}
+        >
+          <TimelineRuler
+            frameWidth={frameWidth}
+            totalFrames={timeline.totalFrames}
+            scrollX={timeline.scrollX}
+            fps={timeline.fps}
+            tracks={tracks}
+            inPoint={timeline.inPoint}
+            outPoint={timeline.outPoint}
+            onClick={handleTimelineClick}
+          />
+        </div>
+
         {/* Timeline Tracks Area */}
         <div
           ref={tracksRef}
@@ -173,18 +200,34 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
             overflow: 'auto',
           }}
           onClick={handleTimelineClick}
+          onScroll={(e) => {
+            // Synchronize horizontal scroll with the timeline store
+            const scrollLeft = (e.target as HTMLElement).scrollLeft;
+            setScrollX(scrollLeft);
+          }}
         >
           <TimelineTracks
             tracks={tracks}
             frameWidth={frameWidth}
             timelineWidth={timelineWidth}
             scrollX={timeline.scrollX}
-            currentFrame={timeline.currentFrame}
             selectedTrackIds={timeline.selectedTrackIds}
             onTrackSelect={setSelectedTracks}
           />
+        </div>
 
-          {/* Playhead */}
+        {/* Global Playhead - spans across ruler and tracks */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            pointerEvents: 'none',
+            zIndex: 1000,
+          }}
+        >
           <TimelinePlayhead
             currentFrame={timeline.currentFrame}
             frameWidth={frameWidth}

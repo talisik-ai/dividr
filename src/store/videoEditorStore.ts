@@ -372,10 +372,13 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       set((state) => ({
         tracks: state.tracks.map((track) => {
           if (track.id === trackId) {
+            const updatedStartFrame = newStartFrame || track.startFrame;
+            const updatedEndFrame = newEndFrame || track.endFrame;
             return {
               ...track,
-              startFrame: newStartFrame || track.startFrame,
-              endFrame: newEndFrame || track.endFrame,
+              startFrame: updatedStartFrame,
+              endFrame: updatedEndFrame,
+              duration: updatedEndFrame - updatedStartFrame, // Keep duration in sync
             };
           }
           return track;
@@ -410,12 +413,17 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         return;
 
       const newId = uuidv4();
-      const firstPart = { ...track, endFrame: frame };
+      const firstPart = {
+        ...track,
+        endFrame: frame,
+        duration: frame - track.startFrame, // Update duration for first part
+      };
       const secondPart: VideoTrack = {
         ...track,
         id: newId,
         name: `${track.name} (2)`,
         startFrame: frame,
+        duration: track.endFrame - frame, // Update duration for second part
       };
 
       set((state) => ({
