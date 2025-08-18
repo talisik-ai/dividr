@@ -1,12 +1,6 @@
 import React from 'react';
 import { FaBackward, FaForward, FaPause, FaPlay } from 'react-icons/fa';
-import {
-  LuCopy,
-  LuRedo2,
-  LuSquareSplitHorizontal,
-  LuTrash,
-  LuUndo2,
-} from 'react-icons/lu';
+import { LuCopy, LuRedo2, LuTrash, LuUndo2 } from 'react-icons/lu';
 import { TbScissors } from 'react-icons/tb';
 
 import { useVideoEditorStore } from '../../../Store/videoEditorStore';
@@ -19,6 +13,7 @@ export const TimelineControls: React.FC = () => {
     togglePlayback,
     stop,
     setPlaybackRate,
+    splitAtPlayhead,
   } = useVideoEditorStore();
 
   const formatTime = (frame: number) => {
@@ -48,11 +43,11 @@ export const TimelineControls: React.FC = () => {
           <LuRedo2 />
         </button>
         <button
-          onClick={stop}
+          onClick={splitAtPlayhead}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Stop"
+          title="Split tracks at playhead"
         >
-          <LuSquareSplitHorizontal />
+          <TbScissors />
         </button>
         <button
           onClick={stop}

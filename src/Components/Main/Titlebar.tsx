@@ -50,30 +50,85 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   );
   const showExportButton = isInVideoEditor;
 
-  // Convert tracks to FFmpeg job
+  // Convert tracks to FFmpeg job with timeline-aware processing
   const createFFmpegJob = useCallback((): VideoEditJob => {
-    // Build a comprehensive job with per-track timing information
-    const trackInfos = tracks.map((track) => {
-      // For concatenation, we use the track's original duration from the source file
-      // track.duration = original file duration in frames
-      // startFrame/endFrame = timeline positions (not source file positions)
-      const originalDurationSeconds = track.duration / timeline.fps;
-
+    if (tracks.length === 0) {
       return {
-        path: track.source,
-        startTime: 0, // Always start from beginning of source file for concat
-        duration: Math.max(0.033, originalDurationSeconds), // Use original file duration
-        endTime: originalDurationSeconds, // End time relative to source file start
+        inputs: [],
+        output: 'final_video.mp4',
+        operations: {},
       };
-    });
+    }
+
+    // Sort tracks by timeline position to process them in order
+    const sortedTracks = [...tracks]
+      .filter((track) => track.visible) // Only include visible tracks
+      .sort((a, b) => a.startFrame - b.startFrame);
+
+    if (sortedTracks.length === 0) {
+      return {
+        inputs: [],
+        output: 'final_video.mp4',
+        operations: {},
+      };
+    }
+
+    const trackInfos: Array<{
+      path: string;
+      startTime?: number;
+      duration?: number;
+    }> = [];
+
+    // Process tracks in timeline order, adding black video for gaps
+    let currentTimelineFrame = 0;
+
+    for (const track of sortedTracks) {
+      // If there's a gap before this track, add a black video segment
+      if (track.startFrame > currentTimelineFrame) {
+        const gapDurationFrames = track.startFrame - currentTimelineFrame;
+        const gapDurationSeconds = gapDurationFrames / timeline.fps;
+
+        if (gapDurationSeconds > 0.033) {
+          // Only add significant gaps (> 1 frame)
+          console.log(
+            `🗬 Adding ${gapDurationSeconds}s gap before "${track.name}"`,
+          );
+
+          // Create a black video segment for the gap
+          // We'll mark this as a gap and handle it specially in the command builder
+          trackInfos.push({
+            path: '__GAP__',
+            duration: gapDurationSeconds,
+            startTime: 0,
+          });
+        }
+      }
+
+      // Add the actual track with proper source timing
+      const trackDurationSeconds = track.duration / timeline.fps;
+      const sourceStartTime = track.sourceStartTime || 0;
+
+      console.log(
+        `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
+      );
+
+      trackInfos.push({
+        path: track.source,
+        startTime: sourceStartTime,
+        duration: Math.max(0.033, trackDurationSeconds),
+      });
+
+      // Update current position to the end of this track
+      currentTimelineFrame = track.endFrame;
+    }
 
     return {
       inputs: trackInfos,
       output: 'final_video.mp4',
       operations: {
-        concat: tracks.length > 1,
+        concat: trackInfos.length > 1,
         targetFrameRate: timeline.fps,
-        normalizeFrameRate: tracks.length > 1, // Only normalize when concatenating
+        normalizeFrameRate: trackInfos.length > 1,
       },
     };
   }, [tracks, timeline.fps]);

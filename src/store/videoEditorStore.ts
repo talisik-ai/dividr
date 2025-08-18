@@ -13,6 +13,7 @@ export interface VideoTrack {
   duration: number; // in frames
   startFrame: number;
   endFrame: number;
+  sourceStartTime?: number; // in seconds - where in the source file this track segment starts
   offsetX?: number;
   offsetY?: number;
   width?: number;
@@ -93,6 +94,7 @@ interface VideoEditorStore {
   ) => void;
   duplicateTrack: (trackId: string) => string;
   splitTrack: (trackId: string, frame: number) => void;
+  splitAtPlayhead: () => boolean;
 
   // Playback Actions
   play: () => void;
@@ -310,6 +312,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         id,
         startFrame,
         endFrame: startFrame + duration,
+        sourceStartTime: trackData.sourceStartTime || 0, // Default to beginning of source file
         color: getTrackColor(get().tracks.length),
       };
 
@@ -419,29 +422,74 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     },
 
     splitTrack: (trackId, frame) => {
-      const track = get().tracks.find((t) => t.id === trackId);
+      const state = get();
+      const track = state.tracks.find((t) => t.id === trackId);
       if (!track || frame <= track.startFrame || frame >= track.endFrame)
         return;
 
       const newId = uuidv4();
+
+      // Calculate timing for split parts
+      const splitTimeInSeconds =
+        (frame - track.startFrame) / state.timeline.fps;
+      const originalSourceStartTime = track.sourceStartTime || 0;
+
       const firstPart = {
         ...track,
         endFrame: frame,
         duration: frame - track.startFrame, // Update duration for first part
+        sourceStartTime: originalSourceStartTime, // Keep original source start time
       };
+
       const secondPart: VideoTrack = {
         ...track,
         id: newId,
         name: `${track.name} (2)`,
         startFrame: frame,
         duration: track.endFrame - frame, // Update duration for second part
+        sourceStartTime: originalSourceStartTime + splitTimeInSeconds, // Start from split point in source
       };
+
+      console.log(
+        `✂️ Split timing: First part source start: ${firstPart.sourceStartTime}s, Second part source start: ${secondPart.sourceStartTime}s`,
+      );
 
       set((state) => ({
         tracks: state.tracks
           .map((t) => (t.id === trackId ? firstPart : t))
           .concat(secondPart),
       }));
+    },
+
+    splitAtPlayhead: () => {
+      const state = get();
+      const currentFrame = state.timeline.currentFrame;
+
+      // Find all tracks that intersect with the current playhead position
+      const intersectingTracks = state.tracks.filter(
+        (track) =>
+          currentFrame > track.startFrame && currentFrame < track.endFrame,
+      );
+
+      if (intersectingTracks.length === 0) {
+        console.log('🚫 No tracks found at current playhead position');
+        return false;
+      }
+
+      // Split all intersecting tracks at the current playhead position
+      let splitCount = 0;
+      intersectingTracks.forEach((track) => {
+        console.log(
+          `✂️ Splitting track "${track.name}" at frame ${currentFrame}`,
+        );
+        get().splitTrack(track.id, currentFrame);
+        splitCount++;
+      });
+
+      console.log(
+        `✅ Successfully split ${splitCount} track(s) at frame ${currentFrame}`,
+      );
+      return true;
     },
 
     // Playback Actions
