@@ -30,9 +30,12 @@ export async function detectVideoFrameRate(videoPath: string): Promise<number> {
     console.warn('FFmpeg operations require Electron main process');
     return 30; // Fallback
   }
-  
+
   try {
-    return await window.electronAPI.invoke('ffmpeg:detect-frame-rate', videoPath);
+    return await window.electronAPI.invoke(
+      'ffmpeg:detect-frame-rate',
+      videoPath,
+    );
   } catch (error) {
     console.error('Failed to detect video frame rate:', error);
     return 30; // Fallback
@@ -40,23 +43,25 @@ export async function detectVideoFrameRate(videoPath: string): Promise<number> {
 }
 
 // Detect frame rates for multiple videos and suggest target
-export async function suggestConcatFrameRate(videoPaths: string[]): Promise<number> {
+export async function suggestConcatFrameRate(
+  videoPaths: string[],
+): Promise<number> {
   try {
     const frameRates = await Promise.all(
-      videoPaths.map(path => detectVideoFrameRate(path))
+      videoPaths.map((path) => detectVideoFrameRate(path)),
     );
-    
+
     console.log('Detected frame rates:', frameRates);
-    
+
     // Use the highest frame rate to avoid quality loss
     const maxFrameRate = Math.max(...frameRates);
-    
+
     // Round to common frame rates
     if (maxFrameRate <= 24.5) return 24;
     if (maxFrameRate <= 25.5) return 25;
     if (maxFrameRate <= 30.5) return 30;
     if (maxFrameRate <= 60.5) return 60;
-    
+
     return Math.round(maxFrameRate);
   } catch (err) {
     console.warn('Failed to detect frame rates, using default 30fps:', err);
@@ -70,7 +75,7 @@ export function cancelCurrentFfmpeg(): Promise<boolean> {
     console.warn('FFmpeg operations require Electron main process');
     return Promise.resolve(false);
   }
-  
+
   return window.electronAPI.invoke('ffmpeg:cancel');
 }
 
@@ -82,9 +87,11 @@ export function isFfmpegRunning(): boolean {
 }
 
 // Parse FFmpeg progress output
-export function parseFfmpegProgress(progressLine: string): Partial<FfmpegProgress> {
+export function parseFfmpegProgress(
+  progressLine: string,
+): Partial<FfmpegProgress> {
   const progress: any = {};
-  
+
   const patterns = {
     frame: /frame=\s*(\d+)/,
     fps: /fps=\s*([\d.]+)/,
@@ -92,13 +99,14 @@ export function parseFfmpegProgress(progressLine: string): Partial<FfmpegProgres
     outTime: /time=(\d{2}:\d{2}:\d{2}\.\d{2})/,
     totalSize: /size=\s*(\d+\w+)/,
     speed: /speed=\s*([\d.]+x)/,
-    progress: /progress=(\w+)/
+    progress: /progress=(\w+)/,
   };
 
   for (const [key, pattern] of Object.entries(patterns)) {
     const match = progressLine.match(pattern);
     if (match) {
-      progress[key] = (key === 'frame' || key === 'fps') ? Number(match[1]) : match[1];
+      progress[key] =
+        key === 'frame' || key === 'fps' ? Number(match[1]) : match[1];
     }
   }
 
@@ -108,7 +116,7 @@ export function parseFfmpegProgress(progressLine: string): Partial<FfmpegProgres
 // Enhanced FFmpeg runner with progress callbacks via IPC
 export async function runFfmpegWithProgress(
   job: VideoEditJob,
-  callbacks?: FfmpegCallbacks
+  callbacks?: FfmpegCallbacks,
 ): Promise<{ command: string; logs: string }> {
   if (!isElectron()) {
     throw new Error('FFmpeg operations require Electron main process');
@@ -116,21 +124,28 @@ export async function runFfmpegWithProgress(
 
   return new Promise((resolve, reject) => {
     // Set up progress listener
-    const handleProgress = (event: any, data: { type: string; data: string }) => {
+    const handleProgress = (
+      event: any,
+      data: { type: string; data: string },
+    ) => {
       if (data.type === 'stdout') {
         callbacks?.onLog?.(data.data, 'stdout');
-        
+
         // Parse progress information
         const progress = parseFfmpegProgress(data.data);
         if (Object.keys(progress).length > 0) {
           callbacks?.onProgress?.(progress as FfmpegProgress);
         }
-        
+
         // Check for status updates
         if (data.data.includes('progress=')) {
           const status = data.data.match(/progress=(\w+)/)?.[1];
           if (status) {
-            callbacks?.onStatus?.(status === 'end' ? 'Processing complete' : `Processing: ${status}`);
+            callbacks?.onStatus?.(
+              status === 'end'
+                ? 'Processing complete'
+                : `Processing: ${status}`,
+            );
           }
         }
       } else if (data.type === 'stderr') {
@@ -142,7 +157,8 @@ export async function runFfmpegWithProgress(
     window.electronAPI.on('ffmpeg:progress', handleProgress);
 
     // Start FFmpeg process
-    window.electronAPI.invoke('ffmpegRun', job)
+    window.electronAPI
+      .invoke('ffmpegRun', job)
       .then((result: any) => {
         // Clean up listener
         window.electronAPI.removeListener('ffmpeg:progress', handleProgress);
@@ -158,10 +174,10 @@ export async function runFfmpegWithProgress(
 
 // Keep original function for backward compatibility
 export async function runFfmpeg(
-  job: VideoEditJob
+  job: VideoEditJob,
 ): Promise<{ command: string; logs: string }> {
   const result = await window.electronAPI.ffmpegRun(job);
-  
+
   if (result.success) {
     return result.result!;
   } else {
