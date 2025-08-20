@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-import { colors } from 'tailwindcss/defaultTheme';
+import defaultTheme, { colors } from 'tailwindcss/defaultTheme';
 
 module.exports = {
   darkMode: 'class',
@@ -12,25 +12,22 @@ module.exports = {
   prefix: '',
   theme: {
     screens: {
-      'xs': '475px',
-      'sm': '640px',
-      'md': '950px',
-      'lg': '980px',
-      '2xl': '1400px',
+      ...defaultTheme.screens,
+
       // Height-based breakpoints
-      'h-sm1': { 'raw': '(max-height: 630px)' },
-      'h-md1': { 'raw': '(max-height: 800px)' },
-      'h-lg1': { 'raw': '(max-height: 850px)' },
-      'h-xl1': { 'raw': '(max-height: 900px)' },
+      'h-sm1': { raw: '(max-height: 630px)' },
+      'h-md1': { raw: '(max-height: 800px)' },
+      'h-lg1': { raw: '(max-height: 850px)' },
+      'h-xl1': { raw: '(max-height: 900px)' },
     },
     container: {
       center: true,
       padding: '2rem',
       screens: {
-        'xs': '475px',
-        'sm': '640px',
-        'md': '900px',
-        'lg': '950px',
+        xs: '475px',
+        sm: '640px',
+        md: '900px',
+        lg: '950px',
         '2xl': '1400px',
       },
     },
@@ -52,41 +49,17 @@ module.exports = {
       colors: {
         ...colors, // Spread the default colors
         titleBar: {
-          DEFAULT: '#F9FAF7',
+          DEFAULT: '#000000',
           dark: '#09090B',
         },
-        body:{
-          DEFAULT: '#fff',
+        body: {
+          DEFAULT: '#000000',
           dark: '#09090B',
         },
-        'red-500': '#FF0000',
-        'blue-500': '#00A1D6',
-        resizeColumn: '#E4E4E7',
-        alternateBlack: '#121212',
-        primary: '#F45513',
-        secondary: '#202020',
-        divider: '#D1D5DB',
-        tabs: '#fef9f4',
-        lightGray: '#EDEDED',
-        darkMode: '#09090B',
-        darkModeCompliment: '#272727',
-        darkModeNavigation: '#191919',
-        darkModeBorderColor: '#434347',
-        darkModeDropdown: '#18181B',
-        darkModeLight: '#D4D4D8',
-        darkModeDarkGray: '#363636',
-        darkModeHover: '#3E3E46',
-        inputDarkMode: '#FEF9F426',
-        inputDarkModeBorder: '#27272ACC',
-        skeleton: '#E8EDF1',
-        border: '#E4E4E7',
-        detailsTab: '#EDEDED',
-        componentBorder:'#BCBCBC',
-        availableStatus: '#34C759', // Status Available and Download Icon
-        notAvailableStatus: '#787575',
-        darkModeNotAvailableStatus: '#C6C6C6',
-        darkModeButtonDefault: '#71717A',
-        darkModeButtonActive: '#E4E4E7',
+        controls: '#2d2d2d',
+        primary: '#1ED760',
+        secondary: '#121212',
+        toolbarIcon: '#9CA3AF',
       },
     },
   },
