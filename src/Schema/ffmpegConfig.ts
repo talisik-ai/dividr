@@ -19,3 +19,40 @@ export interface VideoEditJob {
     targetFrameRate?: number;
   };
 }
+
+export interface CommandParts {
+  args: string[];
+  filters: string[];
+}
+
+export interface AudioTrimResult {
+  filterRef: string;
+  filters: string[];
+}
+
+export interface AudioProcessingContext {
+  trackInfo: TrackInfo;
+  originalIndex: number;
+  fileIndex: number;
+  inputStreamRef: string;
+}
+
+export interface VideoProcessingContext {
+  trackInfo: TrackInfo;
+  originalIndex: number;
+  fileIndex: number;
+  inputStreamRef: string;
+}
+
+export interface InputCategory {
+  originalIndex: number;
+  fileIndex: number;
+  trackInfo: TrackInfo;
+  isGap: boolean;
+}
+
+export interface CategorizedInputs {
+  videoInputs: InputCategory[];
+  audioInputs: Omit<InputCategory, 'isGap'>[];
+  fileInputIndex: number;
+}

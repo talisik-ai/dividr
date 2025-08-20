@@ -1,8 +1,4 @@
-import {
-  Route,
-  HashRouter as Router,
-  Routes,
-} from 'react-router-dom';
+import { Route, HashRouter as Router, Routes } from 'react-router-dom';
 import './App.css';
 import NewProject from './Components/Pages/NewProject';
 import NotFound from './Components/Pages/NotFound';
@@ -17,17 +13,17 @@ function App() {
         <Routes>
           {/* Home route - Shows NewProject page with TitleBar */}
           <Route path="/" element={<NewProject />} />
-          
+
           {/* Video Editor route - Shows full VideoEditorLayout */}
           <Route path="/video-editor" element={<VideoEditorLayout />}>
             <Route index element={<VideoEditor />} />
           </Route>
-          
+
           {/* Fallback for any unknown routes */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
-    {/*  <Toaster /> */} 
+      {/*  <Toaster /> */}
     </ThemeProvider>
   );
 }

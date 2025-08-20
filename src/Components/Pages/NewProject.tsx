@@ -5,7 +5,7 @@ import TitleBar from '../Main/Titlebar';
 /**
  * A custom React Sub Page
  * This component displays the initial project creation screen with TitleBar
- * 
+ *
  * @returns JSX.Element - The rendered component displaying new project page.
  */
 const NewProject = () => {
@@ -26,7 +26,7 @@ const NewProject = () => {
             <p>Start creating your first video project. Import media,</p>
             <p className="text-xs"> edit, and export professional videos.</p>
           </div>
-          <button 
+          <button
             className="p-2 bg-white text-black rounded text-sm hover:bg-gray-100 transition-colors"
             onClick={handleCreateProject}
           >
