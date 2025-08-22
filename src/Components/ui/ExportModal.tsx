@@ -19,7 +19,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from './select';
 
 interface ExportConfig {
@@ -40,7 +39,7 @@ const videoFormats = [
   { value: 'avi', label: 'AVI', extension: '.avi' },
   { value: 'mov', label: 'QuickTime (MOV)', extension: '.mov' },
   { value: 'mkv', label: 'Matroska (MKV)', extension: '.mkv' },
-  { value: 'webm', label: 'WebM', extension: '.webm' },
+ // { value: 'webm', label: 'WebM', extension: '.webm' },
   { value: 'wmv', label: 'Windows Media Video', extension: '.wmv' },
 ];
 
@@ -179,7 +178,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <Label htmlFor="format">Video Format</Label>
             <Select value={format} onValueChange={setFormat}>
               <SelectTrigger>
-                <SelectValue placeholder="Select format" />
+                <span className="block truncate">
+                  {selectedFormat?.label || "Select format"}
+                </span>
               </SelectTrigger>
               <SelectContent className='bg-black'>
                 {videoFormats.map((fmt) => (

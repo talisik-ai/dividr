@@ -111,7 +111,7 @@ export const SelectTrigger: React.FC<
     isOpen?: boolean;
     setIsOpen?: (open: boolean) => void;
   }
-> = ({ children, className, isOpen, setIsOpen }) => (
+> = ({ children, className, value, isOpen, setIsOpen }) => (
   <button
     type="button"
     className={cn(
@@ -120,7 +120,15 @@ export const SelectTrigger: React.FC<
     )}
     onClick={() => setIsOpen?.(!isOpen)}
   >
-    {children}
+    {React.Children.map(children, (child) => {
+      if (React.isValidElement(child) && child.type === SelectValue) {
+        return React.cloneElement(
+          child as React.ReactElement<Record<string, unknown>>,
+          { value },
+        );
+      }
+      return child;
+    })}
     <svg
       className={cn(
         'h-4 w-4 opacity-50 transition-transform',
