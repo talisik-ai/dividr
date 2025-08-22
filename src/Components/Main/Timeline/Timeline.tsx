@@ -145,15 +145,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   return (
     <div
       ref={timelineRef}
-      className={`timeline-container ${className || ''}`}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        backgroundColor: '#1a1a1a',
-        color: '#ffffff',
-        overflow: 'hidden',
-      }}
+      className={`timeline-container ${className || ''} flex flex-col h-full bg-gray-800 text-white overflow-hidden`}
     >
       {/* Timeline Header with Controls */}
       {/* TimelineHeader component removed as per edit hint */}
@@ -162,23 +154,9 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       <TimelineControls />
 
       {/* Timeline Content Area */}
-      <div
-        style={{
-          display: 'flex',
-          flex: 1,
-          overflow: 'hidden',
-          position: 'relative',
-          flexDirection: 'column',
-        }}
-      >
+      <div className="flex flex-col flex-1 relative overflow-hidden">
         {/* Timeline Ruler - Fixed at top but scrolls horizontally */}
-        <div
-          style={{
-            position: 'relative',
-            overflow: 'hidden',
-            zIndex: 10,
-          }}
-        >
+        <div className="relative overflow-hidden z-10">
           <TimelineRuler
             frameWidth={frameWidth}
             totalFrames={timeline.totalFrames}
@@ -194,11 +172,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
         {/* Timeline Tracks Area */}
         <div
           ref={tracksRef}
-          style={{
-            flex: 1,
-            position: 'relative',
-            overflow: 'auto',
-          }}
+          className="flex-1 relative overflow-auto"
           onClick={handleTimelineClick}
           onScroll={(e) => {
             // Synchronize horizontal scroll with the timeline store
@@ -217,17 +191,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
         </div>
 
         {/* Global Playhead - spans across ruler and tracks */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            pointerEvents: 'none',
-            zIndex: 1000,
-          }}
-        >
+        <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-1000">
           <TimelinePlayhead
             currentFrame={timeline.currentFrame}
             frameWidth={frameWidth}

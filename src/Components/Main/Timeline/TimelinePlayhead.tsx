@@ -21,51 +21,23 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
     <>
       {/* Playhead line */}
       <div
-        style={{
-          position: 'absolute',
-          left: left,
-          top: 0,
-          width: '2px',
-          height: '100%',
-          backgroundColor: 'white',
-          zIndex: 100,
-          pointerEvents: 'none',
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-        }}
+        className="absolute top-0 w-0.5 h-full bg-white z-[100] pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
+        style={{ left: left }}
       />
 
       {/* Playhead handle */}
       <div
+        className="absolute top-0 w-[14px] h-5 bg-white z-[101] pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
         style={{
-          position: 'absolute',
           left: left - 6,
-          top: 0,
-          width: '14px',
-          height: '20px',
-          backgroundColor: 'white',
           clipPath: 'polygon(50% 100%, 0 0, 100% 0)',
-          zIndex: 101,
-          pointerEvents: 'none',
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
         }}
       />
 
       {/* Frame number indicator */}
       <div
-        style={{
-          position: 'absolute',
-          left: left + 8,
-          top: '2px',
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          color: '#fff',
-          padding: '2px 6px',
-          borderRadius: '3px',
-          fontSize: '10px',
-          fontWeight: 'bold',
-          whiteSpace: 'nowrap',
-          zIndex: 102,
-          pointerEvents: 'none',
-        }}
+        className="absolute top-0.5 bg-black/80 text-white px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-[102] pointer-events-none"
+        style={{ left: left + 8 }}
       >
         {currentFrame}
       </div>

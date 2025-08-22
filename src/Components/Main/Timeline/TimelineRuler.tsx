@@ -105,41 +105,25 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
 
   return (
     <div
-      className="h-[36px] lg:h-[40px]"
+      className="h-[36px] lg:h-[40px] bg-[#1e1e1e] border-b border-[#333] relative overflow-hidden cursor-pointer"
       style={{
-        backgroundColor: '#1e1e1e',
-        borderBottom: '1px solid #333',
-        position: 'relative',
-        overflow: 'hidden',
-        cursor: 'pointer',
         backgroundImage: 'linear-gradient(to bottom, #2a2a2a 0%, #1e1e1e 100%)',
       }}
       onClick={onClick}
     >
       {/* Background Grid */}
       <div
+        className="absolute top-0 h-full"
         style={{
-          position: 'absolute',
-          top: 0,
           left: -scrollX,
           width: Math.max(effectiveEndFrame * frameWidth, window.innerWidth),
-          height: '100%',
           background:
             'repeating-linear-gradient(90deg, transparent, transparent 9px, rgba(255,255,255,0.03) 9px, rgba(255,255,255,0.03) 10px)',
         }}
       />
 
       {/* Track Content Regions Indicator */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '32px',
-          left: 0,
-          right: 0,
-          height: '3px',
-          backgroundColor: '#2a2a2a',
-        }}
-      >
+      <div className="absolute top-8 left-0 right-0 h-[3px] bg-[#2a2a2a]">
         {trackRegions.map((region, index) => (
           <div
             key={index}
@@ -171,22 +155,21 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
           (frameWidth > 2 && frame % Math.max(1, Math.floor(fps / 4)) === 0);
 
         return (
-          <div key={frame} style={{ position: 'absolute', left: x, top: 0 }}>
+          <div key={frame} className="absolute top-0" style={{ left: x }}>
             <div
+              className="mb-px"
               style={{
                 width: isMinute ? '2px' : '1px',
                 height: `${tickHeight}px`,
                 backgroundColor: tickColor,
-                marginBottom: '1px',
               }}
             />
             {showLabel && (
               <div
+                className="-translate-x-1/2 whitespace-nowrap"
                 style={{
                   fontSize: isMinute ? '11px' : '10px',
                   color: tickColor,
-                  transform: 'translateX(-50%)',
-                  whiteSpace: 'nowrap',
                   fontWeight: isMinute ? '600' : '400',
                   textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                 }}
@@ -201,14 +184,9 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
       {/* In/Out Points with improved design */}
       {inPoint !== undefined && (
         <div
+          className="absolute top-0 w-[3px] h-full bg-[#4CAF50] z-10"
           style={{
-            position: 'absolute',
             left: inPoint * frameWidth - scrollX,
-            top: 0,
-            width: '3px',
-            height: '100%',
-            backgroundColor: '#4CAF50',
-            zIndex: 10,
             boxShadow: '0 0 4px rgba(76, 175, 80, 0.5)',
           }}
         />
@@ -216,14 +194,9 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
 
       {outPoint !== undefined && (
         <div
+          className="absolute top-0 w-[3px] h-full bg-[#f44336] z-10"
           style={{
-            position: 'absolute',
             left: outPoint * frameWidth - scrollX,
-            top: 0,
-            width: '3px',
-            height: '100%',
-            backgroundColor: '#f44336',
-            zIndex: 10,
             boxShadow: '0 0 4px rgba(244, 67, 54, 0.5)',
           }}
         />

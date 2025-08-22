@@ -424,11 +424,10 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
 
   return (
     <div
-      className="relative min-h-full bg-[#1a1a1a]"
+      className="relative min-h-full bg-[#1a1a1a] overflow-visible"
       style={{
         width: timelineWidth,
         minWidth: timelineWidth,
-        overflow: 'visible',
       }}
     >
       {/* Render each track row */}

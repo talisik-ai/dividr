@@ -65,6 +65,7 @@ const VideoEditorLayout = () => {
               )}
 
               <main className="flex-1 overflow-auto">
+                {/* Based on Video Editor component*/}
                 <Outlet />
               </main>
 

@@ -44,68 +44,22 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
       {/* Render Progress Overlay */}
       {render.isRendering && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#2d2d2d',
-              padding: '32px',
-              borderRadius: '8px',
-              textAlign: 'center',
-              minWidth: '200px',
-            }}
-          >
-            <h3 style={{ margin: '0 0 16px 0' }}>Rendering Video</h3>
+        <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-80 flex items-center justify-center z-1000">
+          <div className="bg-gray-800 p-8 rounded text-center min-w-[200px]">
+            <h3 className="m-0 mb-4">Rendering Video</h3>
 
-            <div
-              style={{
-                width: '100%',
-                height: '8px',
-                backgroundColor: '#1a1a1a',
-                borderRadius: '4px',
-                overflow: 'hidden',
-                marginBottom: '16px',
-              }}
-            >
+            <div className="w-full h-2 bg-gray-700 rounded overflow-hidden mb-4">
               <div
-                style={{
-                  width: `${render.progress}%`,
-                  height: '100%',
-                  backgroundColor: '#4CAF50',
-                  transition: 'width 0.3s ease',
-                }}
+                className={`h-full bg-green-500 transition-width duration-300 ease-in-out`}
+                style={{ width: `${render.progress}%` }}
               />
             </div>
 
-            <p
-              style={{ fontSize: '12px', color: '#aaa', margin: '0 0 16px 0' }}
-            >
-              {render.status}
-            </p>
+            <p className="text-xs text-gray-400 m-0 mb-4">{render.status}</p>
 
             <button
               onClick={cancelRender}
-              style={{
-                backgroundColor: '#f44336',
-                border: 'none',
-                color: '#fff',
-                fontSize: '12px',
-                cursor: 'pointer',
-                padding: '8px 16px',
-                borderRadius: '4px',
-              }}
+              className="bg-red-600 border-none text-white text-xs cursor-pointer py-2 px-4 rounded"
             >
               Cancel
             </button>
