@@ -1,8 +1,62 @@
 import { spawn } from 'child_process';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import started from 'electron-squirrel-startup';
-import ffmpegPath from 'ffmpeg-static';
-import ffprobePath from 'ffprobe-static';
+// Dynamic import of ffmpeg binaries to avoid module resolution issues
+let ffmpegPath: string | null = null;
+let ffprobePath: { path: string } | null = null;
+
+// Initialize ffmpeg paths dynamically with fallbacks
+async function initializeFfmpegPaths() {
+  try {
+    // Try to import ffmpeg-static dynamically
+    const ffmpegStatic = await import('ffmpeg-static');
+    ffmpegPath = ffmpegStatic.default;
+    console.log('✅ FFmpeg binary path (static):', ffmpegPath);
+  } catch (error) {
+    console.error('❌ Failed to load ffmpeg-static:', error.message);
+
+    // Fallback to system FFmpeg if available
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const { execSync } = require('child_process');
+      const systemFfmpeg = execSync('where ffmpeg', {
+        encoding: 'utf8',
+      }).trim();
+      ffmpegPath = systemFfmpeg.split('\n')[0]; // Get first result
+      console.log('✅ Using system FFmpeg:', ffmpegPath);
+    } catch (systemError) {
+      console.error('❌ System FFmpeg not found:', systemError.message);
+      console.error(
+        '📋 Please install FFmpeg or ensure ffmpeg-static package is properly installed',
+      );
+    }
+  }
+
+  try {
+    // Try to import ffprobe-static dynamically
+    const ffprobeStatic = await import('ffprobe-static');
+    ffprobePath = ffprobeStatic.default;
+    console.log('✅ FFprobe binary path (static):', ffprobePath?.path);
+  } catch (error) {
+    console.error('❌ Failed to load ffprobe-static:', error.message);
+
+    // Fallback to system FFprobe if available
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const { execSync } = require('child_process');
+      const systemFfprobe = execSync('where ffprobe', {
+        encoding: 'utf8',
+      }).trim();
+      ffprobePath = { path: systemFfprobe.split('\n')[0] }; // Get first result
+      console.log('✅ Using system FFprobe:', ffprobePath.path);
+    } catch (systemError) {
+      console.error('❌ System FFprobe not found:', systemError.message);
+      console.error(
+        '📋 Please install FFmpeg or ensure ffprobe-static package is properly installed',
+      );
+    }
+  }
+}
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -290,7 +344,7 @@ ipcMain.handle('run-ffmpeg-with-progress', async (event, job: VideoEditJob) => {
 });
 
 // IPC Handler to cancel FFmpeg operation
-ipcMain.handle('cancel-ffmpeg', async (event) => {
+ipcMain.handle('cancel-ffmpeg', async () => {
   try {
     const cancelled = cancelCurrentFfmpeg();
     if (cancelled) {
@@ -391,6 +445,15 @@ ipcMain.handle(
 // FFmpeg IPC handlers
 ipcMain.handle('ffmpeg:detect-frame-rate', async (event, videoPath: string) => {
   return new Promise((resolve, reject) => {
+    if (!ffprobePath?.path) {
+      reject(
+        new Error(
+          'FFprobe binary not available. Please ensure ffprobe-static is properly installed.',
+        ),
+      );
+      return;
+    }
+
     const ffprobe = spawn(ffprobePath.path, [
       '-v',
       'quiet',
@@ -443,6 +506,15 @@ ipcMain.handle('ffmpeg:detect-frame-rate', async (event, videoPath: string) => {
 // Get media file duration using FFprobe
 ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
   return new Promise((resolve, reject) => {
+    if (!ffprobePath?.path) {
+      reject(
+        new Error(
+          'FFprobe binary not available. Please ensure ffprobe-static is properly installed.',
+        ),
+      );
+      return;
+    }
+
     const ffprobe = spawn(ffprobePath.path, [
       '-v',
       'quiet',
@@ -520,7 +592,7 @@ ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
 });
 
 // Global FFmpeg process tracking
-let currentFfmpegProcess: any = null;
+let currentFfmpegProcess: ReturnType<typeof spawn> | null = null;
 
 ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
   return new Promise((resolve, reject) => {
@@ -537,7 +609,13 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
 
     console.log('Running FFmpeg with args:', args);
 
-    const ffmpeg = spawn(ffmpegPath as string, args);
+    if (!ffmpegPath) {
+      throw new Error(
+        'FFmpeg binary not available. Please ensure ffmpeg-static is properly installed.',
+      );
+    }
+
+    const ffmpeg = spawn(ffmpegPath, args);
     currentFfmpegProcess = ffmpeg;
 
     let logs = '';
@@ -625,7 +703,11 @@ const createWindow = () => {
   mainWindow.webContents.openDevTools();
 };
 
-app.on('ready', createWindow);
+app.on('ready', async () => {
+  // Initialize FFmpeg paths before creating the window
+  await initializeFfmpegPaths();
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (mediaServer) {
