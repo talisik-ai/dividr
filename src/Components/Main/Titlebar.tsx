@@ -19,16 +19,18 @@ import {
   FfmpegCallbacks,
   runFfmpegWithProgress,
 } from '../../Utility/ffmpegRunner';
-import { useTheme } from '../../Utility/ThemeProvider';
+import { ExportModal } from '../ui/ExportModal';
 import { Input } from '../ui/input';
 interface TitleBarProps {
   className?: string;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
-  const { theme } = useTheme();
+  // const { theme } = useTheme(); // Unused for now
   const location = useLocation();
   const [isMaximized, setIsMaximized] = React.useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] =
+    React.useState<boolean>(false);
   const {
     tracks,
     timeline,
@@ -37,7 +39,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     updateRenderProgress,
     finishRender,
     cancelRender,
-    importMediaFromDialog,
+    // importMediaFromDialog, // Unused for now
   } = useVideoEditorStore();
   const navigate = useNavigate();
 
@@ -51,139 +53,167 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   const showExportButton = isInVideoEditor;
 
   // Convert tracks to FFmpeg job with timeline-aware processing
-  const createFFmpegJob = useCallback((): VideoEditJob => {
-    if (tracks.length === 0) {
-      return {
-        inputs: [],
-        output: 'final_video.mp4',
-        operations: {},
-      };
-    }
-
-    // Sort tracks by timeline position to process them in order
-    const sortedTracks = [...tracks]
-      .filter((track) => track.visible) // Only include visible tracks
-      .sort((a, b) => a.startFrame - b.startFrame);
-
-    if (sortedTracks.length === 0) {
-      return {
-        inputs: [],
-        output: 'final_video.mp4',
-        operations: {},
-      };
-    }
-
-    const trackInfos: Array<{
-      path: string;
-      startTime?: number;
-      duration?: number;
-    }> = [];
-
-    // Process tracks in timeline order, adding black video for gaps
-    let currentTimelineFrame = 0;
-
-    for (const track of sortedTracks) {
-      // If there's a gap before this track, add a black video segment
-      if (track.startFrame > currentTimelineFrame) {
-        const gapDurationFrames = track.startFrame - currentTimelineFrame;
-        const gapDurationSeconds = gapDurationFrames / timeline.fps;
-
-        if (gapDurationSeconds > 0.033) {
-          // Only add significant gaps (> 1 frame)
-          console.log(
-            `🗬 Adding ${gapDurationSeconds}s gap before "${track.name}"`,
-          );
-
-          // Create a black video segment for the gap
-          // We'll mark this as a gap and handle it specially in the command builder
-          trackInfos.push({
-            path: '__GAP__',
-            duration: gapDurationSeconds,
-            startTime: 0,
-          });
-        }
+  const createFFmpegJob = useCallback(
+    (outputFilename = 'final_video.mp4', outputPath?: string): VideoEditJob => {
+      if (tracks.length === 0) {
+        return {
+          inputs: [],
+          output: outputFilename,
+          outputPath,
+          operations: {},
+        };
       }
 
-      // Add the actual track with proper source timing
-      const trackDurationSeconds = track.duration / timeline.fps;
-      const sourceStartTime = track.sourceStartTime || 0;
+      // Sort tracks by timeline position to process them in order
+      const sortedTracks = [...tracks]
+        .filter((track) => track.visible) // Only include visible tracks
+        .sort((a, b) => a.startFrame - b.startFrame);
 
-      console.log(
-        `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
-      );
+      if (sortedTracks.length === 0) {
+        return {
+          inputs: [],
+          output: outputFilename,
+          outputPath,
+          operations: {},
+        };
+      }
 
-      trackInfos.push({
-        path: track.source,
-        startTime: sourceStartTime,
-        duration: Math.max(0.033, trackDurationSeconds),
-      });
+      const trackInfos: Array<{
+        path: string;
+        startTime?: number;
+        duration?: number;
+      }> = [];
 
-      // Update current position to the end of this track
-      currentTimelineFrame = track.endFrame;
-    }
+      // Process tracks in timeline order, adding black video for gaps
+      let currentTimelineFrame = 0;
 
-    return {
-      inputs: trackInfos,
-      output: 'final_video.mp4',
-      operations: {
-        concat: trackInfos.length > 1,
-        targetFrameRate: timeline.fps,
-        normalizeFrameRate: trackInfos.length > 1,
-      },
-    };
-  }, [tracks, timeline.fps]);
+      for (const track of sortedTracks) {
+        // If there's a gap before this track, add a black video segment
+        if (track.startFrame > currentTimelineFrame) {
+          const gapDurationFrames = track.startFrame - currentTimelineFrame;
+          const gapDurationSeconds = gapDurationFrames / timeline.fps;
 
-  // Render video using FFmpeg
-  const handleRender = useCallback(async () => {
+          if (gapDurationSeconds > 0.033) {
+            // Only add significant gaps (> 1 frame)
+            console.log(
+              `🗬 Adding ${gapDurationSeconds}s gap before "${track.name}"`,
+            );
+
+            // Create a black video segment for the gap
+            // We'll mark this as a gap and handle it specially in the command builder
+            trackInfos.push({
+              path: '__GAP__',
+              duration: gapDurationSeconds,
+              startTime: 0,
+            });
+          }
+        }
+
+        // Add the actual track with proper source timing
+        const trackDurationSeconds = track.duration / timeline.fps;
+        const sourceStartTime = track.sourceStartTime || 0;
+
+        console.log(
+          `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
+        );
+
+        trackInfos.push({
+          path: track.source,
+          startTime: sourceStartTime,
+          duration: Math.max(0.033, trackDurationSeconds),
+        });
+
+        // Update current position to the end of this track
+        currentTimelineFrame = track.endFrame;
+      }
+
+      return {
+        inputs: trackInfos,
+        output: outputFilename,
+        outputPath,
+        operations: {
+          concat: trackInfos.length > 1,
+          targetFrameRate: timeline.fps,
+          normalizeFrameRate: trackInfos.length > 1,
+        },
+      };
+    },
+    [tracks, timeline.fps],
+  );
+
+  // Handle export button click - shows modal
+  const handleRender = useCallback(() => {
     if (tracks.length === 0) {
       alert('No tracks to render');
       return;
     }
+    setIsExportModalOpen(true);
+  }, [tracks.length]);
 
-    const job = createFFmpegJob();
-    console.log('🎬 FFmpeg Job:', job);
+  // Render video using FFmpeg with specified config
+  const handleActualRender = useCallback(
+    async (outputFilename: string, outputPath?: string) => {
+      if (tracks.length === 0) {
+        alert('No tracks to render');
+        return;
+      }
 
-    const callbacks: FfmpegCallbacks = {
-      onProgress: (progress) => {
-        if (progress.percentage) {
-          updateRenderProgress(
-            progress.percentage,
-            `Rendering... ${progress.percentage.toFixed(1)}%`,
-          );
-        }
-      },
-      onStatus: (status) => {
-        updateRenderProgress(render.progress, status);
-      },
-      onLog: (log, type) => {
-        //   console.log(`[${type}] ${log}`);
-      },
-    };
+      const job = createFFmpegJob(outputFilename, outputPath);
+      console.log('🎬 FFmpeg Job:', job);
+      console.log('🗂️ Output Path:', outputPath);
 
-    try {
-      startRender({
-        outputPath: job.output,
-        format: 'mp4',
-        quality: 'high',
-      });
+      const callbacks: FfmpegCallbacks = {
+        onProgress: (progress) => {
+          if (progress.percentage) {
+            updateRenderProgress(
+              progress.percentage,
+              `Rendering... ${progress.percentage.toFixed(1)}%`,
+            );
+          }
+        },
+        onStatus: (status) => {
+          updateRenderProgress(render.progress, status);
+        },
+        onLog: () => {
+          // Disabled logging for now
+        },
+      };
 
-      await runFfmpegWithProgress(job, callbacks);
-      finishRender();
-      alert('Render completed successfully!');
-    } catch (error) {
-      //console.error('Render failed:', error);
-      cancelRender();
-      alert(`Render failed: ${error}`);
-    }
-  }, [
-    tracks,
-    createFFmpegJob,
-    render.progress,
-    startRender,
-    updateRenderProgress,
-    finishRender,
-    cancelRender,
-  ]);
+      try {
+        startRender({
+          outputPath: job.output,
+          format: 'mp4',
+          quality: 'high',
+        });
+
+        await runFfmpegWithProgress(job, callbacks);
+        finishRender();
+        alert('Render completed successfully!');
+      } catch (error) {
+        //console.error('Render failed:', error);
+        cancelRender();
+        alert(`Render failed: ${error}`);
+      }
+    },
+    [
+      tracks,
+      createFFmpegJob,
+      render.progress,
+      startRender,
+      updateRenderProgress,
+      finishRender,
+      cancelRender,
+    ],
+  );
+
+  // Handle export modal confirmation
+  const handleExportConfirm = useCallback(
+    (config: { filename: string; format: string; outputPath: string }) => {
+      setIsExportModalOpen(false);
+      handleActualRender(config.filename, config.outputPath);
+    },
+    [handleActualRender],
+  );
 
   const handleCreateProject = () => {
     navigate('/video-editor');
@@ -282,6 +312,14 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
           </div>
         </div>
       </div>
+
+      {/* Export Configuration Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        onExport={handleExportConfirm}
+        defaultFilename="final_video"
+      />
     </>
   );
 };

@@ -5,6 +5,7 @@ import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { VideoEditJob } from './Schema/ffmpegConfig';
 import { buildFfmpegCommand } from './Utility/commandBuilder';
@@ -188,6 +189,64 @@ ipcMain.handle(
     }
   },
 );
+
+// IPC Handler for save dialog
+ipcMain.handle(
+  'show-save-dialog',
+  async (
+    event,
+    options?: {
+      title?: string;
+      defaultPath?: string;
+      buttonLabel?: string;
+      filters?: Array<{ name: string; extensions: string[] }>;
+    },
+  ) => {
+    try {
+      const result = await dialog.showSaveDialog({
+        title: options?.title || 'Save Video As',
+        defaultPath:
+          options?.defaultPath || path.join(os.homedir(), 'Downloads'),
+        buttonLabel: options?.buttonLabel || 'Save',
+        filters: options?.filters || [
+          {
+            name: 'Video Files',
+            extensions: ['mp4', 'avi', 'mov', 'mkv', 'webm', 'wmv'],
+          },
+          {
+            name: 'All Files',
+            extensions: ['*'],
+          },
+        ],
+      });
+
+      if (result.canceled) {
+        return { success: false, canceled: true };
+      }
+
+      return {
+        success: true,
+        filePath: result.filePath,
+        directory: path.dirname(result.filePath || ''),
+        filename: path.basename(result.filePath || ''),
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+);
+
+// IPC Handler for getting downloads directory
+ipcMain.handle('get-downloads-directory', async () => {
+  try {
+    return {
+      success: true,
+      path: path.join(os.homedir(), 'Downloads'),
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
 // IPC Handler for FFmpeg operations (backward compatibility)
 ipcMain.handle('run-ffmpeg', async (event, job: VideoEditJob) => {
@@ -470,7 +529,7 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
       return;
     }
 
-    const location = 'public/output/';
+    const location = job.outputPath || 'public/output/';
 
     // Build proper FFmpeg command
     const baseArgs = buildFfmpegCommand(job, location);

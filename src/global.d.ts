@@ -31,6 +31,26 @@ declare global {
         error?: string;
       }>;
 
+      showSaveDialog: (options?: {
+        title?: string;
+        defaultPath?: string;
+        buttonLabel?: string;
+        filters?: Array<{ name: string; extensions: string[] }>;
+      }) => Promise<{
+        success: boolean;
+        filePath?: string;
+        directory?: string;
+        filename?: string;
+        canceled?: boolean;
+        error?: string;
+      }>;
+
+      getDownloadsDirectory: () => Promise<{
+        success: boolean;
+        path?: string;
+        error?: string;
+      }>;
+
       // File preview methods
       createPreviewUrl: (filePath: string) => Promise<{
         success: boolean;

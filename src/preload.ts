@@ -31,6 +31,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     properties?: Array<'openFile' | 'openDirectory' | 'multiSelections'>;
   }) => ipcRenderer.invoke('open-file-dialog', options),
 
+  showSaveDialog: (options?: {
+    title?: string;
+    defaultPath?: string;
+    buttonLabel?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+  }) => ipcRenderer.invoke('show-save-dialog', options),
+
+  getDownloadsDirectory: () => ipcRenderer.invoke('get-downloads-directory'),
+
   // File preview methods
   createPreviewUrl: (filePath: string) =>
     ipcRenderer.invoke('create-preview-url', filePath),

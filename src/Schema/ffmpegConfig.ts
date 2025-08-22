@@ -8,6 +8,7 @@ export interface TrackInfo {
 export interface VideoEditJob {
   inputs: string[] | TrackInfo[]; // Support both simple paths and detailed track info
   output: string;
+  outputPath?: string; // Optional output directory path
   operations: {
     concat?: boolean;
     trim?: { start?: string; duration?: string; end?: string };

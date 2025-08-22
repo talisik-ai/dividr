@@ -1,4 +1,5 @@
 const videoInputs: InputCategory[] = [];
+import * as path from 'path';
 import {
   AudioProcessingContext,
   AudioTrimResult,
@@ -745,9 +746,7 @@ export function buildFfmpegCommand(
   }
 
   const outputFilePath = location
-    ? location.endsWith('/')
-      ? location + job.output
-      : location + '/' + job.output
+    ? path.join(location, job.output)
     : job.output;
 
   // Output file
