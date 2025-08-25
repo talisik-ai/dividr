@@ -18,7 +18,7 @@ const config: ForgeConfig = {
     name: 'Dividr',
     executableName: 'Dividr',
     extraResource: ['./src/Assets/Logo'],
-    // Ensure native modules are included
+    // Ensure native modules and ffmpeg binaries are included
     ignore: [/^\/\.gitignore$/, /^\/README\.md$/, /^\/docs\//],
   },
   rebuildConfig: {},

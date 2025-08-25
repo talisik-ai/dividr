@@ -6,55 +6,289 @@ let ffmpegPath: string | null = null;
 let ffprobePath: { path: string } | null = null;
 
 // Initialize ffmpeg paths dynamically with fallbacks
-async function initializeFfmpegPaths() {
-  try {
-    // Try to import ffmpeg-static dynamically
-    const ffmpegStatic = await import('ffmpeg-static');
-    ffmpegPath = ffmpegStatic.default;
-    console.log('✅ FFmpeg binary path (static):', ffmpegPath);
-  } catch (error) {
-    console.error('❌ Failed to load ffmpeg-static:', error.message);
+function initializeFfmpegPaths() {
+  console.log('🔍 Initializing FFmpeg paths...');
+  console.log('📦 Is packaged:', app.isPackaged);
+  console.log('🌍 Environment:', process.env.NODE_ENV || 'production');
 
-    // Fallback to system FFmpeg if available
+  // Method 1: Try require approach (only for development)
+  if (!app.isPackaged) {
     try {
+      console.log('🔄 Attempting require method (development mode)...');
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const ffmpegStatic = require('ffmpeg-static');
+      if (ffmpegStatic) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+        const fs = require('fs');
+        if (fs.existsSync(ffmpegStatic)) {
+          ffmpegPath = ffmpegStatic;
+          console.log('✅ FFmpeg resolved via require:', ffmpegPath);
+        } else {
+          console.log('⚠️ FFmpeg require returned invalid path:', ffmpegStatic);
+        }
+      }
+    } catch (requireError) {
+      console.log('⚠️ Require method failed:', requireError.message);
+    }
+  } else {
+    console.log(
+      '🚫 Skipping require method for packaged app - using manual resolution',
+    );
+  }
+
+  // FFprobe require method (only for development, same issue as ffmpeg)
+  if (!app.isPackaged) {
+    try {
+      console.log('🔄 Attempting FFprobe require method (development mode)...');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const ffprobeStatic = require('ffprobe-static');
+      if (ffprobeStatic) {
+        ffprobePath = ffprobeStatic;
+        console.log('✅ FFprobe resolved via require:', ffprobePath?.path);
+      }
+    } catch (requireError) {
+      console.log('⚠️ FFprobe require method failed:', requireError.message);
+    }
+  } else {
+    console.log(
+      '🚫 Skipping FFprobe require method for packaged app - using manual resolution',
+    );
+  }
+
+  // Method 2: Manual path resolution for packaged apps (always used for packaged apps)
+  if (app.isPackaged) {
+    try {
+      console.log('🔄 Attempting manual path resolution...');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const path = require('path');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const fs = require('fs');
+
+      // Get the correct base paths for packaged apps
+      const appPath = app.getAppPath();
+      const resourcesPath = process.resourcesPath;
+      const isWindows = process.platform === 'win32';
+      const ffmpegBinary = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
+
+      console.log('📁 App path:', appPath);
+      console.log('📁 Resources path:', resourcesPath);
+      console.log('🖥️ Platform:', process.platform);
+
+      const possiblePaths = [
+        // Primary: Resources path + app.asar.unpacked - try without .exe first (common for ffmpeg-static)
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffmpeg-static',
+          'ffmpeg',
+        ),
+        // Then try with platform-specific extension
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffmpeg-static',
+          ffmpegBinary,
+        ),
+        // Fallback: App path relative - try without .exe first
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          'ffmpeg-static',
+          'ffmpeg',
+        ),
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          'ffmpeg-static',
+          ffmpegBinary,
+        ),
+        // Direct node_modules paths (for unpackaged scenarios)
+        path.join(appPath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(appPath, 'node_modules', 'ffmpeg-static', ffmpegBinary),
+        path.join(resourcesPath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(resourcesPath, 'node_modules', 'ffmpeg-static', ffmpegBinary),
+      ];
+
+      for (const testPath of possiblePaths) {
+        console.log('🔍 Checking FFmpeg path:', testPath);
+        if (fs.existsSync(testPath)) {
+          ffmpegPath = testPath;
+          console.log('✅ FFmpeg found at manual path:', testPath);
+          break;
+        } else {
+          console.log('❌ FFmpeg not found at:', testPath);
+        }
+      }
+
+      // Similar logic for ffprobe - it has a different directory structure
+      const ffprobeBinary = isWindows ? 'ffprobe.exe' : 'ffprobe';
+      const platformPath = isWindows
+        ? path.join('bin', 'win32', 'x64')
+        : path.join('bin', 'linux', 'x64');
+
+      const ffprobePaths = [
+        // Primary: ffprobe-static has platform-specific subdirectories
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          'ffprobe',
+        ),
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          ffprobeBinary,
+        ),
+        // Fallback: App path relative with platform subdirectories
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          'ffprobe',
+        ),
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          ffprobeBinary,
+        ),
+        // Legacy paths (try root directory too)
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          'ffprobe',
+        ),
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          ffprobeBinary,
+        ),
+        // Direct node_modules paths (for unpackaged scenarios)
+        path.join(
+          appPath,
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          'ffprobe',
+        ),
+        path.join(
+          appPath,
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          ffprobeBinary,
+        ),
+        path.join(appPath, 'node_modules', 'ffprobe-static', 'ffprobe'),
+        path.join(appPath, 'node_modules', 'ffprobe-static', ffprobeBinary),
+        path.join(
+          resourcesPath,
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          'ffprobe',
+        ),
+        path.join(
+          resourcesPath,
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          ffprobeBinary,
+        ),
+        path.join(resourcesPath, 'node_modules', 'ffprobe-static', 'ffprobe'),
+        path.join(
+          resourcesPath,
+          'node_modules',
+          'ffprobe-static',
+          ffprobeBinary,
+        ),
+      ];
+
+      for (const testPath of ffprobePaths) {
+        console.log('🔍 Checking FFprobe path:', testPath);
+        if (fs.existsSync(testPath)) {
+          ffprobePath = { path: testPath };
+          console.log('✅ FFprobe found at manual path:', testPath);
+          break;
+        } else {
+          console.log('❌ FFprobe not found at:', testPath);
+        }
+      }
+    } catch (manualError) {
+      console.log('⚠️ Manual path resolution failed:', manualError.message);
+    }
+  }
+
+  // Method 3: System fallback
+  if (!ffmpegPath) {
+    try {
+      console.log('🔄 Attempting system FFmpeg fallback...');
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const { execSync } = require('child_process');
       const systemFfmpeg = execSync('where ffmpeg', {
         encoding: 'utf8',
       }).trim();
-      ffmpegPath = systemFfmpeg.split('\n')[0]; // Get first result
+      ffmpegPath = systemFfmpeg.split('\n')[0];
       console.log('✅ Using system FFmpeg:', ffmpegPath);
     } catch (systemError) {
-      console.error('❌ System FFmpeg not found:', systemError.message);
-      console.error(
-        '📋 Please install FFmpeg or ensure ffmpeg-static package is properly installed',
-      );
+      console.log('⚠️ System FFmpeg not available:', systemError.message);
     }
   }
 
-  try {
-    // Try to import ffprobe-static dynamically
-    const ffprobeStatic = await import('ffprobe-static');
-    ffprobePath = ffprobeStatic.default;
-    console.log('✅ FFprobe binary path (static):', ffprobePath?.path);
-  } catch (error) {
-    console.error('❌ Failed to load ffprobe-static:', error.message);
-
-    // Fallback to system FFprobe if available
+  if (!ffprobePath) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const { execSync } = require('child_process');
       const systemFfprobe = execSync('where ffprobe', {
         encoding: 'utf8',
       }).trim();
-      ffprobePath = { path: systemFfprobe.split('\n')[0] }; // Get first result
+      ffprobePath = { path: systemFfprobe.split('\n')[0] };
       console.log('✅ Using system FFprobe:', ffprobePath.path);
     } catch (systemError) {
-      console.error('❌ System FFprobe not found:', systemError.message);
-      console.error(
-        '📋 Please install FFmpeg or ensure ffprobe-static package is properly installed',
-      );
+      console.log('⚠️ System FFprobe not available:', systemError.message);
     }
+  }
+
+  // Final status report
+  console.log('🎯 FFmpeg initialization complete:');
+  console.log(
+    '  - FFmpeg available:',
+    !!ffmpegPath,
+    ffmpegPath ? `(${ffmpegPath})` : '',
+  );
+  console.log(
+    '  - FFprobe available:',
+    !!ffprobePath?.path,
+    ffprobePath?.path ? `(${ffprobePath.path})` : '',
+  );
+
+  if (!ffmpegPath || !ffprobePath?.path) {
+    console.error('❌ FFmpeg initialization failed!');
+    console.error(
+      '📋 Please ensure ffmpeg-static and ffprobe-static packages are installed correctly',
+    );
+    console.error('📋 Or install FFmpeg system-wide as a fallback');
   }
 }
 import fs from 'node:fs';
@@ -656,6 +890,28 @@ ipcMain.handle('ffmpeg:cancel', async () => {
   return false;
 });
 
+// Diagnostic handler to check FFmpeg status
+ipcMain.handle('ffmpeg:status', async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+  const fs = require('fs');
+
+  const ffmpegExists = ffmpegPath ? fs.existsSync(ffmpegPath) : false;
+  const ffprobeExists = ffprobePath?.path
+    ? fs.existsSync(ffprobePath.path)
+    : false;
+
+  return {
+    ffmpegPath,
+    ffprobePath: ffprobePath?.path,
+    ffmpegExists,
+    ffprobeExists,
+    isReady: ffmpegPath !== null && ffprobePath?.path !== null,
+    appPath: app.getAppPath(),
+    isPackaged: app.isPackaged,
+    environment: process.env.NODE_ENV || 'production',
+  };
+});
+
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -669,12 +925,14 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
       webSecurity: true,
       nodeIntegration: true,
-      // devTools: false,
+      devTools: false,
     },
   });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    // Only open DevTools in development
+    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
@@ -703,9 +961,9 @@ const createWindow = () => {
   mainWindow.webContents.openDevTools();
 };
 
-app.on('ready', async () => {
+app.on('ready', () => {
   // Initialize FFmpeg paths before creating the window
-  await initializeFfmpegPaths();
+  initializeFfmpegPaths();
   createWindow();
 });
 

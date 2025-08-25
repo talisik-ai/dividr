@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDuration: (filePath: string) =>
     ipcRenderer.invoke('ffmpeg:get-duration', filePath),
 
+  // FFmpeg diagnostics
+  getFFmpegStatus: () => ipcRenderer.invoke('ffmpeg:status'),
+
   // Enhanced API with progress tracking
   runFfmpegWithProgress: (
     job: VideoEditJob,
