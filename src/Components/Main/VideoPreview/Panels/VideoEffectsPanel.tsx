@@ -25,44 +25,7 @@ export const VideoEffectsPanel: React.FC<CustomPanelProps> = ({
       </div>
 
       {/* Content */}
-      <div className="p-4 space-y-4">
-        <div className="space-y-3">
-          <h4 className="text-xs font-semibold text-white border-b border-gray-600 pb-1">
-            Basic Adjustments
-          </h4>
-
-          {(['Brightness', 'Contrast', 'Saturation'] as const).map((effect) => (
-            <div key={effect} className="space-y-1">
-              <div className="flex justify-between items-center">
-                <label className="text-xs text-gray-300">{effect}:</label>
-                <span className="text-xs text-white">0</span>
-              </div>
-              <input
-                type="range"
-                min="-100"
-                max="100"
-                defaultValue="0"
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="space-y-3">
-          <h4 className="text-xs font-semibold text-white border-b border-gray-600 pb-1">
-            Filters
-          </h4>
-
-          {(['Blur', 'Sepia', 'Grayscale'] as const).map((filter) => (
-            <div key={filter} className="flex items-center justify-between">
-              <label className="text-xs text-gray-300">{filter}:</label>
-              <button className="relative inline-flex h-4 w-8 items-center rounded-full transition-colors duration-200 bg-gray-600">
-                <span className="inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 translate-x-1" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
+      <div className="p-4 space-y-4">Coming soon</div>
     </div>
   );
 };
