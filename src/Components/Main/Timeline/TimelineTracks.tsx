@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   VideoTrack,
   useVideoEditorStore,
-} from '../../../Store/videoEditorStore';
+} from '../../../store/VideoEditorStore';
 
 // Define track row types - easy to extend in the future
 export interface TrackRowDefinition {

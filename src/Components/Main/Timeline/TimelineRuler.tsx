@@ -1,5 +1,5 @@
 import React from 'react';
-import { VideoTrack } from '../../../Store/videoEditorStore';
+import { VideoTrack } from '../../../store/VideoEditorStore';
 
 interface TimelineRulerProps {
   frameWidth: number;
