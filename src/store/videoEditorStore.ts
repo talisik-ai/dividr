@@ -125,8 +125,29 @@ interface VideoEditorStore {
 
   // Utility Actions
   reset: () => void;
-  importMediaFromDialog: () => Promise<void>; // New method using native dialog
+  importMediaFromDialog: () => Promise<{
+    success: boolean;
+    importedFiles: Array<{
+      id: string;
+      name: string;
+      type: string;
+      size: number;
+      url: string;
+      thumbnail?: string;
+    }>;
+  }>; // New method using native dialog
   importMediaFromFiles: (files: File[]) => Promise<void>; // Keep for backward compatibility
+  importMediaFromDrop: (files: File[]) => Promise<{
+    success: boolean;
+    importedFiles: Array<{
+      id: string;
+      name: string;
+      type: string;
+      size: number;
+      url: string;
+      thumbnail?: string;
+    }>;
+  }>; // New method for drag-and-drop with proper file handling
   exportProject: () => string;
   importProject: (data: string) => void;
 }
@@ -674,8 +695,17 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           !result.files ||
           result.files.length === 0
         ) {
-          return;
+          return { success: false, importedFiles: [] };
         }
+
+        const importedFiles: Array<{
+          id: string;
+          name: string;
+          type: string;
+          size: number;
+          url: string;
+          thumbnail?: string;
+        }> = [];
 
         const newTracks = await Promise.all(
           result.files.map(async (fileInfo, index) => {
@@ -720,6 +750,25 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               }
             }
 
+            // Determine proper MIME type
+            let mimeType = 'application/octet-stream';
+            if (fileInfo.type === 'video') {
+              mimeType = `video/${fileInfo.extension}`;
+            } else if (fileInfo.type === 'audio') {
+              mimeType = `audio/${fileInfo.extension}`;
+            } else if (fileInfo.type === 'image') {
+              mimeType = `image/${fileInfo.extension}`;
+            }
+
+            // Add to imported files list for MediaImportPanel
+            importedFiles.push({
+              id: Math.random().toString(36).substr(2, 9),
+              name: fileInfo.name,
+              type: mimeType,
+              size: fileInfo.size,
+              url: previewUrl || fileInfo.path,
+            });
+
             return {
               type: fileInfo.type,
               name: fileInfo.name,
@@ -736,8 +785,11 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         );
 
         newTracks.forEach((track) => get().addTrack(track));
+
+        return { success: true, importedFiles };
       } catch (error) {
         console.error('Failed to import media from dialog:', error);
+        return { success: false, importedFiles: [] };
       }
     },
 
@@ -778,6 +830,169 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       );
 
       newTracks.forEach((track) => get().addTrack(track));
+    },
+
+    importMediaFromDrop: async (files) => {
+      try {
+        console.log(
+          '🎯 importMediaFromDrop called with files:',
+          files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+        );
+
+        // Convert File objects to ArrayBuffers for IPC transfer
+        const fileBuffers = await Promise.all(
+          files.map(async (file) => {
+            const buffer = await file.arrayBuffer();
+            return {
+              name: file.name,
+              type: file.type,
+              size: file.size,
+              buffer,
+            };
+          }),
+        );
+
+        console.log('🚀 Sending files to main process for processing...');
+
+        // Process files in main process to get real file paths
+        const result =
+          await window.electronAPI.processDroppedFiles(fileBuffers);
+
+        if (!result.success) {
+          console.error(
+            '❌ Failed to process files in main process:',
+            result.error,
+          );
+          return { success: false, importedFiles: [] };
+        }
+
+        console.log('✅ Files processed in main process:', result.files);
+
+        const importedFiles: Array<{
+          id: string;
+          name: string;
+          type: string;
+          size: number;
+          url: string;
+          thumbnail?: string;
+        }> = [];
+
+        const newTracks = await Promise.all(
+          result.files.map(async (fileInfo, index) => {
+            console.log(
+              `🔍 Processing file: ${fileInfo.name}, path: ${fileInfo.path}`,
+            );
+
+            // Get accurate duration using FFprobe
+            let actualDuration: number;
+            try {
+              const durationSeconds = await window.electronAPI.getDuration(
+                fileInfo.path,
+              );
+              console.log(
+                `⏱️ Duration for ${fileInfo.name}: ${durationSeconds}s`,
+              );
+              actualDuration = Math.round(
+                durationSeconds * (get().timeline.fps || 30),
+              );
+            } catch (error) {
+              console.warn(
+                `⚠️ Failed to get duration for ${fileInfo.name}:`,
+                error,
+              );
+              const estimatedDuration = fileInfo.type === 'image' ? 150 : 1500;
+              actualDuration = estimatedDuration;
+            }
+
+            // Create preview URL
+            let previewUrl: string | undefined;
+            if (fileInfo.type === 'video' || fileInfo.type === 'image') {
+              try {
+                const previewResult = await window.electronAPI.createPreviewUrl(
+                  fileInfo.path,
+                );
+                if (previewResult.success) {
+                  previewUrl = previewResult.url;
+                  console.log(`✅ Preview URL created for: ${fileInfo.name}`);
+                } else {
+                  console.warn(
+                    `⚠️ Failed to create preview URL for ${fileInfo.name}:`,
+                    previewResult.error,
+                  );
+                }
+              } catch (error) {
+                console.warn(
+                  `⚠️ Error creating preview URL for ${fileInfo.name}:`,
+                  error,
+                );
+              }
+            }
+
+            // Determine proper MIME type
+            let mimeType = 'application/octet-stream';
+            if (fileInfo.type === 'video') {
+              mimeType = `video/${fileInfo.extension}`;
+            } else if (fileInfo.type === 'audio') {
+              mimeType = `audio/${fileInfo.extension}`;
+            } else if (fileInfo.type === 'image') {
+              mimeType = `image/${fileInfo.extension}`;
+            }
+
+            // Add to imported files list for MediaImportPanel
+            importedFiles.push({
+              id: Math.random().toString(36).substr(2, 9),
+              name: fileInfo.name,
+              type: mimeType,
+              size: fileInfo.size,
+              url: previewUrl || fileInfo.path,
+            });
+
+            const track = {
+              type: fileInfo.type,
+              name: fileInfo.name,
+              source: fileInfo.path, // Use actual file path for FFmpeg compatibility
+              previewUrl, // Use preview URL for display
+              duration: actualDuration,
+              startFrame: 0, // Start at 0, let smart positioning handle arrangement
+              endFrame: actualDuration,
+              visible: true,
+              locked: false,
+              color: getTrackColor(get().tracks.length + index),
+            };
+
+            console.log(`📋 Created track for ${fileInfo.name}:`, track);
+            return track;
+          }),
+        );
+
+        console.log(
+          `✅ Adding ${newTracks.length} tracks to timeline:`,
+          newTracks.map((t) => ({
+            name: t.name,
+            type: t.type,
+            previewUrl: !!t.previewUrl,
+          })),
+        );
+        console.log(
+          `📊 Current tracks count before adding: ${get().tracks.length}`,
+        );
+        newTracks.forEach((track) => {
+          const addedId = get().addTrack(track);
+          console.log(`➕ Added track with ID: ${addedId} for ${track.name}`);
+        });
+        console.log(
+          `📊 Current tracks count after adding: ${get().tracks.length}`,
+        );
+        console.log(
+          `📋 All tracks in store:`,
+          get().tracks.map((t) => ({ id: t.id, name: t.name, type: t.type })),
+        );
+
+        return { success: true, importedFiles };
+      } catch (error) {
+        console.error('Failed to import media from drop:', error);
+        return { success: false, importedFiles: [] };
+      }
     },
 
     exportProject: () => {

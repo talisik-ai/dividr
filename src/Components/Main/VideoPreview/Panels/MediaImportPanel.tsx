@@ -1,6 +1,6 @@
 import { ScrollTabs } from '@/Components/ui/scroll-tab';
 import React, { useCallback, useRef, useState } from 'react';
-import { useVideoEditorStore } from '../../../../Store/videoEditorStore';
+import { useVideoEditorStore } from '../../../../store/VideoEditorStore';
 import { CustomPanelProps } from './PanelRegistry';
 
 interface FilePreview {
@@ -16,7 +16,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   className,
   onClose,
 }) => {
-  const { importMediaFromDialog } = useVideoEditorStore();
+  const { importMediaFromDialog, importMediaFromDrop } = useVideoEditorStore();
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
@@ -38,60 +38,108 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     }
   }, []);
 
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      try {
+        console.log(
+          '🎯 MediaImportPanel handleFiles called with',
+          files.length,
+          'files:',
+          files.map((f) => f.name),
+        );
+
+        // Create initial previews for immediate UI feedback
+        const initialPreviews: FilePreview[] = files.map((file) => ({
+          id: Math.random().toString(36).substr(2, 9),
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          url: URL.createObjectURL(file), // Temporary preview URL
+        }));
+
+        setSelectedFiles((prev) => [...prev, ...initialPreviews]);
+
+        // Start upload progress simulation
+        initialPreviews.forEach((preview) => {
+          setUploadProgress((prev) => ({ ...prev, [preview.id]: 0 }));
+        });
+
+        // Actually import the files using the proper Electron method
+        console.log('🚀 Calling importMediaFromDrop...');
+        const result = await importMediaFromDrop(files);
+        console.log('📦 importMediaFromDrop result:', result);
+
+        if (result.success) {
+          // Update the previews with the actual imported file data
+          const updatedPreviews = initialPreviews.map((initial, index) => {
+            const imported = result.importedFiles[index];
+            if (imported) {
+              return {
+                ...initial,
+                id: imported.id,
+                url: imported.url, // Use the proper preview URL from Electron
+                thumbnail: imported.thumbnail,
+              };
+            }
+            return initial;
+          });
+
+          setSelectedFiles((prev) => {
+            // Replace the initial previews with updated ones
+            const filteredPrev = prev.filter(
+              (p) => !initialPreviews.some((ip) => ip.id === p.id),
+            );
+            return [...filteredPrev, ...updatedPreviews];
+          });
+
+          // Complete the progress for all files
+          initialPreviews.forEach((preview) => {
+            setUploadProgress((prev) => ({ ...prev, [preview.id]: 100 }));
+          });
+        } else {
+          // If import failed, still show progress completion but mark as error
+          console.error('Failed to import dropped files');
+          initialPreviews.forEach((preview) => {
+            setUploadProgress((prev) => ({ ...prev, [preview.id]: 100 }));
+          });
+        }
+      } catch (error) {
+        console.error('Error handling files:', error);
+        // Still complete progress to avoid stuck UI
+        files.forEach(() => {
+          const id = Math.random().toString(36).substr(2, 9);
+          setUploadProgress((prev) => ({ ...prev, [id]: 100 }));
+        });
+      }
+    },
+    [importMediaFromDrop],
+  );
+
   const handleDragOut = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const files = Array.from(e.dataTransfer.files);
-      handleFiles(files);
-    }
-  }, []);
-
-  const handleFiles = useCallback((files: File[]) => {
-    const newPreviews: FilePreview[] = files.map((file) => ({
-      id: Math.random().toString(36).substr(2, 9),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      url: URL.createObjectURL(file),
-    }));
-
-    setSelectedFiles((prev) => [...prev, ...newPreviews]);
-
-    // Simulate upload progress
-    newPreviews.forEach((preview) => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.random() * 30;
-        if (progress >= 100) {
-          progress = 100;
-          clearInterval(interval);
-        }
-        setUploadProgress((prev) => ({
-          ...prev,
-          [preview.id]: Math.min(progress, 100),
-        }));
-      }, 200);
-    });
-  }, []);
-
-  const handleFileInput = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const files = Array.from(e.dataTransfer.files);
+        await handleFiles(files);
+      }
+    },
+    [handleFiles],
+  );
 
   const handleFileInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files) {
         const files = Array.from(e.target.files);
-        handleFiles(files);
+        await handleFiles(files);
       }
     },
     [handleFiles],
@@ -163,7 +211,20 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
             </p>
 
             <button
-              onClick={importMediaFromDialog}
+              onClick={async () => {
+                const result = await importMediaFromDialog();
+                if (result.success && result.importedFiles.length > 0) {
+                  // Add the imported files to the panel state
+                  setSelectedFiles((prev) => [
+                    ...prev,
+                    ...result.importedFiles,
+                  ]);
+                  // Mark them as completed (100% progress)
+                  result.importedFiles.forEach((file) => {
+                    setUploadProgress((prev) => ({ ...prev, [file.id]: 100 }));
+                  });
+                }
+              }}
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-xs font-medium transition-colors duration-200"
             >
               Upload Files
@@ -211,21 +272,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
                       <p className="text-xs text-gray-400">
                         {formatFileSize(file.size)}
                       </p>
-
-                      {!isComplete && (
-                        <div className="mt-2">
-                          <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-                            <span>Uploading...</span>
-                            <span>{Math.round(progress)}%</span>
-                          </div>
-                          <div className="w-full bg-gray-700 rounded-full h-1">
-                            <div
-                              className="bg-blue-500 h-1 rounded-full transition-all duration-200"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
 
@@ -326,7 +372,17 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
           )}
         </div>
         <button
-          onClick={importMediaFromDialog}
+          onClick={async () => {
+            const result = await importMediaFromDialog();
+            if (result.success && result.importedFiles.length > 0) {
+              // Add the imported files to the panel state
+              setSelectedFiles((prev) => [...prev, ...result.importedFiles]);
+              // Mark them as completed (100% progress)
+              result.importedFiles.forEach((file) => {
+                setUploadProgress((prev) => ({ ...prev, [file.id]: 100 }));
+              });
+            }
+          }}
           className="w-full bg-black hover:bg-gray-600 text-white p-2 rounded-lg text-xs lg:text-sm font-medium transition-colors duration-200"
         >
           Upload

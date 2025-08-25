@@ -70,6 +70,34 @@ declare global {
         error?: string;
       }>;
 
+      // File processing methods
+      processDroppedFiles: (
+        fileBuffers: Array<{
+          name: string;
+          type: string;
+          size: number;
+          buffer: ArrayBuffer;
+        }>
+      ) => Promise<{
+        success: boolean;
+        files?: Array<{
+          name: string;
+          originalName: string;
+          type: 'video' | 'audio' | 'image';
+          size: number;
+          extension: string;
+          path: string;
+          hasPath: boolean;
+          isTemporary: boolean;
+        }>;
+        error?: string;
+      }>;
+      cleanupTempFiles: (filePaths: string[]) => Promise<{
+        success: boolean;
+        cleanedCount?: number;
+        error?: string;
+      }>;
+
       ffmpegRun: (job: VideoEditJob) => Promise<{
         success: boolean;
         result?: { command: string; logs: string };

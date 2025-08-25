@@ -594,6 +594,105 @@ ipcMain.handle('cancel-ffmpeg', async () => {
   }
 });
 
+// IPC Handler for processing dropped files by writing them to temp location
+ipcMain.handle(
+  'process-dropped-files',
+  async (
+    event,
+    fileBuffers: Array<{
+      name: string;
+      type: string;
+      size: number;
+      buffer: ArrayBuffer;
+    }>,
+  ) => {
+    try {
+      console.log(
+        '🎯 Processing dropped files in main process:',
+        fileBuffers.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+      );
+
+      const tempDir = path.join(os.tmpdir(), 'dividr-uploads');
+
+      // Ensure temp directory exists
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const processedFiles = [];
+
+      for (const fileData of fileBuffers) {
+        // Create a unique filename to avoid conflicts
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substring(2, 8);
+        const ext = path.extname(fileData.name);
+        const baseName = path.basename(fileData.name, ext);
+        const uniqueFileName = `${baseName}_${timestamp}_${random}${ext}`;
+        const tempFilePath = path.join(tempDir, uniqueFileName);
+
+        // Write the file buffer to temp location
+        const buffer = Buffer.from(fileData.buffer);
+        fs.writeFileSync(tempFilePath, buffer);
+
+        // Determine file type based on extension
+        const extension = ext.toLowerCase().slice(1);
+        let type: 'video' | 'audio' | 'image' = 'video';
+        if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(extension)) {
+          type = 'audio';
+        } else if (
+          ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'].includes(
+            extension,
+          )
+        ) {
+          type = 'image';
+        }
+
+        processedFiles.push({
+          name: fileData.name,
+          originalName: fileData.name,
+          type,
+          size: fileData.size,
+          extension,
+          path: tempFilePath,
+          hasPath: true,
+          isTemporary: true,
+        });
+
+        console.log(
+          `📁 Wrote temporary file: ${fileData.name} -> ${tempFilePath}`,
+        );
+      }
+
+      return { success: true, files: processedFiles };
+    } catch (error) {
+      console.error('Failed to process dropped files:', error);
+      return { success: false, error: error.message };
+    }
+  },
+);
+
+// IPC Handler for cleaning up temporary files
+ipcMain.handle('cleanup-temp-files', async (event, filePaths: string[]) => {
+  try {
+    let cleanedCount = 0;
+    for (const filePath of filePaths) {
+      try {
+        if (fs.existsSync(filePath) && filePath.includes('dividr-uploads')) {
+          fs.unlinkSync(filePath);
+          cleanedCount++;
+          console.log(`🗑️ Cleaned up temporary file: ${filePath}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to cleanup file ${filePath}:`, error);
+      }
+    }
+    return { success: true, cleanedCount };
+  } catch (error) {
+    console.error('Failed to cleanup temporary files:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // IPC Handler for creating preview URLs from file paths
 ipcMain.handle('create-preview-url', async (event, filePath: string) => {
   try {
@@ -925,7 +1024,7 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
       webSecurity: true,
       nodeIntegration: true,
-      devTools: false,
+      // devTools: false,
     },
   });
 
