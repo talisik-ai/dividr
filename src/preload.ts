@@ -115,6 +115,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Cancel FFmpeg operation
   cancelFfmpeg: () => ipcRenderer.invoke('cancel-ffmpeg'),
+
+  // Subtitle file operations
+  writeSubtitleFile: (options: {
+    content: string;
+    filename: string;
+    outputPath: string;
+  }) => ipcRenderer.invoke('write-subtitle-file', options),
+
+  deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
 });
 
 contextBridge.exposeInMainWorld('appControl', {

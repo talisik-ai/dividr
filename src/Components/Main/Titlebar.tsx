@@ -14,7 +14,7 @@ import { RxBox } from 'react-icons/rx';
 import { useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../Assets/Logo/logo.svg';
 import { VideoEditJob } from '../../Schema/ffmpegConfig';
-import { useVideoEditorStore } from '../../store/videoEditorStore';
+import { useVideoEditorStore, VideoTrack } from '../../store/videoEditorStore';
 import {
   FfmpegCallbacks,
   runFfmpegWithProgress,
@@ -52,6 +52,49 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   );
   const showExportButton = isInVideoEditor;
 
+  // Function to generate .srt content from subtitle tracks
+  const generateSrtContent = useCallback(
+    (subtitleTracks: VideoTrack[]): string => {
+      if (subtitleTracks.length === 0) return '';
+
+      // Sort subtitle tracks by start time
+      const sortedSubtitles = [...subtitleTracks]
+        .filter((track) => track.visible && track.subtitleText)
+        .sort((a, b) => a.startFrame - b.startFrame);
+
+      const srtLines: string[] = [];
+
+      sortedSubtitles.forEach((track, index) => {
+        const startTimeSeconds = track.startFrame / timeline.fps;
+        const endTimeSeconds = track.endFrame / timeline.fps;
+
+        // Convert seconds to SRT time format (HH:MM:SS,mmm)
+        const formatSrtTime = (seconds: number): string => {
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          const secs = Math.floor(seconds % 60);
+          const milliseconds = Math.floor((seconds % 1) * 1000);
+
+          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`;
+        };
+
+        const startTime = formatSrtTime(startTimeSeconds);
+        const endTime = formatSrtTime(endTimeSeconds);
+
+        // SRT format: index, timing, text, blank line
+        srtLines.push(
+          (index + 1).toString(),
+          `${startTime} --> ${endTime}`,
+          track.subtitleText || '',
+          '',
+        );
+      });
+
+      return srtLines.join('\n');
+    },
+    [timeline.fps],
+  );
+
   // Convert tracks to FFmpeg job with timeline-aware processing
   const createFFmpegJob = useCallback(
     (outputFilename = 'final_video.mp4', outputPath?: string): VideoEditJob => {
@@ -64,10 +107,15 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
         };
       }
 
-      // Sort tracks by timeline position to process them in order
+      // Separate subtitle tracks for separate processing
+      const subtitleTracks = tracks.filter(
+        (track) => track.type === 'subtitle',
+      );
+
+      // Sort non-subtitle tracks by timeline position to process them in order
       const sortedTracks = [...tracks]
         .filter((track) => track.visible) // Only include visible tracks
-        .filter((track) => track.type !== 'subtitle') // Exclude subtitle tracks - they're for preview only, proper subtitle export should be handled separately
+        .filter((track) => track.type !== 'subtitle') // Exclude subtitle tracks - they'll be handled as .srt file
         .sort((a, b) => a.startFrame - b.startFrame);
 
       if (sortedTracks.length === 0) {
@@ -128,6 +176,13 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
         currentTimelineFrame = track.endFrame;
       }
 
+      // Generate subtitle content if there are subtitle tracks
+      let subtitleContent = '';
+      if (subtitleTracks.length > 0) {
+        subtitleContent = generateSrtContent(subtitleTracks);
+        console.log('📝 Generated subtitle content for export');
+      }
+
       return {
         inputs: trackInfos,
         output: outputFilename,
@@ -136,10 +191,12 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
           concat: trackInfos.length > 1,
           targetFrameRate: timeline.fps,
           normalizeFrameRate: trackInfos.length > 1,
+          subtitles: subtitleContent ? 'temp_subtitles.srt' : undefined, // FFmpeg will look for this file
         },
+        subtitleContent, // Pass the subtitle content separately so main process can create the file
       };
     },
-    [tracks, timeline.fps],
+    [tracks, timeline.fps, generateSrtContent],
   );
 
   // Handle export button click - shows modal
@@ -181,13 +238,17 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
       };
 
       try {
+        console.log('🚀 Starting render process...');
         startRender({
           outputPath: job.output,
           format: 'mp4',
           quality: 'high',
         });
 
-        await runFfmpegWithProgress(job, callbacks);
+        console.log('📞 Calling runFfmpegWithProgress...');
+        const result = await runFfmpegWithProgress(job, callbacks);
+        console.log('✅ runFfmpegWithProgress completed:', result);
+
         finishRender();
         alert('Render completed successfully!');
       } catch (error) {

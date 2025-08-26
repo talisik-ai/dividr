@@ -14,17 +14,16 @@ import {
 } from './dialog';
 import { Input } from './input';
 import { Label } from './label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from './select';
+import { Select, SelectContent, SelectItem, SelectTrigger } from './select';
 
 interface ExportConfig {
   filename: string;
   format: string;
   outputPath: string;
+  subtitles?: {
+    enabled: boolean;
+    type: 'hardcoded' | 'embedded';
+  };
 }
 
 interface ExportModalProps {
@@ -39,7 +38,7 @@ const videoFormats = [
   { value: 'avi', label: 'AVI', extension: '.avi' },
   { value: 'mov', label: 'QuickTime (MOV)', extension: '.mov' },
   { value: 'mkv', label: 'Matroska (MKV)', extension: '.mkv' },
- // { value: 'webm', label: 'WebM', extension: '.webm' },
+  // { value: 'webm', label: 'WebM', extension: '.webm' },
   { value: 'wmv', label: 'Windows Media Video', extension: '.wmv' },
 ];
 
@@ -54,11 +53,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [outputPath, setOutputPath] = useState('');
   const [isLoadingDefaultPath, setIsLoadingDefaultPath] = useState(false);
 
+  // Subtitle options
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
+  const [subtitleType, setSubtitleType] = useState<'hardcoded' | 'embedded'>(
+    'hardcoded',
+  );
+
   // Reset form when modal opens and load default path
   React.useEffect(() => {
     if (isOpen) {
       setFilename(defaultFilename);
       setFormat('mp4');
+      setSubtitlesEnabled(false);
+      setSubtitleType('hardcoded');
       loadDefaultPath();
     }
   }, [isOpen, defaultFilename]);
@@ -86,10 +93,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleBrowseFolder = async () => {
     try {
       const selectedFormat = videoFormats.find((f) => f.value === format);
-      const defaultFilePath = outputPath 
+      const defaultFilePath = outputPath
         ? `${outputPath}/${filename.trim()}${selectedFormat?.extension || '.mp4'}`
         : `${filename.trim()}${selectedFormat?.extension || '.mp4'}`;
-      
+
       const result = await window.electronAPI.showSaveDialog({
         title: 'Save Video As',
         defaultPath: defaultFilePath,
@@ -138,6 +145,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       filename: finalFilename,
       format,
       outputPath: outputPath.trim(),
+      subtitles: subtitlesEnabled
+        ? {
+            enabled: true,
+            type: subtitleType,
+          }
+        : {
+            enabled: false,
+            type: 'hardcoded',
+          },
     });
   };
 
@@ -148,7 +164,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const selectedFormat = videoFormats.find((f) => f.value === format);
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} className='text-white bg-black'>
+    <Dialog isOpen={isOpen} onClose={onClose} className="text-white bg-black">
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Export Video</DialogTitle>
@@ -179,10 +195,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <Select value={format} onValueChange={setFormat}>
               <SelectTrigger>
                 <span className="block truncate">
-                  {selectedFormat?.label || "Select format"}
+                  {selectedFormat?.label || 'Select format'}
                 </span>
               </SelectTrigger>
-              <SelectContent className='bg-black'>
+              <SelectContent className="bg-black">
                 {videoFormats.map((fmt) => (
                   <SelectItem key={fmt.value} value={fmt.value}>
                     {fmt.label}
@@ -201,7 +217,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 type="text"
                 value={outputPath}
                 onChange={(e) => setOutputPath(e.target.value)}
-                placeholder={isLoadingDefaultPath ? "Loading..." : "Select output folder"}
+                placeholder={
+                  isLoadingDefaultPath ? 'Loading...' : 'Select output folder'
+                }
                 className="flex-1 text-white"
                 disabled={isLoadingDefaultPath}
               />
@@ -216,8 +234,76 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Full path: {outputPath ? `${outputPath}/${filename.trim() || 'filename'}${selectedFormat?.extension || '.mp4'}` : 'No folder selected'}
+              Full path:{' '}
+              {outputPath
+                ? `${outputPath}/${filename.trim() || 'filename'}${selectedFormat?.extension || '.mp4'}`
+                : 'No folder selected'}
             </p>
+          </div>
+
+          {/* Subtitle Options */}
+          <div className="space-y-3 border-t border-gray-700 pt-4">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="subtitles"
+                checked={subtitlesEnabled}
+                onChange={(e) => setSubtitlesEnabled(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <Label htmlFor="subtitles" className="text-sm font-medium">
+                Include Subtitles
+              </Label>
+            </div>
+
+            {subtitlesEnabled && (
+              <div className="ml-6 space-y-2">
+                <Label className="text-sm">Subtitle Type</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="hardcoded"
+                      name="subtitleType"
+                      value="hardcoded"
+                      checked={subtitleType === 'hardcoded'}
+                      onChange={(e) =>
+                        setSubtitleType(
+                          e.target.value as 'hardcoded' | 'embedded',
+                        )
+                      }
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
+                    />
+                    <Label htmlFor="hardcoded" className="text-sm">
+                      Hardcoded (burned-in)
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="embedded"
+                      name="subtitleType"
+                      value="embedded"
+                      checked={subtitleType === 'embedded'}
+                      onChange={(e) =>
+                        setSubtitleType(
+                          e.target.value as 'hardcoded' | 'embedded',
+                        )
+                      }
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
+                    />
+                    <Label htmlFor="embedded" className="text-sm">
+                      Embedded (selectable)
+                    </Label>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  {subtitleType === 'hardcoded'
+                    ? 'Subtitles will be permanently burned into the video and cannot be turned off'
+                    : 'Subtitles will be embedded as a separate track that can be turned on/off in video players'}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Format Description */}
@@ -239,7 +325,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <Button variant="outline" onClick={handleCancel} className="mr-2">
             Cancel
           </Button>
-          <Button onClick={handleExport} disabled={!filename.trim() || !outputPath.trim() || isLoadingDefaultPath}>
+          <Button
+            onClick={handleExport}
+            disabled={
+              !filename.trim() || !outputPath.trim() || isLoadingDefaultPath
+            }
+          >
             Export Video
           </Button>
         </DialogFooter>

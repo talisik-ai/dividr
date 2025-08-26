@@ -1,4 +1,3 @@
-const videoInputs: InputCategory[] = [];
 import * as path from 'path';
 import {
   AudioProcessingContext,
@@ -438,10 +437,45 @@ function buildConcatFilter(
   concatInputPairs: string[],
   videoCount: number,
   audioCount: number,
+  subtitlePath?: string,
+  crop?: { width: number; height: number; x: number; y: number },
 ): string {
   const concatFilter = `${concatInputPairs.join('')}concat=n=${videoCount}:v=${videoCount > 0 ? 1 : 0}:a=${audioCount > 0 ? 1 : 0}:unsafe=1[temp_outv][temp_outa]`;
-  const finalFilter = `[temp_outv]setpts=PTS-STARTPTS[outv];[temp_outa]asetpts=PTS-STARTPTS[outa]`;
-  return concatFilter + ';' + finalFilter;
+
+  let currentVideoRef = '[temp_outv]';
+
+  // Build the filter chain: concat -> crop -> subtitles -> setpts
+  let filterChain = '';
+
+  // Handle cropping first if needed
+  if (crop) {
+    filterChain += `${currentVideoRef}crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}[cropped];`;
+    currentVideoRef = '[cropped]';
+  }
+
+  // Handle subtitles next if needed
+  if (subtitlePath) {
+    // For Windows, use proper path format for FFmpeg
+    let ffmpegPath = subtitlePath;
+    if (process.platform === 'win32') {
+      ffmpegPath = subtitlePath.replace(/\\/g, '/');
+    }
+
+    console.log('🎬 Subtitle path debug - original:', subtitlePath);
+    console.log('🎬 Subtitle path debug - ffmpeg format:', ffmpegPath);
+    console.log('🎬 Platform:', process.platform);
+
+    filterChain += `${currentVideoRef}subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[subtitled];`;
+    currentVideoRef = '[subtitled]';
+  }
+
+  // Always add setpts at the end
+  filterChain += `${currentVideoRef}setpts=PTS-STARTPTS[outv]`;
+
+  const finalVideoFilter = filterChain;
+
+  const finalAudioFilter = `[temp_outa]asetpts=PTS-STARTPTS[outa]`;
+  return concatFilter + ';' + finalVideoFilter + ';' + finalAudioFilter;
 }
 
 /**
@@ -453,7 +487,16 @@ function buildConcatFilter(
 function buildSingleGapFilterComplex(
   duration: number,
   targetFps: number,
+  subtitlePath?: string,
 ): string {
+  if (subtitlePath) {
+    // Proper path format for FFmpeg on Windows
+    let ffmpegPath = subtitlePath;
+    if (process.platform === 'win32') {
+      ffmpegPath = subtitlePath.replace(/\\/g, '/');
+    }
+    return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[temp_outv];[temp_outv]subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+  }
   return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
 }
 
@@ -564,7 +607,18 @@ function handleConcatenationWorkflow(
     const allFilters = [...trimFilters, ...fpsFilters];
     let filterComplex = allFilters.length > 0 ? allFilters.join(';') + ';' : '';
 
-    const videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[outv]`;
+    let videoOnlyFilter: string;
+    if (job.operations.subtitles) {
+      // Add subtitles after video concatenation
+      // Proper path format for FFmpeg on Windows
+      let ffmpegPath = job.operations.subtitles;
+      if (process.platform === 'win32') {
+        ffmpegPath = job.operations.subtitles.replace(/\\/g, '/');
+      }
+      videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[temp_outv];[temp_outv]subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+    } else {
+      videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[outv]`;
+    }
     filterComplex += videoOnlyFilter;
 
     filterComplex = handleAudioReplacementProcessing(
@@ -595,6 +649,8 @@ function handleConcatenationWorkflow(
       concatInputPairs,
       videoCount,
       videoInputs.length,
+      job.operations.subtitles,
+      job.operations.crop,
     );
     filterComplex += concatFilter;
 
@@ -618,7 +674,11 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
     const duration = getGapDuration(trackInfo);
     const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
 
-    const filterComplex = buildSingleGapFilterComplex(duration, targetFps);
+    const filterComplex = buildSingleGapFilterComplex(
+      duration,
+      targetFps,
+      job.operations.subtitles,
+    );
     cmd.args.push(
       '-f',
       'lavfi',
@@ -633,10 +693,70 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
 
     const trimFilters = createSingleTrackTrimFilters(trackInfo);
     if (trimFilters) {
-      cmd.args.push(
-        '-filter_complex',
-        `${trimFilters.videoFilter};${trimFilters.audioFilter}`,
-      );
+      let filterComplex = `${trimFilters.videoFilter};${trimFilters.audioFilter}`;
+
+      // Add crop and/or subtitles if specified
+
+      // Handle cropping first if needed
+      if (job.operations.crop) {
+        const crop = job.operations.crop;
+        filterComplex = filterComplex.replace('[outv]', '[pre_crop]');
+        filterComplex += `;[pre_crop]crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}[outv]`;
+      }
+
+      // Add subtitles if specified
+      if (job.operations.subtitles) {
+        // Modify the video filter to output to temp, then add subtitles
+        filterComplex = filterComplex.replace('[outv]', '[temp_outv]');
+        // Proper path format for FFmpeg on Windows
+        let ffmpegPath = job.operations.subtitles;
+        if (process.platform === 'win32') {
+          ffmpegPath = job.operations.subtitles.replace(/\\/g, '/');
+        }
+        filterComplex += `;[temp_outv]subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+      }
+
+      cmd.args.push('-filter_complex', filterComplex);
+      cmd.args.push('-map', '[outv]', '-map', '[outa]');
+    } else if (job.operations.subtitles || job.operations.crop) {
+      // No trimming but we have subtitles and/or cropping
+      let filterComplex = '';
+      let videoInput = '[0:v]';
+
+      // Handle cropping first if needed
+      if (job.operations.crop) {
+        const crop = job.operations.crop;
+        if (job.operations.subtitles) {
+          // If we also have subtitles, crop first then subtitles
+          filterComplex = `${videoInput}crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}[cropped]`;
+          videoInput = '[cropped]';
+        } else {
+          // Only cropping, no subtitles
+          filterComplex = `${videoInput}crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}[outv]`;
+        }
+      }
+
+      // Add subtitles if specified
+      if (job.operations.subtitles) {
+        // Proper path format for FFmpeg on Windows
+        let ffmpegPath = job.operations.subtitles;
+        if (process.platform === 'win32') {
+          ffmpegPath = job.operations.subtitles.replace(/\\/g, '/');
+        }
+
+        if (filterComplex) {
+          // Already have cropping, add subtitles to the chain
+          filterComplex += `;${videoInput}subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+        } else {
+          // Only subtitles, no cropping
+          filterComplex = `${videoInput}subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+        }
+      }
+
+      // Add audio passthrough
+      filterComplex += ';[0:a]acopy[outa]';
+
+      cmd.args.push('-filter_complex', filterComplex);
       cmd.args.push('-map', '[outv]', '-map', '[outa]');
     }
   }
@@ -710,8 +830,26 @@ function handleCrop(job: VideoEditJob, cmd: CommandParts) {
 }
 
 function handleSubtitles(job: VideoEditJob, cmd: CommandParts) {
-  if (job.operations.subtitles) {
-    cmd.filters.push(`subtitles=${job.operations.subtitles}`);
+  // Only add subtitles to -vf filters if we're NOT using concatenation
+  // Concatenation uses -filter_complex, so subtitles must be integrated there
+  if (
+    job.operations.subtitles &&
+    !(job.operations.concat && job.inputs.length > 1)
+  ) {
+    // Proper path format for FFmpeg on Windows
+    let ffmpegPath = job.operations.subtitles;
+    if (process.platform === 'win32') {
+      ffmpegPath = job.operations.subtitles.replace(/\\/g, '/');
+    }
+
+    const subtitleFilter = `subtitles=filename='${ffmpegPath}':force_style='Alignment=2'`;
+    cmd.filters.push(subtitleFilter);
+    console.log('📝 Added subtitle filter to -vf:', subtitleFilter);
+  } else if (job.operations.subtitles) {
+    console.log(
+      '📝 Subtitle file detected, will be integrated into filter complex:',
+      job.operations.subtitles,
+    );
   }
 }
 
@@ -737,12 +875,19 @@ export function buildFfmpegCommand(
   // Run all step handlers
   for (const step of steps) step(job, cmd);
 
-  // Apply -vf filters if we’re not in concat mode
-  if (
-    cmd.filters.length > 0 &&
-    !(job.operations.concat && job.inputs.length > 1)
-  ) {
+  // Apply -vf filters ONLY if we're not using -filter_complex
+  // Check if -filter_complex is already being used
+  const usesFilterComplex = cmd.args.includes('-filter_complex');
+
+  if (cmd.filters.length > 0 && !usesFilterComplex) {
+    // Only use -vf if we're not already using -filter_complex
     cmd.args.push('-vf', cmd.filters.join(','));
+  } else if (cmd.filters.length > 0 && usesFilterComplex) {
+    // Log a warning if we tried to add -vf filters when -filter_complex is already used
+    console.warn(
+      '⚠️ Attempted to use -vf filters when -filter_complex is already in use. Filters ignored:',
+      cmd.filters,
+    );
   }
 
   const outputFilePath = location

@@ -948,57 +948,160 @@ ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
 let currentFfmpegProcess: ReturnType<typeof spawn> | null = null;
 
 ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
-  return new Promise((resolve, reject) => {
-    if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
-      reject(new Error('Another FFmpeg process is already running'));
-      return;
+  console.log('🎯 MAIN PROCESS: ffmpegRun handler called!');
+  console.log('🎯 MAIN PROCESS: Received job:', JSON.stringify(job, null, 2));
+
+  if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
+    throw new Error('Another FFmpeg process is already running');
+  }
+
+  const location = job.outputPath || 'public/output/';
+  let tempSubtitlePath: string | null = null;
+
+  try {
+    // Create temporary subtitle file if subtitle content is provided
+    if (job.subtitleContent && job.operations.subtitles) {
+      tempSubtitlePath = path.join(location, 'temp_subtitles.srt');
+
+      // Ensure directory exists
+      if (!fs.existsSync(location)) {
+        fs.mkdirSync(location, { recursive: true });
+      }
+
+      // Write subtitle content to file
+      fs.writeFileSync(tempSubtitlePath, job.subtitleContent, 'utf8');
+      console.log('📝 Created temporary subtitle file:', tempSubtitlePath);
+
+      // Update the job to use the absolute path instead of just the filename
+      job.operations.subtitles = tempSubtitlePath;
+      console.log('📁 Updated subtitle path to absolute:', tempSubtitlePath);
+      console.log('📁 Absolute path details:');
+      console.log('  - Raw path:', JSON.stringify(tempSubtitlePath));
+      console.log('  - Path.resolve:', path.resolve(tempSubtitlePath));
+      console.log('  - Path exists:', fs.existsSync(tempSubtitlePath));
     }
 
-    const location = job.outputPath || 'public/output/';
+    // Verify subtitle file exists before running FFmpeg
+    if (tempSubtitlePath) {
+      if (!fs.existsSync(tempSubtitlePath)) {
+        throw new Error(`Subtitle file does not exist: ${tempSubtitlePath}`);
+      }
+      console.log('✅ Subtitle file verified to exist:', tempSubtitlePath);
+    }
 
     // Build proper FFmpeg command
     const baseArgs = buildFfmpegCommand(job, location);
     const args = ['-progress', 'pipe:1', '-y', ...baseArgs];
 
-    console.log('Running FFmpeg with args:', args);
+    console.log('🔧 FFmpeg command built:');
+    console.log('  - Base args:', baseArgs);
+    console.log('  - Full args:', args);
+    console.log('  - Job operations.subtitles:', job.operations.subtitles);
 
-    if (!ffmpegPath) {
-      throw new Error(
-        'FFmpeg binary not available. Please ensure ffmpeg-static is properly installed.',
-      );
-    }
+    return new Promise((resolve, reject) => {
+      console.log('🚀 Starting FFmpeg with args:', args);
 
-    const ffmpeg = spawn(ffmpegPath, args);
-    currentFfmpegProcess = ffmpeg;
-
-    let logs = '';
-
-    ffmpeg.stdout.on('data', (data) => {
-      const text = data.toString();
-      logs += `[stdout] ${text}\n`;
-      event.sender.send('ffmpeg:progress', { type: 'stdout', data: text });
-    });
-
-    ffmpeg.stderr.on('data', (data) => {
-      const text = data.toString();
-      logs += `[stderr] ${text}\n`;
-      event.sender.send('ffmpeg:progress', { type: 'stderr', data: text });
-    });
-
-    ffmpeg.on('close', (code) => {
-      currentFfmpegProcess = null;
-      if (code === 0) {
-        resolve({ success: true, logs });
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code}\nLogs:\n${logs}`));
+      // Double-check subtitle file still exists right before spawning
+      if (tempSubtitlePath && !fs.existsSync(tempSubtitlePath)) {
+        reject(
+          new Error(
+            `Subtitle file disappeared before FFmpeg start: ${tempSubtitlePath}`,
+          ),
+        );
+        return;
       }
-    });
 
-    ffmpeg.on('error', (err) => {
-      currentFfmpegProcess = null;
-      reject(err);
+      if (!ffmpegPath) {
+        reject(
+          new Error(
+            'FFmpeg binary not available. Please ensure ffmpeg-static is properly installed.',
+          ),
+        );
+        return;
+      }
+
+      const ffmpeg = spawn(ffmpegPath, args);
+      currentFfmpegProcess = ffmpeg;
+
+      let logs = '';
+
+      ffmpeg.stdout.on('data', (data) => {
+        const text = data.toString();
+        logs += `[stdout] ${text}\n`;
+        event.sender.send('ffmpeg:progress', { type: 'stdout', data: text });
+      });
+
+      ffmpeg.stderr.on('data', (data) => {
+        const text = data.toString();
+        logs += `[stderr] ${text}\n`;
+        event.sender.send('ffmpeg:progress', { type: 'stderr', data: text });
+      });
+
+      ffmpeg.on('close', (code) => {
+        currentFfmpegProcess = null;
+        console.log(`🏁 FFmpeg process finished with code: ${code}`);
+
+        // Always cleanup temporary subtitle file after FFmpeg completes
+        if (tempSubtitlePath && fs.existsSync(tempSubtitlePath)) {
+          try {
+            fs.unlinkSync(tempSubtitlePath);
+            console.log(
+              '🗑️ Cleaned up temporary subtitle file after FFmpeg completion',
+            );
+          } catch (cleanupError) {
+            console.warn(
+              '⚠️ Failed to cleanup temporary subtitle file after completion:',
+              cleanupError,
+            );
+          }
+        }
+
+        if (code === 0) {
+          resolve({ success: true, logs });
+        } else {
+          reject(new Error(`FFmpeg exited with code ${code}\nLogs:\n${logs}`));
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        currentFfmpegProcess = null;
+        console.log('❌ FFmpeg process error:', err.message);
+
+        // Cleanup temporary subtitle file on error
+        if (tempSubtitlePath && fs.existsSync(tempSubtitlePath)) {
+          try {
+            fs.unlinkSync(tempSubtitlePath);
+            console.log(
+              '🗑️ Cleaned up temporary subtitle file after FFmpeg error',
+            );
+          } catch (cleanupError) {
+            console.warn(
+              '⚠️ Failed to cleanup temporary subtitle file after error:',
+              cleanupError,
+            );
+          }
+        }
+
+        reject(err);
+      });
     });
-  });
+  } catch (error) {
+    console.log('💥 Setup error occurred before FFmpeg could start:', error);
+
+    // Only cleanup on setup errors, not FFmpeg execution errors
+    if (tempSubtitlePath && fs.existsSync(tempSubtitlePath)) {
+      try {
+        fs.unlinkSync(tempSubtitlePath);
+        console.log('🗑️ Cleaned up temporary subtitle file due to setup error');
+      } catch (cleanupError) {
+        console.warn(
+          '⚠️ Failed to cleanup temporary subtitle file after setup error:',
+          cleanupError,
+        );
+      }
+    }
+    throw error;
+  }
 });
 
 ipcMain.handle('ffmpeg:cancel', async () => {

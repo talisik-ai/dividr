@@ -118,11 +118,16 @@ export async function runFfmpegWithProgress(
   job: VideoEditJob,
   callbacks?: FfmpegCallbacks,
 ): Promise<{ command: string; logs: string }> {
+  console.log('🔍 runFfmpegWithProgress called with job:', job);
+
   if (!isElectron()) {
+    console.error('❌ Not in Electron environment!');
     throw new Error('FFmpeg operations require Electron main process');
   }
+  console.log('✅ Electron environment confirmed');
 
   return new Promise((resolve, reject) => {
+    console.log('📡 Setting up IPC communication...');
     // Set up progress listener
     const handleProgress = (
       event: any,
@@ -154,17 +159,21 @@ export async function runFfmpegWithProgress(
     };
 
     // Register progress listener
+    console.log('👂 Registering progress listener...');
     window.electronAPI.on('ffmpeg:progress', handleProgress);
 
     // Start FFmpeg process
+    console.log('🚀 Invoking ffmpegRun in main process...');
     window.electronAPI
       .invoke('ffmpegRun', job)
       .then((result: any) => {
+        console.log('✅ FFmpeg process completed successfully:', result);
         // Clean up listener
         window.electronAPI.removeListener('ffmpeg:progress', handleProgress);
         resolve({ command: 'ffmpeg-via-ipc', logs: result.logs });
       })
       .catch((error: any) => {
+        console.error('❌ FFmpeg process failed:', error);
         // Clean up listener
         window.electronAPI.removeListener('ffmpeg:progress', handleProgress);
         reject(error);

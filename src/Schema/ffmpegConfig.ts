@@ -19,6 +19,7 @@ export interface VideoEditJob {
     normalizeFrameRate?: boolean;
     targetFrameRate?: number;
   };
+  subtitleContent?: string; // SRT content to be written to a temporary file
 }
 
 export interface CommandParts {

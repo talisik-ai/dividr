@@ -99,6 +99,21 @@ declare global {
       }>;
       readFile: (filePath: string) => Promise<string>;
 
+      // Subtitle file operations
+      writeSubtitleFile: (options: {
+        content: string;
+        filename: string;
+        outputPath: string;
+      }) => Promise<{
+        success: boolean;
+        filePath?: string;
+        error?: string;
+      }>;
+      deleteFile: (filePath: string) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
       ffmpegRun: (job: VideoEditJob) => Promise<{
         success: boolean;
         result?: { command: string; logs: string };
