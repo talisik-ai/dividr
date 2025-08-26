@@ -149,7 +149,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const getTrackGradient = (type: VideoTrack['type']) => {
       switch (type) {
         case 'subtitle':
-          return 'linear-gradient(135deg, #9b59b6, #8e44ad)';
+          return 'linear-gradient(135deg, #1f1f1f, #2a2a2a)';
         case 'video':
           return 'linear-gradient(135deg, #8e44ad, #9b59b6)';
         case 'audio':
@@ -200,12 +200,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               ? track.subtitleText
               : track.name}
           </div>
-
-          {track.type === 'subtitle' && (
-            <div className="absolute right-1 top-1 text-[8px] text-white/80">
-              {track.name.split('.').pop()?.toUpperCase()}
-            </div>
-          )}
 
           {track.type === 'audio' && track.volume !== undefined && (
             <div className="absolute right-1 top-1 text-[8px] text-white/80">
