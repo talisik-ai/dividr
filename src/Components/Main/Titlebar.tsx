@@ -67,6 +67,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
       // Sort tracks by timeline position to process them in order
       const sortedTracks = [...tracks]
         .filter((track) => track.visible) // Only include visible tracks
+        .filter((track) => track.type !== 'subtitle') // Exclude subtitle tracks - they're for preview only, proper subtitle export should be handled separately
         .sort((a, b) => a.startFrame - b.startFrame);
 
       if (sortedTracks.length === 0) {
