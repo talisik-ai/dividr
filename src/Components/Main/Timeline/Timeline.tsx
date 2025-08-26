@@ -13,6 +13,7 @@ interface TimelineProps {
 export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
     timeline,
@@ -76,6 +77,15 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   );
   useHotkeys('i', () => setInPoint(timeline.currentFrame));
   useHotkeys('o', () => setOutPoint(timeline.currentFrame));
+
+  // Cleanup scroll timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Zoom controls
   useHotkeys('equal', () => setZoom(Math.min(timeline.zoom * 1.2, 10)));
@@ -171,9 +181,21 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
           className="flex-1 relative overflow-auto"
           onClick={handleTimelineClick}
           onScroll={(e) => {
-            // Synchronize horizontal scroll with the timeline store
+            // Throttled scroll handling for better performance with many tracks
             const scrollLeft = (e.target as HTMLElement).scrollLeft;
+
+            // Clear previous timeout
+            if (scrollTimeoutRef.current) {
+              clearTimeout(scrollTimeoutRef.current);
+            }
+
+            // Set immediate update for smooth playhead movement
             setScrollX(scrollLeft);
+
+            // Throttle additional updates for performance
+            scrollTimeoutRef.current = setTimeout(() => {
+              setScrollX(scrollLeft);
+            }, 16); // ~60fps throttling
           }}
         >
           <TimelineTracks
