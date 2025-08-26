@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { FaSquarePlus } from 'react-icons/fa6';
-import { useVideoEditorStore } from '../../../Store/videoEditorStore';
+import { useVideoEditorStore } from '../../../store/VideoEditorStore';
   
 // Custom debounce and throttle utilities to avoid external dependencies  
 const debounce = <T extends (...args: unknown[]) => unknown>(  
@@ -82,7 +82,10 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);  
   const renderFrameRef = useRef<number>(0);  
   
-  const { preview, timeline, tracks, setPreviewScale, playback } =  
+  // Drag and drop state
+  const [dragActive, setDragActive] = useState(false);
+
+  const { preview, timeline, tracks, setPreviewScale, playback, importMediaFromDrop } =  
     useVideoEditorStore();  
   
   // Enhanced container size management with better responsiveness
@@ -157,6 +160,52 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       actualHeight
     };  
   }, [containerSize, preview.canvasWidth, preview.canvasHeight]);  
+  
+  // Drag and drop handlers
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set drag inactive if we're leaving the container entirely
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setDragActive(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    console.log('🎯 VideoPreview handleDrop called with', files.length, 'files');
+    
+    try {
+      await importMediaFromDrop(files);
+    } catch (error) {
+      console.error('Failed to import media from drop in VideoPreview:', error);
+    }
+  }, [importMediaFromDrop]);
+
+  const handleClick = useCallback(async () => {
+    try {
+      await useVideoEditorStore.getState().importMediaFromDialog();
+    } catch (error) {
+      console.error('Failed to open file dialog from VideoPreview:', error);
+    }
+  }, []);
   
   const handleWheel = useCallback(  
     (e: WheelEvent) => {  
@@ -583,11 +632,17 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
      };
    }, [renderFrameSimple]);
 
-   return (
-     <div
-       ref={containerRef}
-       className={`relative overflow-hidden w-full h-full min-h-0 flex items-center justify-center ${className || ''}`}
-     >
+     return (
+    <div
+      ref={containerRef}
+      className={`relative overflow-hidden w-full h-full min-h-0 flex items-center justify-center ${className || ''} ${
+        dragActive ? 'border-2 border-dashed border-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''
+      }`}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
        <canvas
          ref={canvasRef}
          className="max-w-full max-h-full object-contain"
@@ -621,11 +676,34 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
          <motion.div
            initial={{ opacity: 0, scale: 0.9 }}
            animate={{ opacity: 1, scale: 1 }}
-           className="absolute inset-0 flex items-center justify-center"
+           className="absolute inset-0 flex items-center justify-center cursor-pointer"
+           onClick={handleClick}
          >
-           <div className="text-center text-gray-400 p-4">
+           <div className={`text-center p-4 transition-colors duration-200 ${
+             dragActive 
+               ? 'text-blue-500' 
+               : 'text-gray-400 hover:text-gray-300'
+           }`}>
              <FaSquarePlus className="mx-auto mb-4 text-3xl lg:text-5xl" />
-             <p className="mx-auto text-sm md:text-md lg:text-lg">Drop media files here or click to add</p>
+             <p className="mx-auto text-sm md:text-md lg:text-lg">
+               {dragActive ? 'Drop files to add to timeline' : 'Drop media files here or click to add'}
+             </p>
+           </div>
+         </motion.div>
+       )}
+
+       {/* Drag overlay when tracks exist */}
+       {tracks.length > 0 && dragActive && (
+         <motion.div
+           initial={{ opacity: 0 }}
+           animate={{ opacity: 1 }}
+           className="absolute inset-0 flex items-center justify-center bg-blue-500/20 backdrop-blur-sm"
+         >
+           <div className="text-center text-blue-600 dark:text-blue-400 p-4">
+             <FaSquarePlus className="mx-auto mb-4 text-4xl lg:text-6xl" />
+             <p className="mx-auto text-lg md:text-xl lg:text-2xl font-semibold">
+               Drop files to add to timeline
+             </p>
            </div>
          </motion.div>
        )}

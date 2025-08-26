@@ -8,7 +8,7 @@ import {
   type PanelItem,
   type PanelSection
 } from '../../../Store/PanelStore';
-import { useVideoEditorStore } from '../../../Store/videoEditorStore';
+import { useVideoEditorStore } from '../../../store/VideoEditorStore';
 import { getCustomPanelComponent, hasCustomPanelComponent } from './Panels/PanelRegistry';
 import { initializePanelRegistry } from './Panels/registerPanels';
 

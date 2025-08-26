@@ -1,8 +1,296 @@
 import { spawn } from 'child_process';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import started from 'electron-squirrel-startup';
-import ffmpegPath from 'ffmpeg-static';
-import ffprobePath from 'ffprobe-static';
+// Dynamic import of ffmpeg binaries to avoid module resolution issues
+let ffmpegPath: string | null = null;
+let ffprobePath: { path: string } | null = null;
+
+// Initialize ffmpeg paths dynamically with fallbacks
+function initializeFfmpegPaths() {
+  console.log('🔍 Initializing FFmpeg paths...');
+  console.log('📦 Is packaged:', app.isPackaged);
+  console.log('🌍 Environment:', process.env.NODE_ENV || 'production');
+
+  // Method 1: Try require approach (only for development)
+  if (!app.isPackaged) {
+    try {
+      console.log('🔄 Attempting require method (development mode)...');
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const ffmpegStatic = require('ffmpeg-static');
+      if (ffmpegStatic) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+        const fs = require('fs');
+        if (fs.existsSync(ffmpegStatic)) {
+          ffmpegPath = ffmpegStatic;
+          console.log('✅ FFmpeg resolved via require:', ffmpegPath);
+        } else {
+          console.log('⚠️ FFmpeg require returned invalid path:', ffmpegStatic);
+        }
+      }
+    } catch (requireError) {
+      console.log('⚠️ Require method failed:', requireError.message);
+    }
+  } else {
+    console.log(
+      '🚫 Skipping require method for packaged app - using manual resolution',
+    );
+  }
+
+  // FFprobe require method (only for development, same issue as ffmpeg)
+  if (!app.isPackaged) {
+    try {
+      console.log('🔄 Attempting FFprobe require method (development mode)...');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const ffprobeStatic = require('ffprobe-static');
+      if (ffprobeStatic) {
+        ffprobePath = ffprobeStatic;
+        console.log('✅ FFprobe resolved via require:', ffprobePath?.path);
+      }
+    } catch (requireError) {
+      console.log('⚠️ FFprobe require method failed:', requireError.message);
+    }
+  } else {
+    console.log(
+      '🚫 Skipping FFprobe require method for packaged app - using manual resolution',
+    );
+  }
+
+  // Method 2: Manual path resolution for packaged apps (always used for packaged apps)
+  if (app.isPackaged) {
+    try {
+      console.log('🔄 Attempting manual path resolution...');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const path = require('path');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const fs = require('fs');
+
+      // Get the correct base paths for packaged apps
+      const appPath = app.getAppPath();
+      const resourcesPath = process.resourcesPath;
+      const isWindows = process.platform === 'win32';
+      const ffmpegBinary = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
+
+      console.log('📁 App path:', appPath);
+      console.log('📁 Resources path:', resourcesPath);
+      console.log('🖥️ Platform:', process.platform);
+
+      const possiblePaths = [
+        // Primary: Resources path + app.asar.unpacked - try without .exe first (common for ffmpeg-static)
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffmpeg-static',
+          'ffmpeg',
+        ),
+        // Then try with platform-specific extension
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffmpeg-static',
+          ffmpegBinary,
+        ),
+        // Fallback: App path relative - try without .exe first
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          'ffmpeg-static',
+          'ffmpeg',
+        ),
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          'ffmpeg-static',
+          ffmpegBinary,
+        ),
+        // Direct node_modules paths (for unpackaged scenarios)
+        path.join(appPath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(appPath, 'node_modules', 'ffmpeg-static', ffmpegBinary),
+        path.join(resourcesPath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+        path.join(resourcesPath, 'node_modules', 'ffmpeg-static', ffmpegBinary),
+      ];
+
+      for (const testPath of possiblePaths) {
+        console.log('🔍 Checking FFmpeg path:', testPath);
+        if (fs.existsSync(testPath)) {
+          ffmpegPath = testPath;
+          console.log('✅ FFmpeg found at manual path:', testPath);
+          break;
+        } else {
+          console.log('❌ FFmpeg not found at:', testPath);
+        }
+      }
+
+      // Similar logic for ffprobe - it has a different directory structure
+      const ffprobeBinary = isWindows ? 'ffprobe.exe' : 'ffprobe';
+      const platformPath = isWindows
+        ? path.join('bin', 'win32', 'x64')
+        : path.join('bin', 'linux', 'x64');
+
+      const ffprobePaths = [
+        // Primary: ffprobe-static has platform-specific subdirectories
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          'ffprobe',
+        ),
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          ffprobeBinary,
+        ),
+        // Fallback: App path relative with platform subdirectories
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          'ffprobe',
+        ),
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          ffprobeBinary,
+        ),
+        // Legacy paths (try root directory too)
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          'ffprobe',
+        ),
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          'ffprobe-static',
+          ffprobeBinary,
+        ),
+        // Direct node_modules paths (for unpackaged scenarios)
+        path.join(
+          appPath,
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          'ffprobe',
+        ),
+        path.join(
+          appPath,
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          ffprobeBinary,
+        ),
+        path.join(appPath, 'node_modules', 'ffprobe-static', 'ffprobe'),
+        path.join(appPath, 'node_modules', 'ffprobe-static', ffprobeBinary),
+        path.join(
+          resourcesPath,
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          'ffprobe',
+        ),
+        path.join(
+          resourcesPath,
+          'node_modules',
+          'ffprobe-static',
+          platformPath,
+          ffprobeBinary,
+        ),
+        path.join(resourcesPath, 'node_modules', 'ffprobe-static', 'ffprobe'),
+        path.join(
+          resourcesPath,
+          'node_modules',
+          'ffprobe-static',
+          ffprobeBinary,
+        ),
+      ];
+
+      for (const testPath of ffprobePaths) {
+        console.log('🔍 Checking FFprobe path:', testPath);
+        if (fs.existsSync(testPath)) {
+          ffprobePath = { path: testPath };
+          console.log('✅ FFprobe found at manual path:', testPath);
+          break;
+        } else {
+          console.log('❌ FFprobe not found at:', testPath);
+        }
+      }
+    } catch (manualError) {
+      console.log('⚠️ Manual path resolution failed:', manualError.message);
+    }
+  }
+
+  // Method 3: System fallback
+  if (!ffmpegPath) {
+    try {
+      console.log('🔄 Attempting system FFmpeg fallback...');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const { execSync } = require('child_process');
+      const systemFfmpeg = execSync('where ffmpeg', {
+        encoding: 'utf8',
+      }).trim();
+      ffmpegPath = systemFfmpeg.split('\n')[0];
+      console.log('✅ Using system FFmpeg:', ffmpegPath);
+    } catch (systemError) {
+      console.log('⚠️ System FFmpeg not available:', systemError.message);
+    }
+  }
+
+  if (!ffprobePath) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const { execSync } = require('child_process');
+      const systemFfprobe = execSync('where ffprobe', {
+        encoding: 'utf8',
+      }).trim();
+      ffprobePath = { path: systemFfprobe.split('\n')[0] };
+      console.log('✅ Using system FFprobe:', ffprobePath.path);
+    } catch (systemError) {
+      console.log('⚠️ System FFprobe not available:', systemError.message);
+    }
+  }
+
+  // Final status report
+  console.log('🎯 FFmpeg initialization complete:');
+  console.log(
+    '  - FFmpeg available:',
+    !!ffmpegPath,
+    ffmpegPath ? `(${ffmpegPath})` : '',
+  );
+  console.log(
+    '  - FFprobe available:',
+    !!ffprobePath?.path,
+    ffprobePath?.path ? `(${ffprobePath.path})` : '',
+  );
+
+  if (!ffmpegPath || !ffprobePath?.path) {
+    console.error('❌ FFmpeg initialization failed!');
+    console.error(
+      '📋 Please ensure ffmpeg-static and ffprobe-static packages are installed correctly',
+    );
+    console.error('📋 Or install FFmpeg system-wide as a fallback');
+  }
+}
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -290,7 +578,7 @@ ipcMain.handle('run-ffmpeg-with-progress', async (event, job: VideoEditJob) => {
 });
 
 // IPC Handler to cancel FFmpeg operation
-ipcMain.handle('cancel-ffmpeg', async (event) => {
+ipcMain.handle('cancel-ffmpeg', async () => {
   try {
     const cancelled = cancelCurrentFfmpeg();
     if (cancelled) {
@@ -303,6 +591,105 @@ ipcMain.handle('cancel-ffmpeg', async (event) => {
     }
   } catch (error) {
     return { success: false, message: `Failed to cancel: ${error.message}` };
+  }
+});
+
+// IPC Handler for processing dropped files by writing them to temp location
+ipcMain.handle(
+  'process-dropped-files',
+  async (
+    event,
+    fileBuffers: Array<{
+      name: string;
+      type: string;
+      size: number;
+      buffer: ArrayBuffer;
+    }>,
+  ) => {
+    try {
+      console.log(
+        '🎯 Processing dropped files in main process:',
+        fileBuffers.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+      );
+
+      const tempDir = path.join(os.tmpdir(), 'dividr-uploads');
+
+      // Ensure temp directory exists
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const processedFiles = [];
+
+      for (const fileData of fileBuffers) {
+        // Create a unique filename to avoid conflicts
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substring(2, 8);
+        const ext = path.extname(fileData.name);
+        const baseName = path.basename(fileData.name, ext);
+        const uniqueFileName = `${baseName}_${timestamp}_${random}${ext}`;
+        const tempFilePath = path.join(tempDir, uniqueFileName);
+
+        // Write the file buffer to temp location
+        const buffer = Buffer.from(fileData.buffer);
+        fs.writeFileSync(tempFilePath, buffer);
+
+        // Determine file type based on extension
+        const extension = ext.toLowerCase().slice(1);
+        let type: 'video' | 'audio' | 'image' = 'video';
+        if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(extension)) {
+          type = 'audio';
+        } else if (
+          ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'].includes(
+            extension,
+          )
+        ) {
+          type = 'image';
+        }
+
+        processedFiles.push({
+          name: fileData.name,
+          originalName: fileData.name,
+          type,
+          size: fileData.size,
+          extension,
+          path: tempFilePath,
+          hasPath: true,
+          isTemporary: true,
+        });
+
+        console.log(
+          `📁 Wrote temporary file: ${fileData.name} -> ${tempFilePath}`,
+        );
+      }
+
+      return { success: true, files: processedFiles };
+    } catch (error) {
+      console.error('Failed to process dropped files:', error);
+      return { success: false, error: error.message };
+    }
+  },
+);
+
+// IPC Handler for cleaning up temporary files
+ipcMain.handle('cleanup-temp-files', async (event, filePaths: string[]) => {
+  try {
+    let cleanedCount = 0;
+    for (const filePath of filePaths) {
+      try {
+        if (fs.existsSync(filePath) && filePath.includes('dividr-uploads')) {
+          fs.unlinkSync(filePath);
+          cleanedCount++;
+          console.log(`🗑️ Cleaned up temporary file: ${filePath}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to cleanup file ${filePath}:`, error);
+      }
+    }
+    return { success: true, cleanedCount };
+  } catch (error) {
+    console.error('Failed to cleanup temporary files:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -391,6 +778,15 @@ ipcMain.handle(
 // FFmpeg IPC handlers
 ipcMain.handle('ffmpeg:detect-frame-rate', async (event, videoPath: string) => {
   return new Promise((resolve, reject) => {
+    if (!ffprobePath?.path) {
+      reject(
+        new Error(
+          'FFprobe binary not available. Please ensure ffprobe-static is properly installed.',
+        ),
+      );
+      return;
+    }
+
     const ffprobe = spawn(ffprobePath.path, [
       '-v',
       'quiet',
@@ -443,6 +839,15 @@ ipcMain.handle('ffmpeg:detect-frame-rate', async (event, videoPath: string) => {
 // Get media file duration using FFprobe
 ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
   return new Promise((resolve, reject) => {
+    if (!ffprobePath?.path) {
+      reject(
+        new Error(
+          'FFprobe binary not available. Please ensure ffprobe-static is properly installed.',
+        ),
+      );
+      return;
+    }
+
     const ffprobe = spawn(ffprobePath.path, [
       '-v',
       'quiet',
@@ -520,7 +925,7 @@ ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
 });
 
 // Global FFmpeg process tracking
-let currentFfmpegProcess: any = null;
+let currentFfmpegProcess: ReturnType<typeof spawn> | null = null;
 
 ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
   return new Promise((resolve, reject) => {
@@ -537,7 +942,13 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
 
     console.log('Running FFmpeg with args:', args);
 
-    const ffmpeg = spawn(ffmpegPath as string, args);
+    if (!ffmpegPath) {
+      throw new Error(
+        'FFmpeg binary not available. Please ensure ffmpeg-static is properly installed.',
+      );
+    }
+
+    const ffmpeg = spawn(ffmpegPath, args);
     currentFfmpegProcess = ffmpeg;
 
     let logs = '';
@@ -578,6 +989,28 @@ ipcMain.handle('ffmpeg:cancel', async () => {
   return false;
 });
 
+// Diagnostic handler to check FFmpeg status
+ipcMain.handle('ffmpeg:status', async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+  const fs = require('fs');
+
+  const ffmpegExists = ffmpegPath ? fs.existsSync(ffmpegPath) : false;
+  const ffprobeExists = ffprobePath?.path
+    ? fs.existsSync(ffprobePath.path)
+    : false;
+
+  return {
+    ffmpegPath,
+    ffprobePath: ffprobePath?.path,
+    ffmpegExists,
+    ffprobeExists,
+    isReady: ffmpegPath !== null && ffprobePath?.path !== null,
+    appPath: app.getAppPath(),
+    isPackaged: app.isPackaged,
+    environment: process.env.NODE_ENV || 'production',
+  };
+});
+
 const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -597,6 +1030,8 @@ const createWindow = () => {
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    // Only open DevTools in development
+    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
@@ -625,7 +1060,11 @@ const createWindow = () => {
   mainWindow.webContents.openDevTools();
 };
 
-app.on('ready', createWindow);
+app.on('ready', () => {
+  // Initialize FFmpeg paths before creating the window
+  initializeFfmpegPaths();
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (mediaServer) {
