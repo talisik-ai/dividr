@@ -4,7 +4,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 
 export interface VideoTrack {
   id: string;
-  type: 'video' | 'audio' | 'image';
+  type: 'video' | 'audio' | 'image' | 'subtitle';
   name: string;
   source: string; // File path for FFmpeg processing
   previewUrl?: string; // Preview URL for video preview component
@@ -22,6 +22,7 @@ export interface VideoTrack {
   visible: boolean;
   locked: boolean;
   color: string;
+  subtitleText?: string; // For subtitle tracks, store the actual subtitle content
 }
 
 export interface TimelineState {
@@ -162,6 +163,215 @@ const TRACK_COLORS = [
   '#9b59b6',
   '#34495e',
 ];
+
+// Helper function to detect subtitle files
+const isSubtitleFile = (fileName: string): boolean => {
+  const subtitleExtensions = [
+    '.srt',
+    '.vtt',
+    '.ass',
+    '.ssa',
+    '.sub',
+    '.sbv',
+    '.lrc',
+  ];
+  return subtitleExtensions.some((ext) => fileName.toLowerCase().endsWith(ext));
+};
+
+// Subtitle parsing interface
+interface SubtitleSegment {
+  startTime: number; // in seconds
+  endTime: number; // in seconds
+  text: string;
+  index?: number;
+}
+
+// Parse SRT subtitle format
+const parseSRT = (content: string): SubtitleSegment[] => {
+  const segments: SubtitleSegment[] = [];
+  const blocks = content.trim().split(/\n\s*\n/);
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n');
+    if (lines.length < 3) continue;
+
+    const index = parseInt(lines[0]);
+    const timeRegex =
+      /(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/;
+    const timeMatch = lines[1].match(timeRegex);
+
+    if (timeMatch) {
+      const startTime =
+        parseInt(timeMatch[1]) * 3600 +
+        parseInt(timeMatch[2]) * 60 +
+        parseInt(timeMatch[3]) +
+        parseInt(timeMatch[4]) / 1000;
+
+      const endTime =
+        parseInt(timeMatch[5]) * 3600 +
+        parseInt(timeMatch[6]) * 60 +
+        parseInt(timeMatch[7]) +
+        parseInt(timeMatch[8]) / 1000;
+
+      const text = lines.slice(2).join('\n').trim();
+
+      segments.push({
+        startTime,
+        endTime,
+        text,
+        index,
+      });
+    }
+  }
+
+  return segments;
+};
+
+// Parse VTT subtitle format
+const parseVTT = (content: string): SubtitleSegment[] => {
+  const segments: SubtitleSegment[] = [];
+  const lines = content.split('\n');
+  let i = 0;
+
+  // Skip header
+  while (i < lines.length && !lines[i].includes('-->')) {
+    i++;
+  }
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+
+    if (line.includes('-->')) {
+      const timeRegex =
+        /(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/;
+      const timeMatch = line.match(timeRegex);
+
+      if (timeMatch) {
+        const startTime =
+          parseInt(timeMatch[1]) * 3600 +
+          parseInt(timeMatch[2]) * 60 +
+          parseInt(timeMatch[3]) +
+          parseInt(timeMatch[4]) / 1000;
+
+        const endTime =
+          parseInt(timeMatch[5]) * 3600 +
+          parseInt(timeMatch[6]) * 60 +
+          parseInt(timeMatch[7]) +
+          parseInt(timeMatch[8]) / 1000;
+
+        i++;
+        const textLines = [];
+        while (i < lines.length && lines[i].trim() !== '') {
+          textLines.push(lines[i].trim());
+          i++;
+        }
+
+        const text = textLines.join('\n');
+
+        segments.push({
+          startTime,
+          endTime,
+          text,
+        });
+      }
+    }
+    i++;
+  }
+
+  return segments;
+};
+
+// Main subtitle parser function
+const parseSubtitleContent = (
+  content: string,
+  fileName: string,
+): SubtitleSegment[] => {
+  const extension = fileName.toLowerCase().split('.').pop();
+
+  switch (extension) {
+    case 'srt':
+      return parseSRT(content);
+    case 'vtt':
+      return parseVTT(content);
+    default:
+      // For other formats, try SRT parsing as fallback
+      return parseSRT(content);
+  }
+};
+
+// Helper function to process subtitle files and create individual tracks
+const processSubtitleFile = async (
+  fileInfo: {
+    name: string;
+    path: string;
+    type: string;
+    extension: string;
+    size: number;
+  },
+  fileContent: string,
+  currentTrackCount: number,
+  fps: number,
+  previewUrl?: string,
+): Promise<Omit<VideoTrack, 'id'>[]> => {
+  try {
+    console.log(`📖 Parsing subtitle content for: ${fileInfo.name}`);
+
+    // Parse subtitle segments
+    const segments = parseSubtitleContent(fileContent, fileInfo.name);
+    console.log(`🎬 Parsed ${segments.length} subtitle segments`);
+
+    if (segments.length > 0) {
+      // Create individual tracks for each subtitle segment
+      const subtitleTracks = segments.map((segment, segmentIndex) => {
+        const startFrame = Math.round(segment.startTime * fps);
+        const endFrame = Math.round(segment.endTime * fps);
+
+        return {
+          type: 'subtitle' as const,
+          name: `${
+            segment.text.length > 30
+              ? segment.text.substring(0, 30) + '...'
+              : segment.text
+          }`,
+          source: fileInfo.path,
+          previewUrl,
+          duration: endFrame - startFrame,
+          startFrame,
+          endFrame,
+          visible: true,
+          locked: false,
+          color: getTrackColor(currentTrackCount + segmentIndex),
+          subtitleText: segment.text,
+        };
+      });
+
+      console.log(
+        `📋 Created ${subtitleTracks.length} subtitle tracks for ${fileInfo.name}`,
+      );
+      return subtitleTracks;
+    }
+  } catch (error) {
+    console.error(`❌ Error parsing subtitle file ${fileInfo.name}:`, error);
+  }
+
+  // Fallback: create single subtitle track if parsing fails
+  console.log(`📖 Creating fallback subtitle track for: ${fileInfo.name}`);
+  return [
+    {
+      type: 'subtitle' as const,
+      name: fileInfo.name,
+      source: fileInfo.path,
+      previewUrl,
+      duration: 150, // 5 seconds at 30fps
+      startFrame: 0,
+      endFrame: 150,
+      visible: true,
+      locked: false,
+      color: getTrackColor(currentTrackCount),
+      subtitleText: `Subtitle: ${fileInfo.name}`,
+    },
+  ];
+};
 
 const getTrackColor = (index: number) =>
   TRACK_COLORS[index % TRACK_COLORS.length];
@@ -683,6 +893,13 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
                 'jpeg',
                 'png',
                 'gif',
+                'srt',
+                'vtt',
+                'ass',
+                'ssa',
+                'sub',
+                'sbv',
+                'lrc',
               ],
             },
             { name: 'All Files', extensions: ['*'] },
@@ -750,9 +967,65 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               }
             }
 
-            // Determine proper MIME type
+            // Determine proper MIME type and track type
             let mimeType = 'application/octet-stream';
-            if (fileInfo.type === 'video') {
+            let trackType: 'video' | 'audio' | 'image' | 'subtitle' =
+              fileInfo.type;
+
+            // Check for subtitle files if not already detected
+            if (isSubtitleFile(fileInfo.name)) {
+              trackType = 'subtitle';
+              mimeType = `text/${fileInfo.extension}`;
+
+              // For subtitle files, try to read and parse the content
+              try {
+                console.log(
+                  '📖 Reading subtitle file content from:',
+                  fileInfo.path,
+                );
+
+                // Read file content using Electron API
+                const subtitleContent = await window.electronAPI.readFile(
+                  fileInfo.path,
+                );
+
+                if (subtitleContent) {
+                  console.log(
+                    '📄 Subtitle content length:',
+                    subtitleContent.length,
+                  );
+
+                  // Process subtitle file using helper
+                  const subtitleTracks = await processSubtitleFile(
+                    fileInfo,
+                    subtitleContent,
+                    get().tracks.length + index,
+                    get().timeline.fps,
+                    previewUrl,
+                  );
+
+                  // Add to imported files list for MediaImportPanel
+                  importedFiles.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    name: fileInfo.name,
+                    type: mimeType,
+                    size: fileInfo.size,
+                    url: previewUrl || fileInfo.path,
+                  });
+
+                  console.log(
+                    `📋 Created ${subtitleTracks.length} subtitle tracks from dialog for ${fileInfo.name}`,
+                  );
+                  return subtitleTracks;
+                }
+              } catch (error) {
+                console.error(
+                  `❌ Error parsing subtitle file from dialog ${fileInfo.name}:`,
+                  error,
+                );
+                console.log('📖 Creating fallback subtitle track from dialog');
+              }
+            } else if (fileInfo.type === 'video') {
               mimeType = `video/${fileInfo.extension}`;
             } else if (fileInfo.type === 'audio') {
               mimeType = `audio/${fileInfo.extension}`;
@@ -760,17 +1033,19 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               mimeType = `image/${fileInfo.extension}`;
             }
 
-            // Add to imported files list for MediaImportPanel
-            importedFiles.push({
-              id: Math.random().toString(36).substr(2, 9),
-              name: fileInfo.name,
-              type: mimeType,
-              size: fileInfo.size,
-              url: previewUrl || fileInfo.path,
-            });
+            // Add to imported files list for MediaImportPanel (for non-subtitle files or fallback)
+            if (trackType !== 'subtitle') {
+              importedFiles.push({
+                id: Math.random().toString(36).substr(2, 9),
+                name: fileInfo.name,
+                type: mimeType,
+                size: fileInfo.size,
+                url: previewUrl || fileInfo.path,
+              });
+            }
 
             return {
-              type: fileInfo.type,
+              type: trackType,
               name: fileInfo.name,
               source: fileInfo.path, // This is the actual file system path for FFmpeg
               previewUrl, // This is the data URL for preview display
@@ -780,11 +1055,16 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               visible: true,
               locked: false,
               color: getTrackColor(get().tracks.length + index),
+              ...(trackType === 'subtitle' && {
+                subtitleText: `Subtitle: ${fileInfo.name}`,
+              }),
             };
           }),
         );
 
-        newTracks.forEach((track) => get().addTrack(track));
+        // Flatten tracks array (subtitle files return arrays of tracks) and filter out null/undefined
+        const validTracks = newTracks.flat().filter(Boolean);
+        validTracks.forEach((track) => get().addTrack(track));
 
         return { success: true, importedFiles };
       } catch (error) {
@@ -797,6 +1077,52 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       // Legacy method for web File objects - fallback for drag & drop
       const newTracks = await Promise.all(
         files.map(async (file, index) => {
+          // Check if this is a subtitle file
+          if (isSubtitleFile(file.name)) {
+            try {
+              // Read subtitle file content
+              const fileContent = await file.text();
+
+              // Create file info object for the helper
+              const fileInfo = {
+                name: file.name,
+                path: URL.createObjectURL(file), // Use blob URL as path for legacy support
+                type: 'subtitle',
+                extension: file.name.split('.').pop() || '',
+                size: file.size,
+              };
+
+              // Process subtitle file using helper
+              const subtitleTracks = await processSubtitleFile(
+                fileInfo,
+                fileContent,
+                get().tracks.length + index,
+                get().timeline.fps,
+              );
+
+              return subtitleTracks;
+            } catch (error) {
+              console.error(
+                `❌ Error processing subtitle file ${file.name}:`,
+                error,
+              );
+              // Fallback to single subtitle track
+              return {
+                type: 'subtitle' as const,
+                name: file.name,
+                source: URL.createObjectURL(file),
+                originalFile: file,
+                duration: 150,
+                startFrame: index * 150,
+                endFrame: index * 150 + 150,
+                visible: true,
+                locked: false,
+                color: getTrackColor(get().tracks.length + index),
+                subtitleText: `Subtitle: ${file.name}`,
+              };
+            }
+          }
+
           // For regular File objects, we'll create blob URLs for preview
           // but log a warning that this won't work with FFmpeg
           const blobUrl = URL.createObjectURL(file);
@@ -829,7 +1155,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         }),
       );
 
-      newTracks.forEach((track) => get().addTrack(track));
+      // Flatten tracks array (subtitle files return arrays of tracks) and filter out null/undefined
+      const validTracks = newTracks.flat().filter(Boolean);
+      validTracks.forEach((track) => get().addTrack(track));
     },
 
     importMediaFromDrop: async (files) => {
@@ -928,9 +1256,58 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               }
             }
 
-            // Determine proper MIME type
+            // Determine proper MIME type and track type
             let mimeType = 'application/octet-stream';
-            if (fileInfo.type === 'video') {
+            let trackType: 'video' | 'audio' | 'image' | 'subtitle' =
+              fileInfo.type;
+
+            // Check for subtitle files if not already detected
+            console.log('🔍 File info:', fileInfo);
+            console.log('🔍 File buffers:', fileBuffers);
+
+            if (isSubtitleFile(fileInfo.name)) {
+              trackType = 'subtitle';
+              mimeType = `text/${fileInfo.extension}`;
+
+              // Get corresponding file buffer for content reading
+              const fileBuffer = fileBuffers.find(
+                (fb) => fb.name === fileInfo.name,
+              );
+
+              // Parse subtitle content from buffer if available
+              if (fileBuffer) {
+                try {
+                  // Convert buffer to text
+                  const textDecoder = new TextDecoder('utf-8');
+                  const subtitleContent = textDecoder.decode(fileBuffer.buffer);
+
+                  // Process subtitle file using helper
+                  const subtitleTracks = await processSubtitleFile(
+                    fileInfo,
+                    subtitleContent,
+                    get().tracks.length + index,
+                    get().timeline.fps,
+                    previewUrl,
+                  );
+
+                  // Add to imported files list for MediaImportPanel
+                  importedFiles.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    name: fileInfo.name,
+                    type: mimeType,
+                    size: fileInfo.size,
+                    url: previewUrl || fileInfo.path,
+                  });
+
+                  return subtitleTracks;
+                } catch (error) {
+                  console.error(
+                    `❌ Error parsing subtitle file ${fileInfo.name}:`,
+                    error,
+                  );
+                }
+              }
+            } else if (fileInfo.type === 'video') {
               mimeType = `video/${fileInfo.extension}`;
             } else if (fileInfo.type === 'audio') {
               mimeType = `audio/${fileInfo.extension}`;
@@ -938,17 +1315,19 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               mimeType = `image/${fileInfo.extension}`;
             }
 
-            // Add to imported files list for MediaImportPanel
-            importedFiles.push({
-              id: Math.random().toString(36).substr(2, 9),
-              name: fileInfo.name,
-              type: mimeType,
-              size: fileInfo.size,
-              url: previewUrl || fileInfo.path,
-            });
+            // Add to imported files list for MediaImportPanel (for non-subtitle files)
+            if (trackType !== 'subtitle') {
+              importedFiles.push({
+                id: Math.random().toString(36).substr(2, 9),
+                name: fileInfo.name,
+                type: mimeType,
+                size: fileInfo.size,
+                url: previewUrl || fileInfo.path,
+              });
+            }
 
             const track = {
-              type: fileInfo.type,
+              type: trackType,
               name: fileInfo.name,
               source: fileInfo.path, // Use actual file path for FFmpeg compatibility
               previewUrl, // Use preview URL for display
@@ -958,6 +1337,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               visible: true,
               locked: false,
               color: getTrackColor(get().tracks.length + index),
+              ...(trackType === 'subtitle' && {
+                subtitleText: `Subtitle: ${fileInfo.name}`,
+              }),
             };
 
             console.log(`📋 Created track for ${fileInfo.name}:`, track);
@@ -965,9 +1347,12 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           }),
         );
 
+        // Flatten tracks array (subtitle files return arrays of tracks) and filter out null/undefined
+        const validTracks = newTracks.flat().filter(Boolean);
+
         console.log(
-          `✅ Adding ${newTracks.length} tracks to timeline:`,
-          newTracks.map((t) => ({
+          `✅ Adding ${validTracks.length} tracks to timeline:`,
+          validTracks.map((t) => ({
             name: t.name,
             type: t.type,
             previewUrl: !!t.previewUrl,
@@ -976,7 +1361,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         console.log(
           `📊 Current tracks count before adding: ${get().tracks.length}`,
         );
-        newTracks.forEach((track) => {
+        validTracks.forEach((track) => {
           const addedId = get().addTrack(track);
           console.log(`➕ Added track with ID: ${addedId} for ${track.name}`);
         });

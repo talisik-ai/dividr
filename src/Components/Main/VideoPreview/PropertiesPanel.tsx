@@ -1,5 +1,5 @@
 import React from 'react';
-import { useVideoEditorStore } from '../../../store/VideoEditorStore';
+import { useVideoEditorStore } from '../../../store/videoEditorStore';
 
 interface PropertiesPanelProps {
   className?: string;

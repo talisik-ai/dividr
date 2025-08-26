@@ -693,6 +693,26 @@ ipcMain.handle('cleanup-temp-files', async (event, filePaths: string[]) => {
   }
 });
 
+// IPC Handler for reading file content
+ipcMain.handle('read-file', async (event, filePath: string) => {
+  try {
+    console.log(`📖 Reading file content from: ${filePath}`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    // Read file content as UTF-8 text
+    const content = fs.readFileSync(filePath, 'utf-8');
+    console.log(`📄 Successfully read file, content length: ${content.length}`);
+
+    return content;
+  } catch (error) {
+    console.error(`❌ Failed to read file ${filePath}:`, error);
+    throw error;
+  }
+});
+
 // IPC Handler for creating preview URLs from file paths
 ipcMain.handle('create-preview-url', async (event, filePath: string) => {
   try {

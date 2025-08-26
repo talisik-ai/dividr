@@ -77,7 +77,7 @@ declare global {
           type: string;
           size: number;
           buffer: ArrayBuffer;
-        }>
+        }>,
       ) => Promise<{
         success: boolean;
         files?: Array<{
@@ -97,6 +97,7 @@ declare global {
         cleanedCount?: number;
         error?: string;
       }>;
+      readFile: (filePath: string) => Promise<string>;
 
       ffmpegRun: (job: VideoEditJob) => Promise<{
         success: boolean;
@@ -134,6 +135,5 @@ declare global {
   }
 }
 // eslint-disable-next-line prettier/prettier
-export { };
+export {};
 // eslint-disable-next-line prettier/prettier
-

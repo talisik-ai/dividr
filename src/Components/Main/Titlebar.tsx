@@ -14,7 +14,7 @@ import { RxBox } from 'react-icons/rx';
 import { useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../Assets/Logo/logo.svg';
 import { VideoEditJob } from '../../Schema/ffmpegConfig';
-import { useVideoEditorStore } from '../../store/VideoEditorStore';
+import { useVideoEditorStore } from '../../store/videoEditorStore';
 import {
   FfmpegCallbacks,
   runFfmpegWithProgress,

@@ -10,7 +10,7 @@ import {
 import { TbScissors } from 'react-icons/tb';
 
 // eslint-disable-next-line import/no-unresolved
-import { useVideoEditorStore } from '../../../store/VideoEditorStore';
+import { useVideoEditorStore } from '../../../store/videoEditorStore';
 
 export const TimelineControls: React.FC = () => {
   const {

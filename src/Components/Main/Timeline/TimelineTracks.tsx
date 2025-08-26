@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   VideoTrack,
   useVideoEditorStore,
-} from '../../../store/VideoEditorStore';
+} from '../../../store/videoEditorStore';
 
 // Define track row types - easy to extend in the future
 export interface TrackRowDefinition {
@@ -14,6 +14,13 @@ export interface TrackRowDefinition {
 }
 
 export const TRACK_ROWS: TrackRowDefinition[] = [
+  {
+    id: 'subtitle',
+    name: 'Subtitles',
+    trackTypes: ['subtitle'],
+    color: '#9b59b6',
+    icon: '💬',
+  },
   {
     id: 'video',
     name: 'Video',
@@ -143,6 +150,8 @@ export const TrackItem: React.FC<TrackItemProps> = ({
 
   const getTrackGradient = (type: VideoTrack['type']) => {
     switch (type) {
+      case 'subtitle':
+        return 'linear-gradient(135deg, #9b59b6, #8e44ad)';
       case 'video':
         return 'linear-gradient(135deg, #8e44ad, #9b59b6)';
       case 'audio':
@@ -189,8 +198,16 @@ export const TrackItem: React.FC<TrackItemProps> = ({
           className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis"
           style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
         >
-          {track.name}
+          {track.type === 'subtitle' && track.subtitleText
+            ? track.subtitleText
+            : track.name}
         </div>
+
+        {track.type === 'subtitle' && (
+          <div className="absolute right-1 top-1 text-[8px] text-white/80">
+            {track.name.split('.').pop()?.toUpperCase()}
+          </div>
+        )}
 
         {track.type === 'audio' && track.volume !== undefined && (
           <div className="absolute right-1 top-1 text-[8px] text-white/80">
