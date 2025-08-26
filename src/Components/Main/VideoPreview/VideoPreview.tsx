@@ -89,6 +89,19 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     importMediaFromDrop,
   } = useVideoEditorStore();
 
+  // Helper function to get active subtitle tracks at current frame
+  const getActiveSubtitleTracks = useCallback(() => {
+    const currentFrame = timeline.currentFrame;
+    return tracks.filter(
+      (track) =>
+        track.type === 'subtitle' &&
+        track.visible &&
+        currentFrame >= track.startFrame &&
+        currentFrame <= track.endFrame &&
+        track.subtitleText,
+    );
+  }, [tracks, timeline.currentFrame]);
+
   // Enhanced container size management with better responsiveness
   useEffect(() => {
     const updateSize = () => {
@@ -688,6 +701,52 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           {bufferingTracks.size > 1 ? 's' : ''}...
         </div>
       )}
+
+      {/* Subtitle Overlay */}
+      {(() => {
+        const activeSubtitles = getActiveSubtitleTracks();
+        if (activeSubtitles.length === 0) return null;
+
+        return (
+          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-end">
+            {activeSubtitles.map((track, index) => (
+              <motion.div
+                key={track.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ duration: 0.2 }}
+                className="mb-2 px-4 py-1 bg-black bg-opacity-80 text-white text-center rounded-lg max-w-[85%] shadow-2xl border border-white/20"
+                style={{
+                  fontSize: `${Math.max(14, Math.min(24, preview.canvasWidth / 35))}px`,
+                  lineHeight: '1.5',
+                  marginBottom:
+                    index === activeSubtitles.length - 1 ? '40px' : '12px',
+                  textShadow:
+                    '1px 1px 2px rgba(0,0,0,1), 0 0 4px rgba(0,0,0,0.8)',
+                  fontWeight: '500',
+                }}
+              >
+                <div
+                  className="break-words"
+                  style={{
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
+                    letterSpacing: '0.025em',
+                  }}
+                >
+                  {track.subtitleText}
+                </div>
+                {activeSubtitles.length > 1 && (
+                  <div className="text-xs opacity-60 mt-1 font-normal">
+                    Subtitle {index + 1}
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Debug info
        <div className="absolute bottom-4 left-4 bg-black bg-opacity-75 text-white px-3 py-1 rounded text-xs">
