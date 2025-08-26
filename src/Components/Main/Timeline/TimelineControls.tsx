@@ -16,12 +16,19 @@ export const TimelineControls: React.FC = () => {
   const {
     playback,
     timeline,
+    tracks,
     setCurrentFrame,
     togglePlayback,
     stop,
     setPlaybackRate,
     splitAtPlayhead,
   } = useVideoEditorStore();
+
+  // Calculate effective end frame considering all tracks
+  const effectiveEndFrame =
+    tracks.length > 0
+      ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
+      : timeline.totalFrames;
 
   const formatTime = (frame: number) => {
     const totalSeconds = frame / timeline.fps;
@@ -111,7 +118,7 @@ export const TimelineControls: React.FC = () => {
         <button
           onClick={() =>
             setCurrentFrame(
-              Math.min(timeline.totalFrames - 1, timeline.currentFrame + 1),
+              Math.min(effectiveEndFrame - 1, timeline.currentFrame + 1),
             )
           }
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
@@ -129,8 +136,7 @@ export const TimelineControls: React.FC = () => {
         </button>
         */}
         <div className="text-xs p-2 text-gray-400">
-          {formatTime(timeline.currentFrame)} /{' '}
-          {formatTime(timeline.totalFrames)}
+          {formatTime(timeline.currentFrame)} / {formatTime(effectiveEndFrame)}
         </div>
       </div>
 
@@ -151,7 +157,7 @@ export const TimelineControls: React.FC = () => {
           <select
             value={playback.playbackRate}
             onChange={(e) => setPlaybackRate(Number(e.target.value))}
-            className="bg-black bg-secondary font-toolbarIcon text-xs"
+            className="bg-secondary font-toolbarIcon text-xs"
           >
             <option value={0.25}>0.25x</option>
             <option value={0.5}>0.5x</option>

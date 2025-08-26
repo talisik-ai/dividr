@@ -473,15 +473,23 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
 
     // Timeline Actions
     setCurrentFrame: (frame) =>
-      set((state) => ({
-        timeline: {
-          ...state.timeline,
-          currentFrame: Math.max(
-            0,
-            Math.min(frame, state.timeline.totalFrames),
-          ),
-        },
-      })),
+      set((state) => {
+        // Calculate effective end frame considering all tracks
+        const effectiveEndFrame =
+          state.tracks.length > 0
+            ? Math.max(
+                ...state.tracks.map((track) => track.endFrame),
+                state.timeline.totalFrames,
+              )
+            : state.timeline.totalFrames;
+
+        return {
+          timeline: {
+            ...state.timeline,
+            currentFrame: Math.max(0, Math.min(frame, effectiveEndFrame)),
+          },
+        };
+      }),
 
     setTotalFrames: (frames) =>
       set((state) => ({
@@ -1412,7 +1420,17 @@ export const useTimelineShortcuts = () => {
   return {
     onSpace: () => store.togglePlayback(),
     onHome: () => store.setCurrentFrame(0),
-    onEnd: () => store.setCurrentFrame(store.timeline.totalFrames),
+    onEnd: () => {
+      // Calculate effective end frame considering all tracks
+      const effectiveEndFrame =
+        store.tracks.length > 0
+          ? Math.max(
+              ...store.tracks.map((track) => track.endFrame),
+              store.timeline.totalFrames,
+            )
+          : store.timeline.totalFrames;
+      store.setCurrentFrame(effectiveEndFrame - 1);
+    },
     onArrowLeft: () => store.setCurrentFrame(store.timeline.currentFrame - 1),
     onArrowRight: () => store.setCurrentFrame(store.timeline.currentFrame + 1),
     onI: () => store.setInPoint(store.timeline.currentFrame),
