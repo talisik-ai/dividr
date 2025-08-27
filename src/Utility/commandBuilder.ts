@@ -21,6 +21,36 @@ const AUDIO_DEFAULTS = {
   SAMPLE_RATE: 48000,
 } as const;
 
+/**
+ * Converts Windows path to FFmpeg-compatible format and escapes special characters
+ * @param filePath - The file path to convert
+ * @returns FFmpeg-compatible path with proper escaping
+ */
+function convertToFfmpegPath(filePath: string): string {
+  let ffmpegPath = filePath;
+
+  // Convert Windows backslashes to forward slashes
+  if (process.platform === 'win32') {
+    ffmpegPath = filePath.replace(/\\/g, '/');
+
+    // CRITICAL: Escape Windows drive letter colon (C: becomes C\:)
+    // This prevents FFmpeg from misinterpreting the colon as a parameter separator
+    ffmpegPath = ffmpegPath.replace(/^([a-zA-Z]):/, '$1\\:');
+  }
+
+  // Escape special characters that can cause issues in FFmpeg filters
+  // Note: We're using single quotes around the path, so we mainly need to escape single quotes
+  ffmpegPath = ffmpegPath.replace(/'/g, "\\'");
+
+  console.log('🎬 Path conversion debug:');
+  console.log('  - Original:', filePath);
+  console.log('  - FFmpeg format:', ffmpegPath);
+  console.log('  - Platform:', process.platform);
+  console.log('  - Final quoted format:', `'${ffmpegPath}'`);
+
+  return ffmpegPath;
+}
+
 const GAP_MARKER = '__GAP__' as const;
 
 const FILE_EXTENSIONS = {
@@ -455,17 +485,10 @@ function buildConcatFilter(
 
   // Handle subtitles next if needed
   if (subtitlePath) {
-    // For Windows, use proper path format for FFmpeg
-    let ffmpegPath = subtitlePath;
-    if (process.platform === 'win32') {
-      ffmpegPath = subtitlePath.replace(/\\/g, '/');
-    }
-
-    console.log('🎬 Subtitle path debug - original:', subtitlePath);
-    console.log('🎬 Subtitle path debug - ffmpeg format:', ffmpegPath);
-    console.log('🎬 Platform:', process.platform);
-
-    filterChain += `${currentVideoRef}subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[subtitled];`;
+    const ffmpegPath = convertToFfmpegPath(subtitlePath);
+    const subtitleFilter = `${currentVideoRef}subtitles='${ffmpegPath}':force_style='Alignment=2'[subtitled];`;
+    console.log('🎬 SUBTITLE FILTER CONSTRUCTED:', subtitleFilter);
+    filterChain += subtitleFilter;
     currentVideoRef = '[subtitled]';
   }
 
@@ -490,12 +513,8 @@ function buildSingleGapFilterComplex(
   subtitlePath?: string,
 ): string {
   if (subtitlePath) {
-    // Proper path format for FFmpeg on Windows
-    let ffmpegPath = subtitlePath;
-    if (process.platform === 'win32') {
-      ffmpegPath = subtitlePath.replace(/\\/g, '/');
-    }
-    return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[temp_outv];[temp_outv]subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+    const ffmpegPath = convertToFfmpegPath(subtitlePath);
+    return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[temp_outv];[temp_outv]subtitles='${ffmpegPath}':force_style='Alignment=2'[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
   }
   return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
 }
@@ -610,12 +629,8 @@ function handleConcatenationWorkflow(
     let videoOnlyFilter: string;
     if (job.operations.subtitles) {
       // Add subtitles after video concatenation
-      // Proper path format for FFmpeg on Windows
-      let ffmpegPath = job.operations.subtitles;
-      if (process.platform === 'win32') {
-        ffmpegPath = job.operations.subtitles.replace(/\\/g, '/');
-      }
-      videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[temp_outv];[temp_outv]subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+      const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
+      videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[temp_outv];[temp_outv]subtitles='${ffmpegPath}':force_style='Alignment=2'[outv]`;
     } else {
       videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[outv]`;
     }
@@ -708,12 +723,8 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
       if (job.operations.subtitles) {
         // Modify the video filter to output to temp, then add subtitles
         filterComplex = filterComplex.replace('[outv]', '[temp_outv]');
-        // Proper path format for FFmpeg on Windows
-        let ffmpegPath = job.operations.subtitles;
-        if (process.platform === 'win32') {
-          ffmpegPath = job.operations.subtitles.replace(/\\/g, '/');
-        }
-        filterComplex += `;[temp_outv]subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+        const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
+        filterComplex += `;[temp_outv]subtitles='${ffmpegPath}':force_style='Alignment=2'[outv]`;
       }
 
       cmd.args.push('-filter_complex', filterComplex);
@@ -738,18 +749,14 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
 
       // Add subtitles if specified
       if (job.operations.subtitles) {
-        // Proper path format for FFmpeg on Windows
-        let ffmpegPath = job.operations.subtitles;
-        if (process.platform === 'win32') {
-          ffmpegPath = job.operations.subtitles.replace(/\\/g, '/');
-        }
+        const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
 
         if (filterComplex) {
           // Already have cropping, add subtitles to the chain
-          filterComplex += `;${videoInput}subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+          filterComplex += `;${videoInput}subtitles='${ffmpegPath}':force_style='Alignment=2'[outv]`;
         } else {
           // Only subtitles, no cropping
-          filterComplex = `${videoInput}subtitles=filename='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+          filterComplex = `${videoInput}subtitles='${ffmpegPath}':force_style='Alignment=2'[outv]`;
         }
       }
 
@@ -836,13 +843,9 @@ function handleSubtitles(job: VideoEditJob, cmd: CommandParts) {
     job.operations.subtitles &&
     !(job.operations.concat && job.inputs.length > 1)
   ) {
-    // Proper path format for FFmpeg on Windows
-    let ffmpegPath = job.operations.subtitles;
-    if (process.platform === 'win32') {
-      ffmpegPath = job.operations.subtitles.replace(/\\/g, '/');
-    }
+    const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
 
-    const subtitleFilter = `subtitles=filename='${ffmpegPath}':force_style='Alignment=2'`;
+    const subtitleFilter = `subtitles='${ffmpegPath}':force_style='Alignment=2'`;
     cmd.filters.push(subtitleFilter);
     console.log('📝 Added subtitle filter to -vf:', subtitleFilter);
   } else if (job.operations.subtitles) {

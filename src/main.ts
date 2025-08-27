@@ -956,16 +956,20 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
   }
 
   const location = job.outputPath || 'public/output/';
+  // Ensure we have an absolute path for the location
+  const absoluteLocation = path.isAbsolute(location)
+    ? location
+    : path.resolve(location);
   let tempSubtitlePath: string | null = null;
 
   try {
     // Create temporary subtitle file if subtitle content is provided
     if (job.subtitleContent && job.operations.subtitles) {
-      tempSubtitlePath = path.join(location, 'temp_subtitles.srt');
+      tempSubtitlePath = path.join(absoluteLocation, 'temp_subtitles.srt');
 
       // Ensure directory exists
-      if (!fs.existsSync(location)) {
-        fs.mkdirSync(location, { recursive: true });
+      if (!fs.existsSync(absoluteLocation)) {
+        fs.mkdirSync(absoluteLocation, { recursive: true });
       }
 
       // Write subtitle content to file
@@ -975,10 +979,6 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
       // Update the job to use the absolute path instead of just the filename
       job.operations.subtitles = tempSubtitlePath;
       console.log('📁 Updated subtitle path to absolute:', tempSubtitlePath);
-      console.log('📁 Absolute path details:');
-      console.log('  - Raw path:', JSON.stringify(tempSubtitlePath));
-      console.log('  - Path.resolve:', path.resolve(tempSubtitlePath));
-      console.log('  - Path exists:', fs.existsSync(tempSubtitlePath));
     }
 
     // Verify subtitle file exists before running FFmpeg
@@ -990,13 +990,11 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
     }
 
     // Build proper FFmpeg command
-    const baseArgs = buildFfmpegCommand(job, location);
+    const baseArgs = buildFfmpegCommand(job, absoluteLocation);
     const args = ['-progress', 'pipe:1', '-y', ...baseArgs];
 
-    console.log('🔧 FFmpeg command built:');
-    console.log('  - Base args:', baseArgs);
-    console.log('  - Full args:', args);
-    console.log('  - Job operations.subtitles:', job.operations.subtitles);
+    console.log('🎬 COMPLETE FFMPEG COMMAND:');
+    console.log(['ffmpeg', ...args].join(' '));
 
     return new Promise((resolve, reject) => {
       console.log('🚀 Starting FFmpeg with args:', args);
