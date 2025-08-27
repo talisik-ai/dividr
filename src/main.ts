@@ -965,7 +965,7 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
   try {
     // Create temporary subtitle file if subtitle content is provided
     if (job.subtitleContent && job.operations.subtitles) {
-      tempSubtitlePath = path.join(absoluteLocation, 'temp_subtitles.srt');
+      tempSubtitlePath = path.join(absoluteLocation, 'temp_subtitles.ass');
 
       // Ensure directory exists
       if (!fs.existsSync(absoluteLocation)) {

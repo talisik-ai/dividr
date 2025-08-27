@@ -123,7 +123,7 @@ export function generateVTTContent(segments: SubtitleSegment[]): string {
 }
 
 /**
- * Generates ASS subtitle content (Advanced SubStation Alpha)
+ * Generates ASS subtitle content (Advanced SubStation Alpha) with opaque background
  */
 export function generateASSContent(segments: SubtitleSegment[]): string {
   if (segments.length === 0) {
@@ -136,10 +136,19 @@ ScriptType: v4.00+
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,16,&Hffffff,&Hffffff,&H0,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1
+Style: Default,Arial,16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,4,0,0,2,10,10,10,1
 
 [Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+
+  // ASS Style Parameters Explanation:
+  // - BackColour=&H80000000: Semi-transparent black background (80 = ~50% alpha)
+  // - Bold=-1: Bold text enabled
+  // - BorderStyle=4: Background box style (fills bounding box behind text)
+  // - Outline=0, Shadow=0: No outline or shadow
+  // - Alignment=2: Bottom center alignment
+  // - PrimaryColour=&H00FFFFFF: White text color
 
   const events = segments
     .map((segment) => {

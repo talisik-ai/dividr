@@ -52,8 +52,8 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   );
   const showExportButton = isInVideoEditor;
 
-  // Function to generate .srt content from subtitle tracks
-  const generateSrtContent = useCallback(
+  // Function to generate .ass content from subtitle tracks
+  const generateAssContent = useCallback(
     (subtitleTracks: VideoTrack[]): string => {
       if (subtitleTracks.length === 0) return '';
 
@@ -62,35 +62,43 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
         .filter((track) => track.visible && track.subtitleText)
         .sort((a, b) => a.startFrame - b.startFrame);
 
-      const srtLines: string[] = [];
+      // ASS file header with enhanced styling
+      const header = `[Script Info]
+Title: Exported Subtitles
+ScriptType: v4.00+
 
-      sortedSubtitles.forEach((track, index) => {
-        const startTimeSeconds = track.startFrame / timeline.fps;
-        const endTimeSeconds = track.endFrame / timeline.fps;
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,4,0,0,2,10,10,10,1
 
-        // Convert seconds to SRT time format (HH:MM:SS,mmm)
-        const formatSrtTime = (seconds: number): string => {
-          const hours = Math.floor(seconds / 3600);
-          const minutes = Math.floor((seconds % 3600) / 60);
-          const secs = Math.floor(seconds % 60);
-          const milliseconds = Math.floor((seconds % 1) * 1000);
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
 
-          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`;
-        };
+      // Convert seconds to ASS time format (H:MM:SS.cc)
+      const formatAssTime = (seconds: number): string => {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        const centiseconds = Math.floor((seconds % 1) * 100);
 
-        const startTime = formatSrtTime(startTimeSeconds);
-        const endTime = formatSrtTime(endTimeSeconds);
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}`;
+      };
 
-        // SRT format: index, timing, text, blank line
-        srtLines.push(
-          (index + 1).toString(),
-          `${startTime} --> ${endTime}`,
-          track.subtitleText || '',
-          '',
-        );
-      });
+      // Generate dialogue events
+      const events = sortedSubtitles
+        .map((track) => {
+          const startTimeSeconds = track.startFrame / timeline.fps;
+          const endTimeSeconds = track.endFrame / timeline.fps;
 
-      return srtLines.join('\n');
+          const startTime = formatAssTime(startTimeSeconds);
+          const endTime = formatAssTime(endTimeSeconds);
+
+          return `Dialogue: 0,${startTime},${endTime},Default,,0,0,0,,${track.subtitleText || ''}`;
+        })
+        .join('\n');
+
+      return header + events;
     },
     [timeline.fps],
   );
@@ -179,7 +187,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
       // Generate subtitle content if there are subtitle tracks
       let subtitleContent = '';
       if (subtitleTracks.length > 0) {
-        subtitleContent = generateSrtContent(subtitleTracks);
+        subtitleContent = generateAssContent(subtitleTracks);
         console.log('📝 Generated subtitle content for export');
       }
 
@@ -191,12 +199,12 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
           concat: trackInfos.length > 1,
           targetFrameRate: timeline.fps,
           normalizeFrameRate: trackInfos.length > 1,
-          subtitles: subtitleContent ? 'temp_subtitles.srt' : undefined, // FFmpeg will look for this file
+          subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
         },
         subtitleContent, // Pass the subtitle content separately so main process can create the file
       };
     },
-    [tracks, timeline.fps, generateSrtContent],
+    [tracks, timeline.fps, generateAssContent],
   );
 
   // Handle export button click - shows modal

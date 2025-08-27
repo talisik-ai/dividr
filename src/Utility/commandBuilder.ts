@@ -486,7 +486,7 @@ function buildConcatFilter(
   // Handle subtitles next if needed
   if (subtitlePath) {
     const ffmpegPath = convertToFfmpegPath(subtitlePath);
-    const subtitleFilter = `${currentVideoRef}subtitles='${ffmpegPath}':force_style='Alignment=2'[subtitled];`;
+    const subtitleFilter = `${currentVideoRef}subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[subtitled];`;
     console.log('🎬 SUBTITLE FILTER CONSTRUCTED:', subtitleFilter);
     filterChain += subtitleFilter;
     currentVideoRef = '[subtitled]';
@@ -514,7 +514,7 @@ function buildSingleGapFilterComplex(
 ): string {
   if (subtitlePath) {
     const ffmpegPath = convertToFfmpegPath(subtitlePath);
-    return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[temp_outv];[temp_outv]subtitles='${ffmpegPath}':force_style='Alignment=2'[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+    return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[temp_outv];[temp_outv]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
   }
   return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
 }
@@ -630,7 +630,7 @@ function handleConcatenationWorkflow(
     if (job.operations.subtitles) {
       // Add subtitles after video concatenation
       const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
-      videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[temp_outv];[temp_outv]subtitles='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+      videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[temp_outv];[temp_outv]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[outv]`;
     } else {
       videoOnlyFilter = `${concatVideoInputs.join('')}concat=n=${videoCount}:v=1:a=0[outv]`;
     }
@@ -724,7 +724,7 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
         // Modify the video filter to output to temp, then add subtitles
         filterComplex = filterComplex.replace('[outv]', '[temp_outv]');
         const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
-        filterComplex += `;[temp_outv]subtitles='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+        filterComplex += `;[temp_outv]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[outv]`;
       }
 
       cmd.args.push('-filter_complex', filterComplex);
@@ -753,10 +753,10 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
 
         if (filterComplex) {
           // Already have cropping, add subtitles to the chain
-          filterComplex += `;${videoInput}subtitles='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+          filterComplex += `;${videoInput}subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[outv]`;
         } else {
           // Only subtitles, no cropping
-          filterComplex = `${videoInput}subtitles='${ffmpegPath}':force_style='Alignment=2'[outv]`;
+          filterComplex = `${videoInput}subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[outv]`;
         }
       }
 
@@ -845,7 +845,7 @@ function handleSubtitles(job: VideoEditJob, cmd: CommandParts) {
   ) {
     const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
 
-    const subtitleFilter = `subtitles='${ffmpegPath}':force_style='Alignment=2'`;
+    const subtitleFilter = `subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'`;
     cmd.filters.push(subtitleFilter);
     console.log('📝 Added subtitle filter to -vf:', subtitleFilter);
   } else if (job.operations.subtitles) {

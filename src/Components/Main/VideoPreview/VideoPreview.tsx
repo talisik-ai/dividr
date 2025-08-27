@@ -702,48 +702,57 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         </div>
       )}
 
-      {/* Subtitle Overlay */}
+      {/* Subtitle Overlay - Exact match to FFmpeg output style */}
       {(() => {
         const activeSubtitles = getActiveSubtitleTracks();
         if (activeSubtitles.length === 0) return null;
 
+        const { scaleX, scaleY } = calculateContentScale();
+
         return (
-          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-end">
-            {activeSubtitles.map((track, index) => (
-              <motion.div
-                key={track.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                transition={{ duration: 0.2 }}
-                className="mb-2 px-4 py-1 bg-black bg-opacity-80 text-white text-center rounded-lg max-w-[85%] shadow-2xl border border-white/20"
-                style={{
-                  fontSize: `${Math.max(14, Math.min(24, preview.canvasWidth / 35))}px`,
-                  lineHeight: '1.5',
-                  marginBottom:
-                    index === activeSubtitles.length - 1 ? '40px' : '12px',
-                  textShadow:
-                    '1px 1px 2px rgba(0,0,0,1), 0 0 4px rgba(0,0,0,0.8)',
-                  fontWeight: '500',
-                }}
-              >
+          <div className="absolute inset-0 pointer-events-none">
+            <div
+              className="relative w-full h-full flex flex-col items-center justify-end"
+              style={{
+                // Apply the same scaling as the video content to ensure subtitles are positioned correctly
+                transform: `scale(${scaleX}, ${scaleY})`,
+                transformOrigin: 'center',
+                width: `${preview.canvasWidth}px`,
+                height: `${preview.canvasHeight}px`,
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                marginLeft: `-${preview.canvasWidth / 2}px`,
+                marginTop: `-${preview.canvasHeight / 2}px`,
+              }}
+            >
+              {activeSubtitles.map((track, index) => (
                 <div
-                  className="break-words"
+                  key={track.id}
+                  className="text-white text-center font-[Arial] absolute bottom-5 left-0 right-0"
                   style={{
-                    wordBreak: 'break-word',
-                    overflowWrap: 'break-word',
-                    letterSpacing: '0.025em',
+                    // Match FFmpeg's ASS subtitle styling with opaque background
+                    fontSize: `${Math.max(16, preview.canvasHeight * 0.04)}px`, // Proportional to video height, like FFmpeg
+                    fontWeight: 'bold', // ASS default weight
+                    lineHeight: '1.0', // FFmpeg default line height
+                    textShadow: 'none', // No outline to match FFmpeg output
+                    wordWrap: 'break-word',
+                    whiteSpace: 'pre-wrap', // Preserve line breaks exactly like FFmpeg
+                    color: '#FFFFFF', // Pure white, FFmpeg default
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)', // Semi-transparent black background
+                    padding: '4px 8px', // Padding for background
+                    margin: '0 auto', // Center horizontally
+                    textAlign: 'center', // Center alignment matching Alignment=2
+                    position: 'relative',
+                    borderRadius: '2px', // Slight rounding for better appearance
+                    display: 'inline-block', // Make background fit text width
+                    maxWidth: '90%', // Prevent overflow
                   }}
                 >
                   {track.subtitleText}
                 </div>
-                {activeSubtitles.length > 1 && (
-                  <div className="text-xs opacity-60 mt-1 font-normal">
-                    Subtitle {index + 1}
-                  </div>
-                )}
-              </motion.div>
-            ))}
+              ))}
+            </div>
           </div>
         );
       })()}
