@@ -592,9 +592,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
             ctx.fillRect(x, y, width, height);
             ctx.globalAlpha = 1.0;
 
-            const loadStatus = videoElement
-              ? `isLoaded: ${videoElement.isLoaded}, isBuffering: ${videoElement.isBuffering}`
-              : 'no video element';
+            // const loadStatus = videoElement
+            //   ? `isLoaded: ${videoElement.isLoaded}, isBuffering: ${videoElement.isBuffering}`
+            //   : 'no video element';
             //   console.log(`⏳ Video ${track.name} loading... ${loadStatus}`);
           }
         }
@@ -726,7 +726,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
                 marginTop: `-${preview.canvasHeight / 2}px`,
               }}
             >
-              {activeSubtitles.map((track, index) => (
+              {activeSubtitles.map((track) => (
                 <div
                   key={track.id}
                   className="text-white text-center font-[Arial] absolute bottom-5 left-0 right-0"
@@ -739,12 +739,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
                     wordWrap: 'break-word',
                     whiteSpace: 'pre-wrap', // Preserve line breaks exactly like FFmpeg
                     color: '#FFFFFF', // Pure white, FFmpeg default
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)', // Semi-transparent black background
-                    padding: '4px 8px', // Padding for background
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent black background
+                    padding: '2px 0', // Padding for background
                     margin: '0 auto', // Center horizontally
                     textAlign: 'center', // Center alignment matching Alignment=2
                     position: 'relative',
-                    borderRadius: '2px', // Slight rounding for better appearance
                     display: 'inline-block', // Make background fit text width
                     maxWidth: '90%', // Prevent overflow
                   }}
