@@ -1,5 +1,5 @@
 import React from 'react';
-import { PanelType } from '../../../../Store/PanelStore';
+import { PanelType } from '../../../../store/PanelStore';
 
 // Base interface for custom panel components
 export interface CustomPanelProps {

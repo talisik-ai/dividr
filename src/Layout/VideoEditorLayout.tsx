@@ -5,7 +5,7 @@ import { Outlet } from 'react-router-dom';
 import { Timeline } from '../Components/Main/Timeline/Timeline';
 import TitleBar from '../Components/Main/Titlebar';
 import Toolbar from '../Components/Main/Toolbar';
-import { useIsPanelVisible } from '../Store/PanelStore';
+import { useIsPanelVisible } from '../store/PanelStore';
 // Error Boundary component
 class ErrorBoundary extends Component<
   { children: ReactNode },

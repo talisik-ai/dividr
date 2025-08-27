@@ -8,9 +8,15 @@ interface ScrollTabsProps {
   tabs: { value: string; label: string; content: React.ReactNode }[];
   defaultValue?: string;
   className?: string;
+  onValueChange?: (value: string) => void;
 }
 
-export function ScrollTabs({ tabs, defaultValue, className }: ScrollTabsProps) {
+export function ScrollTabs({
+  tabs,
+  defaultValue,
+  className,
+  onValueChange,
+}: ScrollTabsProps) {
   const scrollViewportRef = React.useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
@@ -71,6 +77,7 @@ export function ScrollTabs({ tabs, defaultValue, className }: ScrollTabsProps) {
   return (
     <Tabs
       defaultValue={defaultValue ?? tabs[0]?.value}
+      onValueChange={onValueChange}
       className={cn('w-full', className)}
     >
       <div className="flex items-center w-full px-2">

@@ -22,6 +22,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
     {},
   );
+  const [, setActiveTab] = useState<string>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle drag events
@@ -288,17 +289,15 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   );
 
   // File List Component
-  const fileListContent = (files: FilePreview[]) => (
+  const fileListContent = (files: FilePreview[], tabType: string) => (
     <div className="flex-1 overflow-auto">
       <div className="p-4 pt-0">
         <h4 className="text-xs font-semibold text-gray-300 mb-3">
-          Uploaded Files ({files.length})
+          {getTabLabel(tabType, files.length)}
         </h4>
 
         <div className="space-y-2">
           {files.map((file) => {
-            const progress = uploadProgress[file.id] || 0;
-            const isComplete = progress >= 100;
             const isSubtitle = isSubtitleFile(file.name);
 
             return (
@@ -362,13 +361,28 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     });
   };
 
+  const getTabLabel = (tabType: string, count: number) => {
+    switch (tabType) {
+      case 'videos':
+        return `Video Files (${count})`;
+      case 'audio':
+        return `Audio Files (${count})`;
+      case 'images':
+        return `Image Files (${count})`;
+      case 'subtitles':
+        return `Subtitle Files (${count})`;
+      default:
+        return `Uploaded Files (${count})`;
+    }
+  };
+
   const tabs = [
     {
       value: 'all',
       label: 'All',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('all'))
+          ? fileListContent(getFilteredFiles('all'), 'all')
           : uploadArea,
     },
     {
@@ -376,7 +390,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       label: 'Videos',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('videos'))
+          ? fileListContent(getFilteredFiles('videos'), 'videos')
           : uploadArea,
     },
     {
@@ -384,7 +398,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       label: 'Audio',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('audio'))
+          ? fileListContent(getFilteredFiles('audio'), 'audio')
           : uploadArea,
     },
     {
@@ -392,7 +406,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       label: 'Images',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('images'))
+          ? fileListContent(getFilteredFiles('images'), 'images')
           : uploadArea,
     },
     {
@@ -400,7 +414,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       label: 'Subtitles',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('subtitles'))
+          ? fileListContent(getFilteredFiles('subtitles'), 'subtitles')
           : uploadArea,
     },
   ];
@@ -442,7 +456,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       </div>
       {/* Tab Navigation and Content */}
       <div className="flex-1 flex flex-col">
-        <ScrollTabs tabs={tabs} />
+        <ScrollTabs
+          tabs={tabs}
+          defaultValue="all"
+          onValueChange={setActiveTab}
+        />
       </div>
     </div>
   );

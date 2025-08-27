@@ -46,7 +46,10 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   // Determine context based on current route
   const isInVideoEditor = location.pathname.startsWith('/video-editor');
   const titleText = isInVideoEditor ? (
-    <Input className="border-none text-center text-sm p-2 h-6" />
+    <Input
+      className="border-none text-center text-sm p-2 h-6"
+      placeholder="Untitled Project"
+    />
   ) : (
     'Dividr'
   );
