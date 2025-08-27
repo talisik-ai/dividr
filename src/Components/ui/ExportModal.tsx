@@ -20,10 +20,6 @@ interface ExportConfig {
   filename: string;
   format: string;
   outputPath: string;
-  subtitles?: {
-    enabled: boolean;
-    type: 'hardcoded' | 'embedded';
-  };
 }
 
 interface ExportModalProps {
@@ -53,19 +49,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [outputPath, setOutputPath] = useState('');
   const [isLoadingDefaultPath, setIsLoadingDefaultPath] = useState(false);
 
-  // Subtitle options
-  const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
-  const [subtitleType, setSubtitleType] = useState<'hardcoded' | 'embedded'>(
-    'hardcoded',
-  );
+  // Removed subtitle options - subtitles are automatically included from timeline
 
   // Reset form when modal opens and load default path
   React.useEffect(() => {
     if (isOpen) {
       setFilename(defaultFilename);
       setFormat('mp4');
-      setSubtitlesEnabled(false);
-      setSubtitleType('hardcoded');
       loadDefaultPath();
     }
   }, [isOpen, defaultFilename]);
@@ -145,15 +135,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       filename: finalFilename,
       format,
       outputPath: outputPath.trim(),
-      subtitles: subtitlesEnabled
-        ? {
-            enabled: true,
-            type: subtitleType,
-          }
-        : {
-            enabled: false,
-            type: 'hardcoded',
-          },
     });
   };
 
@@ -241,69 +222,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </p>
           </div>
 
-          {/* Subtitle Options */}
+          {/* Subtitles are automatically included from timeline */}
           <div className="space-y-3 border-t border-gray-700 pt-4">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="subtitles"
-                checked={subtitlesEnabled}
-                onChange={(e) => setSubtitlesEnabled(e.target.checked)}
-                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <Label htmlFor="subtitles" className="text-sm font-medium">
-                Include Subtitles
-              </Label>
+            <div className="text-sm text-gray-400">
+              <span className="text-green-400">✓</span> Subtitles from timeline
+              will be automatically included (burned-in)
             </div>
-
-            {subtitlesEnabled && (
-              <div className="ml-6 space-y-2">
-                <Label className="text-sm">Subtitle Type</Label>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      id="hardcoded"
-                      name="subtitleType"
-                      value="hardcoded"
-                      checked={subtitleType === 'hardcoded'}
-                      onChange={(e) =>
-                        setSubtitleType(
-                          e.target.value as 'hardcoded' | 'embedded',
-                        )
-                      }
-                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
-                    />
-                    <Label htmlFor="hardcoded" className="text-sm">
-                      Hardcoded (burned-in)
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      id="embedded"
-                      name="subtitleType"
-                      value="embedded"
-                      checked={subtitleType === 'embedded'}
-                      onChange={(e) =>
-                        setSubtitleType(
-                          e.target.value as 'hardcoded' | 'embedded',
-                        )
-                      }
-                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500"
-                    />
-                    <Label htmlFor="embedded" className="text-sm">
-                      Embedded (selectable)
-                    </Label>
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground mt-2">
-                  {subtitleType === 'hardcoded'
-                    ? 'Subtitles will be permanently burned into the video and cannot be turned off'
-                    : 'Subtitles will be embedded as a separate track that can be turned on/off in video players'}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Format Description */}
