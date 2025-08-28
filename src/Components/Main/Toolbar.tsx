@@ -1,13 +1,10 @@
 /**
- * A custom React fixed component
- * A Fixed element in Downlodr, displays the tooligation links for status, categories and tag pages
- *  - Status (All Downloads, Currently Downloading, and Finished Downloads)
- *  - Categories (All Categories, Uncategorized downloads, and then list of individual categories)
- *  - Tags (All Tags, Untaged downloads, and then list of individual tags)
+ * A custom React toolbar component for the video editor
+ * Displays tool buttons for different panels: media import, text tools, video effects, etc.
  *
  * @param className - for UI of Toolbar
+ * @param collapsed - whether the toolbar is collapsed
  * @returns JSX.Element - The rendered component displaying a Toolbar
- *
  */
 import { useCallback, useRef } from 'react';
 import { BiText } from 'react-icons/bi';
@@ -16,7 +13,81 @@ import { CgSoftwareDownload } from 'react-icons/cg';
 import { LuMusic } from 'react-icons/lu';
 import { MdOutlineSettings } from 'react-icons/md';
 import { SlPicture } from 'react-icons/sl';
-import { usePanelStore, type PanelType } from '../../Store/PanelStore';
+import { usePanelStore, type PanelType } from '../../store/PanelStore';
+
+interface ToolbarButtonProps {
+  icon: React.ReactNode;
+  title: string;
+  onClick: () => void;
+  isActive: boolean;
+}
+
+const ToolbarButton = ({
+  icon,
+  title,
+  onClick,
+  isActive,
+}: ToolbarButtonProps) => (
+  <button
+    onClick={onClick}
+    title={title}
+    className={`transition-all duration-200 p-2 rounded-lg hover:bg-gray-800/50 ${
+      isActive
+        ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
+        : 'text-toolbarIcon hover:text-gray-300'
+    }`}
+  >
+    {icon}
+  </button>
+);
+
+interface ToolbarConfig {
+  panelType: PanelType;
+  icon: React.ReactNode;
+  title: string;
+  size: number;
+  isSpecial?: boolean; // for media-import which has special handling
+}
+
+const toolbarConfig: ToolbarConfig[] = [
+  {
+    panelType: 'media-import',
+    icon: <CgSoftwareDownload size={20} />,
+    title: 'Import media files',
+    size: 20,
+    isSpecial: true,
+  },
+  {
+    panelType: 'text-tools',
+    icon: <BiText size={18} />,
+    title: 'Text tools',
+    size: 18,
+  },
+  {
+    panelType: 'video-effects',
+    icon: <BsCameraVideo size={16} />,
+    title: 'Video effects',
+    size: 16,
+  },
+  {
+    panelType: 'images',
+    icon: <SlPicture size={16} />,
+    title: 'Image tools',
+    size: 16,
+  },
+  {
+    panelType: 'audio-tools',
+    icon: <LuMusic size={16} />,
+    title: 'Audio tools',
+    size: 16,
+  },
+  {
+    panelType: 'settings',
+    icon: <MdOutlineSettings size={18} />,
+    title: 'Project settings',
+    size: 18,
+  },
+];
 
 // import { toast } from 'react-hot-toast';
 //import TooltipWrapper from '@/Components/SubComponents/custom/TooltipWrapper';
@@ -106,6 +177,16 @@ const Toolbar = ({
     togglePanel('media-import');
   }, [togglePanel]);
 
+  // Get the appropriate click handler for each button
+  const getClickHandler = useCallback(
+    (config: ToolbarConfig) => {
+      return config.isSpecial && config.panelType === 'media-import'
+        ? handleImportFiles
+        : () => handleTogglePanel(config.panelType);
+    },
+    [handleImportFiles, handleTogglePanel],
+  );
+
   // Note: Project management functions removed for now, but can be re-added to UI store actions
 
   const toolRef = useRef<HTMLElement>(null);
@@ -124,74 +205,17 @@ const Toolbar = ({
         <div>
           {/*  <TooltipWrapper content={collapsed ? 'Status' : null} side="left"> */}
           <div
-            className={`flex flex-col items-center transition-opacity duration-300 gap-6`}
+            className={`flex flex-col items-center transition-opacity duration-300 gap-4`}
           >
-            <button
-              onClick={handleImportFiles}
-              title="Import media files"
-              className={`text-toolbarIcon transition-colors duration-200 ${
-                activePanelType === 'media-import'
-                  ? 'text-blue-400'
-                  : 'text-toolbarIcon'
-              }`}
-            >
-              <CgSoftwareDownload size={20} />
-            </button>
-            <button
-              onClick={() => handleTogglePanel('text-tools')}
-              title="Text tools"
-              className={`text-toolbarIcon transition-colors duration-200 ${
-                activePanelType === 'text-tools'
-                  ? 'text-blue-400'
-                  : 'text-toolbarIcon'
-              }`}
-            >
-              <BiText size={18} />
-            </button>
-            <button
-              onClick={() => handleTogglePanel('video-effects')}
-              title="Video effects"
-              className={`text-toolbarIcon transition-colors duration-200 ${
-                activePanelType === 'video-effects'
-                  ? 'text-blue-400'
-                  : 'text-toolbarIcon'
-              }`}
-            >
-              <BsCameraVideo size={16} />
-            </button>
-            <button
-              onClick={() => handleTogglePanel('images')}
-              title="Image tools"
-              className={`text-toolbarIcon transition-colors duration-200 ${
-                activePanelType === 'images'
-                  ? 'text-blue-400'
-                  : 'text-toolbarIcon'
-              }`}
-            >
-              <SlPicture size={16} />
-            </button>
-            <button
-              onClick={() => handleTogglePanel('audio-tools')}
-              title="Audio tools"
-              className={`text-toolbarIcon transition-colors duration-200 ${
-                activePanelType === 'audio-tools'
-                  ? 'text-blue-400'
-                  : 'text-toolbarIcon'
-              }`}
-            >
-              <LuMusic size={16} />
-            </button>
-            <button
-              onClick={() => handleTogglePanel('settings')}
-              title="Project settings"
-              className={`text-toolbarIcon transition-colors duration-200 ${
-                activePanelType === 'settings'
-                  ? 'text-blue-400'
-                  : 'text-toolbarIcon'
-              }`}
-            >
-              <MdOutlineSettings size={18} />
-            </button>
+            {toolbarConfig.map((config) => (
+              <ToolbarButton
+                key={config.panelType}
+                icon={config.icon}
+                title={config.title}
+                onClick={getClickHandler(config)}
+                isActive={activePanelType === config.panelType}
+              />
+            ))}
           </div>
           {/*  </TooltipWrapper> */}
         </div>

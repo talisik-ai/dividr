@@ -1,6 +1,6 @@
 import { ScrollTabs } from '@/Components/ui/scroll-tab';
 import React, { useCallback, useRef, useState } from 'react';
-import { useVideoEditorStore } from '../../../../store/VideoEditorStore';
+import { useVideoEditorStore } from '../../../../store/videoEditorStore';
 import { CustomPanelProps } from './PanelRegistry';
 
 interface FilePreview {
@@ -22,6 +22,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
     {},
   );
+  const [, setActiveTab] = useState<string>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle drag events
@@ -162,10 +163,26 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const getFileIcon = (type: string): string => {
+  const isSubtitleFile = (fileName: string): boolean => {
+    const subtitleExtensions = [
+      '.srt',
+      '.vtt',
+      '.ass',
+      '.ssa',
+      '.sub',
+      '.sbv',
+      '.lrc',
+    ];
+    return subtitleExtensions.some((ext) =>
+      fileName.toLowerCase().endsWith(ext),
+    );
+  };
+
+  const getFileIcon = (type: string, fileName?: string): string => {
     if (type.startsWith('video/')) return '🎬';
     if (type.startsWith('audio/')) return '🎵';
     if (type.startsWith('image/')) return '🖼️';
+    if (fileName && isSubtitleFile(fileName)) return '💬';
     return '📄';
   };
 
@@ -234,7 +251,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
               ref={fileInputRef}
               type="file"
               multiple
-              accept="video/*,audio/*,image/*"
+              accept="video/*,audio/*,image/*,.srt,.vtt,.ass,.ssa,.sub,.sbv,.lrc"
               onChange={handleFileInputChange}
               className="hidden"
             />
@@ -244,36 +261,58 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     </div>
   );
 
+  // Subtitle File Display Component
+  const renderSubtitleFile = (file: FilePreview) => (
+    <div className="flex items-center space-x-3 flex-1 min-w-0">
+      <div className="text-2xl">💬</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-white truncate">{file.name}</p>
+        <p className="text-xs text-purple-400">
+          Subtitle • {formatFileSize(file.size)}
+        </p>
+        <p className="text-xs text-gray-500">
+          {file.name.split('.').pop()?.toUpperCase()} format
+        </p>
+      </div>
+    </div>
+  );
+
+  // Media File Display Component
+  const renderMediaFile = (file: FilePreview) => (
+    <div className="flex items-center space-x-3 flex-1 min-w-0">
+      <div className="text-2xl">{getFileIcon(file.type, file.name)}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-white truncate">{file.name}</p>
+        <p className="text-xs text-gray-400">{formatFileSize(file.size)}</p>
+      </div>
+    </div>
+  );
+
   // File List Component
-  const fileListContent = (files: FilePreview[]) => (
+  const fileListContent = (files: FilePreview[], tabType: string) => (
     <div className="flex-1 overflow-auto">
       <div className="p-4 pt-0">
         <h4 className="text-xs font-semibold text-gray-300 mb-3">
-          Uploaded Files ({files.length})
+          {getTabLabel(tabType, files.length)}
         </h4>
 
         <div className="space-y-2">
           {files.map((file) => {
-            const progress = uploadProgress[file.id] || 0;
-            const isComplete = progress >= 100;
+            const isSubtitle = isSubtitleFile(file.name);
 
             return (
               <div
                 key={file.id}
-                className="bg-gray-800 rounded-lg p-3 border border-gray-700"
+                className={`rounded-lg p-3 border transition-colors duration-200 ${
+                  isSubtitle
+                    ? 'bg-purple-900/20 border-purple-600/30 hover:bg-purple-900/30'
+                    : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
+                }`}
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3 flex-1 min-w-0">
-                    <div className="text-2xl">{getFileIcon(file.type)}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-white truncate">
-                        {file.name}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {formatFileSize(file.size)}
-                      </p>
-                    </div>
-                  </div>
+                  {isSubtitle
+                    ? renderSubtitleFile(file)
+                    : renderMediaFile(file)}
 
                   <button
                     onClick={() => removeFile(file.id)}
@@ -303,7 +342,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     </div>
   );
 
-  const getFilteredFiles = (type: 'all' | 'videos' | 'audio' | 'images') => {
+  const getFilteredFiles = (
+    type: 'all' | 'videos' | 'audio' | 'images' | 'subtitles',
+  ) => {
     return selectedFiles.filter((file) => {
       switch (type) {
         case 'videos':
@@ -312,10 +353,27 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
           return file.type.startsWith('audio/');
         case 'images':
           return file.type.startsWith('image/');
+        case 'subtitles':
+          return isSubtitleFile(file.name);
         default:
           return true;
       }
     });
+  };
+
+  const getTabLabel = (tabType: string, count: number) => {
+    switch (tabType) {
+      case 'videos':
+        return `Video Files (${count})`;
+      case 'audio':
+        return `Audio Files (${count})`;
+      case 'images':
+        return `Image Files (${count})`;
+      case 'subtitles':
+        return `Subtitle Files (${count})`;
+      default:
+        return `Uploaded Files (${count})`;
+    }
   };
 
   const tabs = [
@@ -324,7 +382,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       label: 'All',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('all'))
+          ? fileListContent(getFilteredFiles('all'), 'all')
           : uploadArea,
     },
     {
@@ -332,7 +390,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       label: 'Videos',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('videos'))
+          ? fileListContent(getFilteredFiles('videos'), 'videos')
           : uploadArea,
     },
     {
@@ -340,7 +398,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       label: 'Audio',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('audio'))
+          ? fileListContent(getFilteredFiles('audio'), 'audio')
           : uploadArea,
     },
     {
@@ -348,7 +406,15 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       label: 'Images',
       content:
         selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('images'))
+          ? fileListContent(getFilteredFiles('images'), 'images')
+          : uploadArea,
+    },
+    {
+      value: 'subtitles',
+      label: 'Subtitles',
+      content:
+        selectedFiles.length > 0
+          ? fileListContent(getFilteredFiles('subtitles'), 'subtitles')
           : uploadArea,
     },
   ];
@@ -390,7 +456,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       </div>
       {/* Tab Navigation and Content */}
       <div className="flex-1 flex flex-col">
-        <ScrollTabs tabs={tabs} />
+        <ScrollTabs
+          tabs={tabs}
+          defaultValue="all"
+          onValueChange={setActiveTab}
+        />
       </div>
     </div>
   );

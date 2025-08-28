@@ -6,10 +6,13 @@ import {
   usePanelStore,
   usePanelWidth,
   type PanelItem,
-  type PanelSection
-} from '../../../Store/PanelStore';
-import { useVideoEditorStore } from '../../../store/VideoEditorStore';
-import { getCustomPanelComponent, hasCustomPanelComponent } from './Panels/PanelRegistry';
+  type PanelSection,
+} from '../../../store/PanelStore';
+import { useVideoEditorStore } from '../../../store/videoEditorStore';
+import {
+  getCustomPanelComponent,
+  hasCustomPanelComponent,
+} from './Panels/PanelRegistry';
 import { initializePanelRegistry } from './Panels/registerPanels';
 
 interface StylePanelProps {
@@ -190,24 +193,24 @@ export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
   if (activePanelType && hasCustomPanelComponent(activePanelType)) {
     const CustomComponent = getCustomPanelComponent(activePanelType);
     const basePanelClasses =
-  "bg-secondary text-white border-r border-gray-700 transition-all duration-300 w-[22%] text-xs";
+      'bg-secondary text-white border-r border-gray-700 transition-all duration-300 w-[22%] text-xs';
 
     if (CustomComponent) {
       return (
         <React.Suspense
-        fallback={
-          <div
-            className={`${basePanelClasses} ${className} flex items-center justify-center`}
-          >
-            <div className="text-gray-400">Loading...</div>
-          </div>
-        }
-      >
-        <CustomComponent
-          className={`${basePanelClasses} ${className}`}
-          onClose={handleClosePanel}
-        />
-      </React.Suspense>
+          fallback={
+            <div
+              className={`${basePanelClasses} ${className} flex items-center justify-center`}
+            >
+              <div className="text-gray-400">Loading...</div>
+            </div>
+          }
+        >
+          <CustomComponent
+            className={`${basePanelClasses} ${className}`}
+            onClose={handleClosePanel}
+          />
+        </React.Suspense>
       );
     }
   }

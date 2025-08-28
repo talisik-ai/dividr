@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import { useVideoEditorStore } from './VideoEditorStore';
+import { useVideoEditorStore } from './videoEditorStore';
 // Define the different panel types that can be shown
 export type PanelType =
   | 'media-import' // Import/download panel (custom component)

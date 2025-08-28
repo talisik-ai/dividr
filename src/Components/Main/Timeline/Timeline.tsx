@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useVideoEditorStore } from '../../../store/VideoEditorStore';
+import { useVideoEditorStore } from '../../../store/videoEditorStore';
 import { TimelineControls } from './TimelineControls';
 import { TimelinePlayhead } from './TimelinePlayhead';
 import { TimelineRuler } from './TimelineRuler';
@@ -13,6 +13,7 @@ interface TimelineProps {
 export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
     timeline,
@@ -27,6 +28,12 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     setSelectedTracks,
   } = useVideoEditorStore();
 
+  // Calculate effective timeline duration based on actual track content
+  const effectiveEndFrame =
+    tracks.length > 0
+      ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
+      : timeline.totalFrames;
+
   // Animation loop for playback
   useEffect(() => {
     if (!playback.isPlaying) return;
@@ -36,8 +43,8 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       const currentFrame = timeline.currentFrame;
       const nextFrame =
         currentFrame + Math.max(1, Math.round(timeline.fps / targetFPS)); // Skip frames for better performance
-      if (nextFrame >= timeline.totalFrames) {
-        setCurrentFrame(playback.isLooping ? 0 : timeline.totalFrames - 1);
+      if (nextFrame >= effectiveEndFrame) {
+        setCurrentFrame(playback.isLooping ? 0 : effectiveEndFrame - 1);
       } else {
         setCurrentFrame(nextFrame);
       }
@@ -50,6 +57,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     timeline.fps,
     timeline.totalFrames,
     timeline.currentFrame,
+    effectiveEndFrame,
     setCurrentFrame,
   ]);
 
@@ -60,17 +68,24 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   });
 
   useHotkeys('home', () => setCurrentFrame(0));
-  useHotkeys('end', () => setCurrentFrame(timeline.totalFrames - 1));
+  useHotkeys('end', () => setCurrentFrame(effectiveEndFrame - 1));
   useHotkeys('left', () =>
     setCurrentFrame(Math.max(0, timeline.currentFrame - 1)),
   );
   useHotkeys('right', () =>
-    setCurrentFrame(
-      Math.min(timeline.totalFrames - 1, timeline.currentFrame + 1),
-    ),
+    setCurrentFrame(Math.min(effectiveEndFrame - 1, timeline.currentFrame + 1)),
   );
   useHotkeys('i', () => setInPoint(timeline.currentFrame));
   useHotkeys('o', () => setOutPoint(timeline.currentFrame));
+
+  // Cleanup scroll timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Zoom controls
   useHotkeys('equal', () => setZoom(Math.min(timeline.zoom * 1.2, 10)));
@@ -117,12 +132,6 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   // Calculate frame width based on zoom
   const frameWidth = 2 * timeline.zoom; // Base width * zoom factor
 
-  // Calculate effective timeline duration based on actual track content
-  const effectiveEndFrame =
-    tracks.length > 0
-      ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
-      : timeline.totalFrames;
-
   const timelineWidth = effectiveEndFrame * frameWidth;
 
   // Handle timeline click to set current frame
@@ -133,13 +142,10 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
       const rect = tracksRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
       const frame = Math.floor(x / frameWidth);
-      const clampedFrame = Math.max(
-        0,
-        Math.min(frame, timeline.totalFrames - 1),
-      );
+      const clampedFrame = Math.max(0, Math.min(frame, effectiveEndFrame - 1));
       setCurrentFrame(clampedFrame);
     },
-    [frameWidth, timeline.totalFrames, setCurrentFrame],
+    [frameWidth, effectiveEndFrame, setCurrentFrame],
   );
 
   return (
@@ -175,9 +181,21 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
           className="flex-1 relative overflow-auto"
           onClick={handleTimelineClick}
           onScroll={(e) => {
-            // Synchronize horizontal scroll with the timeline store
+            // Throttled scroll handling for better performance with many tracks
             const scrollLeft = (e.target as HTMLElement).scrollLeft;
+
+            // Clear previous timeout
+            if (scrollTimeoutRef.current) {
+              clearTimeout(scrollTimeoutRef.current);
+            }
+
+            // Set immediate update for smooth playhead movement
             setScrollX(scrollLeft);
+
+            // Throttle additional updates for performance
+            scrollTimeoutRef.current = setTimeout(() => {
+              setScrollX(scrollLeft);
+            }, 16); // ~60fps throttling
           }}
         >
           <TimelineTracks

@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ) => ipcRenderer.invoke('process-dropped-files', fileBuffers),
   cleanupTempFiles: (filePaths: string[]) =>
     ipcRenderer.invoke('cleanup-temp-files', filePaths),
+  readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
 
   // FFmpeg API
   ffmpegRun: (job: VideoEditJob) => ipcRenderer.invoke('ffmpegRun', job),
@@ -114,6 +115,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Cancel FFmpeg operation
   cancelFfmpeg: () => ipcRenderer.invoke('cancel-ffmpeg'),
+
+  // Subtitle file operations
+  writeSubtitleFile: (options: {
+    content: string;
+    filename: string;
+    outputPath: string;
+  }) => ipcRenderer.invoke('write-subtitle-file', options),
+
+  deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
 });
 
 contextBridge.exposeInMainWorld('appControl', {

@@ -14,12 +14,7 @@ import {
 } from './dialog';
 import { Input } from './input';
 import { Label } from './label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from './select';
+import { Select, SelectContent, SelectItem, SelectTrigger } from './select';
 
 interface ExportConfig {
   filename: string;
@@ -39,7 +34,7 @@ const videoFormats = [
   { value: 'avi', label: 'AVI', extension: '.avi' },
   { value: 'mov', label: 'QuickTime (MOV)', extension: '.mov' },
   { value: 'mkv', label: 'Matroska (MKV)', extension: '.mkv' },
- // { value: 'webm', label: 'WebM', extension: '.webm' },
+  // { value: 'webm', label: 'WebM', extension: '.webm' },
   { value: 'wmv', label: 'Windows Media Video', extension: '.wmv' },
 ];
 
@@ -53,6 +48,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [format, setFormat] = useState('mp4');
   const [outputPath, setOutputPath] = useState('');
   const [isLoadingDefaultPath, setIsLoadingDefaultPath] = useState(false);
+
+  // Removed subtitle options - subtitles are automatically included from timeline
 
   // Reset form when modal opens and load default path
   React.useEffect(() => {
@@ -86,10 +83,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleBrowseFolder = async () => {
     try {
       const selectedFormat = videoFormats.find((f) => f.value === format);
-      const defaultFilePath = outputPath 
+      const defaultFilePath = outputPath
         ? `${outputPath}/${filename.trim()}${selectedFormat?.extension || '.mp4'}`
         : `${filename.trim()}${selectedFormat?.extension || '.mp4'}`;
-      
+
       const result = await window.electronAPI.showSaveDialog({
         title: 'Save Video As',
         defaultPath: defaultFilePath,
@@ -148,7 +145,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const selectedFormat = videoFormats.find((f) => f.value === format);
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} className='text-white bg-black'>
+    <Dialog isOpen={isOpen} onClose={onClose} className="text-white bg-black">
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Export Video</DialogTitle>
@@ -179,10 +176,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <Select value={format} onValueChange={setFormat}>
               <SelectTrigger>
                 <span className="block truncate">
-                  {selectedFormat?.label || "Select format"}
+                  {selectedFormat?.label || 'Select format'}
                 </span>
               </SelectTrigger>
-              <SelectContent className='bg-black'>
+              <SelectContent className="bg-black">
                 {videoFormats.map((fmt) => (
                   <SelectItem key={fmt.value} value={fmt.value}>
                     {fmt.label}
@@ -201,7 +198,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 type="text"
                 value={outputPath}
                 onChange={(e) => setOutputPath(e.target.value)}
-                placeholder={isLoadingDefaultPath ? "Loading..." : "Select output folder"}
+                placeholder={
+                  isLoadingDefaultPath ? 'Loading...' : 'Select output folder'
+                }
                 className="flex-1 text-white"
                 disabled={isLoadingDefaultPath}
               />
@@ -216,8 +215,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Full path: {outputPath ? `${outputPath}/${filename.trim() || 'filename'}${selectedFormat?.extension || '.mp4'}` : 'No folder selected'}
+              Full path:{' '}
+              {outputPath
+                ? `${outputPath}/${filename.trim() || 'filename'}${selectedFormat?.extension || '.mp4'}`
+                : 'No folder selected'}
             </p>
+          </div>
+
+          {/* Subtitles are automatically included from timeline */}
+          <div className="space-y-3 border-t border-gray-700 pt-4">
+            <div className="text-sm text-gray-400">
+              <span className="text-green-400">✓</span> Subtitles from timeline
+              will be automatically included (burned-in)
+            </div>
           </div>
 
           {/* Format Description */}
@@ -239,7 +249,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <Button variant="outline" onClick={handleCancel} className="mr-2">
             Cancel
           </Button>
-          <Button onClick={handleExport} disabled={!filename.trim() || !outputPath.trim() || isLoadingDefaultPath}>
+          <Button
+            onClick={handleExport}
+            disabled={
+              !filename.trim() || !outputPath.trim() || isLoadingDefaultPath
+            }
+          >
             Export Video
           </Button>
         </DialogFooter>

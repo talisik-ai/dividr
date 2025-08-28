@@ -77,7 +77,7 @@ declare global {
           type: string;
           size: number;
           buffer: ArrayBuffer;
-        }>
+        }>,
       ) => Promise<{
         success: boolean;
         files?: Array<{
@@ -95,6 +95,22 @@ declare global {
       cleanupTempFiles: (filePaths: string[]) => Promise<{
         success: boolean;
         cleanedCount?: number;
+        error?: string;
+      }>;
+      readFile: (filePath: string) => Promise<string>;
+
+      // Subtitle file operations
+      writeSubtitleFile: (options: {
+        content: string;
+        filename: string;
+        outputPath: string;
+      }) => Promise<{
+        success: boolean;
+        filePath?: string;
+        error?: string;
+      }>;
+      deleteFile: (filePath: string) => Promise<{
+        success: boolean;
         error?: string;
       }>;
 
@@ -134,6 +150,5 @@ declare global {
   }
 }
 // eslint-disable-next-line prettier/prettier
-export { };
+export {};
 // eslint-disable-next-line prettier/prettier
-

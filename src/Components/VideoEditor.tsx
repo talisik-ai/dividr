@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { useVideoEditorStore } from '../store/VideoEditorStore';
+import { useVideoEditorStore } from '../store/videoEditorStore';
 import { VideoPreview } from './Main/VideoPreview/VideoPreview';
 interface VideoEditorProps {
   className?: string;
