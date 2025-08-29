@@ -7,10 +7,18 @@ export interface SubtitleSegment {
   index: number;
 }
 
+export interface TextStyleOptions {
+  fontWeight?: string | number;
+  fontStyle?: string;
+  fontFamily?: string;
+  textTransform?: string;
+}
+
 export interface SubtitleExportOptions {
   format: 'srt' | 'vtt' | 'ass';
   outputPath: string;
   filename: string;
+  textStyle?: TextStyleOptions;
 }
 
 /**
@@ -123,12 +131,18 @@ export function generateVTTContent(segments: SubtitleSegment[]): string {
 }
 
 /**
- * Generates ASS subtitle content (Advanced SubStation Alpha) with opaque background
+ * Generates ASS subtitle content (Advanced SubStation Alpha) with styling support
  */
-export function generateASSContent(segments: SubtitleSegment[]): string {
+export function generateASSContent(
+  segments: SubtitleSegment[],
+  textStyle?: TextStyleOptions,
+): string {
   if (segments.length === 0) {
     return '';
   }
+
+  // Convert text style to ASS parameters
+  const assStyle = convertTextStyleToASS(textStyle);
 
   const header = `[Script Info]
 Title: Exported Subtitles
@@ -136,7 +150,9 @@ ScriptType: v4.00+
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,4,0,0,2,10,10,10,1
+Style: Default,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,${assStyle.italic},0,0,100,100,0,0,4,0,0,2,10,10,10,1
+Style: Semibold,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,${assStyle.italic},0,0,100,100,0,0,4,0,0,2,10,10,10,1
+Style: Bold,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,${assStyle.italic},0,0,120,120,0,0,4,0,0,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -155,11 +171,96 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const startTime = formatTimeForASS(segment.startTime);
       const endTime = formatTimeForASS(segment.endTime);
 
-      return `Dialogue: 0,${startTime},${endTime},Default,,0,0,0,,${segment.text}`;
+      // Apply text transformations if specified
+      let text = segment.text;
+      if (textStyle?.textTransform) {
+        text = applyTextTransform(text, textStyle.textTransform);
+      }
+
+      // Choose style based on font weight
+      let styleName = 'Default';
+      if (textStyle?.fontWeight) {
+        const weight =
+          typeof textStyle.fontWeight === 'number'
+            ? textStyle.fontWeight
+            : parseInt(textStyle.fontWeight.toString());
+
+        if (weight >= 800) {
+          styleName = 'Bold'; // For 800+ (like uppercase and bold)
+        } else if (weight >= 600) {
+          styleName = 'Semibold'; // For 600 (semibold)
+        }
+      }
+
+      return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
     })
     .join('\n');
 
   return header + events;
+}
+
+/**
+ * Converts text style options to ASS format parameters
+ */
+function convertTextStyleToASS(textStyle?: TextStyleOptions): {
+  fontFamily: string;
+  bold: number;
+  italic: number;
+} {
+  if (!textStyle) {
+    return {
+      fontFamily: 'Arial',
+      bold: -1, // Default bold for visibility
+      italic: 0,
+    };
+  }
+
+  // Convert font weight to ASS bold value
+  let bold = 0;
+  if (textStyle.fontWeight) {
+    const fontWeight =
+      typeof textStyle.fontWeight === 'number'
+        ? textStyle.fontWeight
+        : parseInt(textStyle.fontWeight.toString());
+    if (fontWeight >= 700) {
+      bold = -1; // Bold enabled
+    } else if (fontWeight >= 600) {
+      bold = -1; // Semibold treated as bold in ASS
+    }
+  }
+
+  // Convert font style to ASS italic value
+  const italic = textStyle.fontStyle === 'italic' ? -1 : 0;
+
+  // Extract font family or use default
+  let fontFamily = 'Arial';
+  if (textStyle.fontFamily) {
+    // Extract first font from font stack
+    fontFamily = textStyle.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
+  }
+
+  return {
+    fontFamily,
+    bold,
+    italic,
+  };
+}
+
+/**
+ * Applies text transformations to subtitle text
+ */
+function applyTextTransform(text: string, transform: string): string {
+  switch (transform) {
+    case 'uppercase':
+      return text.toUpperCase();
+    case 'lowercase':
+      return text.toLowerCase();
+    case 'capitalize':
+      return text.replace(/\b\w/g, (char) => char.toUpperCase());
+    case 'none':
+    default:
+      return text;
+  }
 }
 
 /**
@@ -198,7 +299,7 @@ export async function createSubtitleFile(
       content = generateVTTContent(segments);
       break;
     case 'ass':
-      content = generateASSContent(segments);
+      content = generateASSContent(segments, options.textStyle);
       break;
     default:
       throw new Error(`Unsupported subtitle format: ${options.format}`);

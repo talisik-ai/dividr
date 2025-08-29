@@ -19,6 +19,10 @@ import {
   FfmpegCallbacks,
   runFfmpegWithProgress,
 } from '../../Utility/ffmpegRunner';
+import {
+  extractSubtitleSegments,
+  generateASSContent,
+} from '../../Utility/subtitleExporter';
 import { ExportModal } from '../ui/ExportModal';
 import { Input } from '../ui/input';
 interface TitleBarProps {
@@ -39,6 +43,8 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     updateRenderProgress,
     finishRender,
     cancelRender,
+    textStyle,
+    getTextStyleForSubtitle,
     // importMediaFromDialog, // Unused for now
   } = useVideoEditorStore();
   const navigate = useNavigate();
@@ -55,55 +61,21 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   );
   const showExportButton = isInVideoEditor;
 
-  // Function to generate .ass content from subtitle tracks
+  // Function to generate .ass content from subtitle tracks using the subtitle exporter
   const generateAssContent = useCallback(
     (subtitleTracks: VideoTrack[]): string => {
       if (subtitleTracks.length === 0) return '';
 
-      // Sort subtitle tracks by start time
-      const sortedSubtitles = [...subtitleTracks]
-        .filter((track) => track.visible && track.subtitleText)
-        .sort((a, b) => a.startFrame - b.startFrame);
+      // Extract subtitle segments from tracks
+      const segments = extractSubtitleSegments(subtitleTracks, timeline);
 
-      // ASS file header with enhanced styling
-      const header = `[Script Info]
-Title: Exported Subtitles
-ScriptType: v4.00+
+      // Get current text style
+      const currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
 
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,4,0,0,2,10,10,10,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`;
-
-      // Convert seconds to ASS time format (H:MM:SS.cc)
-      const formatAssTime = (seconds: number): string => {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = Math.floor(seconds % 60);
-        const centiseconds = Math.floor((seconds % 1) * 100);
-
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}`;
-      };
-
-      // Generate dialogue events
-      const events = sortedSubtitles
-        .map((track) => {
-          const startTimeSeconds = track.startFrame / timeline.fps;
-          const endTimeSeconds = track.endFrame / timeline.fps;
-
-          const startTime = formatAssTime(startTimeSeconds);
-          const endTime = formatAssTime(endTimeSeconds);
-
-          return `Dialogue: 0,${startTime},${endTime},Default,,0,0,0,,${track.subtitleText || ''}`;
-        })
-        .join('\n');
-
-      return header + events;
+      // Generate ASS content with styling
+      return generateASSContent(segments, currentTextStyle);
     },
-    [timeline.fps],
+    [timeline, textStyle, getTextStyleForSubtitle],
   );
 
   // Convert tracks to FFmpeg job with timeline-aware processing
@@ -189,9 +161,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
       // Generate subtitle content if there are subtitle tracks
       let subtitleContent = '';
+      let currentTextStyle = undefined;
       if (subtitleTracks.length > 0) {
         subtitleContent = generateAssContent(subtitleTracks);
-        console.log('📝 Generated subtitle content for export');
+        currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
+        console.log(
+          '📝 Generated subtitle content for export with text style:',
+          textStyle.activeStyle,
+        );
       }
 
       return {
@@ -203,11 +180,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
           targetFrameRate: timeline.fps,
           normalizeFrameRate: trackInfos.length > 1,
           subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
+          textStyle: currentTextStyle,
         },
         subtitleContent, // Pass the subtitle content separately so main process can create the file
+        subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
       };
     },
-    [tracks, timeline.fps, generateAssContent],
+    [
+      tracks,
+      timeline.fps,
+      generateAssContent,
+      textStyle,
+      getTextStyleForSubtitle,
+    ],
   );
 
   // Handle export button click - shows modal

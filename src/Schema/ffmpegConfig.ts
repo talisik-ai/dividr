@@ -5,6 +5,13 @@ export interface TrackInfo {
   endTime?: number; // in seconds
 }
 
+export interface TextStyleConfig {
+  fontWeight?: string | number;
+  fontStyle?: string;
+  fontFamily?: string;
+  textTransform?: string;
+}
+
 export interface VideoEditJob {
   inputs: string[] | TrackInfo[]; // Support both simple paths and detailed track info
   output: string;
@@ -18,8 +25,10 @@ export interface VideoEditJob {
     replaceAudio?: string;
     normalizeFrameRate?: boolean;
     targetFrameRate?: number;
+    textStyle?: TextStyleConfig; // Text styling for subtitles
   };
   subtitleContent?: string; // SRT content to be written to a temporary file
+  subtitleFormat?: 'srt' | 'vtt' | 'ass'; // Subtitle format for export
 }
 
 export interface CommandParts {
