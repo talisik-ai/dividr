@@ -167,7 +167,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         <div
           ref={nodeRef}
           className={`
-          absolute h-[30px] rounded flex items-center px-2 py-1 overflow-hidden select-none z-[1]
+          absolute h-[30px] rounded flex items-center px-2 py-1 overflow-hidden select-none z-10
           ${isSelected ? 'border-2 border-white' : 'border border-white/20'}
           ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
           ${track.visible ? 'opacity-100' : 'opacity-50'}
@@ -217,7 +217,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         {/* Left resize handle */}
         {!track.locked && isSelected && (
           <div
-            className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-[15] rounded-l
+            className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-15 rounded-l
             ${isResizing === 'left' ? 'bg-blue-500' : 'bg-green-500'}`}
             style={{ left: left - 3 }}
             onMouseDown={(e) => handleMouseDown('left', e)}
@@ -227,7 +227,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         {/* Right resize handle */}
         {!track.locked && isSelected && (
           <div
-            className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-[15] rounded-r
+            className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-15 rounded-r
             ${isResizing === 'right' ? 'bg-blue-500' : 'bg-green-500'}`}
             style={{ left: left + clampedWidth - 3 }}
             onMouseDown={(e) => handleMouseDown('right', e)}

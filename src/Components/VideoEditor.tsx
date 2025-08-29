@@ -78,7 +78,7 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
       {/* Render Progress Overlay */}
       {render.isRendering && (
-        <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-80 flex items-center justify-center z-1000">
+        <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-80 flex items-center justify-center z-[1000]">
           <div className="bg-black p-8 rounded text-center min-w-[200px] text-white border-2 border-white">
             <h3 className="m-0 mb-4">Rendering Video</h3>
             <div className="w-full h-2 bg-gray-700 rounded overflow-hidden mb-4">
