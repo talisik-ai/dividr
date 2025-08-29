@@ -58,6 +58,7 @@ export interface RenderState {
   isRendering: boolean;
   progress: number;
   status: string;
+  currentTime?: string; // Current render time in HH:MM:SS.FF format from FFmpeg outTime
   currentJob?: {
     outputPath: string;
     format: string;
@@ -120,7 +121,11 @@ interface VideoEditorStore {
     format: string;
     quality: string;
   }) => void;
-  updateRenderProgress: (progress: number, status: string) => void;
+  updateRenderProgress: (
+    progress: number,
+    status: string,
+    currentTime?: string,
+  ) => void;
   finishRender: () => void;
   cancelRender: () => void;
 
@@ -469,6 +474,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       isRendering: false,
       progress: 0,
       status: 'ready',
+      currentTime: undefined as string | undefined,
     },
 
     // Timeline Actions
@@ -826,9 +832,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         },
       })),
 
-    updateRenderProgress: (progress, status) =>
+    updateRenderProgress: (progress, status, currentTime) =>
       set((state) => ({
-        render: { ...state.render, progress, status },
+        render: { ...state.render, progress, status, currentTime },
       })),
 
     finishRender: () =>
@@ -838,6 +844,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           isRendering: false,
           progress: 100,
           status: 'Render complete',
+          currentTime: undefined,
           currentJob: undefined,
         },
       })),
@@ -849,6 +856,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           isRendering: false,
           progress: 0,
           status: 'Render cancelled',
+          currentTime: undefined,
           currentJob: undefined,
         },
       })),
@@ -877,6 +885,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           isRendering: false,
           progress: 0,
           status: 'ready',
+          currentTime: undefined,
         },
       }),
 

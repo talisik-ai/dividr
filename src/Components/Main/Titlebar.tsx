@@ -231,17 +231,34 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       console.log('🎬 FFmpeg Job:', job);
       console.log('🗂️ Output Path:', outputPath);
 
+      // Store the latest currentTime to avoid race conditions
+      let latestCurrentTime = render.currentTime;
+
       const callbacks: FfmpegCallbacks = {
         onProgress: (progress) => {
-          if (progress.percentage) {
+          // Always update if we have outTime, even without percentage
+          if (progress.outTime) {
+            // Update our local tracking variable
+            latestCurrentTime = progress.outTime;
+
+            updateRenderProgress(
+              progress.percentage || render.progress,
+              progress.percentage
+                ? `Rendering... ${progress.percentage.toFixed(1)}%`
+                : render.status,
+              progress.outTime, // Pass the current time from FFmpeg
+            );
+          } else if (progress.percentage) {
             updateRenderProgress(
               progress.percentage,
               `Rendering... ${progress.percentage.toFixed(1)}%`,
+              latestCurrentTime, // Use latest currentTime
             );
           }
         },
         onStatus: (status) => {
-          updateRenderProgress(render.progress, status);
+          updateRenderProgress(render.progress, status, latestCurrentTime);
+          console.log(render.progress);
         },
         onLog: () => {
           // Disabled logging for now
