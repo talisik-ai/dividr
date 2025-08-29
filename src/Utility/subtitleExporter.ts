@@ -150,7 +150,9 @@ ScriptType: v4.00+
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,${assStyle.bold},${assStyle.italic},0,0,100,100,0,0,4,0,0,2,10,10,10,1
+Style: Default,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,${assStyle.italic},0,0,100,100,0,0,4,0,0,2,10,10,10,1
+Style: Semibold,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,${assStyle.italic},0,0,100,100,0,0,4,0,0,2,10,10,10,1
+Style: Bold,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,${assStyle.italic},0,0,120,120,0,0,4,0,0,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -175,7 +177,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         text = applyTextTransform(text, textStyle.textTransform);
       }
 
-      return `Dialogue: 0,${startTime},${endTime},Default,,0,0,0,,${text}`;
+      // Choose style based on font weight
+      let styleName = 'Default';
+      if (textStyle?.fontWeight) {
+        const weight =
+          typeof textStyle.fontWeight === 'number'
+            ? textStyle.fontWeight
+            : parseInt(textStyle.fontWeight.toString());
+
+        if (weight >= 800) {
+          styleName = 'Bold'; // For 800+ (like uppercase and bold)
+        } else if (weight >= 600) {
+          styleName = 'Semibold'; // For 600 (semibold)
+        }
+      }
+
+      return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
     })
     .join('\n');
 
