@@ -8,6 +8,7 @@ import {
   LuSquareSplitHorizontal,
 } from 'react-icons/lu';
 import { TbScissors } from 'react-icons/tb';
+import { useTimelineDuration } from '@/hooks/useTimelineDuration';
 
 // eslint-disable-next-line import/no-unresolved
 import { useVideoEditorStore } from '../../../store/videoEditorStore';
@@ -23,6 +24,7 @@ export const TimelineControls: React.FC = () => {
     setPlaybackRate,
     splitAtPlayhead,
   } = useVideoEditorStore();
+  const duration = useTimelineDuration();
 
   // Calculate effective end frame considering all tracks
   const effectiveEndFrame =
@@ -136,7 +138,7 @@ export const TimelineControls: React.FC = () => {
         </button>
         */}
         <div className="text-xs p-2 text-gray-400">
-          {formatTime(timeline.currentFrame)} / {formatTime(effectiveEndFrame)}
+          {formatTime(timeline.currentFrame)} / {duration.formattedTime}
         </div>
       </div>
 
