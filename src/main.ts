@@ -1,6 +1,15 @@
 import { spawn } from 'child_process';
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import started from 'electron-squirrel-startup';
+
+// Import Vite dev server URL
+declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
+declare const MAIN_WINDOW_VITE_NAME: string;
+
+// Global variables
+let mainWindow: BrowserWindow | null = null;
+const forceQuit = false;
+let isWindowFocused = true;
 // Dynamic import of ffmpeg binaries to avoid module resolution issues
 let ffmpegPath: string | null = null;
 let ffprobePath: { path: string } | null = null;
@@ -1133,7 +1142,7 @@ ipcMain.handle('ffmpeg:status', async () => {
 });
 
 const createWindow = () => {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 900,
     height: 700,
     frame: false,
@@ -1149,37 +1158,104 @@ const createWindow = () => {
     },
   });
 
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-    // Only open DevTools in development
-    mainWindow.webContents.openDevTools();
-  } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
-  }
-
-  // MAIN FUNCTIONS FOR TITLE BAR
-  ipcMain.on('close-btn', () => {
-    if (!mainWindow) return;
-    app.quit();
-  });
-
-  ipcMain.on('minimize-btn', () => {
-    if (mainWindow) mainWindow.minimize();
-  });
-
-  ipcMain.on('maximize-btn', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize();
+  if (mainWindow) {
+    if (
+      process.env.NODE_ENV === 'development' &&
+      MAIN_WINDOW_VITE_DEV_SERVER_URL
+    ) {
+      mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+      mainWindow.webContents.openDevTools();
     } else {
-      mainWindow.maximize();
+      mainWindow.loadFile(
+        path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      );
+
+      // 🚫 Remove all default menus so "View → Toggle Developer Tools" disappears
+      Menu.setApplicationMenu(null);
+
+      // 🚫 Block keyboard shortcuts
+      mainWindow.webContents.on('before-input-event', (event, input) => {
+        if (
+          (input.control && input.shift && input.key.toLowerCase() === 'i') || // Ctrl+Shift+I
+          input.key === 'F12' || // F12
+          (process.platform === 'darwin' &&
+            input.meta &&
+            input.alt &&
+            input.key.toLowerCase() === 'i') // Cmd+Opt+I
+        ) {
+          event.preventDefault();
+        }
+      });
+
+      // 🚫 If DevTools somehow open, force-close them
+      mainWindow.webContents.on('devtools-opened', () => {
+        mainWindow?.webContents.closeDevTools();
+      });
+
+      // 🚫 Disable right-click → Inspect Element
+      mainWindow.webContents.on('context-menu', (e) => {
+        e.preventDefault();
+      });
     }
-  });
-  // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+
+    // Handle window close events - hide instead of close
+    mainWindow.on('close', async (event) => {
+      if (!forceQuit) {
+        // Get the real-time setting
+        const shouldRunInBackground = await getRunInBackgroundSetting();
+        console.log('Window closing, checking setting:', shouldRunInBackground);
+
+        if (shouldRunInBackground) {
+          event.preventDefault();
+          mainWindow?.hide();
+          return false;
+        }
+      }
+    });
+
+    // Focus tracking for clipboard monitoring
+    mainWindow.on('focus', () => {
+      isWindowFocused = true;
+      // console.log('Window focused - clipboard monitoring paused');
+    });
+
+    mainWindow.on('blur', () => {
+      isWindowFocused = false;
+      // console.log('Window unfocused - clipboard monitoring resumed');
+    });
+
+    // Prevent navigation to external URLs
+    mainWindow.webContents.on('will-navigate', (event) => {
+      event.preventDefault();
+    });
+  }
 };
+
+// MAIN FUNCTIONS FOR TITLE BAR
+ipcMain.on('close-btn', () => {
+  if (!mainWindow) return;
+  app.quit();
+});
+
+ipcMain.on('minimize-btn', () => {
+  if (mainWindow) mainWindow.minimize();
+});
+
+ipcMain.on('maximize-btn', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+});
+
+// Helper function to get run in background setting
+async function getRunInBackgroundSetting(): Promise<boolean> {
+  // This would typically read from a settings file or store
+  // For now, return false as default
+  return false;
+}
 
 app.on('ready', () => {
   // Initialize FFmpeg paths before creating the window
