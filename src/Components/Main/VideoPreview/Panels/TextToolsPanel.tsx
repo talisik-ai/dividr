@@ -71,7 +71,9 @@ const StyleButton: React.FC<{
     onClick={() => !disabled && onClick(style.id)}
     disabled={disabled}
   >
-    <div className={cn(style.className, 'truncate')}>{style.name}</div>
+    <div className={cn(style.className, 'truncate')} style={style.style}>
+      {style.name}
+    </div>
   </button>
 );
 
