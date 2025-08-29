@@ -1,6 +1,7 @@
 import React from 'react';
 import { CustomPanelProps } from './PanelRegistry';
 import { useVideoEditorStore } from '../../../../store/videoEditorStore';
+import { cn } from '@/lib/utils';
 
 interface TextStyle {
   id: string;
@@ -70,9 +71,7 @@ const StyleButton: React.FC<{
     onClick={() => !disabled && onClick(style.id)}
     disabled={disabled}
   >
-    <div className={style.className} style={style.style}>
-      {style.name}
-    </div>
+    <div className={cn(style.className, 'truncate')}>{style.name}</div>
   </button>
 );
 
