@@ -87,6 +87,8 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
     setPreviewScale,
     playback,
     importMediaFromDrop,
+    textStyle,
+    getTextStyleForSubtitle,
   } = useVideoEditorStore();
 
   // Helper function to get active subtitle tracks at current frame
@@ -726,31 +728,40 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
                 marginTop: `-${preview.canvasHeight / 2}px`,
               }}
             >
-              {activeSubtitles.map((track) => (
-                <div
-                  key={track.id}
-                  className="text-white text-center font-[Arial] absolute bottom-5 left-0 right-0"
-                  style={{
-                    // Match FFmpeg's ASS subtitle styling with opaque background
-                    fontSize: `${Math.max(16, preview.canvasHeight * 0.04)}px`, // Proportional to video height, like FFmpeg
-                    fontWeight: 'bold', // ASS default weight
-                    lineHeight: '1.0', // FFmpeg default line height
-                    textShadow: 'none', // No outline to match FFmpeg output
-                    wordWrap: 'break-word',
-                    whiteSpace: 'pre-wrap', // Preserve line breaks exactly like FFmpeg
-                    color: '#FFFFFF', // Pure white, FFmpeg default
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent black background
-                    padding: '2px 0', // Padding for background
-                    margin: '0 auto', // Center horizontally
-                    textAlign: 'center', // Center alignment matching Alignment=2
-                    position: 'relative',
-                    display: 'inline-block', // Make background fit text width
-                    maxWidth: '90%', // Prevent overflow
-                  }}
-                >
-                  {track.subtitleText}
-                </div>
-              ))}
+              {activeSubtitles.map((track) => {
+                const appliedStyle = getTextStyleForSubtitle(
+                  textStyle.activeStyle,
+                );
+
+                return (
+                  <div
+                    key={track.id}
+                    className="text-white text-center absolute bottom-5 left-0 right-0"
+                    style={{
+                      // Match FFmpeg's ASS subtitle styling with applied text styles
+                      fontSize: `${Math.max(18, preview.canvasHeight * 0.045)}px`, // Slightly larger for better visibility
+                      fontFamily: appliedStyle.fontFamily, // Apply selected font family
+                      fontWeight: appliedStyle.fontWeight, // Apply selected font weight
+                      fontStyle: appliedStyle.fontStyle, // Apply selected font style
+                      textTransform: appliedStyle.textTransform, // Apply text transform
+                      lineHeight: '1.2', // Slightly more line height for readability
+                      textShadow: 'none', // No outline to match FFmpeg output
+                      wordWrap: 'break-word',
+                      whiteSpace: 'pre-wrap', // Preserve line breaks exactly like FFmpeg
+                      color: '#FFFFFF', // Pure white, FFmpeg default
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      padding: '2px 0',
+                      margin: '0 auto', // Center horizontally
+                      textAlign: 'center', // Center alignment matching Alignment=2
+                      position: 'relative',
+                      display: 'inline-block', // Make background fit text width
+                      maxWidth: '90%', // Prevent overflow
+                    }}
+                  >
+                    {track.subtitleText}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );

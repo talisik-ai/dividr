@@ -65,6 +65,18 @@ export interface RenderState {
   };
 }
 
+export interface TextStyleState {
+  activeStyle: string;
+  styles: {
+    [key: string]: {
+      fontFamily?: string;
+      fontWeight?: string;
+      fontStyle?: string;
+      textTransform?: string;
+    };
+  };
+}
+
 interface VideoEditorStore {
   // State
   tracks: VideoTrack[];
@@ -72,6 +84,7 @@ interface VideoEditorStore {
   playback: PlaybackState;
   preview: PreviewState;
   render: RenderState;
+  textStyle: TextStyleState;
 
   // Timeline Actions
   setCurrentFrame: (frame: number) => void;
@@ -123,6 +136,10 @@ interface VideoEditorStore {
   updateRenderProgress: (progress: number, status: string) => void;
   finishRender: () => void;
   cancelRender: () => void;
+
+  // Text Style Actions
+  setActiveTextStyle: (styleId: string) => void;
+  getTextStyleForSubtitle: (styleId: string) => React.CSSProperties;
 
   // Utility Actions
   reset: () => void;
@@ -469,6 +486,32 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       isRendering: false,
       progress: 0,
       status: 'ready',
+    },
+    textStyle: {
+      activeStyle: 'regular',
+      styles: {
+        regular: {
+          fontWeight: '400',
+        },
+        semibold: {
+          fontWeight: '600',
+        },
+        bold: {
+          fontWeight: '900',
+        },
+        italic: {
+          fontWeight: '400',
+          fontStyle: 'italic',
+        },
+        uppercase: {
+          fontWeight: '800',
+          textTransform: 'uppercase',
+        },
+        script: {
+          fontFamily: '"Segoe Script", cursive',
+          fontWeight: '400',
+        },
+      },
     },
 
     // Timeline Actions
@@ -852,6 +895,32 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           currentJob: undefined,
         },
       })),
+
+    // Text Style Actions
+    setActiveTextStyle: (styleId) =>
+      set((state) => ({
+        textStyle: {
+          ...state.textStyle,
+          activeStyle: styleId,
+        },
+      })),
+
+    getTextStyleForSubtitle: (styleId) => {
+      const state = get();
+      const style =
+        state.textStyle.styles[styleId] || state.textStyle.styles.regular;
+      return {
+        fontFamily: style.fontFamily || '"Arial", sans-serif',
+        fontWeight: style.fontWeight || '400',
+        fontStyle: style.fontStyle || 'normal',
+        textTransform:
+          (style.textTransform as
+            | 'none'
+            | 'uppercase'
+            | 'lowercase'
+            | 'capitalize') || 'none',
+      };
+    },
 
     // Utility Actions
     reset: () =>
