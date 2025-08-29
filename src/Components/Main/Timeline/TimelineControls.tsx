@@ -47,42 +47,42 @@ export const TimelineControls: React.FC = () => {
         <button
           onClick={stop}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Stop"
+          title="Undo"
         >
           <LuUndo2 />
         </button>
         <button
           onClick={stop}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Stop"
+          title="Revert"
         >
           <LuRedo2 />
         </button>
         <button
           onClick={splitAtPlayhead}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Split tracks at playhead"
+          title="Split"
         >
           <LuSquareSplitHorizontal />
         </button>
         <button
           onClick={stop}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Stop"
+          title="Clip"
         >
           <TbScissors />
         </button>
         <button
           onClick={stop}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Stop"
+          title="Copy"
         >
           <LuCopy />
         </button>
         <button
           onClick={stop}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Stop"
+          title="Remove"
         >
           <LuTrash />
         </button>
