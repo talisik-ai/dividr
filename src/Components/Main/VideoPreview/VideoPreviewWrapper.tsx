@@ -1,39 +1,63 @@
 import React from 'react';
 import { VideoPreview } from './VideoPreview';
-import { VideoBlobPreview } from './VideoBlobPreview';
+import { VideoDirectPreview } from './VideoDirectPreview';
 
 interface VideoPreviewWrapperProps {
   className?: string;
-  useBlobOptimization?: boolean; // Feature flag for gradual rollout
+  useDirectOptimization?: boolean; // Feature flag for direct video optimization
 }
 
 /**
- * Wrapper component that allows easy switching between canvas-based and blob-based video preview
- * This enables gradual rollout and A/B testing of the optimization
+ * Wrapper component that allows easy switching between canvas-based and direct video preview
+ * Direct video preview is much more efficient and maintains audio
  */
-export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({ 
+export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
   className,
-  useBlobOptimization = true // Default to new optimized version
+  useDirectOptimization = true, // Default to direct video for better performance
 }) => {
   // You can control this via environment variables, user settings, or feature flags
-  const envDisabled = import.meta.env.VITE_USE_BLOB_PREVIEW === 'false';
-  const shouldUseBlobPreview = useBlobOptimization && !envDisabled;
+  const envDisabled =
+    (import.meta as any).env?.VITE_USE_DIRECT_PREVIEW === 'false';
+  const envEnabled =
+    (import.meta as any).env?.VITE_USE_DIRECT_PREVIEW === 'true';
 
-  // Add error boundary for blob preview
-  const [blobError, setBlobError] = React.useState<boolean>(false);
+  // Use direct video optimization by default (much better than blobs or canvas)
+  const shouldUseDirectPreview =
+    (useDirectOptimization || envEnabled) && !envDisabled;
 
-  if (shouldUseBlobPreview && !blobError) {
+  // Add error boundary for direct preview
+  const [directError, setDirectError] = React.useState<boolean>(false);
+
+  // Log the mode being used
+  React.useEffect(() => {
+    console.log(
+      `🎬 Video Preview Mode: ${shouldUseDirectPreview && !directError ? 'Direct Video (Optimized)' : 'Canvas Rendering (Fallback)'}`,
+    );
+  }, [shouldUseDirectPreview, directError]);
+
+  if (shouldUseDirectPreview && !directError) {
     try {
       return (
-        <React.Suspense fallback={<VideoPreview className={className} />}>
-          <VideoBlobErrorBoundary onError={() => setBlobError(true)}>
-            <VideoBlobPreview className={className} />
-          </VideoBlobErrorBoundary>
+        <React.Suspense
+          fallback={
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+                <span className="text-sm text-gray-400">
+                  Loading direct video preview...
+                </span>
+              </div>
+            </div>
+          }
+        >
+          <VideoDirectErrorBoundary onError={() => setDirectError(true)}>
+            <VideoDirectPreview className={className} />
+          </VideoDirectErrorBoundary>
         </React.Suspense>
       );
     } catch (error) {
-      console.warn('Blob preview failed, falling back to canvas:', error);
-      setBlobError(true);
+      console.warn('Direct preview failed, falling back to canvas:', error);
+      setDirectError(true);
     }
   }
 
@@ -41,15 +65,18 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
   return <VideoPreview className={className} />;
 };
 
-// Simple error boundary for blob preview
-const VideoBlobErrorBoundary: React.FC<{
+// Simple error boundary for direct preview
+const VideoDirectErrorBoundary: React.FC<{
   children: React.ReactNode;
   onError: () => void;
 }> = ({ children, onError }) => {
   React.useEffect(() => {
     const handleError = (error: ErrorEvent) => {
-      if (error.message?.includes('blob') || error.message?.includes('MediaRecorder')) {
-        console.warn('Blob preview error detected, falling back to canvas');
+      if (
+        error.message?.includes('video') ||
+        error.message?.includes('DirectPreview')
+      ) {
+        console.warn('Direct preview error detected, falling back to canvas');
         onError();
       }
     };
@@ -62,4 +89,4 @@ const VideoBlobErrorBoundary: React.FC<{
 };
 
 // Export both components for direct usage if needed
-export { VideoPreview, VideoBlobPreview };
+export { VideoPreview, VideoDirectPreview };

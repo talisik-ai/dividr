@@ -26,7 +26,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     preview,
     textStyle,
     getTextStyleForSubtitle,
-    setPreviewScale,
     importMediaFromDrop,
   } = useVideoEditorStore();
 
@@ -134,7 +133,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [importMediaFromDrop],
   );
 
-  // Initialize blob manager
+  // Initialize blob manager with simplified configuration
   const {
     getCurrentBlob,
     getBlobForTime,
@@ -142,68 +141,82 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     cacheSize,
     isGenerating,
   } = useVideoBlobManager(tracks, currentTime, timeline.fps, {
-    debounceTimeout: 5000, // Your suggested 5-second debounce
-    segmentDuration: 10, // 10-second segments for good balance
-    maxCacheSize: 15, // Reasonable cache size
-    preloadRadius: 20, // Preload 20 seconds around current position
+    debounceTimeout: 2000, // Faster response for testing
+    segmentDuration: 5, // Shorter segments for better responsiveness
+    maxCacheSize: 8, // Smaller cache to avoid memory issues
+    preloadRadius: 10, // Smaller preload radius
   });
 
-  // Update video source when blob changes - optimized for instant playback
+  // Simplified video source update logic
   const updateVideoSource = useCallback(async () => {
     const video = videoRef.current;
     if (!video) return;
 
-    setError(null);
-
     try {
+      setError(null);
       const currentBlob = getCurrentBlob();
 
       if (currentBlob) {
-        // Use cached blob - INSTANT playback
-        video.src = currentBlob.url;
+        // Use cached blob
+        if (video.src !== currentBlob.url) {
+          setIsLoading(true);
+          video.src = currentBlob.url;
+        }
 
         // Seek to the correct position within the blob
         const blobOffset = currentTime - currentBlob.timeRange.start;
-        video.currentTime = Math.max(0, blobOffset);
+        const targetTime = Math.max(0, Math.min(blobOffset, 5)); // Clamp to segment duration
 
-        // No loading state for cached blobs - they're instant!
-        return;
-      }
+        if (Math.abs(video.currentTime - targetTime) > 0.2) {
+          video.currentTime = targetTime;
+        }
+      } else {
+        // Generate blob for current time range
+        const segmentDuration = 5; // Match the config
+        const segmentStart =
+          Math.floor(currentTime / segmentDuration) * segmentDuration;
+        const timeRange = {
+          start: segmentStart,
+          end: segmentStart + segmentDuration,
+        };
 
-      // No cached blob available - trigger background generation but don't block UI
-      const segmentStart = Math.floor(currentTime / 10) * 10;
-      const timeRange = {
-        start: segmentStart,
-        end: segmentStart + 10,
-      };
+        setIsLoading(true);
+        console.log(
+          `🎬 Generating blob for time range ${timeRange.start}-${timeRange.end}s`,
+        );
 
-      // Start generation in background without blocking
-      getBlobForTime(timeRange)
-        .then((blobData) => {
-          if (blobData && video && video === videoRef.current) {
-            video.src = blobData.url;
-            const blobOffset = currentTime - blobData.timeRange.start;
-            video.currentTime = Math.max(0, blobOffset);
-          }
-        })
-        .catch((err) => {
-          setError(
-            err instanceof Error ? err.message : 'Failed to load video blob',
+        const blobData = await getBlobForTime(timeRange);
+
+        if (blobData && video === videoRef.current) {
+          // Check video ref hasn't changed
+          video.src = blobData.url;
+          const blobOffset = currentTime - blobData.timeRange.start;
+          video.currentTime = Math.max(
+            0,
+            Math.min(blobOffset, segmentDuration),
           );
-        });
+        }
+      }
     } catch (err) {
+      console.error('Video source update failed:', err);
       setError(
         err instanceof Error ? err.message : 'Failed to load video blob',
       );
+    } finally {
+      setIsLoading(false);
     }
   }, [currentTime, getCurrentBlob, getBlobForTime]);
 
-  // Handle playback state changes
-  const handlePlaybackChange = useCallback(() => {
+  // Simplified effect that handles all video synchronization
+  useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    if (playback.isPlaying) {
+    // Update video source when needed
+    updateVideoSource();
+
+    // Handle playback state
+    if (playback.isPlaying && !isLoading) {
       video.play().catch(console.error);
     } else {
       video.pause();
@@ -211,84 +224,52 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
     video.playbackRate = playback.playbackRate;
     video.volume = playback.muted ? 0 : playback.volume;
+    video.muted = playback.muted;
   }, [
+    currentTime,
     playback.isPlaying,
     playback.playbackRate,
     playback.volume,
     playback.muted,
+    isLoading,
+    updateVideoSource,
   ]);
 
-  // Sync timeline position with video
-  const handleTimelineSync = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || isLoading) return;
-
-    const currentBlob = getCurrentBlob();
-    if (currentBlob) {
-      const targetTime = currentTime - currentBlob.timeRange.start;
-      const currentVideoTime = video.currentTime;
-
-      // Only seek if there's a significant difference (avoid micro-seeks)
-      if (Math.abs(currentVideoTime - targetTime) > 0.1) {
-        video.currentTime = Math.max(0, targetTime);
-      }
-    } else {
-      // No blob available, trigger generation
-      updateVideoSource();
-    }
-  }, [currentTime, isLoading, getCurrentBlob, updateVideoSource]);
-
-  // Preload strategy
-  const handlePreloading = useCallback(() => {
-    // Preload adjacent segments when not actively generating
+  // Simplified preloading effect
+  useEffect(() => {
     if (!isGenerating) {
-      preloadAdjacentSegments();
+      const timeoutId = setTimeout(() => {
+        preloadAdjacentSegments();
+      }, 1000); // Preload after 1 second of inactivity
+
+      return () => clearTimeout(timeoutId);
     }
-  }, [isGenerating, preloadAdjacentSegments]);
+  }, [isGenerating, preloadAdjacentSegments, currentTime]);
 
-  // Effect for video source updates
-  useEffect(() => {
-    updateVideoSource();
-  }, [updateVideoSource]);
-
-  // Effect for playback synchronization
-  useEffect(() => {
-    handlePlaybackChange();
-  }, [handlePlaybackChange]);
-
-  // Effect for timeline synchronization
-  useEffect(() => {
-    handleTimelineSync();
-  }, [handleTimelineSync]);
-
-  // Effect for preloading
-  useEffect(() => {
-    const interval = setInterval(handlePreloading, 2000); // Check every 2 seconds
-    return () => clearInterval(interval);
-  }, [handlePreloading]);
-
-  // Handle video element events - minimal loading states
+  // Handle video element events
   const handleVideoLoadStart = useCallback(() => {
-    // Don't show loading for blob videos - they should be instant
+    setIsLoading(true);
   }, []);
 
   const handleVideoCanPlay = useCallback(() => {
-    setError(null); // Clear any previous errors
+    setIsLoading(false);
+    setError(null);
   }, []);
 
   const handleVideoError = useCallback(
     (event: React.SyntheticEvent<HTMLVideoElement>) => {
       const video = event.currentTarget;
       setError(`Video error: ${video.error?.message || 'Unknown error'}`);
+      setIsLoading(false);
     },
     [],
   );
 
   // Handle video seeking completion
   const handleVideoSeeked = useCallback(() => {
-    // Video has finished seeking, ensure playback state is correct
-    handlePlaybackChange();
-  }, [handlePlaybackChange]);
+    // Video has finished seeking, no additional action needed
+    // The main effect handles playback state synchronization
+  }, []);
 
   const { actualWidth, actualHeight } = calculateContentScale();
 
@@ -400,11 +381,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         </div>
       )}
 
-      {/* Loading Overlay - Only show for actual errors or critical loading */}
-      {error && !getCurrentBlob() && (
+      {/* Loading Overlay */}
+      {isLoading && (
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="flex flex-col items-center text-white">
-            <div className="text-sm">Loading video...</div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mb-2"></div>
+            <span className="text-sm">Generating preview...</span>
           </div>
         </div>
       )}

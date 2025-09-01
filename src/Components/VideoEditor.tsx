@@ -75,7 +75,7 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
         {/* Main Content Area */}
         <VideoPreviewWrapper
           className="w-full h-full max-w-full max-h-full"
-          useBlobOptimization={false} // Disabled - blob system needs video content implementation
+          useDirectOptimization={true} // Use much better direct video approach
         />
       </div>
 
