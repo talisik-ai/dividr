@@ -5,16 +5,11 @@ interface VideoDirectPreviewProps {
   className?: string;
 }
 
-/**
- * Optimized Video Preview using Direct Video Element Rendering
- * Much simpler and more efficient than blob generation
- * Maintains audio, reduces complexity, and provides better performance
- */
 export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
   className,
 }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const videoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragActive, setDragActive] = useState(false);
 
@@ -26,12 +21,69 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     textStyle,
     getTextStyleForSubtitle,
     importMediaFromDrop,
+    setCurrentFrame,
   } = useVideoEditorStore();
 
-  // Convert frame to time
-  const currentTime = timeline.currentFrame / timeline.fps;
+  // Active video track
+  const activeVideoTrack = React.useMemo(() => {
+    try {
+      return tracks.find(
+        (track) =>
+          track.type === 'video' &&
+          track.visible &&
+          track.previewUrl &&
+          timeline.currentFrame >= track.startFrame &&
+          timeline.currentFrame < track.endFrame,
+      );
+    } catch {
+      return undefined;
+    }
+  }, [tracks, timeline.currentFrame]);
 
-  // Helper function to get active subtitle tracks
+  // Resize observer
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setContainerSize({ width: rect.width, height: rect.height });
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Content scale
+  const calculateContentScale = useCallback(() => {
+    const containerAspect = containerSize.width / containerSize.height;
+    const videoAspect = preview.canvasWidth / preview.canvasHeight;
+
+    let actualWidth = preview.canvasWidth;
+    let actualHeight = preview.canvasHeight;
+
+    if (containerSize.width > 0 && containerSize.height > 0) {
+      if (containerAspect > videoAspect) {
+        const scale = containerSize.height / preview.canvasHeight;
+        actualWidth = preview.canvasWidth * scale;
+        actualHeight = containerSize.height;
+      } else {
+        const scale = containerSize.width / preview.canvasWidth;
+        actualWidth = containerSize.width;
+        actualHeight = preview.canvasHeight * scale;
+      }
+      actualWidth *= preview.previewScale;
+      actualHeight *= preview.previewScale;
+    }
+    return { actualWidth, actualHeight };
+  }, [
+    containerSize,
+    preview.canvasWidth,
+    preview.canvasHeight,
+    preview.previewScale,
+  ]);
+
+  // Subtitle tracks
   const getActiveSubtitleTracks = useCallback(() => {
     const currentFrame = timeline.currentFrame;
     return tracks.filter(
@@ -44,57 +96,90 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     );
   }, [tracks, timeline.currentFrame]);
 
-  // Container size management
+  // Load video source once
   useEffect(() => {
-    const updateContainerSize = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setContainerSize({ width: rect.width, height: rect.height });
+    const video = videoRef.current;
+    if (!video || !activeVideoTrack?.previewUrl) return;
+    if (video.src !== activeVideoTrack.previewUrl) {
+      video.src = activeVideoTrack.previewUrl;
+    }
+  }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl]);
+
+  // Sync play/pause & volume
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    try {
+      if (playback.isPlaying) {
+        if (video.paused && video.readyState >= 3) {
+          video.play().catch(console.warn);
+        }
+      } else {
+        if (!video.paused) video.pause();
       }
+      video.volume = playback.muted ? 0 : Math.min(playback.volume, 1);
+      video.playbackRate = Math.max(0.25, Math.min(playback.playbackRate, 4));
+    } catch (err) {
+      console.warn('Video sync error:', err);
+    }
+  }, [
+    playback.isPlaying,
+    playback.volume,
+    playback.muted,
+    playback.playbackRate,
+  ]);
+
+  // Sync timeline to video frames
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !activeVideoTrack) return;
+
+    let handle: number;
+    const fps = timeline.fps;
+
+    const step = (
+      _now: DOMHighResTimeStamp,
+      metadata: VideoFrameCallbackMetadata,
+    ) => {
+      if (!video.paused && playback.isPlaying) {
+        const elapsedFrames =
+          (metadata.mediaTime - (activeVideoTrack.sourceStartTime || 0)) * fps +
+          activeVideoTrack.startFrame;
+        setCurrentFrame(Math.floor(elapsedFrames));
+      }
+      handle = video.requestVideoFrameCallback(step);
     };
 
-    updateContainerSize();
-    const resizeObserver = new ResizeObserver(updateContainerSize);
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
+    handle = video.requestVideoFrameCallback(step);
+    return () => video.cancelVideoFrameCallback(handle);
+  }, [activeVideoTrack?.id, playback.isPlaying, timeline.fps, setCurrentFrame]);
+
+  // Sync on scrubbing/seek (user interaction)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !activeVideoTrack) return;
+    if (playback.isPlaying) return; // don’t fight playback
+
+    const trackTime =
+      (timeline.currentFrame - activeVideoTrack.startFrame) / timeline.fps;
+    const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+
+    const diff = Math.abs(video.currentTime - targetTime);
+    if (diff > 0.05) {
+      video.currentTime = Math.max(
+        0,
+        Math.min(targetTime, video.duration || 0),
+      );
     }
+  }, [
+    timeline.currentFrame,
+    timeline.fps,
+    playback.isPlaying,
+    activeVideoTrack,
+  ]);
 
-    return () => resizeObserver.disconnect();
-  }, []);
-
-  // Calculate content scale
-  const calculateContentScale = useCallback(() => {
-    const containerAspect = containerSize.width / containerSize.height;
-    const videoAspect = preview.canvasWidth / preview.canvasHeight;
-
-    let scaleX = 1;
-    let scaleY = 1;
-    let actualWidth = preview.canvasWidth;
-    let actualHeight = preview.canvasHeight;
-
-    if (containerSize.width > 0 && containerSize.height > 0) {
-      if (containerAspect > videoAspect) {
-        scaleY = containerSize.height / preview.canvasHeight;
-        scaleX = scaleY;
-        actualWidth = preview.canvasWidth * scaleX;
-        actualHeight = containerSize.height;
-      } else {
-        scaleX = containerSize.width / preview.canvasWidth;
-        scaleY = scaleX;
-        actualWidth = containerSize.width;
-        actualHeight = preview.canvasHeight * scaleY;
-      }
-
-      scaleX *= preview.previewScale;
-      scaleY *= preview.previewScale;
-      actualWidth *= preview.previewScale;
-      actualHeight *= preview.previewScale;
-    }
-
-    return { scaleX, scaleY, actualWidth, actualHeight };
-  }, [containerSize, preview.canvasWidth, preview.canvasHeight, preview.previewScale]);
-
-  // Drag and drop handlers
+  // Drag/drop
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -110,7 +195,6 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
       e.preventDefault();
       e.stopPropagation();
       setDragActive(false);
-
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
         await importMediaFromDrop(files);
@@ -118,95 +202,6 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     },
     [importMediaFromDrop],
   );
-
-  // Get the primary video track (first visible video track)
-  const primaryVideoTrack = tracks.find(
-    (track) =>
-      track.type === 'video' &&
-      track.visible &&
-      track.previewUrl &&
-      timeline.currentFrame >= track.startFrame &&
-      timeline.currentFrame < track.endFrame,
-  );
-
-  // Manage primary video element
-  useEffect(() => {
-    const videoElements = videoElementsRef.current;
-
-    // Clean up old video elements
-    for (const [trackId, video] of videoElements.entries()) {
-      if (!tracks.some(t => t.id === trackId)) {
-        video.pause();
-        video.src = '';
-        video.remove();
-        videoElements.delete(trackId);
-      }
-    }
-
-    // Create/update primary video element
-    if (primaryVideoTrack && !videoElements.has(primaryVideoTrack.id)) {
-      const video = document.createElement('video');
-      video.style.display = 'none';
-      video.muted = false; // Keep audio!
-      video.preload = 'metadata';
-      video.crossOrigin = 'anonymous';
-      video.src = primaryVideoTrack.previewUrl!;
-      
-      document.body.appendChild(video);
-      videoElements.set(primaryVideoTrack.id, video);
-    }
-
-    return () => {
-      // Cleanup on unmount
-      for (const video of videoElements.values()) {
-        video.pause();
-        video.src = '';
-        video.remove();
-      }
-      videoElements.clear();
-    };
-  }, [tracks, primaryVideoTrack]);
-
-  // Sync video playback and seeking
-  useEffect(() => {
-    if (!primaryVideoTrack) return;
-
-    const video = videoElementsRef.current.get(primaryVideoTrack.id);
-    if (!video) return;
-
-    // Calculate target time within the track
-    const trackTime = (timeline.currentFrame - primaryVideoTrack.startFrame) / timeline.fps;
-    const sourceTime = (primaryVideoTrack.sourceStartTime || 0) + trackTime;
-
-    // Sync playback state
-    if (playback.isPlaying) {
-      if (video.paused) {
-        video.play().catch(console.error);
-      }
-    } else {
-      if (!video.paused) {
-        video.pause();
-      }
-    }
-
-    // Sync seeking (only if significant difference)
-    if (Math.abs(video.currentTime - sourceTime) > 0.2) {
-      video.currentTime = Math.max(0, sourceTime);
-    }
-
-    // Sync volume and rate
-    video.volume = playback.muted ? 0 : playback.volume;
-    video.playbackRate = playback.playbackRate;
-
-  }, [
-    primaryVideoTrack,
-    timeline.currentFrame,
-    timeline.fps,
-    playback.isPlaying,
-    playback.volume,
-    playback.muted,
-    playback.playbackRate,
-  ]);
 
   const { actualWidth, actualHeight } = calculateContentScale();
 
@@ -220,8 +215,8 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
       onDrop={handleDrop}
       style={{ backgroundColor: preview.backgroundColor }}
     >
-      {/* Primary Video Display */}
-      {primaryVideoTrack && (
+      {/* Video */}
+      {activeVideoTrack && (
         <div
           className="absolute inset-0 flex items-center justify-center"
           style={{
@@ -233,39 +228,19 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
           }}
         >
           <video
-            ref={(videoEl) => {
-              if (videoEl && primaryVideoTrack) {
-                const existingVideo = videoElementsRef.current.get(primaryVideoTrack.id);
-                if (existingVideo && existingVideo !== videoEl) {
-                  // Copy state from hidden video to display video
-                  videoEl.src = existingVideo.src;
-                  videoEl.currentTime = existingVideo.currentTime;
-                  videoEl.volume = existingVideo.volume;
-                  videoEl.playbackRate = existingVideo.playbackRate;
-                  videoEl.muted = existingVideo.muted;
-                  
-                  if (!existingVideo.paused) {
-                    videoEl.play().catch(console.error);
-                  }
-                }
-              }
-            }}
+            ref={videoRef}
             className="w-full h-full object-contain"
-            style={{
-              width: preview.canvasWidth,
-              height: preview.canvasHeight,
-            }}
             playsInline
             controls={false}
+            preload="metadata"
           />
         </div>
       )}
 
-      {/* Subtitle Overlay */}
+      {/* Subtitles */}
       {(() => {
-        const activeSubtitles = getActiveSubtitleTracks();
-        if (activeSubtitles.length === 0) return null;
-
+        const activeSubs = getActiveSubtitleTracks();
+        if (activeSubs.length === 0) return null;
         return (
           <div
             className="absolute inset-0 pointer-events-none"
@@ -277,9 +252,10 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
               transform: 'translate(-50%, -50%)',
             }}
           >
-            {activeSubtitles.map((track) => {
-              const appliedStyle = getTextStyleForSubtitle(textStyle.activeStyle);
-
+            {activeSubs.map((track) => {
+              const appliedStyle = getTextStyleForSubtitle(
+                textStyle.activeStyle,
+              );
               return (
                 <div
                   key={track.id}
@@ -291,14 +267,10 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
                     fontStyle: appliedStyle.fontStyle,
                     textTransform: appliedStyle.textTransform,
                     lineHeight: '1.2',
-                    wordWrap: 'break-word',
                     whiteSpace: 'pre-wrap',
-                    color: '#FFFFFF',
                     backgroundColor: 'rgba(0, 0, 0, 0.5)',
                     padding: '2px 0',
                     margin: '0 auto',
-                    textAlign: 'center',
-                    display: 'inline-block',
                     maxWidth: '90%',
                   }}
                 >
@@ -320,8 +292,8 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
         </div>
       )}
 
-      {/* No content placeholder */}
-      {!primaryVideoTrack && tracks.length === 0 && (
+      {/* Placeholder */}
+      {!activeVideoTrack && tracks.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-400">
           <div className="text-center">
             <div className="text-4xl mb-2">🎬</div>

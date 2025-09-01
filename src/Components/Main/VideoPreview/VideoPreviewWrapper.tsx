@@ -30,10 +30,30 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
 
   // Log the mode being used
   React.useEffect(() => {
-    console.log(
-      `🎬 Video Preview Mode: ${shouldUseDirectPreview && !directError ? 'Direct Video (Optimized)' : 'Canvas Rendering (Fallback)'}`,
-    );
-  }, [shouldUseDirectPreview, directError]);
+    const mode =
+      shouldUseDirectPreview && !directError
+        ? 'Direct Video (Optimized)'
+        : 'Canvas Rendering (Fallback)';
+    console.log(`🎬 Video Preview Mode: ${mode}`);
+
+    if (!shouldUseDirectPreview) {
+      console.log(
+        `🎬 Direct preview disabled. useDirectOptimization: ${useDirectOptimization}, envEnabled: ${envEnabled}, envDisabled: ${envDisabled}`,
+      );
+    }
+
+    if (directError) {
+      console.log(
+        `🎬 Direct preview failed with error, falling back to canvas (which may use blobs)`,
+      );
+    }
+  }, [
+    shouldUseDirectPreview,
+    directError,
+    useDirectOptimization,
+    envEnabled,
+    envDisabled,
+  ]);
 
   if (shouldUseDirectPreview && !directError) {
     try {
@@ -70,13 +90,21 @@ const VideoDirectErrorBoundary: React.FC<{
   children: React.ReactNode;
   onError: () => void;
 }> = ({ children, onError }) => {
+  const [hasError, setHasError] = React.useState(false);
+
   React.useEffect(() => {
     const handleError = (error: ErrorEvent) => {
+      // Only catch critical errors that would break the direct preview
       if (
-        error.message?.includes('video') ||
-        error.message?.includes('DirectPreview')
+        error.message?.includes('Cannot read properties') ||
+        error.message?.includes('Cannot access before initialization') ||
+        error.message?.includes('ReferenceError')
       ) {
-        console.warn('Direct preview error detected, falling back to canvas');
+        console.warn(
+          'Critical direct preview error detected, falling back to canvas:',
+          error.message,
+        );
+        setHasError(true);
         onError();
       }
     };
@@ -84,6 +112,10 @@ const VideoDirectErrorBoundary: React.FC<{
     window.addEventListener('error', handleError);
     return () => window.removeEventListener('error', handleError);
   }, [onError]);
+
+  if (hasError) {
+    return <div>Falling back to canvas rendering...</div>;
+  }
 
   return <>{children}</>;
 };
