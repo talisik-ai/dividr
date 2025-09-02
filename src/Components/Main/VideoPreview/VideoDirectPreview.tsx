@@ -132,6 +132,31 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     }
   }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl]);
 
+  // Add effect to auto-resume playback after src change when video is ready
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    function handleAutoResume() {
+      if (playback.isPlaying && video.paused) {
+        console.log(
+          '[DirectPreview] Auto-resume: video is ready, calling play() after src change',
+        );
+        video.play().catch(() => {
+          console.log('playing again ehe');
+        });
+      }
+    }
+
+    video.addEventListener('loadeddata', handleAutoResume);
+    video.addEventListener('canplay', handleAutoResume);
+
+    return () => {
+      video.removeEventListener('loadeddata', handleAutoResume);
+      video.removeEventListener('canplay', handleAutoResume);
+    };
+  }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl, playback.isPlaying]);
+
   // Sync play/pause & volume
   useEffect(() => {
     const video = videoRef.current;
