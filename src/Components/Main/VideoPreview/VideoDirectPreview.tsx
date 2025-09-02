@@ -40,6 +40,29 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     }
   }, [tracks, timeline.currentFrame]);
 
+  // Add debug logs to segment/track detection
+  useEffect(() => {
+    if (activeVideoTrack) {
+      console.log(
+        '[DirectPreview] Timeline/frame changed. Current frame:',
+        timeline.currentFrame,
+        'Active video track:',
+        activeVideoTrack.id,
+        'Src:',
+        activeVideoTrack.previewUrl,
+        'Frames:',
+        activeVideoTrack.startFrame,
+        '-',
+        activeVideoTrack.endFrame,
+      );
+    } else {
+      console.log(
+        '[DirectPreview] Timeline/frame changed. No active video track. Current frame:',
+        timeline.currentFrame,
+      );
+    }
+  }, [activeVideoTrack, timeline.currentFrame]);
+
   // Resize observer
   useEffect(() => {
     const updateSize = () => {
@@ -101,6 +124,10 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     const video = videoRef.current;
     if (!video || !activeVideoTrack?.previewUrl) return;
     if (video.src !== activeVideoTrack.previewUrl) {
+      console.log(
+        '[DirectPreview] Updating video src to',
+        activeVideoTrack.previewUrl,
+      );
       video.src = activeVideoTrack.previewUrl;
     }
   }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl]);
@@ -113,10 +140,18 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     try {
       if (playback.isPlaying) {
         if (video.paused && video.readyState >= 3) {
+          console.log(
+            '[DirectPreview] Resuming playback (playback.isPlaying && video.paused)',
+          );
           video.play().catch(console.warn);
         }
       } else {
-        if (!video.paused) video.pause();
+        if (!video.paused) {
+          console.log(
+            '[DirectPreview] Pausing playback (playback.isPlaying is false)',
+          );
+          video.pause();
+        }
       }
       video.volume = playback.muted ? 0 : Math.min(playback.volume, 1);
       video.playbackRate = Math.max(0.25, Math.min(playback.playbackRate, 4));
@@ -169,6 +204,14 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
 
     const diff = Math.abs(video.currentTime - targetTime);
     if (diff > 0.05) {
+      console.log(
+        '[DirectPreview] Seeking video to',
+        targetTime,
+        'for frame',
+        timeline.currentFrame,
+        'in track',
+        activeVideoTrack.id,
+      );
       video.currentTime = Math.max(
         0,
         Math.min(targetTime, video.duration || 0),

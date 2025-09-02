@@ -147,101 +147,120 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     preloadRadius: 10, // Smaller preload radius
   });
 
-  // Simplified video source update logic
-  const updateVideoSource = useCallback(async () => {
+  // Immediate effect: ensure current segment blob is generated and video src is updated
+  useEffect(() => {
+    let cancelled = false;
     const video = videoRef.current;
     if (!video) return;
 
-    try {
-      setError(null);
-      const currentBlob = getCurrentBlob();
+    // Calculate current segment boundaries
+    const segmentDuration = 5;
+    const segmentStart =
+      Math.floor(currentTime / segmentDuration) * segmentDuration;
+    const timeRange = {
+      start: segmentStart,
+      end: segmentStart + segmentDuration,
+    };
+    console.log(
+      '[BlobPreview] Timeline/frame changed. Current time:',
+      currentTime,
+      'Segment:',
+      timeRange,
+    );
 
+    async function ensureCurrentBlob() {
+      setError(null);
+      setIsLoading(true);
+      const currentBlob = getCurrentBlob();
       if (currentBlob) {
         // Use cached blob
         if (video.src !== currentBlob.url) {
-          setIsLoading(true);
+          console.log(
+            '[BlobPreview] Using cached blob for segment',
+            timeRange,
+            'URL:',
+            currentBlob.url,
+          );
           video.src = currentBlob.url;
         }
-
         // Seek to the correct position within the blob
         const blobOffset = currentTime - currentBlob.timeRange.start;
-        const targetTime = Math.max(0, Math.min(blobOffset, 5)); // Clamp to segment duration
-
+        const targetTime = Math.max(0, Math.min(blobOffset, 5));
         if (Math.abs(video.currentTime - targetTime) > 0.2) {
+          console.log(
+            '[BlobPreview] Seeking video to',
+            targetTime,
+            'within segment',
+            timeRange,
+          );
           video.currentTime = targetTime;
         }
+        setIsLoading(false);
+        if (playback.isPlaying && video.paused) {
+          console.log('[BlobPreview] Resuming playback after blob ready');
+          video.play().catch(() => {
+            /* hello */
+          });
+        }
       } else {
-        // Generate blob for current time range
-        const segmentDuration = 5; // Match the config
-        const segmentStart =
-          Math.floor(currentTime / segmentDuration) * segmentDuration;
-        const timeRange = {
-          start: segmentStart,
-          end: segmentStart + segmentDuration,
-        };
-
-        setIsLoading(true);
+        // Generate blob for current time range immediately (no debounce)
         console.log(
-          `🎬 Generating blob for time range ${timeRange.start}-${timeRange.end}s`,
+          '[BlobPreview] No cached blob for segment',
+          timeRange,
+          '- generating new blob',
         );
-
-        const blobData = await getBlobForTime(timeRange);
-
-        if (blobData && video === videoRef.current) {
-          // Check video ref hasn't changed
-          video.src = blobData.url;
-          const blobOffset = currentTime - blobData.timeRange.start;
-          video.currentTime = Math.max(
-            0,
-            Math.min(blobOffset, segmentDuration),
-          );
+        try {
+          const blobData = await getBlobForTime(timeRange);
+          if (blobData && video === videoRef.current && !cancelled) {
+            console.log(
+              '[BlobPreview] New blob generated for segment',
+              timeRange,
+              'URL:',
+              blobData.url,
+            );
+            video.src = blobData.url;
+            const blobOffset = currentTime - blobData.timeRange.start;
+            video.currentTime = Math.max(
+              0,
+              Math.min(blobOffset, segmentDuration),
+            );
+            setIsLoading(false);
+            if (playback.isPlaying && video.paused) {
+              console.log(
+                '[BlobPreview] Resuming playback after new blob ready',
+              );
+              video.play().catch(() => {
+                /*hello */
+              });
+            }
+          }
+        } catch (err) {
+          if (!cancelled) {
+            console.log(
+              '[BlobPreview] Error generating blob for segment',
+              timeRange,
+              err,
+            );
+            setError(
+              err instanceof Error ? err.message : 'Failed to load video blob',
+            );
+            setIsLoading(false);
+          }
         }
       }
-    } catch (err) {
-      console.error('Video source update failed:', err);
-      setError(
-        err instanceof Error ? err.message : 'Failed to load video blob',
-      );
-    } finally {
-      setIsLoading(false);
     }
-  }, [currentTime, getCurrentBlob, getBlobForTime]);
+    ensureCurrentBlob();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTime, getCurrentBlob, getBlobForTime, playback.isPlaying]);
 
-  // Simplified effect that handles all video synchronization
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    // Update video source when needed
-    updateVideoSource();
-
-    // Handle playback state
-    if (playback.isPlaying && !isLoading) {
-      video.play().catch(console.error);
-    } else {
-      video.pause();
-    }
-
-    video.playbackRate = playback.playbackRate;
-    video.volume = playback.muted ? 0 : playback.volume;
-    video.muted = playback.muted;
-  }, [
-    currentTime,
-    playback.isPlaying,
-    playback.playbackRate,
-    playback.volume,
-    playback.muted,
-    isLoading,
-    updateVideoSource,
-  ]);
-
-  // Simplified preloading effect
+  // Debounced effect: preload adjacent segments
   useEffect(() => {
     if (!isGenerating) {
       const timeoutId = setTimeout(() => {
         preloadAdjacentSegments();
       }, 1000); // Preload after 1 second of inactivity
-
       return () => clearTimeout(timeoutId);
     }
   }, [isGenerating, preloadAdjacentSegments, currentTime]);
@@ -407,7 +426,47 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             <div className="text-sm font-bold mb-2">Preview Error</div>
             <div className="text-xs">{error}</div>
             <button
-              onClick={updateVideoSource}
+              onClick={() => {
+                // Re-trigger the immediate effect to retry
+                const video = videoRef.current;
+                if (video) {
+                  const currentBlob = getCurrentBlob();
+                  if (currentBlob) {
+                    video.src = currentBlob.url;
+                    const blobOffset =
+                      currentTime - currentBlob.timeRange.start;
+                    video.currentTime = Math.max(0, Math.min(blobOffset, 5));
+                  } else {
+                    const segmentDuration = 5;
+                    const segmentStart =
+                      Math.floor(currentTime / segmentDuration) *
+                      segmentDuration;
+                    const timeRange = {
+                      start: segmentStart,
+                      end: segmentStart + segmentDuration,
+                    };
+                    getBlobForTime(timeRange)
+                      .then((blobData) => {
+                        if (blobData && video === videoRef.current) {
+                          video.src = blobData.url;
+                          const blobOffset =
+                            currentTime - blobData.timeRange.start;
+                          video.currentTime = Math.max(
+                            0,
+                            Math.min(blobOffset, segmentDuration),
+                          );
+                        }
+                      })
+                      .catch((err) => {
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : 'Failed to retry video blob',
+                        );
+                      });
+                  }
+                }
+              }}
               className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-500 rounded text-xs"
             >
               Retry
