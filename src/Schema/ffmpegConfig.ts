@@ -12,6 +12,17 @@ export interface TextStyleConfig {
   textTransform?: string;
 }
 
+export type EncodingPreset =
+  | 'ultrafast'
+  | 'superfast'
+  | 'veryfast'
+  | 'faster'
+  | 'fast'
+  | 'medium'
+  | 'slow'
+  | 'slower'
+  | 'veryslow';
+
 export interface VideoEditJob {
   inputs: string[] | TrackInfo[]; // Support both simple paths and detailed track info
   output: string;
@@ -26,6 +37,7 @@ export interface VideoEditJob {
     normalizeFrameRate?: boolean;
     targetFrameRate?: number;
     textStyle?: TextStyleConfig; // Text styling for subtitles
+    preset?: EncodingPreset; // FFmpeg encoding preset for speed/quality tradeoff
   };
   subtitleContent?: string; // SRT content to be written to a temporary file
   subtitleFormat?: 'srt' | 'vtt' | 'ass'; // Subtitle format for export

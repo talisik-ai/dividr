@@ -246,6 +246,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
   }, [isGenerating, preloadAdjacentSegments, currentTime]);
 
+  // Resume playback after loading finishes if playback.isPlaying is true
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!isLoading && playback.isPlaying) {
+      video.play().catch(console.error);
+    }
+  }, [isLoading, playback.isPlaying]);
+
   // Handle video element events
   const handleVideoLoadStart = useCallback(() => {
     setIsLoading(true);
