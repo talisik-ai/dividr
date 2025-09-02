@@ -128,6 +128,8 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     playback.volume,
     playback.muted,
     playback.playbackRate,
+    activeVideoTrack?.id, // <-- add this
+    activeVideoTrack?.previewUrl, // (optional, for extra safety)
   ]);
 
   // Sync timeline to video frames

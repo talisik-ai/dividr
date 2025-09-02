@@ -231,92 +231,55 @@ export const useVideoBlobManager = (
           return;
         }
 
-        // Filter tracks active in this time range
-        const activeTracks = tracks.filter(
-          (track) =>
-            track.visible &&
-            track.type !== 'subtitle' &&
-            track.previewUrl &&
-            !(
-              track.endFrame / fps < timeRange.start ||
-              track.startFrame / fps > timeRange.end
-            ),
-        );
-
-        if (activeTracks.length === 0) {
-          // Return black video blob for empty segments
-          createBlackVideoBlob(
-            timeRange.end - timeRange.start,
-            canvas.width,
-            canvas.height,
-          )
-            .then(resolve)
-            .catch(reject);
-          return;
-        }
-
-        // Load video elements for active tracks
+        // Preload all video elements for tracks with previewUrl
         const videoElements = new Map<string, HTMLVideoElement>();
-        const loadPromises = activeTracks.map((track) => {
-          return new Promise<void>((loadResolve) => {
-            const video = document.createElement('video');
-            video.crossOrigin = 'anonymous';
-            video.muted = true;
-            video.preload = 'metadata';
-
-            video.onloadeddata = () => {
-              videoElements.set(track.id, video);
-              loadResolve();
-            };
-
-            video.onerror = () => {
-              console.warn(`Failed to load track ${track.name}, skipping`);
-              loadResolve(); // Don't fail entire generation for one track
-            };
-
-            if (track.previewUrl) {
-              video.src = track.previewUrl;
-            } else {
-              loadResolve(); // Skip tracks without preview URL
-            }
+        const loadPromises = tracks
+          .filter((track) => track.type === 'video' && track.previewUrl)
+          .map((track) => {
+            return new Promise<void>((loadResolve) => {
+              const video = document.createElement('video');
+              video.crossOrigin = 'anonymous';
+              video.muted = true;
+              video.preload = 'auto';
+              video.src = track.previewUrl || '';
+              video.onloadeddata = () => {
+                videoElements.set(track.id, video);
+                loadResolve();
+              };
+              video.onerror = () => {
+                console.warn(`Failed to load track ${track.name}, skipping`);
+                loadResolve();
+              };
+            });
           });
-        });
 
         Promise.all(loadPromises)
           .then(() => {
-            // Check if MediaRecorder is supported
             if (!MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
               reject(new Error('MediaRecorder not supported'));
               return;
             }
 
-            // Create video stream from canvas
             const stream = canvas.captureStream(fps);
             const mediaRecorder = new MediaRecorder(stream, {
               mimeType: 'video/webm;codecs=vp8',
-              videoBitsPerSecond: 1500000, // 1.5 Mbps for good balance
+              videoBitsPerSecond: 1500000,
             });
 
             const chunks: Blob[] = [];
-
             mediaRecorder.ondataavailable = (event) => {
               if (event.data.size > 0) {
                 chunks.push(event.data);
               }
             };
-
             mediaRecorder.onstop = () => {
-              const blob = new Blob(chunks, { type: 'video/webm' });
-              // Cleanup video elements
               videoElements.forEach((video) => {
                 video.src = '';
                 video.load();
               });
-              resolve(blob);
+              resolve(new Blob(chunks, { type: 'video/webm' }));
             };
-
             mediaRecorder.onerror = (error) => {
-              // Cleanup video elements
               videoElements.forEach((video) => {
                 video.src = '';
                 video.load();
@@ -324,10 +287,8 @@ export const useVideoBlobManager = (
               reject(error);
             };
 
-            // Start recording
             mediaRecorder.start();
 
-            // Render frames for the time range
             const duration = timeRange.end - timeRange.start;
             const totalFrames = Math.ceil(duration * fps);
             let currentFrame = 0;
@@ -337,55 +298,56 @@ export const useVideoBlobManager = (
                 mediaRecorder.stop();
                 return;
               }
+              const timelineFrame = Math.round(
+                (timeRange.start + currentFrame / fps) * fps,
+              );
+              // Find the topmost visible video track at this timeline frame
+              const activeTrack = tracks
+                .filter(
+                  (track) =>
+                    track.type === 'video' &&
+                    track.visible &&
+                    timelineFrame >= track.startFrame &&
+                    timelineFrame < track.endFrame &&
+                    track.previewUrl,
+                )
+                .sort((a, b) => b.startFrame - a.startFrame)[0]; // Topmost by startFrame (could use z-order if available)
 
-              const currentTime = timeRange.start + currentFrame / fps;
-
-              // Clear canvas with black background
+              // Clear canvas
               ctx.fillStyle = '#000000';
               ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-              // Render each active track
-              activeTracks.forEach((track) => {
-                const video = videoElements.get(track.id);
-                if (!video) return;
-
-                // Calculate track time relative to its start
-                const trackTime = currentTime - track.startFrame / fps;
-
-                // Only render if track is active at this time
-                if (trackTime >= 0 && trackTime <= track.duration / fps) {
-                  try {
-                    // Seek video to correct time
-                    if (Math.abs(video.currentTime - trackTime) > 0.1) {
-                      video.currentTime = Math.max(0, trackTime);
-                    }
-
-                    // Calculate dimensions and position
-                    const width = track.width || canvas.width;
-                    const height = track.height || canvas.height;
-                    const x = track.offsetX || (canvas.width - width) / 2;
-                    const y = track.offsetY || (canvas.height - height) / 2;
-
-                    // Draw video frame if ready
-                    if (video.readyState >= video.HAVE_CURRENT_DATA) {
-                      ctx.drawImage(video, x, y, width, height);
-                    }
-                  } catch (error) {
-                    console.warn(`Error rendering track ${track.name}:`, error);
+              if (activeTrack) {
+                const video = videoElements.get(activeTrack.id);
+                if (video) {
+                  // Calculate the time in the source video
+                  const sourceStart = activeTrack.sourceStartTime || 0;
+                  const frameOffset = timelineFrame - activeTrack.startFrame;
+                  const videoTime = sourceStart + frameOffset / fps;
+                  if (Math.abs(video.currentTime - videoTime) > 0.05) {
+                    video.currentTime = Math.max(0, videoTime);
+                  }
+                  // Draw video frame if ready
+                  if (video.readyState >= video.HAVE_CURRENT_DATA) {
+                    const width = activeTrack.width || canvas.width;
+                    const height = activeTrack.height || canvas.height;
+                    const x = activeTrack.offsetX || (canvas.width - width) / 2;
+                    const y =
+                      activeTrack.offsetY || (canvas.height - height) / 2;
+                    ctx.drawImage(video, x, y, width, height);
                   }
                 }
-              });
-
+              }
+              // Otherwise, leave as black (blank segment)
               currentFrame++;
-              setTimeout(renderNextFrame, 1000 / fps); // Maintain fps timing
+              setTimeout(renderNextFrame, 1000 / fps);
             };
-
             renderNextFrame();
           })
           .catch(reject);
       });
     },
-    [fps, createBlackVideoBlob],
+    [fps],
   );
 
   // Generate blob using existing FFmpeg integration (disabled)
