@@ -9,6 +9,7 @@ import {
 } from 'react-icons/lu';
 import { TbScissors } from 'react-icons/tb';
 import { useTimelineDuration } from '@/hooks/useTimelineDuration';
+import { useCallback } from 'react';
 
 // eslint-disable-next-line import/no-unresolved
 import { useVideoEditorStore } from '../../../store/videoEditorStore';
@@ -25,6 +26,48 @@ export const TimelineControls: React.FC = () => {
     splitAtPlayhead,
   } = useVideoEditorStore();
   const duration = useTimelineDuration();
+
+  // Helper: Snap to next segment if in blank
+  const snapToNextSegmentIfBlank = useCallback(() => {
+    const isInBlank = !tracks.some(
+      (track) =>
+        track.type === 'video' &&
+        track.visible &&
+        track.previewUrl &&
+        timeline.currentFrame >= track.startFrame &&
+        timeline.currentFrame < track.endFrame,
+    );
+    if (isInBlank) {
+      const nextSegment = tracks
+        .filter(
+          (track) =>
+            track.type === 'video' &&
+            track.visible &&
+            track.previewUrl &&
+            track.startFrame > timeline.currentFrame,
+        )
+        .sort((a, b) => a.startFrame - b.startFrame)[0];
+      if (nextSegment) {
+        setCurrentFrame(nextSegment.startFrame);
+        return true;
+      }
+    }
+    return false;
+  }, [tracks, timeline.currentFrame, setCurrentFrame]);
+
+  // Wrap the play toggle
+  const handlePlayToggle = useCallback(() => {
+    if (!playback.isPlaying) {
+      const snapped = snapToNextSegmentIfBlank();
+      if (snapped) {
+        setTimeout(() => {
+          togglePlayback();
+        }, 0);
+        return;
+      }
+    }
+    togglePlayback();
+  }, [playback.isPlaying, snapToNextSegmentIfBlank, togglePlayback]);
 
   // Calculate effective end frame considering all tracks
   const effectiveEndFrame =
@@ -110,7 +153,7 @@ export const TimelineControls: React.FC = () => {
         </button>
 
         <button
-          onClick={togglePlayback}
+          onClick={handlePlayToggle}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title={playback.isPlaying ? 'Pause' : 'Play'}
         >

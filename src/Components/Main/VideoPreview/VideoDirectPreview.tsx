@@ -138,6 +138,29 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     if (!video) return;
 
     function handleAutoResume() {
+      // Clamp relative frame to 0 to prevent negative seeks
+      const relativeFrame = Math.max(
+        0,
+        timeline.currentFrame - activeVideoTrack.startFrame,
+      );
+      const trackTime = relativeFrame / timeline.fps;
+      const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+      const clampedTargetTime = Math.max(
+        activeVideoTrack.sourceStartTime || 0,
+        Math.min(targetTime, video.duration || 0),
+      );
+      const diff = Math.abs(video.currentTime - clampedTargetTime);
+      if (diff > 0.05) {
+        console.log(
+          '[DirectPreview] Auto-resume: seeking to',
+          clampedTargetTime,
+          'for frame',
+          timeline.currentFrame,
+          'in track',
+          activeVideoTrack.id,
+        );
+        video.currentTime = clampedTargetTime;
+      }
       if (playback.isPlaying && video.paused) {
         console.log(
           '[DirectPreview] Auto-resume: video is ready, calling play() after src change',
@@ -155,7 +178,12 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
       video.removeEventListener('loadeddata', handleAutoResume);
       video.removeEventListener('canplay', handleAutoResume);
     };
-  }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl, playback.isPlaying]);
+  }, [
+    activeVideoTrack,
+    timeline.currentFrame,
+    timeline.fps,
+    playback.isPlaying,
+  ]);
 
   // Sync play/pause & volume
   useEffect(() => {
@@ -223,24 +251,28 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     if (!video || !activeVideoTrack) return;
     if (playback.isPlaying) return; // don’t fight playback
 
-    const trackTime =
-      (timeline.currentFrame - activeVideoTrack.startFrame) / timeline.fps;
+    const relativeFrame = Math.max(
+      0,
+      timeline.currentFrame - activeVideoTrack.startFrame,
+    );
+    const trackTime = relativeFrame / timeline.fps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+    const clampedTargetTime = Math.max(
+      activeVideoTrack.sourceStartTime || 0,
+      Math.min(targetTime, video.duration || 0),
+    );
 
-    const diff = Math.abs(video.currentTime - targetTime);
+    const diff = Math.abs(video.currentTime - clampedTargetTime);
     if (diff > 0.05) {
       console.log(
         '[DirectPreview] Seeking video to',
-        targetTime,
+        clampedTargetTime,
         'for frame',
         timeline.currentFrame,
         'in track',
         activeVideoTrack.id,
       );
-      video.currentTime = Math.max(
-        0,
-        Math.min(targetTime, video.duration || 0),
-      );
+      video.currentTime = clampedTargetTime;
     }
   }, [
     timeline.currentFrame,
