@@ -63,6 +63,28 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     }
   }, [activeVideoTrack, timeline.currentFrame]);
 
+  // Add effect to pause playback at the end of the last segment
+  useEffect(() => {
+    if (!playback.isPlaying) return;
+    // Find the last visible video track
+    const visibleVideoTracks = tracks
+      .filter(
+        (track) => track.type === 'video' && track.visible && track.previewUrl,
+      )
+      .sort((a, b) => a.endFrame - b.endFrame);
+    const lastTrack = visibleVideoTracks[visibleVideoTracks.length - 1];
+    if (lastTrack && timeline.currentFrame >= lastTrack.endFrame) {
+      // Pause playback if we've reached or passed the end of the last segment
+      playback.isPlaying = false;
+      // If you have a setPlayback or similar action, use that instead:
+      // setPlayback((prev) => ({ ...prev, isPlaying: false }));
+      // Or dispatch an action to pause playback
+      if (videoRef.current && !videoRef.current.paused) {
+        videoRef.current.pause();
+      }
+    }
+  }, [timeline.currentFrame, tracks, playback, videoRef]);
+
   // Resize observer
   useEffect(() => {
     const updateSize = () => {
