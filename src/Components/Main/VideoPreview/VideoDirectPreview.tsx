@@ -141,71 +141,53 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
     );
   }, [tracks, timeline.currentFrame]);
 
-  // Load video source once
-  useEffect(() => {
+  // Add handler for loadedmetadata
+  const handleLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
-    if (!video || !activeVideoTrack?.previewUrl) return;
-    if (video.src !== activeVideoTrack.previewUrl) {
-      console.log(
-        '[DirectPreview] Updating video src to',
-        activeVideoTrack.previewUrl,
-      );
-      video.src = activeVideoTrack.previewUrl;
+    if (!video || !activeVideoTrack) return;
+    // Seek to correct position
+    const relativeFrame = Math.max(
+      0,
+      timeline.currentFrame - activeVideoTrack.startFrame,
+    );
+    const trackTime = relativeFrame / timeline.fps;
+    const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+    video.currentTime = Math.max(
+      activeVideoTrack.sourceStartTime || 0,
+      Math.min(targetTime, video.duration || 0),
+    );
+    // Auto play if timeline is playing
+    if (playback.isPlaying && video.paused) {
+      video.muted = playback.muted; // ensure muted if needed for autoplay
+      video.play().catch(() => {
+        /* hello */
+      });
     }
-  }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl]);
-
-  // Add effect to auto-resume playback after src change when video is ready
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    function handleAutoResume() {
-      // Clamp relative frame to 0 to prevent negative seeks
-      const relativeFrame = Math.max(
-        0,
-        timeline.currentFrame - activeVideoTrack.startFrame,
-      );
-      const trackTime = relativeFrame / timeline.fps;
-      const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
-      const clampedTargetTime = Math.max(
-        activeVideoTrack.sourceStartTime || 0,
-        Math.min(targetTime, video.duration || 0),
-      );
-      const diff = Math.abs(video.currentTime - clampedTargetTime);
-      if (diff > 0.05) {
-        console.log(
-          '[DirectPreview] Auto-resume: seeking to',
-          clampedTargetTime,
-          'for frame',
-          timeline.currentFrame,
-          'in track',
-          activeVideoTrack.id,
-        );
-        video.currentTime = clampedTargetTime;
-      }
-      if (playback.isPlaying && video.paused) {
-        console.log(
-          '[DirectPreview] Auto-resume: video is ready, calling play() after src change',
-        );
-        video.play().catch(() => {
-          console.log('playing again ehe');
-        });
-      }
-    }
-
-    video.addEventListener('loadeddata', handleAutoResume);
-    video.addEventListener('canplay', handleAutoResume);
-
-    return () => {
-      video.removeEventListener('loadeddata', handleAutoResume);
-      video.removeEventListener('canplay', handleAutoResume);
-    };
   }, [
     activeVideoTrack,
     timeline.currentFrame,
     timeline.fps,
     playback.isPlaying,
+    playback.muted,
   ]);
+
+  // Keep the simplified canplay effect for auto-play only
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    function handleAutoPlay() {
+      if (playback.isPlaying && video.paused) {
+        video.muted = playback.muted;
+        video.play().catch(() => {
+          /* hello */
+        });
+      }
+    }
+
+    video.addEventListener('canplay', handleAutoPlay);
+    return () => video.removeEventListener('canplay', handleAutoPlay);
+  }, [playback.isPlaying, playback.muted]);
 
   // Sync play/pause & volume
   useEffect(() => {
@@ -353,10 +335,13 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
         >
           <video
             ref={videoRef}
+            key={activeVideoTrack.previewUrl}
             className="w-full h-full object-contain"
             playsInline
             controls={false}
             preload="metadata"
+            src={activeVideoTrack.previewUrl}
+            onLoadedMetadata={handleLoadedMetadata}
           />
         </div>
       )}
