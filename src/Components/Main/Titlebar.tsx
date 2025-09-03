@@ -15,6 +15,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../Assets/Logo/logo.svg';
 import { VideoEditJob } from '../../Schema/ffmpegConfig';
 import { useVideoEditorStore, VideoTrack } from '../../store/videoEditorStore';
+import { useProjectStore } from '../../store/projectStore';
 import {
   FfmpegCallbacks,
   runFfmpegWithProgress,
@@ -47,6 +48,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     getTextStyleForSubtitle,
     // importMediaFromDialog, // Unused for now
   } = useVideoEditorStore();
+  const { metadata, setTitle } = useProjectStore();
   const navigate = useNavigate();
 
   // Determine context based on current route
@@ -55,6 +57,8 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     <Input
       className="border-none text-center text-sm p-2 h-6"
       placeholder="Untitled Project"
+      value={metadata.title}
+      onChange={(e) => setTitle(e.target.value)}
     />
   ) : (
     'Dividr'
@@ -80,7 +84,10 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
   // Convert tracks to FFmpeg job with timeline-aware processing
   const createFFmpegJob = useCallback(
-    (outputFilename = 'final_video.mp4', outputPath?: string): VideoEditJob => {
+    (
+      outputFilename = 'Untitled_Project.mp4',
+      outputPath?: string,
+    ): VideoEditJob => {
       if (tracks.length === 0) {
         return {
           inputs: [],
@@ -394,7 +401,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         onExport={handleExportConfirm}
-        defaultFilename="final_video"
+        defaultFilename={metadata.title.trim() || 'Untitled_Project'}
       />
     </>
   );

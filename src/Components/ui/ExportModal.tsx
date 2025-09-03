@@ -42,7 +42,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
   onExport,
-  defaultFilename = 'final_video',
+  defaultFilename = 'Untitled_Project',
 }) => {
   const [filename, setFilename] = useState(defaultFilename);
   const [format, setFormat] = useState('mp4');

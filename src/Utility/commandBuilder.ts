@@ -1035,7 +1035,7 @@ export function testExportErrorScenario() {
       { path: 'uu.mp4', startTime: 0, duration: 10 },
       { path: 'eee.mp4', startTime: 0, duration: 15 },
     ],
-    output: 'final_video.mp4',
+    output: 'Untitled_Project.mp4',
     operations: {
       concat: true,
       normalizeFrameRate: true,
