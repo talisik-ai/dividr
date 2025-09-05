@@ -41,6 +41,31 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     const targetFPS = Math.min(15, timeline.fps); // Cap at 15fps for smoother performance
     const interval = setInterval(() => {
       const currentFrame = timeline.currentFrame;
+      // --- Snap to next segment if in blank during playback ---
+      const isInBlank = !tracks.some(
+        (track) =>
+          track.type === 'video' &&
+          track.visible &&
+          track.previewUrl &&
+          currentFrame >= track.startFrame &&
+          currentFrame < track.endFrame,
+      );
+      if (isInBlank) {
+        const nextSegment = tracks
+          .filter(
+            (track) =>
+              track.type === 'video' &&
+              track.visible &&
+              track.previewUrl &&
+              track.startFrame > currentFrame,
+          )
+          .sort((a, b) => a.startFrame - b.startFrame)[0];
+        if (nextSegment) {
+          setCurrentFrame(nextSegment.startFrame);
+          return; // Don't advance frame this tick
+        }
+      }
+      // --- End snap logic ---
       const nextFrame =
         currentFrame + Math.max(1, Math.round(timeline.fps / targetFPS)); // Skip frames for better performance
       if (nextFrame >= effectiveEndFrame) {
@@ -59,6 +84,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     timeline.currentFrame,
     effectiveEndFrame,
     setCurrentFrame,
+    tracks,
   ]);
 
   // Keyboard shortcuts

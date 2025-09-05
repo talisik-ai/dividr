@@ -796,6 +796,7 @@ const steps: ((job: VideoEditJob, cmd: CommandParts) => void)[] = [
   handleSubtitles,
   handleAspect,
   handleReplaceAudio,
+  handlePreset,
 ];
 
 function escapePath(filePath: string) {
@@ -864,6 +865,15 @@ function handleReplaceAudio(job: VideoEditJob, cmd: CommandParts) {
   if (!job.operations.replaceAudio) return;
   cmd.args.push('-i', job.operations.replaceAudio);
   cmd.args.push('-map', '0:v', '-map', `${job.inputs.length}:a`);
+}
+
+function handlePreset(job: VideoEditJob, cmd: CommandParts) {
+  if (!job.operations.preset) return;
+
+  // Add preset before codec specifications for optimal placement
+  cmd.args.push('-preset', job.operations.preset);
+
+  console.log(`🚀 Applied encoding preset: ${job.operations.preset}`);
 }
 
 // -------------------------
@@ -1025,7 +1035,7 @@ export function testExportErrorScenario() {
       { path: 'uu.mp4', startTime: 0, duration: 10 },
       { path: 'eee.mp4', startTime: 0, duration: 15 },
     ],
-    output: 'final_video.mp4',
+    output: 'Untitled_Project.mp4',
     operations: {
       concat: true,
       normalizeFrameRate: true,
@@ -1055,4 +1065,67 @@ export function testExportErrorScenario() {
   }
 
   return command;
+}
+
+// Test function for encoding presets
+export function testEncodingPresets() {
+  const testJob: VideoEditJob = {
+    inputs: ['video1.mp4', 'video2.mp4'],
+    output: 'output_superfast.mp4',
+    operations: {
+      concat: true,
+      preset: 'superfast', // Fast encoding for quick exports
+      normalizeFrameRate: true,
+      targetFrameRate: 30,
+    },
+  };
+
+  console.log('🚀 Testing Encoding Presets:');
+  console.log('⚡ Using "superfast" preset for speed optimization');
+  const command = buildFfmpegCommand(testJob);
+  console.log('🎬 Preset Command:', command.join(' '));
+
+  // Validate preset is in the command
+  const presetIndex = command.indexOf('-preset');
+  if (presetIndex !== -1 && presetIndex + 1 < command.length) {
+    const presetValue = command[presetIndex + 1];
+    console.log(`✅ Preset applied: ${presetValue}`);
+  } else {
+    console.log('⚠️ Preset not found in command');
+  }
+
+  return command;
+}
+
+// Test all available presets
+export function testAllPresets() {
+  const presets = [
+    'ultrafast',
+    'superfast',
+    'veryfast',
+    'faster',
+    'fast',
+    'medium',
+    'slow',
+    'slower',
+    'veryslow',
+  ] as const;
+
+  console.log('🎛️ Testing all available encoding presets:');
+
+  presets.forEach((preset) => {
+    const testJob: VideoEditJob = {
+      inputs: ['input.mp4'],
+      output: `output_${preset}.mp4`,
+      operations: {
+        preset,
+      },
+    };
+
+    const command = buildFfmpegCommand(testJob);
+    const presetIndex = command.indexOf('-preset');
+    const appliedPreset =
+      presetIndex !== -1 ? command[presetIndex + 1] : 'NOT_FOUND';
+    console.log(`  ${preset.padEnd(10)} → ${appliedPreset}`);
+  });
 }

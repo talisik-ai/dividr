@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { useVideoEditorStore } from '../store/videoEditorStore';
 import { useTimelineDuration } from '../hooks/useTimelineDuration';
-import { VideoPreview } from './Main/VideoPreview/VideoPreview';
+import { VideoPreviewWrapper } from './Main/VideoPreview/VideoPreviewWrapper';
 interface VideoEditorProps {
   className?: string;
 }
@@ -73,7 +73,10 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
     >
       <div className="flex flex-1 items-center justify-center overflow-hidden">
         {/* Main Content Area */}
-        <VideoPreview className="w-full h-full max-w-full max-h-full" />
+        <VideoPreviewWrapper
+          className="w-full h-full max-w-full max-h-full"
+          useDirectOptimization={true} // Use much better direct video approach
+        />
       </div>
 
       {/* Render Progress Overlay */}
