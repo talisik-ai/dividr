@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { VideoEditJob } from './Schema/ffmpegConfig';
-import { FfmpegProgress } from './Utility/ffmpegRunner';
+import { VideoEditJob } from './schema/ffmpegConfig';
+import { FfmpegProgress } from './utility/ffmpegRunner';
 
 // Progress event handlers type
 export interface FfmpegEventHandlers {

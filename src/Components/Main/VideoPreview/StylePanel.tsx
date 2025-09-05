@@ -7,7 +7,7 @@ import {
   usePanelWidth,
   type PanelItem,
   type PanelSection,
-} from '../../../store/PanelStore';
+} from '../../../store/panelStore';
 import { useVideoEditorStore } from '../../../store/videoEditorStore';
 import {
   getCustomPanelComponent,

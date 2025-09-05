@@ -304,13 +304,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { VideoEditJob } from './Schema/ffmpegConfig';
-import { buildFfmpegCommand } from './Utility/commandBuilder';
+import { VideoEditJob } from './schema/ffmpegConfig';
+import { buildFfmpegCommand } from './utility/commandBuilder';
 import {
   cancelCurrentFfmpeg,
   runFfmpeg,
   runFfmpegWithProgress,
-} from './Utility/ffmpegRunner';
+} from './utility/ffmpegRunner';
 
 if (started) {
   app.quit();

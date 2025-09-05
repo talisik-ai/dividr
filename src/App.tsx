@@ -1,10 +1,10 @@
 import { Route, HashRouter as Router, Routes } from 'react-router-dom';
 import './App.css';
-import NewProject from './Components/Pages/NewProject';
-import NotFound from './Components/Pages/NotFound';
-import { VideoEditor } from './Components/VideoEditor';
-import VideoEditorLayout from './Layout/VideoEditorLayout';
-import { ThemeProvider } from './Utility/ThemeProvider';
+import NewProject from './components/pages/NewProject';
+import NotFound from './components/pages/NotFound';
+import { VideoEditor } from './components/VideoEditor';
+import VideoEditorLayout from './layout/VideoEditorLayout';
+import { ThemeProvider } from './utility/ThemeProvider';
 
 function App() {
   return (

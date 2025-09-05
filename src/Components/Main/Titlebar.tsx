@@ -12,20 +12,18 @@ import { IoMdClose, IoMdRemove } from 'react-icons/io';
 import { PiBrowsers, PiExportBold } from 'react-icons/pi';
 import { RxBox } from 'react-icons/rx';
 import { useLocation, useNavigate } from 'react-router-dom';
-import logo from '../../Assets/Logo/logo.svg';
-import { VideoEditJob } from '../../Schema/ffmpegConfig';
-import { useVideoEditorStore, VideoTrack } from '../../store/videoEditorStore';
-import { useProjectStore } from '../../store/projectStore';
-import {
-  FfmpegCallbacks,
-  runFfmpegWithProgress,
-} from '../../Utility/ffmpegRunner';
+import logo from '@/assets/Logo/logo.svg';
+import { VideoEditJob } from '@/schema/ffmpegConfig';
+import { useVideoEditorStore, VideoTrack } from '@/store/videoEditorStore';
+import { useProjectStore } from '@/store/projectStore';
+import { FfmpegCallbacks, runFfmpegWithProgress } from '@/utility/ffmpegRunner';
 import {
   extractSubtitleSegments,
   generateASSContent,
-} from '../../Utility/subtitleExporter';
-import { ExportModal } from '../ui/ExportModal';
-import { Input } from '../ui/input';
+} from '@/utility/subtitleExporter';
+import { ExportModal } from '@/components/main/Modal/ExportModal';
+import { Input } from '@/components/sub/ui/input';
+import { ModeToggle } from '@/components/sub/custom/ModeToggle';
 interface TitleBarProps {
   className?: string;
 }
@@ -366,9 +364,9 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
                 New Project
               </button>
             )}
-            {/*Dark Mode/Light Mode 
+            {/*Dark Mode/Light Mode    */}
             <ModeToggle />
-            */}
+
             {/* Minimize Button */}
             <button
               className="rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment hover:opacity-100 p-1 m-2"

@@ -13,7 +13,7 @@ import { CgSoftwareDownload } from 'react-icons/cg';
 import { LuMusic } from 'react-icons/lu';
 import { MdOutlineSettings } from 'react-icons/md';
 import { SlPicture } from 'react-icons/sl';
-import { usePanelStore, type PanelType } from '../../store/PanelStore';
+import { usePanelStore, type PanelType } from '../../store/panelStore';
 
 interface ToolbarButtonProps {
   icon: React.ReactNode;

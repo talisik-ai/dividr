@@ -1,5 +1,5 @@
 // Renderer-side FFmpeg wrapper using IPC to main process
-import { VideoEditJob } from '../Schema/ffmpegConfig';
+import { VideoEditJob } from '../schema/ffmpegConfig';
 
 // Progress interface for FFmpeg output
 export interface FfmpegProgress {

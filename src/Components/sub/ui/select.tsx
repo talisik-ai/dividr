@@ -3,7 +3,7 @@
  * A dropdown select component for choosing options
  */
 import React from 'react';
-import { cn } from '../../lib/utils';
+import { cn } from '../../../lib/utils';
 
 interface SelectProps {
   value: string;

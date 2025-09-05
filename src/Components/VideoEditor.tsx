@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { useVideoEditorStore } from '../store/videoEditorStore';
 import { useTimelineDuration } from '../hooks/useTimelineDuration';
-import { VideoPreviewWrapper } from './Main/VideoPreview/VideoPreviewWrapper';
+import { VideoPreviewWrapper } from './main/VideoPreview/VideoPreviewWrapper';
 interface VideoEditorProps {
   className?: string;
 }

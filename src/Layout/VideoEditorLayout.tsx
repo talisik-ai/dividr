@@ -1,11 +1,11 @@
-import { PropertiesPanel } from '@/Components/Main/VideoPreview/PropertiesPanel';
-import { StylePanel } from '@/Components/Main/VideoPreview/StylePanel';
+import { PropertiesPanel } from '@/components/main/VideoPreview/PropertiesPanel';
+import { StylePanel } from '@/components/main/VideoPreview/StylePanel';
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
-import { Timeline } from '../Components/Main/Timeline/Timeline';
-import TitleBar from '../Components/Main/Titlebar';
-import Toolbar from '../Components/Main/Toolbar';
-import { useIsPanelVisible } from '../store/PanelStore';
+import { Timeline } from '../components/main/Timeline/Timeline';
+import TitleBar from '../components/main/Titlebar';
+import Toolbar from '../components/main/Toolbar';
+import { useIsPanelVisible } from '../store/panelStore';
 // Error Boundary component
 class ErrorBoundary extends Component<
   { children: ReactNode },

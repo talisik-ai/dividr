@@ -4,17 +4,17 @@
  * Modal for configuring video export settings including filename and format
  */
 import React, { useState } from 'react';
-import { Button } from './button';
+import { Button } from '@/components/sub/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from './dialog';
-import { Input } from './input';
-import { Label } from './label';
-import { Select, SelectContent, SelectItem, SelectTrigger } from './select';
+} from '@/components/sub/ui/dialog';
+import { Input } from '@/components/sub/ui/input';
+import { Label } from '@/components/sub/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/sub/ui/select';
 
 interface ExportConfig {
   filename: string;

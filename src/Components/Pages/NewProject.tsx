@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import New from '../../Assets/Logo/New.svg';
-import TitleBar from '../Main/Titlebar';
+import TitleBar from '../main/Titlebar';
 
 /**
  * A custom React Sub Page

@@ -1,4 +1,4 @@
-import { ScrollTabs } from '@/Components/ui/scroll-tab';
+import { ScrollTabs } from '@/components/sub/ui/scroll-tab';
 import React, { useCallback, useRef, useState } from 'react';
 import { useVideoEditorStore } from '../../../../store/videoEditorStore';
 import { CustomPanelProps } from './PanelRegistry';

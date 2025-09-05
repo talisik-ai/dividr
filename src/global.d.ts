@@ -1,4 +1,4 @@
-import { VideoEditJob } from './Schema/ffmpegConfig';
+import { VideoEditJob } from './schema/ffmpegConfig';
 import { FfmpegEventHandlers } from './preload';
 
 // Type definitions for the exposed API
