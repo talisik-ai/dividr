@@ -145,7 +145,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const selectedFormat = videoFormats.find((f) => f.value === format);
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} className="text-white bg-black z-[9999]">
+    <Dialog isOpen={isOpen} onClose={onClose} className="text-white bg-primary z-[9999]">
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Export Video</DialogTitle>
@@ -179,7 +179,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   {selectedFormat?.label || 'Select format'}
                 </span>
               </SelectTrigger>
-              <SelectContent className="bg-black">
+              <SelectContent className="bg-primary">
                 {videoFormats.map((fmt) => (
                   <SelectItem key={fmt.value} value={fmt.value}>
                     {fmt.label}

@@ -167,7 +167,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         <div
           ref={nodeRef}
           className={`
-          absolute h-[30px] rounded flex items-center px-2 py-1 overflow-hidden select-none z-10
+          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] lg: rounded flex items-center px-2 py-1 overflow-hidden select-none z-10
           ${isSelected ? 'border-2 border-white' : 'border border-white/20'}
           ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
           ${track.visible ? 'opacity-100' : 'opacity-50'}
@@ -311,10 +311,13 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       },
       [rowDef.id, onDrop],
     );
+    {
+      /* border of time line tracks previously here */
+    }
 
     return (
       <div
-        className={`relative sm:h-6 md:h-8 lg:h-12 border-b border-[#3d3d3d] border-l-[3px]
+        className={`relative sm:h-6 md:h-8 lg:h-12 border-l-[3px]
         ${isDragOver ? 'bg-green-500/10 border-l-green-500' : 'bg-transparent border-l-transparent'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -462,7 +465,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
 
   return (
     <div
-      className="relative min-h-full bg-[#1a1a1a] overflow-visible"
+      className="relative min-h-full bg-primary dark:bg-primary-dark overflow-visible"
       style={{
         width: timelineWidth,
         minWidth: timelineWidth,

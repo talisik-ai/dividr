@@ -49,16 +49,30 @@ module.exports = {
       colors: {
         ...colors, // Spread the default colors
         titleBar: {
-          DEFAULT: '#000000',
-          dark: '#09090B',
+          DEFAULT: '#E6E7EB',
+          dark: '#000000',
         },
         body: {
-          DEFAULT: '#000000',
-          dark: '#09090B',
+          DEFAULT: '#E6E7EB',
+          dark: '#000000',
+        },
+        primary: {
+          DEFAULT: '#FFFFFF',
+          dark: '#121212',
+        },
+        secondary: {
+          DEFAULT: '#E6E7EB',
+          dark: '#000000',
+        },
+        highlight: {
+          DEFAULT: '#1ED760',
+          dark: '#1ED760',
+        },
+        borderMain: {
+          DEFAULT: '#6B7280',
+          dark: '#9CA3AF',
         },
         controls: '#2d2d2d',
-        primary: '#1ED760',
-        secondary: '#121212',
         toolbarIcon: '#9CA3AF',
       },
     },

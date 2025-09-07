@@ -449,7 +449,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
               });
             }
           }}
-          className="w-full bg-black hover:bg-gray-600 text-white p-2 rounded-lg text-xs lg:text-sm font-medium transition-colors duration-200"
+          className="w-full bg-primary hover:bg-gray-600 text-white p-2 rounded-lg text-xs lg:text-sm font-medium transition-colors duration-200"
         >
           Upload
         </button>

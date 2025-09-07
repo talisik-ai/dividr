@@ -51,11 +51,11 @@ const VideoEditorLayout = () => {
 
   return (
     <ErrorBoundary>
-      <div className="h-screen flex flex-col bg-black dark:bg-darkMode text-gray-900 dark:text-gray-100 pb-2 pr-2">
-        <TitleBar className="h-13 py-4 px-2 bg-black dark:bg-darkMode" />
+      <div className="h-screen flex flex-col bg-body dark:bg-body-dark text-gray-900 dark:text-gray-100 pb-2 pr-2">
+        <TitleBar className="h-12 py-3 px-2" />
         <div className="flex flex-1 overflow-hidden h-[calc(100vh-120px)]">
           <Toolbar
-            className={`w-[55px] bg-secondary mx-2 mb-4 overflow-y-auto h-full transition-all duration-300 rounded`}
+            className={`w-[55px] bg-primary dark:bg-primary-dark mx-2 mb-4 overflow-y-auto h-full transition-all duration-300 rounded`}
           />
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className="flex flex-row flex-1 overflow-hidden">
@@ -72,7 +72,7 @@ const VideoEditorLayout = () => {
               {/* Properties Panel - always visible */}
               <PropertiesPanel />
             </div>
-            <div className="h-[185px] md:h-[195px] lg:h-[245px] flex-shrink-0">
+            <div className="h-[210px] md:h-[220px] lg:h-[280px] flex-shrink-0">
               <Timeline />
             </div>
           </div>

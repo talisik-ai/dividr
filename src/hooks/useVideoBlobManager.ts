@@ -201,8 +201,12 @@ export const useVideoBlobManager = (
           return;
         }
 
-        // Create a simple black frame
-        ctx.fillStyle = '#000000';
+        // Create a simple background frame with theme color
+        const computedStyle = getComputedStyle(document.documentElement);
+        const secondaryColor = computedStyle
+          .getPropertyValue('--color-secondary')
+          .trim();
+        ctx.fillStyle = secondaryColor || '#205000';
         ctx.fillRect(0, 0, width, height);
 
         canvas.toBlob(
@@ -313,8 +317,12 @@ export const useVideoBlobManager = (
                 )
                 .sort((a, b) => b.startFrame - a.startFrame)[0]; // Topmost by startFrame (could use z-order if available)
 
-              // Clear canvas
-              ctx.fillStyle = '#000000';
+              // Clear canvas with theme background color
+              const computedStyle = getComputedStyle(document.documentElement);
+              const secondaryColor = computedStyle
+                .getPropertyValue('--color-secondary')
+                .trim();
+              ctx.fillStyle = secondaryColor || '#205000';
               ctx.fillRect(0, 0, canvas.width, canvas.height);
 
               if (activeTrack) {

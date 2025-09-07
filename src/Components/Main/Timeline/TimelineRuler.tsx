@@ -105,10 +105,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
 
   return (
     <div
-      className="h-[36px] lg:h-[40px] bg-[#1e1e1e] border-b border-[#333] relative overflow-hidden cursor-pointer"
-      style={{
-        backgroundImage: 'linear-gradient(to bottom, #2a2a2a 0%, #1e1e1e 100%)',
-      }}
+      className="h-[36px] lg:h-[40px] bg-primary dark:bg-primary-dark border-t border-borderMain dark:border-borderMain-dark relative overflow-hidden cursor-pointer"
       onClick={onClick}
     >
       {/* Background Grid */}
@@ -123,7 +120,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
       />
 
       {/* Track Content Regions Indicator */}
-      <div className="absolute top-8 left-0 right-0 h-[3px] bg-[#2a2a2a]">
+      <div className="absolute top-8 left-0 right-0 h-[3px] bg-primary dark:bg-primary-dark">
         {trackRegions.map((region, index) => (
           <div
             key={index}

@@ -177,7 +177,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   return (
     <div
       ref={timelineRef}
-      className={`timeline-container ${className || ''} flex flex-col h-full bg-gray-800 text-white overflow-hidden`}
+      className={`timeline-container ${className || ''} flex flex-col h-full bg-primary dark:bg-primary-dark text-white overflow-hidden`}
     >
       {/* Timeline Header with Controls */}
       {/* TimelineHeader component removed as per edit hint */}

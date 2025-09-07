@@ -90,7 +90,7 @@ const PanelItemComponent: React.FC<{
             }`}
           >
             <span
-              className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-200 ${
+              className={`inline-block h-3 w-3 transform rounded-full bg-primary dark:bg-primary-dark transition-transform duration-200 ${
                 item.value ? 'translate-x-4' : 'translate-x-1'
               }`}
             />
@@ -151,7 +151,7 @@ const PanelSectionComponent: React.FC<{
   onUpdateItem: (itemId: string, value: string | number | boolean) => void;
 }> = ({ section, onUpdateItem }) => {
   return (
-    <div className="space-y-3 bg-secondary">
+    <div className="space-y-3 bg-primary">
       <h4 className="text-sm font-semibold text-white border-b border-gray-600 pb-1">
         {section.title}
       </h4>
@@ -193,7 +193,7 @@ export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
   if (activePanelType && hasCustomPanelComponent(activePanelType)) {
     const CustomComponent = getCustomPanelComponent(activePanelType);
     const basePanelClasses =
-      'bg-secondary text-white border-r border-gray-700 transition-all duration-300 w-[22%] text-xs';
+      'bg-primary dark:bg-primary-dark text-white border-r border-gray-700 transition-all duration-300 w-[22%] text-xs';
 
     if (CustomComponent) {
       return (
@@ -222,7 +222,7 @@ export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
 
   return (
     <div
-      className={`overflow-auto bg-secondary text-white border-r border-gray-700 transition-all duration-300 ${className || panelWidth}`}
+      className={`overflow-auto bg-primary dark:bg-primary-dark text-white border-r border-gray-700 transition-all duration-300 ${className || panelWidth}`}
     >
       {/* Panel Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-600">

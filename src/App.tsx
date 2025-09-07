@@ -8,7 +8,7 @@ import { ThemeProvider } from './utility/ThemeProvider';
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
+    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
       <Router>
         <Routes>
           {/* Home route - Shows NewProject page with TitleBar */}

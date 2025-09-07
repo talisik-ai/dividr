@@ -314,12 +314,11 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative bg-black overflow-hidden ${className}`}
+      className={`relative bg-secondary dark:bg-secondary-dark overflow-hidden ${className}`}
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}
       onDragOver={handleDrag}
       onDrop={handleDrop}
-      style={{ backgroundColor: preview.backgroundColor }}
     >
       {/* Video */}
       {activeVideoTrack && (
@@ -368,7 +367,7 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
               return (
                 <div
                   key={track.id}
-                  className="text-white text-center absolute bottom-5 left-0 right-0"
+                  className="text-white text-center absolute bottom-5 left-0 right-0 bg-secondary dark:bg-secondary-dark"
                   style={{
                     fontSize: `${Math.max(18, actualHeight * 0.045)}px`,
                     fontFamily: appliedStyle.fontFamily,
@@ -377,7 +376,6 @@ export const VideoDirectPreview: React.FC<VideoDirectPreviewProps> = ({
                     textTransform: appliedStyle.textTransform,
                     lineHeight: '1.2',
                     whiteSpace: 'pre-wrap',
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
                     padding: '2px 0',
                     margin: '0 auto',
                     maxWidth: '90%',

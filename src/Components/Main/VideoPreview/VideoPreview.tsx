@@ -514,7 +514,10 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       ctx.save();
 
       // Clear entire canvas first
-      ctx.fillStyle = preview.backgroundColor;
+      // Get the computed secondary color from CSS
+      const computedStyle = getComputedStyle(document.documentElement);
+      const secondaryColor = computedStyle.getPropertyValue('--color-secondary').trim();
+      ctx.fillStyle = secondaryColor || '#205000'; // fallback to a reasonable color
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Center the content and apply scale
@@ -690,7 +693,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
       {/* Loading indicator */}
       {loadingTracks.size > 0 && (
-        <div className="absolute top-4 right-4 bg-black bg-opacity-75 text-white px-3 py-1 rounded text-sm">
+        <div className="absolute top-4 right-4 bg-secondary bg-opacity-75 text-white px-3 py-1 rounded text-sm">
           Loading {loadingTracks.size} track{loadingTracks.size > 1 ? 's' : ''}
           ...
         </div>
@@ -768,7 +771,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       })()}
 
       {/* Debug info
-       <div className="absolute bottom-4 left-4 bg-black bg-opacity-75 text-white px-3 py-1 rounded text-xs">
+       <div className="absolute bottom-4 left-4 bg-secondary bg-opacity-75 text-white px-3 py-1 rounded text-xs">
          Tracks: {tracks.length} | Active: {getActiveTracksAtFrame(timeline.currentFrame).length} | Frame: {timeline.currentFrame}
        </div>
  */}

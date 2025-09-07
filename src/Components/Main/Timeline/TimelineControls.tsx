@@ -84,7 +84,7 @@ export const TimelineControls: React.FC = () => {
   };
 
   return (
-    <div className="h-10 bg-secondary flex items-center justify-between px-4 border-t-8 border-black">
+    <div className="h-10 bg-primary dark:bg-primary-dark flex items-center justify-between px-4 border-t-8 border-secondary dark:border-secondary-dark">
       {/* Playback Controls */}
       <div className="flex items-center">
         <button
@@ -202,7 +202,7 @@ export const TimelineControls: React.FC = () => {
           <select
             value={playback.playbackRate}
             onChange={(e) => setPlaybackRate(Number(e.target.value))}
-            className="bg-secondary font-toolbarIcon text-xs"
+            className="bg-primary font-toolbarIcon text-xs"
           >
             <option value={0.25}>0.25x</option>
             <option value={0.5}>0.5x</option>

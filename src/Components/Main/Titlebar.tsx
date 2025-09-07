@@ -24,6 +24,7 @@ import {
 import { ExportModal } from '@/components/main/Modal/ExportModal';
 import { Input } from '@/components/sub/ui/input';
 import { ModeToggle } from '@/components/sub/custom/ModeToggle';
+import { cn } from '@/lib/utils';
 interface TitleBarProps {
   className?: string;
 }
@@ -326,11 +327,11 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   */
   return (
     <>
-      <div className={className}>
-        <div className="relative flex items-center h-6 px-4 py-2 drag-area">
-          {/* Title */}
-          <div className="text-sm">
-            <img src={logo} className="h-6" />
+      <div className={cn('bg-titleBar dark:bg-titleBar-dark', className)}>
+        <div className="relative flex items-center h-8 px-4 py-1 drag-area">
+          {/* Logo */}
+          <div className="flex items-center">
+            <img src={logo} className="h-5 w-auto" alt="Dividr Logo" />
           </div>
 
           {/* Centered Title */}
@@ -338,58 +339,67 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
             <span className="text-white no-drag">{titleText}</span>
           </div>
 
-          {/* Buttons */}
-          <div className="flex space-x-2 no-drag text-white ml-auto">
+          {/* Right Side Controls */}
+          <div className="flex items-center gap-2 no-drag text-white ml-auto h-6">
             {/* Export Button - Only show in video editor */}
             {showExportButton && (
               <button
                 onClick={handleRender}
                 disabled={render.isRendering || tracks.length === 0}
-                className="m-2 h-6 lg:h-8 bg-primary border-none text-white text-xs lg:text-sm cursor-pointer px-2 py-0 rounded flex flex-row gap-1 items-center justify-center"
+                className="h-6 bg-highlight border-none text-white text-xs lg:text-sm cursor-pointer px-3 py-1 rounded flex items-center gap-2 hover:bg-highlight/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {render.isRendering
                   ? `Exporting... ${render.progress.toFixed(0)}%`
                   : 'Export'}
-                <PiExportBold size={16} />
+                <PiExportBold size={14} />
               </button>
             )}
 
-            {/* Import Media Button - Only show when not in video editor */}
+            {/* New Project Button - Only show when not in video editor */}
             {!showExportButton && (
               <button
                 onClick={handleCreateProject}
-                className="m-2 h-6 lg:h-8  bg-primary border-none text-white text-xs lg:text-sm cursor-pointer px-4 py-0 rounded flex flex-row gap-1 items-center justify-center"
+                className="h-6 bg-highlight border-none text-white text-xs lg:text-sm cursor-pointer px-3 py-1 rounded flex items-center gap-2 hover:bg-highlight/90 transition-colors"
               >
-                <FaPlus size={16} />
+                <FaPlus size={14} />
                 New Project
               </button>
             )}
-            {/*Dark Mode/Light Mode    */}
-            <ModeToggle />
 
-            {/* Minimize Button */}
-            <button
-              className="rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment hover:opacity-100 p-1 m-2"
-              onClick={() => window.appControl.minimizeApp()}
-            >
-              <IoMdRemove size={16} />
-            </button>
+            {/* Dark Mode/Light Mode Toggle */}
+            <div className="flex items-center">
+              <ModeToggle />
+            </div>
 
-            {/* Maximize Button with dynamic icon */}
-            <button
-              className="rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment hover:opacity-100 p-1 m-2"
-              onClick={handleMaximizeRestore}
-            >
-              {isMaximized ? <PiBrowsers size={16} /> : <RxBox size={14} />}
-            </button>
+            {/* Window Controls */}
+            <div className="flex items-center">
+              {/* Minimize Button */}
+              <button
+                className="w-8 h-6 rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment flex items-center justify-center transition-colors"
+                onClick={() => window.appControl.minimizeApp()}
+                title="Minimize"
+              >
+                <IoMdRemove size={16} />
+              </button>
 
-            {/* Close Button */}
-            <button
-              className="rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment hover:opacity-100 p-1 m-2"
-              onClick={handleCloseClick}
-            >
-              <IoMdClose size={16} />
-            </button>
+              {/* Maximize Button with dynamic icon */}
+              <button
+                className="w-8 h-6 rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment flex items-center justify-center transition-colors"
+                onClick={handleMaximizeRestore}
+                title={isMaximized ? 'Restore' : 'Maximize'}
+              >
+                {isMaximized ? <PiBrowsers size={16} /> : <RxBox size={16} />}
+              </button>
+
+              {/* Close Button */}
+              <button
+                className="w-8 h-6 rounded-md hover:bg-red-600 flex items-center justify-center transition-colors"
+                onClick={handleCloseClick}
+                title="Close"
+              >
+                <IoMdClose size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </div>

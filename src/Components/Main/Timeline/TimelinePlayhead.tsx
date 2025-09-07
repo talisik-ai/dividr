@@ -21,13 +21,13 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
     <>
       {/* Playhead line */}
       <div
-        className="absolute top-0 w-0.5 h-full bg-white z-[100] pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
+        className="absolute top-0 w-0.5 h-full bg-borderMain dark:borderMain-dark z-[100] pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
         style={{ left: left }}
       />
 
       {/* Playhead handle */}
       <div
-        className="absolute top-0 w-[14px] h-5 bg-white z-[101] pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
+        className="absolute top-0 w-[14px] h-5 bg-borderMain dark:borderMain-dark z-[101] pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
         style={{
           left: left - 6,
           clipPath: 'polygon(50% 100%, 0 0, 100% 0)',
@@ -36,7 +36,7 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = ({
 
       {/* Frame number indicator */}
       <div
-        className="absolute top-0.5 bg-black/80 text-white px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-[102] pointer-events-none"
+        className="absolute top-0.5 bg-primary/80 text-white px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-[102] pointer-events-none"
         style={{ left: left + 8 }}
       >
         {currentFrame}

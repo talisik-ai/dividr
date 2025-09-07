@@ -6,12 +6,12 @@
  * @returns JSX.Element - The rendered mode toggle component.
  */
 import { Button } from '@/components/sub/ui/button';
-import { useTheme } from '@/components/ThemeProvider';
-import { Moon, Sun } from 'lucide-react';
+import { useTheme } from '@/utility/ThemeProvider';
+import { Moon, Sun, Monitor } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 export function ModeToggle() {
-  const { setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -42,50 +42,78 @@ export function ModeToggle() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Get the current theme icon
+  const getCurrentIcon = () => {
+    switch (theme) {
+      case 'light':
+        return <Sun className="h-4 w-4 transition-all duration-200" />;
+      case 'dark':
+        return <Moon className="h-4 w-4 transition-all duration-200" />;
+      case 'system':
+        return <Monitor className="h-4 w-4 transition-all duration-200" />;
+      default:
+        return <Sun className="h-4 w-4 transition-all duration-200" />;
+    }
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       <Button
         variant="ghost"
         size="icon"
-        className="hover:bg-gray-100 dark:bg-transparent dark:hover:bg-darkModeCompliment hover:opacity-100 active:bg-transparent focus-none p-1 my-4"
+        className="w-8 h-7 hover:bg-gray-700 dark:hover:bg-darkModeCompliment transition-colors border-none bg-transparent p-0"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span className="relative flex items-center justify-center">
-          <Sun className="absolute h-[1rem] w-[1rem] transition-transform duration-300 text-text-paragraph dark:rotate-90 dark:scale-0" />
-          <Moon className="absolute h-[1rem] w-[1rem] transition-transform duration-300 text-text-paragraph scale-0 dark:rotate-0 dark:scale-100" />
+        <span className="flex items-center justify-center text-white">
+          {getCurrentIcon()}
         </span>
         <span className="sr-only">Toggle theme</span>
       </Button>
 
       {isOpen && (
-        <div className="fixed right-[inherit] w-32 rounded-md bg-white dark:bg-darkModeCompliment shadow-lg ring-1 ring-black ring-opacity-5 z-[100]">
+        <div className="absolute right-0 top-full mt-1 w-32 rounded-md bg-primary dark:bg-primary-dark shadow-lg ring-1 ring-black ring-opacity-5 z-[100]">
           <div className="py-1" role="menu">
             <button
-              className="block w-full px-4 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-darkModeHover"
+              className={`flex items-center gap-2 w-full h-8 px-3 
+    text-sm font-medium leading-none 
+    text-left text-gray-700 dark:text-gray-200 
+    hover:bg-secondary dark:hover:bg-secondary-dark 
+    border border-transparent transition-colors duration-150
+    ${theme === 'light' ? 'bg-gray-100 dark:bg-secondary-dark' : ''}`}
               onClick={() => {
                 setTheme('light');
                 setIsOpen(false);
               }}
             >
-              Light
+              <span>Light</span>
             </button>
             <button
-              className="block w-full px-4 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-darkModeHover"
+              className={`flex items-center gap-2 w-full h-8 px-3 
+    text-sm font-medium leading-none 
+    text-left text-gray-700 dark:text-gray-200 
+    hover:bg-gray-100 dark:hover:bg-secondary-dark 
+    border border-transparent transition-colors duration-150
+    ${theme === 'dark' ? 'bg-gray-100 dark:bg-secondary-dark' : ''}`}
               onClick={() => {
                 setTheme('dark');
                 setIsOpen(false);
               }}
             >
-              Dark
+              <span>Dark</span>
             </button>
             <button
-              className="block w-full px-4 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-darkModeHover"
+              className={`flex items-center gap-2 w-full h-8 px-3 
+  text-sm font-medium leading-none 
+  text-left text-gray-700 dark:text-gray-200  
+  hover:bg-gray-100 dark:hover:bg-secondary-dark 
+  border- transition-colors duration-150
+  ${theme === 'system' ? 'bg-gray-100 dark:bg-secondary-dark' : ''}`}
               onClick={() => {
                 setTheme('system');
                 setIsOpen(false);
               }}
             >
-              System
+              <span>System</span>
             </button>
           </div>
         </div>

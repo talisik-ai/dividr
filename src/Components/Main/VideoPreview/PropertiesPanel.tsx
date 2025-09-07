@@ -11,7 +11,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const { tracks, timeline, preview } = useVideoEditorStore();
 
   return (
-    <div className="bg-secondary p-4 overflow-auto w-50 text-white border-l-8 border-black rounded">
+    <div className="bg-primary dark:bg-primary-dark p-4 overflow-auto w-50 border-l-8 border-secondary dark:border-secondary-dark rounded text-black dark:text-white">
       <h3 className="text-sm font-bold mb-4">Properties</h3>
 
       {timeline.selectedTrackIds.length > 0 ? (

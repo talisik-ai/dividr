@@ -304,14 +304,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative bg-black overflow-hidden ${className}`}
+      className={`relative bg-primary dark:bg-primary-dark overflow-hidden ${className}`}
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}
       onDragOver={handleDrag}
       onDrop={handleDrop}
-      style={{
-        backgroundColor: preview.backgroundColor,
-      }}
     >
       {/* Video Element */}
       <video
@@ -411,7 +408,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
       {/* Loading Overlay */}
       {isLoading && (
-        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="absolute inset-0 bg-primary bg-opacity-50 flex items-center justify-center">
           <div className="flex flex-col items-center text-white">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mb-2"></div>
             <span className="text-sm">Generating preview...</span>
@@ -477,7 +474,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
       {/* Debug Info (development only) */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="absolute top-2 left-2 bg-black bg-opacity-75 text-white text-xs p-2 rounded">
+        <div className="absolute top-2 left-2 bg-primary bg-opacity-75 text-white text-xs p-2 rounded">
           <div>Cache Size: {cacheSize}</div>
           <div>Generating: {isGenerating ? 'Yes' : 'No'}</div>
           <div>Current Time: {currentTime.toFixed(2)}s</div>

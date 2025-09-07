@@ -67,7 +67,7 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
   return (
     <div
-      className={`bg-secondary ${className || ''} flex flex-col h-full bg-body font-white p-4 rounded`}
+      className={`${className || ''} flex flex-col h-full bg-primary dark:bg-primary-dark font-white p-4 rounded`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
@@ -81,8 +81,8 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
       {/* Render Progress Overlay */}
       {render.isRendering && (
-        <div className="fixed top-0 left-0 right-0 bottom-0 bg-black bg-opacity-80 flex items-center justify-center z-[1000]">
-          <div className="bg-black p-8 rounded text-center min-w-[200px] text-white border-2 border-white">
+        <div className="fixed top-0 left-0 right-0 bottom-0 bg-primary bg-opacity-80 flex items-center justify-center z-[1000]">
+          <div className="bg-primary p-8 rounded text-center min-w-[200px] text-white border-2 border-primary">
             <h3 className="m-0 mb-4">Rendering Video</h3>
             <div className="w-full h-2 bg-gray-700 rounded overflow-hidden mb-4">
               <div

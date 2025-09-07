@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import New from '../../Assets/Logo/New.svg';
+import New from '../../assets/Logo/New.svg';
 import TitleBar from '../main/Titlebar';
 
 /**
@@ -16,12 +16,14 @@ const NewProject = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-black dark:bg-darkMode text-gray-900 dark:text-gray-100 pb-2 pr-2">
-      <TitleBar className="h-13 py-4 px-2 bg-black dark:bg-darkMode relative z-10" />
+    <div className="h-screen flex flex-col text-gray-900 dark:text-gray-100 pb-2 pr-2">
+      <TitleBar className="h-13 py-4 px-2 bg-primary dark:bg-darkMode relative z-10" />
       <div className="flex-1 flex items-center justify-center text-white text-center">
         <div className="flex text-md font-bold flex-col items-center gap-4">
           <img src={New} alt="New Project" />
-          <h1 className="text-2xl">No projects yet</h1>
+          <h1 className="text-2xl text-gray-900 dark:text-gray-100">
+            No projects yet
+          </h1>
           <div className="text-xs text-[#9CA3AF]">
             <p>Start creating your first video project. Import media,</p>
             <p className="text-xs"> edit, and export professional videos.</p>
