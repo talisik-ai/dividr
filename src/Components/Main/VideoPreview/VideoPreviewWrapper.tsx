@@ -1,6 +1,6 @@
 import React from 'react';
 import { VideoPreview } from './VideoPreview';
-import { VideoDirectPreview } from './VideoDirectPreview';
+import { VideoBlobPreview } from './VideoBlobPreview';
 
 interface VideoPreviewWrapperProps {
   className?: string;
@@ -71,7 +71,7 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
           }
         >
           <VideoDirectErrorBoundary onError={() => setDirectError(true)}>
-            <VideoDirectPreview className={className} />
+            <VideoBlobPreview className={className} />
           </VideoDirectErrorBoundary>
         </React.Suspense>
       );
@@ -121,4 +121,4 @@ const VideoDirectErrorBoundary: React.FC<{
 };
 
 // Export both components for direct usage if needed
-export { VideoPreview, VideoDirectPreview };
+export { VideoPreview, VideoBlobPreview };
