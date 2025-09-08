@@ -16,29 +16,56 @@ import {
 
 export const AppMenuBar = () => {
   return (
-    <Menubar>
+    <Menubar variant="minimal">
+      <MenubarMenu>
+        <MenubarTrigger>Home</MenubarTrigger>
+        <MenubarContent>
+          <MenubarItem>
+            Dashboard <MenubarShortcut>⌘D</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem>
+            Recent Projects <MenubarShortcut>⌘R</MenubarShortcut>
+          </MenubarItem>
+          <MenubarSeparator />
+          <MenubarItem>Welcome Screen</MenubarItem>
+          <MenubarItem>Getting Started</MenubarItem>
+        </MenubarContent>
+      </MenubarMenu>
       <MenubarMenu>
         <MenubarTrigger>File</MenubarTrigger>
         <MenubarContent>
           <MenubarItem>
-            New Tab <MenubarShortcut>⌘T</MenubarShortcut>
+            New Project <MenubarShortcut>⌘N</MenubarShortcut>
           </MenubarItem>
           <MenubarItem>
-            New Window <MenubarShortcut>⌘N</MenubarShortcut>
+            Open Project <MenubarShortcut>⌘O</MenubarShortcut>
           </MenubarItem>
-          <MenubarItem disabled>New Incognito Window</MenubarItem>
+          <MenubarItem>
+            Save Project <MenubarShortcut>⌘S</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem>
+            Save As... <MenubarShortcut>⇧⌘S</MenubarShortcut>
+          </MenubarItem>
           <MenubarSeparator />
           <MenubarSub>
-            <MenubarSubTrigger>Share</MenubarSubTrigger>
+            <MenubarSubTrigger>Import</MenubarSubTrigger>
             <MenubarSubContent>
-              <MenubarItem>Email link</MenubarItem>
-              <MenubarItem>Messages</MenubarItem>
-              <MenubarItem>Notes</MenubarItem>
+              <MenubarItem>Import Video</MenubarItem>
+              <MenubarItem>Import Audio</MenubarItem>
+              <MenubarItem>Import Images</MenubarItem>
+            </MenubarSubContent>
+          </MenubarSub>
+          <MenubarSub>
+            <MenubarSubTrigger>Export</MenubarSubTrigger>
+            <MenubarSubContent>
+              <MenubarItem>Export Video</MenubarItem>
+              <MenubarItem>Export Audio</MenubarItem>
+              <MenubarItem>Export Project</MenubarItem>
             </MenubarSubContent>
           </MenubarSub>
           <MenubarSeparator />
           <MenubarItem>
-            Print... <MenubarShortcut>⌘P</MenubarShortcut>
+            Close Project <MenubarShortcut>⌘W</MenubarShortcut>
           </MenubarItem>
         </MenubarContent>
       </MenubarMenu>
@@ -52,54 +79,71 @@ export const AppMenuBar = () => {
             Redo <MenubarShortcut>⇧⌘Z</MenubarShortcut>
           </MenubarItem>
           <MenubarSeparator />
+          <MenubarItem>
+            Cut <MenubarShortcut>⌘X</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem>
+            Copy <MenubarShortcut>⌘C</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem>
+            Paste <MenubarShortcut>⌘V</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem>
+            Delete <MenubarShortcut>⌫</MenubarShortcut>
+          </MenubarItem>
+          <MenubarSeparator />
+          <MenubarItem>
+            Select All <MenubarShortcut>⌘A</MenubarShortcut>
+          </MenubarItem>
+          <MenubarItem>Deselect All</MenubarItem>
+          <MenubarSeparator />
           <MenubarSub>
-            <MenubarSubTrigger>Find</MenubarSubTrigger>
+            <MenubarSubTrigger>Timeline</MenubarSubTrigger>
             <MenubarSubContent>
-              <MenubarItem>Search the web</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>Find...</MenubarItem>
-              <MenubarItem>Find Next</MenubarItem>
-              <MenubarItem>Find Previous</MenubarItem>
+              <MenubarItem>Split Clip</MenubarItem>
+              <MenubarItem>Merge Clips</MenubarItem>
+              <MenubarItem>Trim Start</MenubarItem>
+              <MenubarItem>Trim End</MenubarItem>
+            </MenubarSubContent>
+          </MenubarSub>
+        </MenubarContent>
+      </MenubarMenu>
+      <MenubarMenu>
+        <MenubarTrigger>Settings</MenubarTrigger>
+        <MenubarContent>
+          <MenubarCheckboxItem>Auto-save Projects</MenubarCheckboxItem>
+          <MenubarCheckboxItem checked>Show Timeline Grid</MenubarCheckboxItem>
+          <MenubarCheckboxItem>Snap to Grid</MenubarCheckboxItem>
+          <MenubarSeparator />
+          <MenubarSub>
+            <MenubarSubTrigger>Playback Quality</MenubarSubTrigger>
+            <MenubarSubContent>
+              <MenubarRadioGroup value="high">
+                <MenubarRadioItem value="low">Low</MenubarRadioItem>
+                <MenubarRadioItem value="medium">Medium</MenubarRadioItem>
+                <MenubarRadioItem value="high">High</MenubarRadioItem>
+                <MenubarRadioItem value="ultra">Ultra</MenubarRadioItem>
+              </MenubarRadioGroup>
             </MenubarSubContent>
           </MenubarSub>
           <MenubarSeparator />
-          <MenubarItem>Cut</MenubarItem>
-          <MenubarItem>Copy</MenubarItem>
-          <MenubarItem>Paste</MenubarItem>
+          <MenubarItem>Preferences...</MenubarItem>
+          <MenubarItem>Keyboard Shortcuts</MenubarItem>
+          <MenubarItem>Reset to Defaults</MenubarItem>
         </MenubarContent>
       </MenubarMenu>
       <MenubarMenu>
-        <MenubarTrigger>View</MenubarTrigger>
+        <MenubarTrigger>Help</MenubarTrigger>
         <MenubarContent>
-          <MenubarCheckboxItem>Always Show Bookmarks Bar</MenubarCheckboxItem>
-          <MenubarCheckboxItem checked>
-            Always Show Full URLs
-          </MenubarCheckboxItem>
+          <MenubarItem>User Guide</MenubarItem>
+          <MenubarItem>Video Tutorials</MenubarItem>
+          <MenubarItem>Keyboard Shortcuts</MenubarItem>
           <MenubarSeparator />
-          <MenubarItem inset>
-            Reload <MenubarShortcut>⌘R</MenubarShortcut>
-          </MenubarItem>
-          <MenubarItem disabled inset>
-            Force Reload <MenubarShortcut>⇧⌘R</MenubarShortcut>
-          </MenubarItem>
+          <MenubarItem>Report Bug</MenubarItem>
+          <MenubarItem>Feature Request</MenubarItem>
           <MenubarSeparator />
-          <MenubarItem inset>Toggle Fullscreen</MenubarItem>
-          <MenubarSeparator />
-          <MenubarItem inset>Hide Sidebar</MenubarItem>
-        </MenubarContent>
-      </MenubarMenu>
-      <MenubarMenu>
-        <MenubarTrigger>Profiles</MenubarTrigger>
-        <MenubarContent>
-          <MenubarRadioGroup value="benoit">
-            <MenubarRadioItem value="andy">Andy</MenubarRadioItem>
-            <MenubarRadioItem value="benoit">Benoit</MenubarRadioItem>
-            <MenubarRadioItem value="Luis">Luis</MenubarRadioItem>
-          </MenubarRadioGroup>
-          <MenubarSeparator />
-          <MenubarItem inset>Edit...</MenubarItem>
-          <MenubarSeparator />
-          <MenubarItem inset>Add Profile...</MenubarItem>
+          <MenubarItem>About Dividr</MenubarItem>
+          <MenubarItem>Check for Updates</MenubarItem>
         </MenubarContent>
       </MenubarMenu>
     </Menubar>

@@ -5,13 +5,21 @@ import * as React from 'react';
 
 function Menubar({
   className,
+  variant = 'default',
   ...props
-}: React.ComponentProps<typeof MenubarPrimitive.Root>) {
+}: React.ComponentProps<typeof MenubarPrimitive.Root> & {
+  variant?: 'default' | 'minimal';
+}) {
   return (
     <MenubarPrimitive.Root
       data-slot="menubar"
+      data-variant={variant}
       className={cn(
-        'bg-background flex h-9 items-center gap-1 rounded-md border p-1 shadow-xs',
+        'flex h-9 items-center gap-1',
+        {
+          'rounded-md border p-1 shadow-xs': variant === 'default',
+          'p-0 border-none shadow-none': variant === 'minimal',
+        },
         className,
       )}
       {...props}

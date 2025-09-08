@@ -1,7 +1,6 @@
 import { PropertiesPanel } from '@/Components/Main/VideoPreview/PropertiesPanel';
 import { ToolsPanel } from '@/Components/Main/VideoPreview/ToolsPanel';
 import { AppMenuBar } from '@/Components/sub/custom/AppMenuBar';
-import { Separator } from '@/Components/sub/ui/Separator';
 import { useIsPanelVisible } from '@/Store/PanelStore';
 import { Outlet } from 'react-router-dom';
 import { Timeline } from '../Components/Main/Timeline/Timeline';
@@ -22,8 +21,6 @@ const VideoEditorLayout = () => {
           <AppMenuBar />
           <div className="flex flex-1 gap-2">
             <Toolbar />
-            <Separator orientation="vertical" />
-            {/* Tools Panel - integrated within toolbar area */}
             {isPanelVisible && (
               <div className="flex-1 overflow-hidden">
                 <ToolsPanel className="h-full" />

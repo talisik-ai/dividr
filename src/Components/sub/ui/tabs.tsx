@@ -1,7 +1,6 @@
+import { cn } from '@/Lib/utils';
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 import * as React from 'react';
-
-import { cn } from '@/lib/utils';
 
 function Tabs({
   className,
@@ -18,13 +17,22 @@ function Tabs({
 
 function TabsList({
   className,
+  variant = 'default',
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.List>) {
+}: React.ComponentProps<typeof TabsPrimitive.List> & {
+  variant?: 'default' | 'text';
+}) {
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
+      data-variant={variant}
       className={cn(
-        'bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]',
+        'inline-flex w-fit items-center justify-center',
+        {
+          'bg-muted text-muted-foreground h-9 rounded-lg p-[3px]':
+            variant === 'default',
+          'h-fit gap-6 border-b border-border': variant === 'text',
+        },
         className,
       )}
       {...props}
@@ -34,19 +42,28 @@ function TabsList({
 
 function TabsTrigger({
   className,
+  variant,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+}: React.ComponentProps<typeof TabsPrimitive.Trigger> & {
+  variant?: 'default' | 'text';
+}) {
+  // Get variant from parent context or use provided variant
+  const parentVariant = variant || 'default';
+
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
+      data-variant={parentVariant}
       className={cn(
-        "text-xs transition-all duration-200 inline-flex h-fit flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 font-medium whitespace-nowrap focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        // Default state
-        'text-gray-400 hover:text-gray-300 hover:bg-gray-800/50',
-        // Active state with enhanced styling
-        'data-[state=active]:text-blue-400 data-[state=active]:bg-blue-500/20 data-[state=active]:border-blue-500/30 data-[state=active]:shadow-sm',
-        // Focus states
-        'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring',
+        "text-xs transition-all duration-200 inline-flex h-fit items-center justify-center gap-1.5 font-medium whitespace-nowrap focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        {
+          // Default variant styles
+          'flex-1 rounded-md border border-transparent px-2 py-1 text-muted-foreground hover:text-muted-foreground/80 hover:bg-muted/50 data-[state=active]:text-primary data-[state=active]:bg-background data-[state=active]:border-border data-[state=active]:shadow-sm focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring':
+            parentVariant === 'default',
+          // Text variant styles
+          'relative px-3 py-2 text-muted-foreground hover:text-foreground data-[state=active]:text-primary after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-transparent after:transition-colors hover:after:bg-border data-[state=active]:after:bg-primary':
+            parentVariant === 'text',
+        },
         className,
       )}
       {...props}

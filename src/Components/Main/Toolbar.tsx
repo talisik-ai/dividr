@@ -8,13 +8,8 @@
  */
 import { cn } from '@/Lib/utils';
 import { usePanelStore, type PanelType } from '@/Store/PanelStore';
+import { Cog, FolderDown, Music, Type } from 'lucide-react';
 import { useCallback, useRef } from 'react';
-import { BiText } from 'react-icons/bi';
-import { BsCameraVideo } from 'react-icons/bs';
-import { CgSoftwareDownload } from 'react-icons/cg';
-import { LuMusic } from 'react-icons/lu';
-import { MdOutlineSettings } from 'react-icons/md';
-import { SlPicture } from 'react-icons/sl';
 import { Button } from '../sub/ui/Button';
 
 interface ToolbarButtonProps {
@@ -45,47 +40,42 @@ interface ToolbarConfig {
   panelType: PanelType;
   icon: React.ReactNode;
   title: string;
-  size: number;
   isSpecial?: boolean; // for media-import which has special handling
 }
 
 const toolbarConfig: ToolbarConfig[] = [
   {
     panelType: 'media-import',
-    icon: <CgSoftwareDownload size={20} />,
+    icon: <FolderDown size={16} />,
     title: 'Import media files',
-    size: 20,
     isSpecial: true,
   },
   {
     panelType: 'text-tools',
-    icon: <BiText size={18} />,
+    icon: <Type size={16} />,
     title: 'Text tools',
-    size: 18,
   },
-  {
-    panelType: 'video-effects',
-    icon: <BsCameraVideo size={16} />,
-    title: 'Video effects',
-    size: 16,
-  },
-  {
-    panelType: 'images',
-    icon: <SlPicture size={16} />,
-    title: 'Image tools',
-    size: 16,
-  },
+  // {
+  //   panelType: 'video-effects',
+  //   icon: <BsCameraVideo size={16} />,
+  //   title: 'Video effects',
+  //   size: 16,
+  // },
+  // {
+  //   panelType: 'images',
+  //   icon: <SlPicture size={16} />,
+  //   title: 'Image tools',
+  //   size: 16,
+  // },
   {
     panelType: 'audio-tools',
-    icon: <LuMusic size={16} />,
+    icon: <Music size={16} />,
     title: 'Audio tools',
-    size: 16,
   },
   {
     panelType: 'settings',
-    icon: <MdOutlineSettings size={18} />,
+    icon: <Cog size={16} />,
     title: 'Project settings',
-    size: 18,
   },
 ];
 
