@@ -196,7 +196,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   const uploadArea = (
     <div
       className={cn(
-        'relative border-2 border-dashed rounded-lg lg:p-8 text-center transition-all duration-200',
+        'relative border-2 border-dashed border-accent h-full flex items-center justify-center rounded-lg lg:p-8 text-center transition-all duration-200',
         dragActive
           ? 'border-primary bg-primary/10'
           : 'border-border hover:border-border/80',
@@ -225,13 +225,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
           </svg>
         </div>
 
-        <div className="hidden lg:block">
-          <p className="text-sm font-medium text-foreground mb-2">
-            Drag & drop media files here
-          </p>
-          <p className="text-xs text-muted-foreground mb-4">
-            or browse to upload from your device
-          </p>
+        <div className="hidden lg:block text-xs text-muted-foreground space-y-2">
+          <p>There's nothing here yet</p>
+          <p>Drag & drop media your files here</p>
 
           <Button
             onClick={async () => {

@@ -31,7 +31,7 @@ function TabsList({
         {
           'bg-muted text-muted-foreground h-9 rounded-lg p-[3px]':
             variant === 'default',
-          'h-fit gap-6 border-b border-border': variant === 'text',
+          'h-fit gap-4': variant === 'text',
         },
         className,
       )}
@@ -61,7 +61,7 @@ function TabsTrigger({
           'flex-1 rounded-md border border-transparent px-2 py-1 text-muted-foreground hover:text-muted-foreground/80 hover:bg-muted/50 data-[state=active]:text-primary data-[state=active]:bg-background data-[state=active]:border-border data-[state=active]:shadow-sm focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring':
             parentVariant === 'default',
           // Text variant styles
-          'relative px-3 py-2 text-muted-foreground hover:text-foreground data-[state=active]:text-primary after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-transparent after:transition-colors hover:after:bg-border data-[state=active]:after:bg-primary':
+          'relative text-muted-foreground hover:text-foreground data-[state=active]:text-primary after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-transparent after:transition-colors hover:after:bg-border':
             parentVariant === 'text',
         },
         className,
