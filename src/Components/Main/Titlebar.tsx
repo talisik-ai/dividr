@@ -24,7 +24,7 @@ import { useTheme } from '@/Utility/ThemeProvider';
 import { Copy, Minus, Plus, Square, X } from 'lucide-react';
 import React, { useCallback } from 'react';
 import { PiExportBold } from 'react-icons/pi';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../sub/ui/Button';
 
 interface TitleBarProps {
@@ -330,15 +330,17 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   */
   return (
     <>
-      <div className={cn('bg-zinc-100 dark:bg-zinc-900', className)}>
+      <div className={cn('', className)}>
         <div className="relative flex items-center h-8 drag-area">
           {/* Logo */}
-          <div className="flex items-center">
-            <img
-              src={theme === 'dark' ? LogoDark : LogoLight}
-              className="h-5 w-auto"
-              alt="Dividr Logo"
-            />
+          <div className="flex items-center no-drag">
+            <Link to="/" className="cursor-pointer">
+              <img
+                src={theme === 'dark' ? LogoDark : LogoLight}
+                className="h-5 w-auto"
+                alt="Dividr Logo"
+              />
+            </Link>
           </div>
 
           {/* Centered Title */}

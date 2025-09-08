@@ -14,6 +14,7 @@ import { CgSoftwareDownload } from 'react-icons/cg';
 import { LuMusic } from 'react-icons/lu';
 import { MdOutlineSettings } from 'react-icons/md';
 import { SlPicture } from 'react-icons/sl';
+import { Button } from '../sub/ui/Button';
 
 interface ToolbarButtonProps {
   icon: React.ReactNode;
@@ -28,17 +29,17 @@ const ToolbarButton = ({
   onClick,
   isActive,
 }: ToolbarButtonProps) => (
-  <button
+  <Button
     onClick={onClick}
     title={title}
-    className={`transition-all duration-200 p-2 rounded-lg hover:bg-gray-800/50 ${
-      isActive
-        ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
-        : 'text-toolbarIcon hover:text-gray-300'
-    }`}
+    size="icon"
+    variant="ghost"
+    className={
+      isActive ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30' : ''
+    }
   >
     {icon}
-  </button>
+  </Button>
 );
 
 interface ToolbarConfig {
