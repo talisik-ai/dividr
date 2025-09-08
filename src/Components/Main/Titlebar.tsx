@@ -21,11 +21,9 @@ import {
   generateASSContent,
 } from '@/Utility/subtitleExporter';
 import { useTheme } from '@/Utility/ThemeProvider';
-import { Minus } from 'lucide-react';
+import { Copy, Minus, Plus, Square, X } from 'lucide-react';
 import React, { useCallback } from 'react';
-import { IoMdClose } from 'react-icons/io';
-import { PiBrowsers, PiExportBold } from 'react-icons/pi';
-import { RxBox } from 'react-icons/rx';
+import { PiExportBold } from 'react-icons/pi';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../sub/ui/Button';
 
@@ -356,22 +354,22 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
           <div className="flex items-center gap-2 no-drag text-gray-800 dark:text-gray-100 ml-auto h-6">
             {/* Export Button - Only show in video editor */}
             {showExportButton && (
-              <button
+              <Button
+                variant="secondary"
                 onClick={handleRender}
                 disabled={render.isRendering || tracks.length === 0}
-                className="h-6 bg-highlight border-none text-white text-xs lg:text-sm cursor-pointer px-3 py-1 rounded flex items-center gap-2 hover:bg-highlight/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {render.isRendering
                   ? `Exporting... ${render.progress.toFixed(0)}%`
                   : 'Export'}
                 <PiExportBold size={14} />
-              </button>
+              </Button>
             )}
 
             {/* New Project Button - Only show when not in video editor */}
             {!showExportButton && (
               <Button onClick={handleCreateProject} variant="secondary">
-                New Project
+                <Plus size={16} /> New Project
               </Button>
             )}
 
@@ -393,22 +391,29 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
               </Button>
 
               {/* Maximize Button with dynamic icon */}
-              <button
-                className="w-8 h-6 rounded-md hover:bg-gray-300 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={handleMaximizeRestore}
                 title={isMaximized ? 'Restore' : 'Maximize'}
               >
-                {isMaximized ? <PiBrowsers size={16} /> : <RxBox size={16} />}
-              </button>
+                {isMaximized ? (
+                  <Copy size={16} className="scale-x-[-1] transform" />
+                ) : (
+                  <Square size={16} />
+                )}
+              </Button>
 
               {/* Close Button */}
-              <button
-                className="w-8 h-6 rounded-md hover:bg-red-600 flex items-center justify-center transition-colors"
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hover:bg-red-600 dark:hover:bg-red-600 hover:text-zinc-100"
                 onClick={handleCloseClick}
                 title="Close"
               >
-                <IoMdClose size={16} />
-              </button>
+                <X size={16} />
+              </Button>
             </div>
           </div>
         </div>
