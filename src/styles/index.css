@@ -1,13 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700;800&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap');
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+@import './global.css';
 
 /* body */
 
 body {
-  font-family: Lato;
+  font-family:
+    'Lato',
+    system-ui,
+    -apple-system,
+    sans-serif !important;
   font-size: 18px;
 }
 

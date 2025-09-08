@@ -6,34 +6,34 @@
  * @returns JSX.Element - The rendered component displaying a TitleBar
  *
  */
-import React, { useCallback } from 'react';
-import { FaPlus } from 'react-icons/fa';
-import { IoMdClose, IoMdRemove } from 'react-icons/io';
-import { PiBrowsers, PiExportBold } from 'react-icons/pi';
-import { RxBox } from 'react-icons/rx';
-import { useLocation, useNavigate } from 'react-router-dom';
-import logo from '@/Assets/Logo/logo.svg';
+import LogoDark from '@/Assets/Logo/Logo-Dark.svg';
+import LogoLight from '@/Assets/Logo/Logo-Light.svg';
+import { ExportModal } from '@/Components/Main/Modal/ExportModal';
+import { ModeToggle } from '@/Components/sub/custom/ModeToggle';
+import { Input } from '@/Components/sub/ui/Input';
+import { cn } from '@/Lib/utils';
 import { VideoEditJob } from '@/Schema/ffmpegConfig';
-import { useVideoEditorStore, VideoTrack } from '@/Store/videoEditorStore';
 import { useProjectStore } from '@/Store/projectStore';
+import { useVideoEditorStore, VideoTrack } from '@/Store/videoEditorStore';
 import { FfmpegCallbacks, runFfmpegWithProgress } from '@/Utility/ffmpegRunner';
 import {
   extractSubtitleSegments,
   generateASSContent,
 } from '@/Utility/subtitleExporter';
-import { ExportModal } from '@/Components/Main/Modal/ExportModal';
-import { Input } from '@/Components/sub/ui/Input';
-import { ModeToggle } from '@/Components/sub/custom/ModeToggle';
-import { cn } from '@/Lib/utils';
+import { useTheme } from '@/Utility/ThemeProvider';
+import { Minus } from 'lucide-react';
+import React, { useCallback } from 'react';
+import { IoMdClose } from 'react-icons/io';
+import { PiBrowsers, PiExportBold } from 'react-icons/pi';
+import { RxBox } from 'react-icons/rx';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Button } from '../sub/ui/Button';
+
 interface TitleBarProps {
   className?: string;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
-  const location = useLocation();
-  const [isMaximized, setIsMaximized] = React.useState<boolean>(false);
-  const [isExportModalOpen, setIsExportModalOpen] =
-    React.useState<boolean>(false);
   const {
     tracks,
     timeline,
@@ -47,6 +47,14 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
     // importMediaFromDialog, // Unused for now
   } = useVideoEditorStore();
   const { metadata, setTitle } = useProjectStore();
+  const { theme } = useTheme();
+
+  const location = useLocation();
+
+  const [isMaximized, setIsMaximized] = React.useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] =
+    React.useState<boolean>(false);
+
   const navigate = useNavigate();
 
   // Determine context based on current route
@@ -330,7 +338,11 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
         <div className="relative flex items-center h-8 px-4 py-1 drag-area">
           {/* Logo */}
           <div className="flex items-center">
-            <img src={logo} className="h-5 w-auto" alt="Dividr Logo" />
+            <img
+              src={theme === 'dark' ? LogoDark : LogoLight}
+              className="h-5 w-auto"
+              alt="Dividr Logo"
+            />
           </div>
 
           {/* Centered Title */}
@@ -358,13 +370,9 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
             {/* New Project Button - Only show when not in video editor */}
             {!showExportButton && (
-              <button
-                onClick={handleCreateProject}
-                className="h-6 bg-highlight border-none text-white text-xs lg:text-sm cursor-pointer px-3 py-1 rounded flex items-center gap-2 hover:bg-highlight/90 transition-colors"
-              >
-                <FaPlus size={14} />
+              <Button onClick={handleCreateProject} variant="secondary">
                 New Project
-              </button>
+              </Button>
             )}
 
             {/* Dark Mode/Light Mode Toggle */}
@@ -375,13 +383,14 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
             {/* Window Controls */}
             <div className="flex items-center">
               {/* Minimize Button */}
-              <button
-                className="w-8 h-6 rounded-md hover:bg-gray-300 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => window.appControl.minimizeApp()}
                 title="Minimize"
               >
-                <IoMdRemove size={16} />
-              </button>
+                <Minus size={16} />
+              </Button>
 
               {/* Maximize Button with dynamic icon */}
               <button

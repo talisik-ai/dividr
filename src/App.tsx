@@ -1,9 +1,9 @@
-import { Route, HashRouter as Router, Routes } from 'react-router-dom';
-import './App.css';
+import { HashRouter as Router, Route, Routes } from 'react-router-dom';
 import NewProject from './Components/Pages/NewProject';
 import NotFound from './Components/Pages/NotFound';
 import { VideoEditor } from './Components/VideoEditor';
 import VideoEditorLayout from './Layout/VideoEditorLayout';
+import './Styles/app.css';
 import { ThemeProvider } from './Utility/ThemeProvider';
 
 function App() {

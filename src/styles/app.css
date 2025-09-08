@@ -5,19 +5,17 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   overflow: hidden;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #1a1a1a;
-  color: #ffffff;
+  /* Font family is now handled by Tailwind and index.css */
 }
 
 .App {
@@ -56,12 +54,13 @@ button:active {
 }
 
 /* Input and select styling */
-input, select {
+input,
+select {
   color: inherit;
   background-color: inherit;
 }
 
-input[type="range"] {
+input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
@@ -70,20 +69,20 @@ input[type="range"] {
   outline: none;
 }
 
-input[type="range"]::-webkit-slider-thumb {
+input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
   height: 16px;
-  background: #FF5722;
+  background: #ff5722;
   border-radius: 50%;
   cursor: pointer;
 }
 
-input[type="range"]::-moz-range-thumb {
+input[type='range']::-moz-range-thumb {
   width: 16px;
   height: 16px;
-  background: #FF5722;
+  background: #ff5722;
   border-radius: 50%;
   cursor: pointer;
   border: none;
@@ -91,8 +90,12 @@ input[type="range"]::-moz-range-thumb {
 
 /* Loading animation */
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .loading {
@@ -101,7 +104,7 @@ input[type="range"]::-moz-range-thumb {
 
 /* Drag and drop styling */
 .drag-over {
-  border: 2px dashed #4CAF50 !important;
+  border: 2px dashed #4caf50 !important;
   background-color: rgba(76, 175, 80, 0.1) !important;
 }
 
@@ -114,7 +117,7 @@ input[type="range"]::-moz-range-thumb {
 button:focus,
 input:focus,
 select:focus {
-  outline: 2px solid #FF5722;
+  outline: 2px solid #ff5722;
   outline-offset: 2px;
 }
 
@@ -127,4 +130,4 @@ select:focus {
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
-} 
+}
