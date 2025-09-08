@@ -1,5 +1,9 @@
 /* eslint-disable prettier/prettier */
-import React, { useCallback } from 'react';
+import {
+  getCustomPanelComponent,
+  hasCustomPanelComponent,
+} from '@/Components/Main/VideoPreview/Panels/PanelRegistry';
+import { initializePanelRegistry } from '@/Components/Main/VideoPreview/Panels/registerPanels';
 import {
   useActivePanelType,
   usePanelContent,
@@ -7,13 +11,9 @@ import {
   usePanelWidth,
   type PanelItem,
   type PanelSection,
-} from '../../../store/panelStore';
-import { useVideoEditorStore } from '../../../store/videoEditorStore';
-import {
-  getCustomPanelComponent,
-  hasCustomPanelComponent,
-} from './Panels/PanelRegistry';
-import { initializePanelRegistry } from './Panels/registerPanels';
+} from '@/Store/PanelStore';
+import { useVideoEditorStore } from '@/Store/VideoEditorStore';
+import React, { useCallback } from 'react';
 
 interface StylePanelProps {
   className?: string;

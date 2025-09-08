@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useVideoEditorStore } from '../store/videoEditorStore';
+import { useVideoEditorStore } from '../Store/VideoEditorStore';
 
 export interface TimelineDuration {
   totalFrames: number;

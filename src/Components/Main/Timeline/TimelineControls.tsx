@@ -1,18 +1,16 @@
-import React from 'react';
+import { useTimelineDuration } from '@/hooks/useTimelineDuration';
+import React, { useCallback } from 'react';
 import { FaBackward, FaForward, FaPause, FaPlay } from 'react-icons/fa';
 import {
   LuCopy,
   LuRedo2,
+  LuSquareSplitHorizontal,
   LuTrash,
   LuUndo2,
-  LuSquareSplitHorizontal,
 } from 'react-icons/lu';
 import { TbScissors } from 'react-icons/tb';
-import { useTimelineDuration } from '@/hooks/useTimelineDuration';
-import { useCallback } from 'react';
-
 // eslint-disable-next-line import/no-unresolved
-import { useVideoEditorStore } from '../../../store/videoEditorStore';
+import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 
 export const TimelineControls: React.FC = () => {
   const {

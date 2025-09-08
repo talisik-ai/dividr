@@ -1,7 +1,7 @@
-import React from 'react';
-import { CustomPanelProps } from './PanelRegistry';
-import { useVideoEditorStore } from '../../../../store/videoEditorStore';
 import { cn } from '@/lib/utils';
+import React from 'react';
+import { useVideoEditorStore } from '../../../../Store/VideoEditorStore';
+import { CustomPanelProps } from './PanelRegistry';
 
 interface TextStyle {
   id: string;

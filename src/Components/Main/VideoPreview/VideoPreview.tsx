@@ -2,7 +2,7 @@
 import { motion } from 'framer-motion';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaSquarePlus } from 'react-icons/fa6';
-import { useVideoEditorStore } from '../../../store/videoEditorStore';
+import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 
 // Custom debounce and throttle utilities to avoid external dependencies
 const debounce = <T extends (...args: unknown[]) => unknown>(
@@ -516,7 +516,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       // Clear entire canvas first
       // Get the computed secondary color from CSS
       const computedStyle = getComputedStyle(document.documentElement);
-      const secondaryColor = computedStyle.getPropertyValue('--color-secondary').trim();
+      const secondaryColor = computedStyle
+        .getPropertyValue('--color-secondary')
+        .trim();
       ctx.fillStyle = secondaryColor || '#205000'; // fallback to a reasonable color
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 

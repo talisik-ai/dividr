@@ -1,6 +1,6 @@
 import React from 'react';
+import { useVideoEditorStore } from '../../../../Store/VideoEditorStore';
 import { CustomPanelProps } from './PanelRegistry';
-import { useVideoEditorStore } from '../../../../store/videoEditorStore';
 
 export const SettingsPanel: React.FC<CustomPanelProps> = ({
   className,

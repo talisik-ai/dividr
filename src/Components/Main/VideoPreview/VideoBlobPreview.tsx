@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { useVideoEditorStore } from '../../../store/videoEditorStore';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 
 interface VideoBlobPreviewProps {
   className?: string;

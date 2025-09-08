@@ -14,7 +14,7 @@ import { Input } from '@/Components/sub/ui/Input';
 import { cn } from '@/Lib/utils';
 import { VideoEditJob } from '@/Schema/ffmpegConfig';
 import { useProjectStore } from '@/Store/projectStore';
-import { useVideoEditorStore, VideoTrack } from '@/Store/videoEditorStore';
+import { useVideoEditorStore, VideoTrack } from '@/Store/VideoEditorStore';
 import { FfmpegCallbacks, runFfmpegWithProgress } from '@/Utility/ffmpegRunner';
 import {
   extractSubtitleSegments,
@@ -64,9 +64,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
       value={metadata.title}
       onChange={(e) => setTitle(e.target.value)}
     />
-  ) : (
-    'Dividr'
-  );
+  ) : null;
   const showExportButton = isInVideoEditor;
 
   // Function to generate .ass content from subtitle tracks using the subtitle exporter
@@ -333,7 +331,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   return (
     <>
       <div className={cn('bg-zinc-100 dark:bg-zinc-900', className)}>
-        <div className="relative flex items-center h-8 px-4 py-1 drag-area">
+        <div className="relative flex items-center h-8 drag-area">
           {/* Logo */}
           <div className="flex items-center">
             <img
