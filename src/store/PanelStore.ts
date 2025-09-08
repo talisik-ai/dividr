@@ -467,13 +467,13 @@ const defaultPanelConfigs: Record<Exclude<PanelType, null>, PanelContent> = {
 
 export const usePanelStore = create<PanelState>()(
   subscribeWithSelector((set, get) => ({
-    // Initial State
-    activePanelType: null as PanelType,
-    isPanelVisible: false,
-    panelContent: null as PanelContent | null,
-    panelWidth: 'w-30', // Default width
-    panelHistory: [] as PanelType[],
-    currentHistoryIndex: -1,
+    // Initial State - start with media-import panel open by default
+    activePanelType: 'media-import' as PanelType,
+    isPanelVisible: true,
+    panelContent: defaultPanelConfigs['media-import'] as PanelContent | null,
+    panelWidth: 'w-80', // Default width
+    panelHistory: ['media-import'] as PanelType[],
+    currentHistoryIndex: 0,
 
     // Panel Actions
     showPanel: (panelType, customWidth) => {
@@ -598,12 +598,12 @@ export const usePanelStore = create<PanelState>()(
     // Utility
     reset: () => {
       set({
-        activePanelType: null,
-        isPanelVisible: false,
-        panelContent: null,
-        panelWidth: 'w-64',
-        panelHistory: [],
-        currentHistoryIndex: -1,
+        activePanelType: 'media-import',
+        isPanelVisible: true,
+        panelContent: defaultPanelConfigs['media-import'],
+        panelWidth: 'w-80',
+        panelHistory: ['media-import'],
+        currentHistoryIndex: 0,
       });
     },
   })),

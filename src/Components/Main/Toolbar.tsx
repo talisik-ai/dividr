@@ -6,6 +6,7 @@
  * @param collapsed - whether the toolbar is collapsed
  * @returns JSX.Element - The rendered component displaying a Toolbar
  */
+import { cn } from '@/Lib/utils';
 import { usePanelStore, type PanelType } from '@/Store/PanelStore';
 import { useCallback, useRef } from 'react';
 import { BiText } from 'react-icons/bi';
@@ -34,9 +35,7 @@ const ToolbarButton = ({
     title={title}
     size="icon"
     variant="ghost"
-    className={
-      isActive ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30' : ''
-    }
+    className={isActive && 'bg-accent'}
   >
     {icon}
   </Button>
@@ -96,7 +95,6 @@ const toolbarConfig: ToolbarConfig[] = [
 
 const Toolbar = ({
   className,
-  collapsed,
 }: {
   className?: string;
   collapsed?: boolean;
@@ -193,33 +191,24 @@ const Toolbar = ({
   const toolRef = useRef<HTMLElement>(null);
 
   return (
-    <nav
-      ref={toolRef}
-      className={`${className} transition-all duration-300 ${
-        collapsed ? 'w-[70px]' : ''
-      } relative overflow-x-hidden`}
-    >
-      <div
-        className={`${collapsed ? 'px-1' : 'p-2 ml-0'} mt-2 space-y-2 pb-20`}
-      >
-        {/* Category Section */}
-        <div>
-          {/*  <TooltipWrapper content={collapsed ? 'Status' : null} side="left"> */}
-          <div
-            className={`flex flex-col items-center transition-opacity duration-300 gap-4`}
-          >
-            {toolbarConfig.map((config) => (
-              <ToolbarButton
-                key={config.panelType}
-                icon={config.icon}
-                title={config.title}
-                onClick={getClickHandler(config)}
-                isActive={activePanelType === config.panelType}
-              />
-            ))}
-          </div>
-          {/*  </TooltipWrapper> */}
+    <nav ref={toolRef} className={cn('', className)}>
+      {/* Category Section */}
+      <div>
+        {/*  <TooltipWrapper content={collapsed ? 'Status' : null} side="left"> */}
+        <div
+          className={`flex flex-col items-center transition-opacity duration-300 gap-3`}
+        >
+          {toolbarConfig.map((config) => (
+            <ToolbarButton
+              key={config.panelType}
+              icon={config.icon}
+              title={config.title}
+              onClick={getClickHandler(config)}
+              isActive={activePanelType === config.panelType}
+            />
+          ))}
         </div>
+        {/*  </TooltipWrapper> */}
       </div>
     </nav>
   );

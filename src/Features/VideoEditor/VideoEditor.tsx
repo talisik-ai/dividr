@@ -6,7 +6,7 @@ interface VideoEditorProps {
   className?: string;
 }
 
-export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
+const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
   const { render, importMediaFromFiles, cancelRender } = useVideoEditorStore();
   const duration = useTimelineDuration();
 
@@ -110,3 +110,5 @@ export const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
     </div>
   );
 };
+
+export default VideoEditor;

@@ -15,7 +15,7 @@ import {
 import { useVideoEditorStore } from '@/Store/VideoEditorStore';
 import React, { useCallback } from 'react';
 
-interface StylePanelProps {
+interface ToolsPanelProps {
   className?: string;
 }
 
@@ -171,7 +171,7 @@ const PanelSectionComponent: React.FC<{
 // Initialize panel registry once
 initializePanelRegistry();
 
-export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
+export const ToolsPanel: React.FC<ToolsPanelProps> = ({ className }) => {
   const { tracks, timeline, preview } = useVideoEditorStore();
   const { updatePanelItem, hidePanel } = usePanelStore();
   const panelContent = usePanelContent();
@@ -193,7 +193,7 @@ export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
   if (activePanelType && hasCustomPanelComponent(activePanelType)) {
     const CustomComponent = getCustomPanelComponent(activePanelType);
     const basePanelClasses =
-      'bg-primary dark:bg-primary-dark text-white border-r border-gray-700 transition-all duration-300 w-[22%] text-xs';
+      'bg-primary dark:bg-primary-dark text-white rounded-lg border border-gray-200 dark:border-gray-700 transition-all duration-300 text-xs';
 
     if (CustomComponent) {
       return (
@@ -222,7 +222,7 @@ export const StylePanel: React.FC<StylePanelProps> = ({ className }) => {
 
   return (
     <div
-      className={`overflow-auto bg-primary dark:bg-primary-dark text-white border-r border-gray-700 transition-all duration-300 ${className || panelWidth}`}
+      className={`overflow-auto bg-primary dark:bg-primary-dark text-white rounded-lg border border-gray-200 dark:border-gray-700 transition-all duration-300 ${className || panelWidth}`}
     >
       {/* Panel Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-600">
