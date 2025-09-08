@@ -12,25 +12,24 @@ import { IoMdClose, IoMdRemove } from 'react-icons/io';
 import { PiBrowsers, PiExportBold } from 'react-icons/pi';
 import { RxBox } from 'react-icons/rx';
 import { useLocation, useNavigate } from 'react-router-dom';
-import logo from '@/assets/Logo/logo.svg';
-import { VideoEditJob } from '@/schema/ffmpegConfig';
-import { useVideoEditorStore, VideoTrack } from '@/store/videoEditorStore';
-import { useProjectStore } from '@/store/projectStore';
-import { FfmpegCallbacks, runFfmpegWithProgress } from '@/utility/ffmpegRunner';
+import logo from '@/Assets/Logo/logo.svg';
+import { VideoEditJob } from '@/Schema/ffmpegConfig';
+import { useVideoEditorStore, VideoTrack } from '@/Store/videoEditorStore';
+import { useProjectStore } from '@/Store/projectStore';
+import { FfmpegCallbacks, runFfmpegWithProgress } from '@/Utility/ffmpegRunner';
 import {
   extractSubtitleSegments,
   generateASSContent,
-} from '@/utility/subtitleExporter';
-import { ExportModal } from '@/components/main/Modal/ExportModal';
-import { Input } from '@/components/sub/ui/input';
-import { ModeToggle } from '@/components/sub/custom/ModeToggle';
-import { cn } from '@/lib/utils';
+} from '@/Utility/subtitleExporter';
+import { ExportModal } from '@/Components/Main/Modal/ExportModal';
+import { Input } from '@/Components/sub/ui/Input';
+import { ModeToggle } from '@/Components/sub/custom/ModeToggle';
+import { cn } from '@/Lib/utils';
 interface TitleBarProps {
   className?: string;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
-  // const { theme } = useTheme(); // Unused for now
   const location = useLocation();
   const [isMaximized, setIsMaximized] = React.useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] =
@@ -327,7 +326,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   */
   return (
     <>
-      <div className={cn('bg-titleBar dark:bg-titleBar-dark', className)}>
+      <div className={cn('bg-zinc-100 dark:bg-zinc-900', className)}>
         <div className="relative flex items-center h-8 px-4 py-1 drag-area">
           {/* Logo */}
           <div className="flex items-center">
@@ -336,11 +335,13 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
           {/* Centered Title */}
           <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center justify-center">
-            <span className="text-white no-drag">{titleText}</span>
+            <span className="text-zinc-900 dark:text-zinc-100 no-drag">
+              {titleText}
+            </span>
           </div>
 
           {/* Right Side Controls */}
-          <div className="flex items-center gap-2 no-drag text-white ml-auto h-6">
+          <div className="flex items-center gap-2 no-drag text-gray-800 dark:text-gray-100 ml-auto h-6">
             {/* Export Button - Only show in video editor */}
             {showExportButton && (
               <button
@@ -375,7 +376,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
             <div className="flex items-center">
               {/* Minimize Button */}
               <button
-                className="w-8 h-6 rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment flex items-center justify-center transition-colors"
+                className="w-8 h-6 rounded-md hover:bg-gray-300 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
                 onClick={() => window.appControl.minimizeApp()}
                 title="Minimize"
               >
@@ -384,7 +385,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
               {/* Maximize Button with dynamic icon */}
               <button
-                className="w-8 h-6 rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment flex items-center justify-center transition-colors"
+                className="w-8 h-6 rounded-md hover:bg-gray-300 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
                 onClick={handleMaximizeRestore}
                 title={isMaximized ? 'Restore' : 'Maximize'}
               >

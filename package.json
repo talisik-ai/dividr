@@ -32,6 +32,8 @@
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.25.0",
     "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.6.2",
+    "prettier-plugin-tailwindcss": "^0.6.14",
     "ts-node": "^10.0.0",
     "typescript": "~4.5.4",
     "vite": "^5.0.12"
@@ -43,7 +45,6 @@
   },
   "license": "MIT",
   "dependencies": {
-
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-slot": "^1.2.3",
@@ -67,6 +68,7 @@
     "lucide-react": "^0.540.0",
     "next-themes": "^0.4.6",
     "postcss": "^8.5.6",
+    "prettier-plugin-organize-imports": "^4.2.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-draggable": "^4.5.0",

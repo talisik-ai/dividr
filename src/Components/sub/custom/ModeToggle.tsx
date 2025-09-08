@@ -5,8 +5,8 @@
  *
  * @returns JSX.Element - The rendered mode toggle component.
  */
-import { Button } from '@/components/sub/ui/button';
-import { useTheme } from '@/utility/ThemeProvider';
+import { Button } from '@/Components/sub/ui/Button';
+import { useTheme } from '@/Utility/ThemeProvider';
 import { Moon, Sun, Monitor } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -61,10 +61,10 @@ export function ModeToggle() {
       <Button
         variant="ghost"
         size="icon"
-        className="w-8 h-7 hover:bg-gray-700 dark:hover:bg-darkModeCompliment transition-colors border-none bg-transparent p-0"
+        className="w-8 h-7 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors border-none bg-transparent p-0"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span className="flex items-center justify-center text-white">
+        <span className="flex items-center justify-center text-gray-800 dark:text-gray-100">
           {getCurrentIcon()}
         </span>
         <span className="sr-only">Toggle theme</span>

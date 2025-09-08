@@ -1,14 +1,14 @@
 import { Route, HashRouter as Router, Routes } from 'react-router-dom';
 import './App.css';
-import NewProject from './components/pages/NewProject';
-import NotFound from './components/pages/NotFound';
-import { VideoEditor } from './components/VideoEditor';
-import VideoEditorLayout from './layout/VideoEditorLayout';
-import { ThemeProvider } from './utility/ThemeProvider';
+import NewProject from './Components/Pages/NewProject';
+import NotFound from './Components/Pages/NotFound';
+import { VideoEditor } from './Components/VideoEditor';
+import VideoEditorLayout from './Layout/VideoEditorLayout';
+import { ThemeProvider } from './Utility/ThemeProvider';
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <Router>
         <Routes>
           {/* Home route - Shows NewProject page with TitleBar */}

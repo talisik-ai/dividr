@@ -1,8 +1,8 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@/Lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import * as React from 'react';
-import { ScrollArea, ScrollBar } from './scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
+import { ScrollArea, ScrollBar } from './Scroll-Area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './Tabs';
 
 interface ScrollTabsProps {
   tabs: { value: string; label: string; content: React.ReactNode }[];
