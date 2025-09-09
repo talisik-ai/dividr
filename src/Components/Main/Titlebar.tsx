@@ -10,10 +10,11 @@ import LogoDark from '@/Assets/Logo/Logo-Dark.svg';
 import LogoLight from '@/Assets/Logo/Logo-Light.svg';
 import { ExportModal } from '@/Components/Main/Modal/ExportModal';
 import { ModeToggle } from '@/Components/sub/custom/ModeToggle';
+import { Button } from '@/Components/sub/ui/Button';
 import { Input } from '@/Components/sub/ui/Input';
 import { cn } from '@/Lib/utils';
 import { VideoEditJob } from '@/Schema/ffmpegConfig';
-import { useProjectStore } from '@/Store/projectStore';
+import { useProjectStore } from '@/Store/ProjectStore';
 import { useVideoEditorStore, VideoTrack } from '@/Store/VideoEditorStore';
 import { FfmpegCallbacks, runFfmpegWithProgress } from '@/Utility/ffmpegRunner';
 import {
@@ -25,7 +26,6 @@ import { Copy, Minus, Plus, Square, X } from 'lucide-react';
 import React, { useCallback } from 'react';
 import { PiExportBold } from 'react-icons/pi';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Button } from '../sub/ui/Button';
 
 interface TitleBarProps {
   className?: string;
