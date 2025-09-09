@@ -2,8 +2,8 @@
  * Select Component
  * A dropdown select component for choosing options
  */
+import { cn } from '@/Lib/utils';
 import React from 'react';
-import { cn } from '../../../lib/utils';
 
 interface SelectProps {
   value: string;
@@ -26,6 +26,7 @@ interface SelectItemProps {
 interface SelectTriggerProps {
   children: React.ReactNode;
   className?: string;
+  variant?: 'default' | 'underline';
 }
 
 interface SelectValueProps {
@@ -111,42 +112,58 @@ export const SelectTrigger: React.FC<
     isOpen?: boolean;
     setIsOpen?: (open: boolean) => void;
   }
-> = ({ children, className, value, isOpen, setIsOpen }) => (
-  <button
-    type="button"
-    className={cn(
-      'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
-      className,
-    )}
-    onClick={() => setIsOpen?.(!isOpen)}
-  >
-    {React.Children.map(children, (child) => {
-      if (React.isValidElement(child) && child.type === SelectValue) {
-        return React.cloneElement(
-          child as React.ReactElement<Record<string, unknown>>,
-          { value },
-        );
-      }
-      return child;
-    })}
-    <svg
-      className={cn(
-        'h-4 w-4 opacity-50 transition-transform',
-        isOpen && 'rotate-180',
-      )}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
+> = ({
+  children,
+  className,
+  value,
+  isOpen,
+  setIsOpen,
+  variant = 'default',
+}) => {
+  const baseClasses =
+    'flex items-center justify-between text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-50';
+
+  const variantClasses = {
+    default:
+      'h-10 w-full rounded-md border border-input bg-background px-3 py-2 ring-offset-background placeholder:text-muted-foreground focus:ring-2 focus:ring-ring focus:ring-offset-2',
+    underline:
+      'w-fit h-fit border-b border-input bg-transparent focus:border-ring transition-colors',
+  };
+
+  return (
+    <button
+      type="button"
+      className={cn(baseClasses, variantClasses[variant], className)}
+      onClick={() => setIsOpen?.(!isOpen)}
     >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M19 9l-7 7-7-7"
-      />
-    </svg>
-  </button>
-);
+      {React.Children.map(children, (child) => {
+        if (React.isValidElement(child) && child.type === SelectValue) {
+          return React.cloneElement(
+            child as React.ReactElement<Record<string, unknown>>,
+            { value },
+          );
+        }
+        return child;
+      })}
+      <svg
+        className={cn(
+          'h-4 w-4 opacity-50 transition-transform ml-1',
+          isOpen && 'rotate-180',
+        )}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M19 9l-7 7-7-7"
+        />
+      </svg>
+    </button>
+  );
+};
 
 export const SelectValue: React.FC<
   SelectValueProps & {
@@ -170,7 +187,7 @@ export const SelectContent: React.FC<
   return (
     <div
       className={cn(
-        'absolute top-full left-0 z-[9999] w-full mt-1 bg-background border rounded-md shadow-lg max-h-60 overflow-auto',
+        'absolute top-full left-0 z-[9999] min-w-full mt-1 bg-background border rounded-md shadow-lg max-h-60 overflow-auto',
         className,
       )}
     >
