@@ -208,7 +208,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
         {/* Timeline Tracks Area */}
         <div
           ref={tracksRef}
-          className="flex-1 relative overflow-visible"
+          className="flex-1 relative overflow-visible overflow-x-auto"
           onClick={handleTimelineClick}
           onScroll={(e) => {
             // Throttled scroll handling for better performance with many tracks
