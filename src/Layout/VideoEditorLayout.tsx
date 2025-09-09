@@ -1,5 +1,6 @@
 import { ToolsPanel } from '@/Components/Main/VideoPreview/ToolsPanel';
 import { AppMenuBar } from '@/Components/sub/custom/AppMenuBar';
+import { VideoEditorHeader } from '@/Features/VideoEditor/Components/VideoEditorHeader';
 import { useIsPanelVisible } from '@/Store/PanelStore';
 import { Outlet } from 'react-router-dom';
 import { Timeline } from '../Components/Main/Timeline/Timeline';
@@ -10,22 +11,22 @@ const VideoEditorLayout = () => {
   const isPanelVisible = useIsPanelVisible();
 
   return (
-    <div className="h-screen flex flex-col text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-900 p-4 gap-4">
-      <TitleBar className="h-13 relative z-10" />
+    <div className="h-screen flex flex-col text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-900 p-4">
+      <TitleBar className="relative z-10 border-b border-accent -mx-4 px-4 -mt-4 py-2" />
 
-      <div className="grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] flex-1 min-h-0">
+      <div className="grid grid-cols-[auto_1fr] grid-rows-[auto_1fr_auto] flex-1 min-h-0">
+        {/* Menubar and Project Additional controllers */}
+        <AppMenuBar />
+        <VideoEditorHeader />
+
         {/* Left sidebar with toolbar and tools panel */}
-        <div className="flex flex-col min-h-0 h-full gap-2">
-          {/* Toolbar and Menu bar */}
-          <AppMenuBar />
-          <div className="flex flex-1 gap-2">
-            <Toolbar />
-            {isPanelVisible && (
-              <div className="flex-1 overflow-hidden">
-                <ToolsPanel className="h-full" />
-              </div>
-            )}
-          </div>
+        <div className="flex flex-1 min-h-0 gap-2">
+          <Toolbar />
+          {isPanelVisible && (
+            <div className="flex-1 overflow-hidden">
+              <ToolsPanel className="h-full" />
+            </div>
+          )}
         </div>
 
         {/* Main content area */}
