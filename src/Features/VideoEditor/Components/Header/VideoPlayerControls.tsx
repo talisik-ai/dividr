@@ -1,7 +1,7 @@
 import { Button } from '@/Components/sub/ui/Button';
 import { Separator } from '@/Components/sub/ui/Separator';
 import { cn } from '@/Lib/utils';
-import { Hand, MousePointer2, RotateCcw, RotateCw } from 'lucide-react';
+import { Hand, MousePointer2, Redo2, Undo2 } from 'lucide-react';
 import ZoomControls from './ZoomControls';
 
 interface VideoPlayerControlsProps {
@@ -27,10 +27,10 @@ export const VideoPlayerControls = ({
       <ZoomControls onZoomChange={handleZoomChange} />
       <Separator orientation="vertical" className="!h-3/4 mr-1" />
       <Button variant="ghost" size="icon" disabled>
-        <RotateCcw />
+        <Undo2 />
       </Button>
       <Button variant="ghost" size="icon" disabled>
-        <RotateCw />
+        <Redo2 />
       </Button>
     </div>
   );
