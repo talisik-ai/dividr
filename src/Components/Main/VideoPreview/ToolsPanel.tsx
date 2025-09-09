@@ -35,7 +35,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ className }) => {
         <React.Suspense
           fallback={
             <div
-              className={`w-80 flex items-center justify-center bg-background border-l border-border ${className}`}
+              className={`w-80 flex items-center justify-center bg-background border-l border-accent ${className}`}
             >
               <div className="text-muted-foreground text-sm">Loading...</div>
             </div>

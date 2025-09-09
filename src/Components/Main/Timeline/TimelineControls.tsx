@@ -1,4 +1,4 @@
-import { useTimelineDuration } from '@/hooks/useTimelineDuration';
+import { useTimelineDuration } from '@/Hooks/useTimelineDuration';
 import React, { useCallback } from 'react';
 import { FaBackward, FaForward, FaPause, FaPlay } from 'react-icons/fa';
 import {
@@ -82,7 +82,7 @@ export const TimelineControls: React.FC = () => {
   };
 
   return (
-    <div className="h-10 bg-primary dark:bg-primary-dark flex items-center justify-between px-4 border-t-8 border-secondary dark:border-secondary-dark">
+    <div className="h-10 flex items-center justify-between px-4 border border-t border-accent">
       {/* Playback Controls */}
       <div className="flex items-center">
         <button

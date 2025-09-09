@@ -32,7 +32,7 @@ export const BasePanel: React.FC<BasePanelProps> = ({
   onClose,
 }) => {
   return (
-    <div className={cn('w-80 flex flex-col border-l border-border', className)}>
+    <div className={cn('w-80 flex flex-col border-l border-accent', className)}>
       {/* Header */}
       <div className="flex items-start justify-between px-4">
         <div className="flex-1 min-w-0">
