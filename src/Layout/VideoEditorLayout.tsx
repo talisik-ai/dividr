@@ -1,4 +1,3 @@
-import { PropertiesPanel } from '@/Components/Main/VideoPreview/PropertiesPanel';
 import { ToolsPanel } from '@/Components/Main/VideoPreview/ToolsPanel';
 import { AppMenuBar } from '@/Components/sub/custom/AppMenuBar';
 import { useIsPanelVisible } from '@/Store/PanelStore';
@@ -38,7 +37,7 @@ const VideoEditorLayout = () => {
             </main>
 
             {/* Properties Panel - always visible */}
-            <PropertiesPanel />
+            {/* <PropertiesPanel />  */}
           </div>
         </div>
         {/* Timeline at bottom */}

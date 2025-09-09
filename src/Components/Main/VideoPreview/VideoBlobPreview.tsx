@@ -1,3 +1,7 @@
+import NewDark from '@/Assets/Logo/New-Dark.svg';
+import New from '@/Assets/Logo/New-Light.svg';
+import { cn } from '@/Lib/utils';
+import { useTheme } from '@/Utility/ThemeProvider';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 
@@ -13,6 +17,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragActive, setDragActive] = useState(false);
 
+  const { theme } = useTheme();
   const {
     tracks,
     timeline,
@@ -314,7 +319,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative bg-secondary dark:bg-secondary-dark overflow-hidden ${className}`}
+      className={cn(
+        'relative overflow-hidden  rounded-lg',
+        className,
+        activeVideoTrack ? 'bg-transparent' : 'bg-zinc-100 dark:bg-zinc-900',
+      )}
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}
       onDragOver={handleDrag}
@@ -367,15 +376,20 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               return (
                 <div
                   key={track.id}
-                  className="text-white text-center absolute bottom-5 left-0 right-0 bg-secondary dark:bg-secondary-dark"
+                  className="text-white text-center absolute bottom-10 left-0 right-0 bg-secondary dark:bg-secondary-dark"
                   style={{
-                    fontSize: `${Math.max(18, actualHeight * 0.045)}px`,
-                    fontFamily: appliedStyle.fontFamily,
-                    fontWeight: appliedStyle.fontWeight,
-                    fontStyle: appliedStyle.fontStyle,
-                    textTransform: appliedStyle.textTransform,
-                    lineHeight: '1.2',
-                    whiteSpace: 'pre-wrap',
+                    // Match FFmpeg's ASS subtitle styling with applied text styles
+                    fontSize: `${Math.max(18, preview.canvasHeight * 0.045)}px`, // Slightly larger for better visibility
+                    fontFamily: appliedStyle.fontFamily, // Apply selected font family
+                    fontWeight: appliedStyle.fontWeight, // Apply selected font weight
+                    fontStyle: appliedStyle.fontStyle, // Apply selected font style
+                    textTransform: appliedStyle.textTransform, // Apply text transform
+                    lineHeight: '1.2', // Slightly more line height for readability
+                    textShadow: 'none', // No outline to match FFmpeg output
+                    wordWrap: 'break-word',
+                    whiteSpace: 'pre-wrap', // Preserve line breaks exactly like FFmpeg
+                    color: '#FFFFFF', // Pure white, FFmpeg default
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
                     padding: '2px 0',
                     margin: '0 auto',
                     maxWidth: '90%',
@@ -401,11 +415,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
       {/* Placeholder */}
       {!activeVideoTrack && tracks.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-          <div className="text-center">
-            <div className="text-4xl mb-2">🎬</div>
-            <div>Drop video files to get started</div>
-          </div>
+        <div className="absolute inset-0 flex flex-col gap-2 items-center justify-center border-2 border-dashed border-accent rounded-lg">
+          <img src={theme === 'dark' ? NewDark : New} alt="New Project" />
+          <p className="text-sm text-muted-foreground">
+            Click to browse or drag and drop files here
+          </p>
         </div>
       )}
     </div>

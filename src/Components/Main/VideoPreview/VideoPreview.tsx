@@ -1,8 +1,8 @@
 /* eslint-disable prettier/prettier */
+import { useVideoEditorStore } from '@/Store/VideoEditorStore';
 import { motion } from 'framer-motion';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaSquarePlus } from 'react-icons/fa6';
-import { useVideoEditorStore } from '@/Store/VideoEditorStore';
 
 // Custom debounce and throttle utilities to avoid external dependencies
 const debounce = <T extends (...args: unknown[]) => unknown>(

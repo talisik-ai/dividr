@@ -1,5 +1,6 @@
 import { VideoPreviewWrapper } from '@/Components/Main/VideoPreview/VideoPreviewWrapper';
 import { useTimelineDuration } from '@/Hooks/useTimelineDuration';
+import { cn } from '@/Lib/utils';
 import { useVideoEditorStore } from '@/Store/VideoEditorStore';
 import React, { useCallback } from 'react';
 interface VideoEditorProps {
@@ -67,7 +68,7 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
 
   return (
     <div
-      className={`${className || ''} flex flex-col h-full bg-primary dark:bg-primary-dark font-white p-4 rounded`}
+      className={cn('flex flex-col h-full p-4 bg-accent', className)}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
