@@ -44,7 +44,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
     textStyle,
     getTextStyleForSubtitle,
   } = useVideoEditorStore();
-  const { metadata } = useProjectStore();
+  const { currentProject } = useProjectStore();
 
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
@@ -304,7 +304,9 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         onExport={handleExportConfirm}
-        defaultFilename={metadata.title.trim() || 'Untitled_Project'}
+        defaultFilename={
+          currentProject?.metadata?.title?.trim() || 'Untitled_Project'
+        }
       />
     </>
   );

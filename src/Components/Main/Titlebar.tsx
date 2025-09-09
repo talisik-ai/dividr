@@ -22,7 +22,7 @@ interface TitleBarProps {
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
-  const { metadata } = useProjectStore();
+  const { createNewProject, openProject } = useProjectStore();
   const { theme } = useTheme();
 
   const location = useLocation();
@@ -34,8 +34,19 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   // Determine context based on current route
   const isInVideoEditor = location.pathname.startsWith('/video-editor');
 
-  const handleCreateProject = () => {
-    navigate('/video-editor');
+  const handleCreateProject = async () => {
+    try {
+      const projectId = await createNewProject('Untitled Project');
+
+      // Open the newly created project to set it as current
+      await openProject(projectId);
+
+      // Navigate to video editor with the new project
+      navigate('/video-editor');
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      // Could add toast notification here if needed
+    }
   };
 
   // Function to toggle maximize/restore

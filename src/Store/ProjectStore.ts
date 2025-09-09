@@ -1,58 +1,291 @@
+import { projectService } from '@/Services/ProjectService';
+import {
+  createDefaultProject,
+  ProjectData,
+  ProjectSummary,
+} from '@/Types/Project';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 
-// Project metadata schema
-export interface ProjectMetadata {
-  title: string;
-  description: string;
-  createdAt: string; // ISO string
-  updatedAt: string; // ISO string
-}
-
+// Current project state
 interface ProjectStore {
-  metadata: ProjectMetadata;
-  setTitle: (title: string) => void;
-  setDescription: (description: string) => void;
-  updateTimestamps: () => void;
+  // Current project being edited
+  currentProject: ProjectData | null;
+
+  // List of all projects for management
+  projects: ProjectSummary[];
+
+  // Loading states
+  isLoading: boolean;
+  isInitialized: boolean;
+
+  // Actions for current project
+  setCurrentProject: (project: ProjectData | null) => void;
+  updateCurrentProjectMetadata: (
+    updates: Partial<ProjectData['metadata']>,
+  ) => void;
+  updateCurrentProjectData: (updates: Partial<ProjectData>) => void;
+
+  // Actions for project management
+  initializeProjects: () => Promise<void>;
+  loadProjects: () => Promise<void>;
+  createNewProject: (title: string, description?: string) => Promise<string>;
+  openProject: (id: string) => Promise<void>;
+  saveCurrentProject: () => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
+  duplicateProject: (id: string, newTitle?: string) => Promise<string>;
+  searchProjects: (query: string) => Promise<ProjectSummary[]>;
+  getRecentProjects: (limit?: number) => Promise<ProjectSummary[]>;
+
+  // Import/Export
+  exportProject: (id: string) => Promise<void>;
+  importProject: (file: File) => Promise<string>;
+
+  // Utility
   reset: () => void;
 }
 
-const getDefaultMetadata = (): ProjectMetadata => {
-  const now = new Date().toISOString();
-  return {
-    title: '',
-    description: '',
-    createdAt: now,
-    updatedAt: now,
-  };
-};
-
 export const useProjectStore = create<ProjectStore>()(
   subscribeWithSelector((set, get) => ({
-    metadata: getDefaultMetadata(),
-    setTitle: (title) =>
-      set((state) => ({
-        metadata: {
-          ...state.metadata,
-          title,
-          updatedAt: new Date().toISOString(),
-        },
-      })),
-    setDescription: (description) =>
-      set((state) => ({
-        metadata: {
-          ...state.metadata,
-          description,
-          updatedAt: new Date().toISOString(),
-        },
-      })),
-    updateTimestamps: () =>
-      set((state) => ({
-        metadata: {
-          ...state.metadata,
-          updatedAt: new Date().toISOString(),
-        },
-      })),
-    reset: () => set({ metadata: getDefaultMetadata() }),
+    // Initial state
+    currentProject: null as ProjectData | null,
+    projects: [] as ProjectSummary[],
+    isLoading: false,
+    isInitialized: false,
+
+    // Current project actions
+    setCurrentProject: (project) => set({ currentProject: project }),
+
+    updateCurrentProjectMetadata: (updates) =>
+      set((state) => {
+        if (!state.currentProject) return state;
+
+        return {
+          currentProject: {
+            ...state.currentProject,
+            metadata: {
+              ...state.currentProject.metadata,
+              ...updates,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        };
+      }),
+
+    updateCurrentProjectData: (updates) =>
+      set((state) => {
+        if (!state.currentProject) return state;
+
+        return {
+          currentProject: {
+            ...state.currentProject,
+            ...updates,
+            metadata: {
+              ...state.currentProject.metadata,
+              ...(updates.metadata || {}),
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        };
+      }),
+
+    // Project management actions
+    initializeProjects: async () => {
+      const state = get();
+      if (state.isInitialized) return;
+
+      set({ isLoading: true });
+
+      try {
+        await projectService.init();
+        await get().loadProjects();
+        set({ isInitialized: true });
+      } catch (error) {
+        console.error('Failed to initialize projects:', error);
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    loadProjects: async () => {
+      set({ isLoading: true });
+
+      try {
+        const projects = await projectService.getAllProjects();
+        set({ projects });
+      } catch (error) {
+        console.error('Failed to load projects:', error);
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    createNewProject: async (title, description = '') => {
+      set({ isLoading: true });
+
+      try {
+        const newProject = createDefaultProject(title, description);
+        await projectService.createProject(newProject);
+        await get().loadProjects();
+
+        return newProject.id;
+      } catch (error) {
+        console.error('Failed to create project:', error);
+        throw error;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    openProject: async (id) => {
+      set({ isLoading: true });
+
+      try {
+        const project = await projectService.getProject(id);
+        if (!project) {
+          throw new Error('Project not found');
+        }
+
+        // Mark as opened
+        await projectService.markProjectOpened(id);
+
+        // Set as current project
+        set({ currentProject: project });
+
+        // Refresh project list to update lastOpenedAt
+        await get().loadProjects();
+      } catch (error) {
+        console.error('Failed to open project:', error);
+        throw error;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    saveCurrentProject: async () => {
+      const state = get();
+      if (!state.currentProject) {
+        throw new Error('No current project to save');
+      }
+
+      set({ isLoading: true });
+
+      try {
+        await projectService.updateProject(state.currentProject);
+        await get().loadProjects();
+      } catch (error) {
+        console.error('Failed to save project:', error);
+        throw error;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    deleteProject: async (id) => {
+      set({ isLoading: true });
+
+      try {
+        await projectService.deleteProject(id);
+
+        // If the deleted project is the current project, clear it
+        const state = get();
+        if (state.currentProject?.id === id) {
+          set({ currentProject: null });
+        }
+
+        await get().loadProjects();
+      } catch (error) {
+        console.error('Failed to delete project:', error);
+        throw error;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    duplicateProject: async (id, newTitle) => {
+      set({ isLoading: true });
+
+      try {
+        const newProjectId = await projectService.duplicateProject(
+          id,
+          newTitle,
+        );
+        await get().loadProjects();
+        return newProjectId;
+      } catch (error) {
+        console.error('Failed to duplicate project:', error);
+        throw error;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    searchProjects: async (query) => {
+      try {
+        return await projectService.searchProjects(query);
+      } catch (error) {
+        console.error('Failed to search projects:', error);
+        return [];
+      }
+    },
+
+    getRecentProjects: async (limit = 5) => {
+      try {
+        return await projectService.getRecentProjects(limit);
+      } catch (error) {
+        console.error('Failed to get recent projects:', error);
+        return [];
+      }
+    },
+
+    exportProject: async (id) => {
+      try {
+        const exportData = await projectService.exportProject(id);
+
+        // Create and download file
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+          type: 'application/json',
+        });
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${exportData.metadata.title.replace(/[^a-z0-9]/gi, '_')}.dividr`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Failed to export project:', error);
+        throw error;
+      }
+    },
+
+    importProject: async (file) => {
+      set({ isLoading: true });
+
+      try {
+        const text = await file.text();
+        const exportData = JSON.parse(text);
+
+        const newProjectId = await projectService.importProject(exportData);
+        await get().loadProjects();
+
+        return newProjectId;
+      } catch (error) {
+        console.error('Failed to import project:', error);
+        throw error;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    reset: () =>
+      set({
+        currentProject: null,
+        projects: [],
+        isLoading: false,
+        isInitialized: false,
+      }),
   })),
 );

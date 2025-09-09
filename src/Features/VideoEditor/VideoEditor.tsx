@@ -1,6 +1,8 @@
 import { VideoPreviewWrapper } from '@/Components/Main/VideoPreview/VideoPreviewWrapper';
+import { useProjectSync } from '@/Hooks/useProjectSync';
 import { useTimelineDuration } from '@/Hooks/useTimelineDuration';
 import { cn } from '@/Lib/utils';
+import { useProjectStore } from '@/Store/ProjectStore';
 import { useVideoEditorStore } from '@/Store/VideoEditorStore';
 import React, { useCallback } from 'react';
 interface VideoEditorProps {
@@ -9,7 +11,11 @@ interface VideoEditorProps {
 
 const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
   const { render, importMediaFromFiles, cancelRender } = useVideoEditorStore();
+  const { currentProject } = useProjectStore();
   const duration = useTimelineDuration();
+
+  // Sync project data with video editor
+  const { syncToProject } = useProjectSync();
 
   // Parse FFmpeg time format (HH:MM:SS.FF) to seconds
   const parseTimeToSeconds = useCallback((timeString: string): number => {
