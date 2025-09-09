@@ -204,7 +204,7 @@ const Projects = () => {
     <div className="flex flex-col flex-1 min-h-0 p-6 lg:p-12">
       <div className="flex justify-between mb-6 gap-4">
         <Header />
-        <div className="flex items-center gap-3">
+        <div className="flex items-center h-fit gap-3">
           <label
             className={cn(
               'cursor-pointer',
