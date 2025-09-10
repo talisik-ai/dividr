@@ -8,7 +8,7 @@ import {
   TrackInfo,
   VideoEditJob,
   VideoProcessingContext,
-} from '../schema/ffmpegConfig';
+} from '../Schema/ffmpegConfig';
 
 const VIDEO_DEFAULTS = {
   SIZE: '1920x1080',

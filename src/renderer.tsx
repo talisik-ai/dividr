@@ -7,7 +7,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
-import './index.css';
+import './Styles/index.css';
 // Create root element
 const container = document.createElement('div');
 document.body.appendChild(container);

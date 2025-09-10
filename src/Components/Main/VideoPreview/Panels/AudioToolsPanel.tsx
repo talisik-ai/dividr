@@ -1,31 +1,22 @@
 import React from 'react';
+import { BasePanel } from './BasePanel';
 import { CustomPanelProps } from './PanelRegistry';
 
-export const AudioToolsPanel: React.FC<CustomPanelProps> = ({
-  className,
-  onClose,
-}) => {
+export const AudioToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   return (
-    <div className={` ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
-        <div>
-          <h3 className="text-sm font-bold text-white">Audio Tools</h3>
-          <p className="text-xs text-gray-400">Edit and enhance audio</p>
+    <BasePanel
+      title="Audio Tools"
+      description="Edit and enhance audio tracks"
+      className={className}
+    >
+      <div className="space-y-4">
+        <div className="text-center text-muted-foreground">
+          <p className="text-sm">Coming soon</p>
+          <p className="text-xs mt-2">
+            Audio editing tools will be available in the next update.
+          </p>
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
-            title="Close panel"
-          >
-            ×
-          </button>
-        )}
       </div>
-
-      {/* Content */}
-      <div className="p-4 space-y-4">Coming soon</div>
-    </div>
+    </BasePanel>
   );
 };

@@ -4,17 +4,22 @@
  * Modal for configuring video export settings including filename and format
  */
 import React, { useState } from 'react';
-import { Button } from '@/components/sub/ui/button';
+import { Button } from '@/Components/sub/ui/Button';
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/sub/ui/dialog';
-import { Input } from '@/components/sub/ui/input';
-import { Label } from '@/components/sub/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/sub/ui/select';
+} from '@/Components/sub/ui/Dialog';
+import { Input } from '@/Components/sub/ui/Input';
+import { Label } from '@/Components/sub/ui/Label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from '@/Components/sub/ui/Select';
 
 interface ExportConfig {
   filename: string;
@@ -145,7 +150,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const selectedFormat = videoFormats.find((f) => f.value === format);
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} className="text-white bg-primary z-[9999]">
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      className="text-white bg-primary z-[9999]"
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Export Video</DialogTitle>

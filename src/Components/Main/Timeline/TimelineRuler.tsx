@@ -1,5 +1,6 @@
 import React from 'react';
-import { VideoTrack } from '../../../store/videoEditorStore';
+import { cn } from '../../../Lib/utils';
+import { VideoTrack } from '../../../Store/VideoEditorStore';
 
 interface TimelineRulerProps {
   frameWidth: number;
@@ -105,22 +106,22 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
 
   return (
     <div
-      className="h-[36px] lg:h-[40px] bg-primary dark:bg-primary-dark border-t border-borderMain dark:border-borderMain-dark relative overflow-hidden cursor-pointer"
+      className="h-[36px] lg:h-[40px] border-t border-accent relative overflow-hidden cursor-pointer"
       onClick={onClick}
     >
       {/* Background Grid */}
       <div
-        className="absolute top-0 h-full"
+        className="absolute top-0 h-full bg-gradient-to-r from-transparent via-transparent to-transparent"
         style={{
           left: -scrollX,
           width: Math.max(effectiveEndFrame * frameWidth, window.innerWidth),
-          background:
-            'repeating-linear-gradient(90deg, transparent, transparent 9px, rgba(255,255,255,0.03) 9px, rgba(255,255,255,0.03) 10px)',
+          backgroundImage:
+            'repeating-linear-gradient(90deg, transparent, transparent 9px, hsl(var(--foreground) / 0.05) 9px, hsl(var(--foreground) / 0.05) 10px)',
         }}
       />
 
       {/* Track Content Regions Indicator */}
-      <div className="absolute top-8 left-0 right-0 h-[3px] bg-primary dark:bg-primary-dark">
+      <div className="absolute bottom-0.5 left-0 right-0 h-[1.5px] bg-accent">
         {trackRegions.map((region, index) => (
           <div
             key={index}
@@ -140,13 +141,24 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
       {/* Time Ticks */}
       {ticks.map(({ frame, x, time, isSecond, isMinute, isHour }) => {
         const tickHeight = isHour ? 20 : isMinute ? 16 : isSecond ? 12 : 8;
-        const tickColor = isHour
-          ? '#fff'
+
+        // Theme-aware tick styling
+        const tickClasses = isHour
+          ? 'bg-foreground'
           : isMinute
-            ? '#ddd'
+            ? 'bg-foreground/80'
             : isSecond
-              ? '#aaa'
-              : '#666';
+              ? 'bg-muted-foreground'
+              : 'bg-muted-foreground/60';
+
+        const labelClasses = isHour
+          ? 'text-foreground'
+          : isMinute
+            ? 'text-foreground/80'
+            : isSecond
+              ? 'text-muted-foreground'
+              : 'text-muted-foreground/60';
+
         const showLabel =
           isSecond ||
           (frameWidth > 2 && frame % Math.max(1, Math.floor(fps / 4)) === 0);
@@ -154,21 +166,21 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
         return (
           <div key={frame} className="absolute top-0" style={{ left: x }}>
             <div
-              className="mb-px"
+              className={cn('mb-px', tickClasses)}
               style={{
                 width: isMinute ? '2px' : '1px',
                 height: `${tickHeight}px`,
-                backgroundColor: tickColor,
               }}
             />
             {showLabel && (
               <div
-                className="-translate-x-1/2 whitespace-nowrap"
+                className={cn(
+                  '-translate-x-1/2 whitespace-nowrap',
+                  labelClasses,
+                  isMinute ? 'font-semibold' : 'font-normal',
+                )}
                 style={{
                   fontSize: isMinute ? '11px' : '10px',
-                  color: tickColor,
-                  fontWeight: isMinute ? '600' : '400',
-                  textShadow: '0 1px 2px rgba(0,0,0,0.8)',
                 }}
               >
                 {time}
@@ -181,7 +193,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
       {/* In/Out Points with improved design */}
       {inPoint !== undefined && (
         <div
-          className="absolute top-0 w-[3px] h-full bg-[#4CAF50] z-10"
+          className="absolute top-0 w-[3px] h-full bg-accent z-10"
           style={{
             left: inPoint * frameWidth - scrollX,
             boxShadow: '0 0 4px rgba(76, 175, 80, 0.5)',

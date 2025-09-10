@@ -6,14 +6,11 @@
  * @param collapsed - whether the toolbar is collapsed
  * @returns JSX.Element - The rendered component displaying a Toolbar
  */
+import { cn } from '@/Lib/utils';
+import { usePanelStore, type PanelType } from '@/Store/PanelStore';
+import { Cog, FolderDown, Music, Type } from 'lucide-react';
 import { useCallback, useRef } from 'react';
-import { BiText } from 'react-icons/bi';
-import { BsCameraVideo } from 'react-icons/bs';
-import { CgSoftwareDownload } from 'react-icons/cg';
-import { LuMusic } from 'react-icons/lu';
-import { MdOutlineSettings } from 'react-icons/md';
-import { SlPicture } from 'react-icons/sl';
-import { usePanelStore, type PanelType } from '../../store/panelStore';
+import { Button } from '../sub/ui/Button';
 
 interface ToolbarButtonProps {
   icon: React.ReactNode;
@@ -28,64 +25,57 @@ const ToolbarButton = ({
   onClick,
   isActive,
 }: ToolbarButtonProps) => (
-  <button
+  <Button
     onClick={onClick}
     title={title}
-    className={`transition-all duration-200 p-2 rounded-lg hover:bg-gray-800/50 ${
-      isActive
-        ? 'text-blue-400 bg-blue-500/20 hover:bg-blue-500/30'
-        : 'text-toolbarIcon hover:text-gray-300'
-    }`}
+    size="icon"
+    variant="ghost"
+    className={isActive && 'bg-accent'}
   >
     {icon}
-  </button>
+  </Button>
 );
 
 interface ToolbarConfig {
   panelType: PanelType;
   icon: React.ReactNode;
   title: string;
-  size: number;
   isSpecial?: boolean; // for media-import which has special handling
 }
 
 const toolbarConfig: ToolbarConfig[] = [
   {
     panelType: 'media-import',
-    icon: <CgSoftwareDownload size={20} />,
+    icon: <FolderDown size={16} />,
     title: 'Import media files',
-    size: 20,
     isSpecial: true,
   },
   {
     panelType: 'text-tools',
-    icon: <BiText size={18} />,
+    icon: <Type size={16} />,
     title: 'Text tools',
-    size: 18,
   },
-  {
-    panelType: 'video-effects',
-    icon: <BsCameraVideo size={16} />,
-    title: 'Video effects',
-    size: 16,
-  },
-  {
-    panelType: 'images',
-    icon: <SlPicture size={16} />,
-    title: 'Image tools',
-    size: 16,
-  },
+  // {
+  //   panelType: 'video-effects',
+  //   icon: <BsCameraVideo size={16} />,
+  //   title: 'Video effects',
+  //   size: 16,
+  // },
+  // {
+  //   panelType: 'images',
+  //   icon: <SlPicture size={16} />,
+  //   title: 'Image tools',
+  //   size: 16,
+  // },
   {
     panelType: 'audio-tools',
-    icon: <LuMusic size={16} />,
+    icon: <Music size={16} />,
     title: 'Audio tools',
-    size: 16,
   },
   {
     panelType: 'settings',
-    icon: <MdOutlineSettings size={18} />,
+    icon: <Cog size={16} />,
     title: 'Project settings',
-    size: 18,
   },
 ];
 
@@ -95,7 +85,6 @@ const toolbarConfig: ToolbarConfig[] = [
 
 const Toolbar = ({
   className,
-  collapsed,
 }: {
   className?: string;
   collapsed?: boolean;
@@ -163,19 +152,24 @@ const Toolbar = ({
     
      */
 
-  // Panel toggle handlers
+  // Panel toggle handlers - only open panels, don't close them
   const handleTogglePanel = useCallback(
     (panelType: PanelType) => {
-      togglePanel(panelType);
+      // Only open the panel if it's not already active
+      if (activePanelType !== panelType) {
+        togglePanel(panelType);
+      }
     },
-    [togglePanel],
+    [togglePanel, activePanelType],
   );
 
   // File import using native Electron dialog
   const handleImportFiles = useCallback(async () => {
-    // Also show the media import panel
-    togglePanel('media-import');
-  }, [togglePanel]);
+    // Only show the media import panel if it's not already active
+    if (activePanelType !== 'media-import') {
+      togglePanel('media-import');
+    }
+  }, [togglePanel, activePanelType]);
 
   // Get the appropriate click handler for each button
   const getClickHandler = useCallback(
@@ -192,33 +186,24 @@ const Toolbar = ({
   const toolRef = useRef<HTMLElement>(null);
 
   return (
-    <nav
-      ref={toolRef}
-      className={`${className} transition-all duration-300 ${
-        collapsed ? 'w-[70px]' : ''
-      } relative overflow-x-hidden`}
-    >
-      <div
-        className={`${collapsed ? 'px-1' : 'p-2 ml-0'} mt-2 space-y-2 pb-20`}
-      >
-        {/* Category Section */}
-        <div>
-          {/*  <TooltipWrapper content={collapsed ? 'Status' : null} side="left"> */}
-          <div
-            className={`flex flex-col items-center transition-opacity duration-300 gap-4`}
-          >
-            {toolbarConfig.map((config) => (
-              <ToolbarButton
-                key={config.panelType}
-                icon={config.icon}
-                title={config.title}
-                onClick={getClickHandler(config)}
-                isActive={activePanelType === config.panelType}
-              />
-            ))}
-          </div>
-          {/*  </TooltipWrapper> */}
+    <nav ref={toolRef} className={cn('', className)}>
+      {/* Category Section */}
+      <div>
+        {/*  <TooltipWrapper content={collapsed ? 'Status' : null} side="left"> */}
+        <div
+          className={`flex flex-col items-center transition-opacity duration-300 gap-3`}
+        >
+          {toolbarConfig.map((config) => (
+            <ToolbarButton
+              key={config.panelType}
+              icon={config.icon}
+              title={config.title}
+              onClick={getClickHandler(config)}
+              isActive={activePanelType === config.panelType}
+            />
+          ))}
         </div>
+        {/*  </TooltipWrapper> */}
       </div>
     </nav>
   );

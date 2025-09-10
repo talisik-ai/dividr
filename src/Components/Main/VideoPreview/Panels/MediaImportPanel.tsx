@@ -1,6 +1,15 @@
-import { ScrollTabs } from '@/components/sub/ui/scroll-tab';
+import { Button } from '@/Components/sub/ui/Button';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/Components/sub/ui/Tabs';
+import { cn } from '@/Lib/utils';
+import { Download, X } from 'lucide-react';
 import React, { useCallback, useRef, useState } from 'react';
-import { useVideoEditorStore } from '../../../../store/videoEditorStore';
+import { useVideoEditorStore } from '../../../../Store/VideoEditorStore';
+import { BasePanel } from './BasePanel';
 import { CustomPanelProps } from './PanelRegistry';
 
 interface FilePreview {
@@ -12,17 +21,11 @@ interface FilePreview {
   thumbnail?: string;
 }
 
-export const MediaImportPanel: React.FC<CustomPanelProps> = ({
-  className,
-  onClose,
-}) => {
+export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const { importMediaFromDialog, importMediaFromDrop } = useVideoEditorStore();
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
-  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
-    {},
-  );
-  const [, setActiveTab] = useState<string>('all');
+  const [, setUploadProgress] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle drag events
@@ -188,75 +191,41 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
 
   // Upload Area Component
   const uploadArea = (
-    <div className="p-4">
-      <div
-        className={`relative border-2 border-dashed rounded-lg p-4 lg:p-8 text-center transition-all duration-200 ${
-          dragActive
-            ? 'border-blue-400 bg-blue-400/10'
-            : 'border-gray-600 hover:border-gray-500'
-        }`}
-        onDragEnter={handleDragIn}
-        onDragLeave={handleDragOut}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
-      >
-        <div className="space-y-4">
-          <div className="mx-auto w-12 h-12 lg:w-16 lg:h-16 bg-gray-700 rounded-full flex items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="w-6 h-6 lg:w-8 lg:h-8 text-gray-400"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              preserveAspectRatio="xMidYMid meet"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
-          </div>
+    <div
+      className={cn(
+        'cursor-pointer hover:!border-secondary hover:bg-secondary/10 relative border-2 border-dashed border-accent h-full flex items-center justify-center rounded-lg lg:p-8 text-center transition-all duration-200',
+        dragActive
+          ? 'border-secondary bg-secondary/10'
+          : 'border-border hover:border-border/80',
+      )}
+      onDragEnter={handleDragIn}
+      onDragLeave={handleDragOut}
+      onDragOver={handleDrag}
+      onDrop={handleDrop}
+      onClick={async () => {
+        const result = await importMediaFromDialog();
+        if (result.success && result.importedFiles.length > 0) {
+          // Add the imported files to the panel state
+          setSelectedFiles((prev) => [...prev, ...result.importedFiles]);
+          // Mark them as completed (100% progress)
+          result.importedFiles.forEach((file) => {
+            setUploadProgress((prev) => ({ ...prev, [file.id]: 100 }));
+          });
+        }
+      }}
+    >
+      <div className="hidden lg:block text-xs text-muted-foreground space-y-2">
+        <p>There's nothing here yet</p>
+        <p>Drag & drop media your files here</p>
 
-          <div className="hidden lg:block">
-            <p className="text-sm font-medium text-white mb-2">
-              Drag & drop media files here
-            </p>
-            <p className="text-xs text-gray-400 mb-4">
-              or browse to upload from your device
-            </p>
-
-            <button
-              onClick={async () => {
-                const result = await importMediaFromDialog();
-                if (result.success && result.importedFiles.length > 0) {
-                  // Add the imported files to the panel state
-                  setSelectedFiles((prev) => [
-                    ...prev,
-                    ...result.importedFiles,
-                  ]);
-                  // Mark them as completed (100% progress)
-                  result.importedFiles.forEach((file) => {
-                    setUploadProgress((prev) => ({ ...prev, [file.id]: 100 }));
-                  });
-                }
-              }}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-xs font-medium transition-colors duration-200"
-            >
-              Upload Files
-            </button>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="video/*,audio/*,image/*,.srt,.vtt,.ass,.ssa,.sub,.sbv,.lrc"
-              onChange={handleFileInputChange}
-              className="hidden"
-            />
-          </div>
-        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="video/*,audio/*,image/*,.srt,.vtt,.ass,.ssa,.sub,.sbv,.lrc"
+          onChange={handleFileInputChange}
+          className="hidden"
+        />
       </div>
     </div>
   );
@@ -266,11 +235,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     <div className="flex items-center space-x-3 flex-1 min-w-0">
       <div className="text-2xl">💬</div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-white truncate">{file.name}</p>
+        <p className="text-xs font-medium text-foreground truncate">
+          {file.name}
+        </p>
         <p className="text-xs text-purple-400">
           Subtitle • {formatFileSize(file.size)}
         </p>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           {file.name.split('.').pop()?.toUpperCase()} format
         </p>
       </div>
@@ -282,8 +253,12 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     <div className="flex items-center space-x-3 flex-1 min-w-0">
       <div className="text-2xl">{getFileIcon(file.type, file.name)}</div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-white truncate">{file.name}</p>
-        <p className="text-xs text-gray-400">{formatFileSize(file.size)}</p>
+        <p className="text-xs font-medium text-foreground truncate">
+          {file.name}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {formatFileSize(file.size)}
+        </p>
       </div>
     </div>
   );
@@ -291,8 +266,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   // File List Component
   const fileListContent = (files: FilePreview[], tabType: string) => (
     <div className="flex-1 overflow-auto">
-      <div className="p-4 pt-0">
-        <h4 className="text-xs font-semibold text-gray-300 mb-3">
+      <div className="">
+        <h4 className="text-xs font-semibold text-muted-foreground mb-3">
           {getTabLabel(tabType, files.length)}
         </h4>
 
@@ -303,36 +278,27 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
             return (
               <div
                 key={file.id}
-                className={`rounded-lg p-3 border transition-colors duration-200 ${
+                className={cn(
+                  'rounded-lg p-3 border transition-colors duration-200',
                   isSubtitle
-                    ? 'bg-purple-900/20 border-purple-600/30 hover:bg-purple-900/30'
-                    : 'bg-gray-800 border-gray-700 hover:bg-gray-750'
-                }`}
+                    ? 'bg-purple-500/10 border-purple-500/30 hover:bg-purple-500/20'
+                    : 'bg-muted/50 border-border hover:bg-muted',
+                )}
               >
                 <div className="flex items-start justify-between">
                   {isSubtitle
                     ? renderSubtitleFile(file)
                     : renderMediaFile(file)}
 
-                  <button
+                  <Button
                     onClick={() => removeFile(file.id)}
-                    className="text-gray-400 hover:text-red-400 transition-colors duration-200 ml-2"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive ml-2"
                     title="Remove file"
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             );
@@ -376,68 +342,23 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
     }
   };
 
-  const tabs = [
-    {
-      value: 'all',
-      label: 'All',
-      content:
-        selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('all'), 'all')
-          : uploadArea,
-    },
-    {
-      value: 'videos',
-      label: 'Videos',
-      content:
-        selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('videos'), 'videos')
-          : uploadArea,
-    },
-    {
-      value: 'audio',
-      label: 'Audio',
-      content:
-        selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('audio'), 'audio')
-          : uploadArea,
-    },
-    {
-      value: 'images',
-      label: 'Images',
-      content:
-        selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('images'), 'images')
-          : uploadArea,
-    },
-    {
-      value: 'subtitles',
-      label: 'Subtitles',
-      content:
-        selectedFiles.length > 0
-          ? fileListContent(getFilteredFiles('subtitles'), 'subtitles')
-          : uploadArea,
-    },
-  ];
+  const getTabContent = (
+    type: 'all' | 'videos' | 'audio' | 'images' | 'subtitles',
+  ) => {
+    return selectedFiles.length > 0
+      ? fileListContent(getFilteredFiles(type), type)
+      : uploadArea;
+  };
 
   return (
-    <div className={` ${className}`}>
-      {/* Header */}
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-bold text-white">Your uploads</h3>
-          </div>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
-              title="Close panel"
-            >
-              ×
-            </button>
-          )}
-        </div>
-        <button
+    <BasePanel
+      title="Your uploads"
+      description="Import and manage media files"
+      className={className}
+    >
+      <div className="flex flex-col h-full gap-4">
+        {/* Upload Button */}
+        <Button
           onClick={async () => {
             const result = await importMediaFromDialog();
             if (result.success && result.importedFiles.length > 0) {
@@ -449,19 +370,51 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
               });
             }
           }}
-          className="w-full bg-primary hover:bg-gray-600 text-white p-2 rounded-lg text-xs lg:text-sm font-medium transition-colors duration-200"
+          className="w-full"
         >
-          Upload
-        </button>
+          Upload Files
+          <Download />
+        </Button>
+
+        {/* Tab Navigation and Content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Tabs defaultValue="all" className="flex-1 gap-4 flex flex-col">
+            <TabsList variant="text" className="w-full justify-start">
+              <TabsTrigger value="all" variant="text">
+                All
+              </TabsTrigger>
+              <TabsTrigger value="videos" variant="text">
+                Videos
+              </TabsTrigger>
+              <TabsTrigger value="audio" variant="text">
+                Audio
+              </TabsTrigger>
+              <TabsTrigger value="images" variant="text">
+                Images
+              </TabsTrigger>
+              <TabsTrigger value="subtitles" variant="text">
+                Subtitles
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="all" className="flex-1 overflow-hidden">
+              {getTabContent('all')}
+            </TabsContent>
+            <TabsContent value="videos" className="flex-1 overflow-hidden">
+              {getTabContent('videos')}
+            </TabsContent>
+            <TabsContent value="audio" className="flex-1 overflow-hidden">
+              {getTabContent('audio')}
+            </TabsContent>
+            <TabsContent value="images" className="flex-1 overflow-hidden">
+              {getTabContent('images')}
+            </TabsContent>
+            <TabsContent value="subtitles" className="flex-1 overflow-hidden">
+              {getTabContent('subtitles')}
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
-      {/* Tab Navigation and Content */}
-      <div className="flex-1 flex flex-col">
-        <ScrollTabs
-          tabs={tabs}
-          defaultValue="all"
-          onValueChange={setActiveTab}
-        />
-      </div>
-    </div>
+    </BasePanel>
   );
 };

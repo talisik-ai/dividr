@@ -1,18 +1,28 @@
-import React from 'react';
-import { FaBackward, FaForward, FaPause, FaPlay } from 'react-icons/fa';
+import { Button } from '@/Components/sub/ui/Button';
+import ElasticSlider from '@/Components/sub/ui/Elastic-Slider';
 import {
-  LuCopy,
-  LuRedo2,
-  LuTrash,
-  LuUndo2,
-  LuSquareSplitHorizontal,
-} from 'react-icons/lu';
-import { TbScissors } from 'react-icons/tb';
-import { useTimelineDuration } from '@/hooks/useTimelineDuration';
-import { useCallback } from 'react';
-
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/Components/sub/ui/Select';
+import { useTimelineDuration } from '@/Hooks/useTimelineDuration';
+import {
+  CopyPlus,
+  Maximize,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  SplitSquareHorizontal,
+  Trash,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
+import React, { useCallback } from 'react';
 // eslint-disable-next-line import/no-unresolved
-import { useVideoEditorStore } from '../../../store/videoEditorStore';
+import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 
 export const TimelineControls: React.FC = () => {
   const {
@@ -84,110 +94,24 @@ export const TimelineControls: React.FC = () => {
   };
 
   return (
-    <div className="h-10 bg-primary dark:bg-primary-dark flex items-center justify-between px-4 border-t-8 border-secondary dark:border-secondary-dark">
+    <div className="h-10 grid grid-cols-[364px_1fr] px-4 border-t border-accent">
       {/* Playback Controls */}
-      <div className="flex items-center">
-        <button
-          onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Undo"
-        >
-          <LuUndo2 />
-        </button>
-        <button
-          onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Revert"
-        >
-          <LuRedo2 />
-        </button>
-        <button
-          onClick={splitAtPlayhead}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Split"
-        >
-          <LuSquareSplitHorizontal />
-        </button>
-        <button
-          onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Clip"
-        >
-          <TbScissors />
-        </button>
-        <button
-          onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Copy"
-        >
-          <LuCopy />
-        </button>
-        <button
-          onClick={stop}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Remove"
-        >
-          <LuTrash />
-        </button>
+      <div className="flex items-center gap-6">
+        <Button variant="native" onClick={splitAtPlayhead} title="Split">
+          <SplitSquareHorizontal />
+        </Button>
+        <Button variant="native" onClick={stop} title="Duplicate">
+          <CopyPlus />
+        </Button>
+        <Button variant="native" onClick={stop} title="Duplicate">
+          <Trash />
+        </Button>
       </div>
 
-      {/* Time Display */}
-
-      <div className="flex items-center justify-center">
-        {/* 
-        <button
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Go to start"
-        >
-          <FaFastBackward />
-        </button>
-        */}
-        <button
-          onClick={() =>
-            setCurrentFrame(Math.max(0, timeline.currentFrame - 1))
-          }
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Previous frame"
-        >
-          <FaBackward />
-        </button>
-
-        <button
-          onClick={handlePlayToggle}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title={playback.isPlaying ? 'Pause' : 'Play'}
-        >
-          {playback.isPlaying ? <FaPause /> : <FaPlay />}
-        </button>
-
-        <button
-          onClick={() =>
-            setCurrentFrame(
-              Math.min(effectiveEndFrame - 1, timeline.currentFrame + 1),
-            )
-          }
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Next frame"
-        >
-          <FaForward />
-        </button>
-        {/* 
-        <button
-          onClick={() => setCurrentFrame(timeline.totalFrames - 1)}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Go to end"
-        >
-          <FaFastForward />
-        </button>
-        */}
-        <div className="text-xs p-2 text-gray-400">
-          {formatTime(timeline.currentFrame)} / {duration.formattedTime}
-        </div>
-      </div>
-
-      {/* Additional Controls */}
-      <div className="flex items-center justify-center gap-2">
-        {/* Loop Toggle 
+      <div className="flex items-center flex-1 justify-center relative">
+        {/* Additional Controls */}
+        <div className="flex justify-start gap-2 w-full">
+          {/* Loop Toggle 
         <button
           onClick={toggleLoop}
           
@@ -196,24 +120,28 @@ export const TimelineControls: React.FC = () => {
           🔁
         </button>
         */}
-        {/* Playback Rate */}
-        <div className="flex items-center justify-center gap-2">
-          <label className="font-toolbarIcon text-xs">Speed:</label>
-          <select
-            value={playback.playbackRate}
-            onChange={(e) => setPlaybackRate(Number(e.target.value))}
-            className="bg-primary font-toolbarIcon text-xs"
-          >
-            <option value={0.25}>0.25x</option>
-            <option value={0.5}>0.5x</option>
-            <option value={1}>1x</option>
-            <option value={1.5}>1.5x</option>
-            <option value={2}>2x</option>
-            <option value={4}>4x</option>
-          </select>
-        </div>
+          {/* Playback Rate */}
+          <div className="flex items-center justify-center gap-2">
+            <label className="text-xs">Speed:</label>
+            <Select
+              value={playback.playbackRate.toString()}
+              onValueChange={(value) => setPlaybackRate(Number(value))}
+            >
+              <SelectTrigger variant="underline" className="text-xs w-[50px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0.25">0.25x</SelectItem>
+                <SelectItem value="0.5">0.5x</SelectItem>
+                <SelectItem value="1">1x</SelectItem>
+                <SelectItem value="1.5">1.5x</SelectItem>
+                <SelectItem value="2">2x</SelectItem>
+                <SelectItem value="4">4x</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        {/* Volume Control 
+          {/* Volume Control 
         <div 
         className='flex items-center justify-center gap-2 border-none focus-none'>
           <button
@@ -240,6 +168,82 @@ export const TimelineControls: React.FC = () => {
           </span>
         </div>
         */}
+        </div>
+
+        {/* Time Display */}
+        <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2">
+          {/* 
+        <button
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          title="Go to start"
+        >
+          <FaFastBackward />
+        </button>
+        */}
+          <Button
+            onClick={() =>
+              setCurrentFrame(Math.max(0, timeline.currentFrame - 1))
+            }
+            title="Previous frame"
+            variant="native"
+            size="icon"
+          >
+            <SkipBack />
+          </Button>
+
+          <Button
+            onClick={handlePlayToggle}
+            title={playback.isPlaying ? 'Pause' : 'Play'}
+            variant="native"
+            size="icon"
+          >
+            {playback.isPlaying ? (
+              <Pause className="fill-zinc-900 dark:fill-zinc-100" />
+            ) : (
+              <Play className="fill-zinc-900 dark:fill-zinc-100" />
+            )}
+          </Button>
+
+          <Button
+            onClick={() =>
+              setCurrentFrame(
+                Math.min(effectiveEndFrame - 1, timeline.currentFrame + 1),
+              )
+            }
+            title="Next frame"
+            variant="native"
+            size="icon"
+          >
+            <SkipForward />
+          </Button>
+          {/* 
+        <button
+          onClick={() => setCurrentFrame(timeline.totalFrames - 1)}
+          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
+          title="Go to end"
+        >
+          <FaFastForward />
+        </button>
+        */}
+          <div className="text-xs p-2 text-muted-foreground font-semibold min-w-[140px] text-center">
+            {formatTime(timeline.currentFrame)} / {duration.formattedTime}
+          </div>
+        </div>
+
+        <div className="flex justify-end items-center gap-4 w-full">
+          <ElasticSlider
+            leftIcon={<ZoomOut className="translate scale-x-[-1]" size={16} />}
+            rightIcon={<ZoomIn className="translate scale-x-[-1]" size={16} />}
+            startingValue={500}
+            defaultValue={750}
+            maxValue={1000}
+            showLabel={false}
+            thickness={4}
+          />
+          <Button variant="native" size="icon">
+            <Maximize className="translate scale-x-[-1]" size={16} />
+          </Button>
+        </div>
       </div>
     </div>
   );

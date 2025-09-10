@@ -1,8 +1,9 @@
+import { Film } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  VideoTrack,
   useVideoEditorStore,
-} from '../../../store/videoEditorStore';
+  VideoTrack,
+} from '../../../Store/VideoEditorStore';
 
 // Define track row types - easy to extend in the future
 export interface TrackRowDefinition {
@@ -167,8 +168,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         <div
           ref={nodeRef}
           className={`
-          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] lg: rounded flex items-center px-2 py-1 overflow-hidden select-none z-10
-          ${isSelected ? 'border-2 border-white' : 'border border-white/20'}
+          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] z-10 flex items-center px-2 py-1 overflow-hidden select-none
+          ${isSelected ? 'border-2 border-secondary rounded-none' : 'rounded'}
           ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
           ${track.visible ? 'opacity-100' : 'opacity-50'}
         `}
@@ -202,13 +203,13 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           </div>
 
           {track.type === 'audio' && track.volume !== undefined && (
-            <div className="absolute right-1 top-1 text-[8px] text-white/80">
+            <div className="absolute right-1 top-1 text-[8px] text-foreground">
               {Math.round(track.volume * 100)}%
             </div>
           )}
 
           {track.locked && (
-            <div className="absolute top-0.5 right-0.5 text-[10px] text-white/60">
+            <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60">
               🔒
             </div>
           )}
@@ -217,21 +218,25 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         {/* Left resize handle */}
         {!track.locked && isSelected && (
           <div
-            className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-15 rounded-l
-            ${isResizing === 'left' ? 'bg-blue-500' : 'bg-green-500'}`}
-            style={{ left: left - 3 }}
+            className={`absolute top-1.5 w-2 sm:h-[24px] md:h-[26px] lg:h-[40px] cursor-ew-resize z-20 lg:rounded-l flex items-center justify-center
+            ${isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary'}`}
+            style={{ left: left - 6 }}
             onMouseDown={(e) => handleMouseDown('left', e)}
-          />
+          >
+            <div className="w-0.5 h-3/4 bg-primary rounded-full" />
+          </div>
         )}
 
         {/* Right resize handle */}
         {!track.locked && isSelected && (
           <div
-            className={`absolute top-0 w-1.5 h-[35px] cursor-ew-resize z-15 rounded-r
-            ${isResizing === 'right' ? 'bg-blue-500' : 'bg-green-500'}`}
-            style={{ left: left + clampedWidth - 3 }}
+            className={`absolute top-1.5 w-2 sm:h-[24px] md:h-[26px] lg:h-[40px] cursor-ew-resize z-20 lg:rounded-r flex items-center justify-center
+            ${isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary'}`}
+            style={{ left: left + clampedWidth - 1 }}
             onMouseDown={(e) => handleMouseDown('right', e)}
-          />
+          >
+            <div className="w-0.5 h-3/4 bg-primary rounded-full" />
+          </div>
         )}
       </>
     );
@@ -253,6 +258,8 @@ interface TrackRowProps {
     newEndFrame?: number,
   ) => void;
   onDrop: (rowId: string, files: FileList) => void;
+  allTracksCount: number;
+  onPlaceholderClick?: () => void;
 }
 
 const TrackRow: React.FC<TrackRowProps> = React.memo(
@@ -267,6 +274,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     onTrackMove,
     onTrackResize,
     onDrop,
+    allTracksCount,
+    onPlaceholderClick,
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
@@ -318,7 +327,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     return (
       <div
         className={`relative sm:h-6 md:h-8 lg:h-12 border-l-[3px]
-        ${isDragOver ? 'bg-green-500/10 border-l-green-500' : 'bg-transparent border-l-transparent'}`}
+        ${isDragOver ? 'bg-secondary/10 border-l-secondary' : 'bg-transparent border-l-transparent'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -333,8 +342,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           90deg,
           transparent,
           transparent ${frameWidth * 30 - 1}px,
-          rgba(255,255,255,0.02) ${frameWidth * 30 - 1}px,
-          rgba(255,255,255,0.02) ${frameWidth * 30}px
+          hsl(var(--foreground) / 0.05) ${frameWidth * 30 - 1}px,
+          hsl(var(--foreground) / 0.05) ${frameWidth * 30}px
         )`,
           }}
         />
@@ -358,11 +367,21 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         </div>
 
         {/* Drop hint */}
-        {tracks.length === 0 && (
+        {allTracksCount === 0 && rowDef.id === 'subtitle' && (
           <div
-            className={`absolute top-1/2 left-5 transform -translate-y-1/2 text-xs pointer-events-none
-            ${isDragOver ? 'text-green-500 font-bold' : 'text-gray-500 font-normal'}`}
-          ></div>
+            className={`absolute inset-0 flex items-center px-8 cursor-pointer transition-all duration-200 rounded-lg border-2 border-dashed
+            ${
+              isDragOver
+                ? 'border-secondary bg-secondary/10 text-secondary'
+                : 'border-accent hover:border-secondary hover:bg-secondary/10 bg-accent text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={onPlaceholderClick}
+          >
+            <div className="flex items-center gap-2 text-xs">
+              <Film className="h-4 w-4" />
+              <span>Drag and drop your media here</span>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -377,8 +396,12 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
   selectedTrackIds,
   onTrackSelect,
 }) => {
-  const { moveTrack, resizeTrack, importMediaFromFiles } =
-    useVideoEditorStore();
+  const {
+    moveTrack,
+    resizeTrack,
+    importMediaFromFiles,
+    importMediaFromDialog,
+  } = useVideoEditorStore();
 
   const handleTrackSelect = useCallback(
     (trackId: string, multiSelect = false) => {
@@ -444,6 +467,16 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
     [importMediaFromFiles],
   );
 
+  const handlePlaceholderClick = useCallback(async () => {
+    const result = await importMediaFromDialog();
+    if (result.success && result.importedFiles.length > 0) {
+      console.log(
+        'Files imported successfully from timeline placeholder:',
+        result.importedFiles,
+      );
+    }
+  }, [importMediaFromDialog]);
+
   // Group tracks by their designated rows with subtitle optimization
   const tracksByRow = React.useMemo(() => {
     const grouped: Record<string, VideoTrack[]> = {};
@@ -465,7 +498,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
 
   return (
     <div
-      className="relative min-h-full bg-primary dark:bg-primary-dark overflow-visible"
+      className="relative min-h-full overflow-visible"
       style={{
         width: timelineWidth,
         minWidth: timelineWidth,
@@ -485,6 +518,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
           onTrackMove={handleTrackMove}
           onTrackResize={handleTrackResize}
           onDrop={handleRowDrop}
+          allTracksCount={tracks.length}
+          onPlaceholderClick={handlePlaceholderClick}
         />
       ))}
     </div>

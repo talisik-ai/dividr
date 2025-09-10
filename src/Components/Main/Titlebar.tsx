@@ -6,299 +6,66 @@
  * @returns JSX.Element - The rendered component displaying a TitleBar
  *
  */
-import React, { useCallback } from 'react';
-import { FaPlus } from 'react-icons/fa';
-import { IoMdClose, IoMdRemove } from 'react-icons/io';
-import { PiBrowsers, PiExportBold } from 'react-icons/pi';
-import { RxBox } from 'react-icons/rx';
-import { useLocation, useNavigate } from 'react-router-dom';
-import logo from '@/assets/Logo/logo.svg';
-import { VideoEditJob } from '@/schema/ffmpegConfig';
-import { useVideoEditorStore, VideoTrack } from '@/store/videoEditorStore';
-import { useProjectStore } from '@/store/projectStore';
-import { FfmpegCallbacks, runFfmpegWithProgress } from '@/utility/ffmpegRunner';
-import {
-  extractSubtitleSegments,
-  generateASSContent,
-} from '@/utility/subtitleExporter';
-import { ExportModal } from '@/components/main/Modal/ExportModal';
-import { Input } from '@/components/sub/ui/input';
-import { ModeToggle } from '@/components/sub/custom/ModeToggle';
-import { cn } from '@/lib/utils';
+import LogoDark from '@/Assets/Logo/Logo-Dark.svg';
+import LogoLight from '@/Assets/Logo/Logo-Light.svg';
+import { ModeToggle } from '@/Components/sub/custom/ModeToggle';
+import { Button, buttonVariants } from '@/Components/sub/ui/Button';
+import { cn } from '@/Lib/utils';
+import { useProjectStore } from '@/Store/ProjectStore';
+import { useTheme } from '@/Utility/ThemeProvider';
+import { Copy, Minus, Plus, Square, Upload, X } from 'lucide-react';
+import React from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+
 interface TitleBarProps {
   className?: string;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
-  // const { theme } = useTheme(); // Unused for now
+  const { createNewProject, openProject, importProject } = useProjectStore();
+  const { theme } = useTheme();
+
   const location = useLocation();
+
   const [isMaximized, setIsMaximized] = React.useState<boolean>(false);
-  const [isExportModalOpen, setIsExportModalOpen] =
-    React.useState<boolean>(false);
-  const {
-    tracks,
-    timeline,
-    render,
-    startRender,
-    updateRenderProgress,
-    finishRender,
-    cancelRender,
-    textStyle,
-    getTextStyleForSubtitle,
-    // importMediaFromDialog, // Unused for now
-  } = useVideoEditorStore();
-  const { metadata, setTitle } = useProjectStore();
+
   const navigate = useNavigate();
 
   // Determine context based on current route
   const isInVideoEditor = location.pathname.startsWith('/video-editor');
-  const titleText = isInVideoEditor ? (
-    <Input
-      className="border-none text-center text-sm p-2 h-6"
-      placeholder="Untitled Project"
-      value={metadata.title}
-      onChange={(e) => setTitle(e.target.value)}
-    />
-  ) : (
-    'Dividr'
-  );
-  const showExportButton = isInVideoEditor;
 
-  // Function to generate .ass content from subtitle tracks using the subtitle exporter
-  const generateAssContent = useCallback(
-    (subtitleTracks: VideoTrack[]): string => {
-      if (subtitleTracks.length === 0) return '';
+  const handleCreateProject = async () => {
+    try {
+      const projectId = await createNewProject('Untitled Project');
 
-      // Extract subtitle segments from tracks
-      const segments = extractSubtitleSegments(subtitleTracks, timeline);
+      // Open the newly created project to set it as current
+      await openProject(projectId);
 
-      // Get current text style
-      const currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
-
-      // Generate ASS content with styling
-      return generateASSContent(segments, currentTextStyle);
-    },
-    [timeline, textStyle, getTextStyleForSubtitle],
-  );
-
-  // Convert tracks to FFmpeg job with timeline-aware processing
-  const createFFmpegJob = useCallback(
-    (
-      outputFilename = 'Untitled_Project.mp4',
-      outputPath?: string,
-    ): VideoEditJob => {
-      if (tracks.length === 0) {
-        return {
-          inputs: [],
-          output: outputFilename,
-          outputPath,
-          operations: {},
-        };
-      }
-
-      // Separate subtitle tracks for separate processing
-      const subtitleTracks = tracks.filter(
-        (track) => track.type === 'subtitle',
-      );
-
-      // Sort non-subtitle tracks by timeline position to process them in order
-      const sortedTracks = [...tracks]
-        .filter((track) => track.visible) // Only include visible tracks
-        .filter((track) => track.type !== 'subtitle') // Exclude subtitle tracks - they'll be handled as .srt file
-        .sort((a, b) => a.startFrame - b.startFrame);
-
-      if (sortedTracks.length === 0) {
-        return {
-          inputs: [],
-          output: outputFilename,
-          outputPath,
-          operations: {},
-        };
-      }
-
-      const trackInfos: Array<{
-        path: string;
-        startTime?: number;
-        duration?: number;
-      }> = [];
-
-      // Process tracks in timeline order, adding black video for gaps
-      let currentTimelineFrame = 0;
-
-      for (const track of sortedTracks) {
-        // If there's a gap before this track, add a black video segment
-        if (track.startFrame > currentTimelineFrame) {
-          const gapDurationFrames = track.startFrame - currentTimelineFrame;
-          const gapDurationSeconds = gapDurationFrames / timeline.fps;
-
-          if (gapDurationSeconds > 0.033) {
-            // Only add significant gaps (> 1 frame)
-            console.log(
-              `🗬 Adding ${gapDurationSeconds}s gap before "${track.name}"`,
-            );
-
-            // Create a black video segment for the gap
-            // We'll mark this as a gap and handle it specially in the command builder
-            trackInfos.push({
-              path: '__GAP__',
-              duration: gapDurationSeconds,
-              startTime: 0,
-            });
-          }
-        }
-
-        // Add the actual track with proper source timing
-        const trackDurationSeconds = track.duration / timeline.fps;
-        const sourceStartTime = track.sourceStartTime || 0;
-
-        console.log(
-          `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
-        );
-
-        trackInfos.push({
-          path: track.source,
-          startTime: sourceStartTime,
-          duration: Math.max(0.033, trackDurationSeconds),
-        });
-
-        // Update current position to the end of this track
-        currentTimelineFrame = track.endFrame;
-      }
-
-      // Generate subtitle content if there are subtitle tracks
-      let subtitleContent = '';
-      let currentTextStyle = undefined;
-      if (subtitleTracks.length > 0) {
-        subtitleContent = generateAssContent(subtitleTracks);
-        currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
-        console.log(
-          '📝 Generated subtitle content for export with text style:',
-          textStyle.activeStyle,
-        );
-      }
-
-      return {
-        inputs: trackInfos,
-        output: outputFilename,
-        outputPath,
-        operations: {
-          concat: trackInfos.length > 1,
-          preset: 'superfast', // ⚡ This adds -preset superfast to the FFmpeg command
-          targetFrameRate: timeline.fps,
-          normalizeFrameRate: trackInfos.length > 1,
-          subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
-          textStyle: currentTextStyle,
-        },
-        subtitleContent, // Pass the subtitle content separately so main process can create the file
-        subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
-      };
-    },
-    [
-      tracks,
-      timeline.fps,
-      generateAssContent,
-      textStyle,
-      getTextStyleForSubtitle,
-    ],
-  );
-
-  // Handle export button click - shows modal
-  const handleRender = useCallback(() => {
-    if (tracks.length === 0) {
-      alert('No tracks to render');
-      return;
+      // Navigate to video editor with the new project
+      navigate('/video-editor');
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      // Could add toast notification here if needed
     }
-    setIsExportModalOpen(true);
-  }, [tracks.length]);
+  };
 
-  // Render video using FFmpeg with specified config
-  const handleActualRender = useCallback(
-    async (outputFilename: string, outputPath?: string) => {
-      if (tracks.length === 0) {
-        alert('No tracks to render');
-        return;
-      }
+  const handleImportProject = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-      const job = createFFmpegJob(outputFilename, outputPath);
-      console.log('🎬 FFmpeg Job:', job);
-      console.log('🗂️ Output Path:', outputPath);
+    try {
+      await importProject(file);
+      toast.success('Project imported successfully!');
+    } catch (error) {
+      console.error('Failed to import project:', error);
+      toast.error('Failed to import project');
+    }
 
-      // Store the latest currentTime to avoid race conditions
-      let latestCurrentTime = render.currentTime;
-
-      const callbacks: FfmpegCallbacks = {
-        onProgress: (progress) => {
-          // Always update if we have outTime, even without percentage
-          if (progress.outTime) {
-            // Update our local tracking variable
-            latestCurrentTime = progress.outTime;
-
-            updateRenderProgress(
-              progress.percentage || render.progress,
-              progress.percentage
-                ? `Rendering... ${progress.percentage.toFixed(1)}%`
-                : render.status,
-              progress.outTime, // Pass the current time from FFmpeg
-            );
-          } else if (progress.percentage) {
-            updateRenderProgress(
-              progress.percentage,
-              `Rendering... ${progress.percentage.toFixed(1)}%`,
-              latestCurrentTime, // Use latest currentTime
-            );
-          }
-        },
-        onStatus: (status) => {
-          updateRenderProgress(render.progress, status, latestCurrentTime);
-          console.log(render.progress);
-        },
-        onLog: () => {
-          // Disabled logging for now
-        },
-      };
-
-      try {
-        console.log('🚀 Starting render process...');
-        startRender({
-          outputPath: job.output,
-          format: 'mp4',
-          quality: 'high',
-        });
-
-        console.log('📞 Calling runFfmpegWithProgress...');
-        const result = await runFfmpegWithProgress(job, callbacks);
-        console.log('✅ runFfmpegWithProgress completed:', result);
-
-        finishRender();
-        alert('Render completed successfully!');
-      } catch (error) {
-        //console.error('Render failed:', error);
-        cancelRender();
-        alert(`Render failed: ${error}`);
-      }
-    },
-    [
-      tracks,
-      createFFmpegJob,
-      render.progress,
-      startRender,
-      updateRenderProgress,
-      finishRender,
-      cancelRender,
-    ],
-  );
-
-  // Handle export modal confirmation
-  const handleExportConfirm = useCallback(
-    (config: { filename: string; format: string; outputPath: string }) => {
-      setIsExportModalOpen(false);
-      handleActualRender(config.filename, config.outputPath);
-    },
-    [handleActualRender],
-  );
-
-  const handleCreateProject = () => {
-    navigate('/video-editor');
+    // Reset the input
+    event.target.value = '';
   };
 
   // Function to toggle maximize/restore
@@ -327,43 +94,47 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
   */
   return (
     <>
-      <div className={cn('bg-titleBar dark:bg-titleBar-dark', className)}>
-        <div className="relative flex items-center h-8 px-4 py-1 drag-area">
+      <div className={cn('', className)}>
+        <div className="relative flex items-center h-8 drag-area">
           {/* Logo */}
-          <div className="flex items-center">
-            <img src={logo} className="h-5 w-auto" alt="Dividr Logo" />
-          </div>
-
-          {/* Centered Title */}
-          <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center justify-center">
-            <span className="text-white no-drag">{titleText}</span>
+          <div className="flex items-center no-drag">
+            <Link to="/" className="cursor-pointer">
+              <img
+                src={theme === 'dark' ? LogoDark : LogoLight}
+                className="h-5 w-auto"
+                alt="Dividr Logo"
+              />
+            </Link>
           </div>
 
           {/* Right Side Controls */}
-          <div className="flex items-center gap-2 no-drag text-white ml-auto h-6">
-            {/* Export Button - Only show in video editor */}
-            {showExportButton && (
-              <button
-                onClick={handleRender}
-                disabled={render.isRendering || tracks.length === 0}
-                className="h-6 bg-highlight border-none text-white text-xs lg:text-sm cursor-pointer px-3 py-1 rounded flex items-center gap-2 hover:bg-highlight/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {render.isRendering
-                  ? `Exporting... ${render.progress.toFixed(0)}%`
-                  : 'Export'}
-                <PiExportBold size={14} />
-              </button>
-            )}
-
+          <div className="flex items-center gap-2 no-drag text-gray-800 dark:text-gray-100 ml-auto h-6">
             {/* New Project Button - Only show when not in video editor */}
-            {!showExportButton && (
-              <button
-                onClick={handleCreateProject}
-                className="h-6 bg-highlight border-none text-white text-xs lg:text-sm cursor-pointer px-3 py-1 rounded flex items-center gap-2 hover:bg-highlight/90 transition-colors"
-              >
-                <FaPlus size={14} />
-                New Project
-              </button>
+            {!isInVideoEditor && (
+              <div className="flex items-center gap-2">
+                <label
+                  className={cn(
+                    'cursor-pointer',
+                    buttonVariants({ variant: 'outline', size: 'sm' }),
+                  )}
+                >
+                  <Upload size={16} />
+                  Import
+                  <input
+                    type="file"
+                    accept=".dividr,.json"
+                    onChange={handleImportProject}
+                    className="hidden"
+                  />
+                </label>
+                <Button
+                  onClick={handleCreateProject}
+                  variant="secondary"
+                  size="sm"
+                >
+                  <Plus size={16} /> New Project
+                </Button>
+              </div>
             )}
 
             {/* Dark Mode/Light Mode Toggle */}
@@ -374,43 +145,43 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
             {/* Window Controls */}
             <div className="flex items-center">
               {/* Minimize Button */}
-              <button
-                className="w-8 h-6 rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment flex items-center justify-center transition-colors"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => window.appControl.minimizeApp()}
                 title="Minimize"
               >
-                <IoMdRemove size={16} />
-              </button>
+                <Minus size={16} />
+              </Button>
 
               {/* Maximize Button with dynamic icon */}
-              <button
-                className="w-8 h-6 rounded-md hover:bg-gray-700 dark:hover:bg-darkModeCompliment flex items-center justify-center transition-colors"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={handleMaximizeRestore}
                 title={isMaximized ? 'Restore' : 'Maximize'}
               >
-                {isMaximized ? <PiBrowsers size={16} /> : <RxBox size={16} />}
-              </button>
+                {isMaximized ? (
+                  <Copy size={16} className="scale-x-[-1] transform" />
+                ) : (
+                  <Square size={16} />
+                )}
+              </Button>
 
               {/* Close Button */}
-              <button
-                className="w-8 h-6 rounded-md hover:bg-red-600 flex items-center justify-center transition-colors"
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hover:bg-red-600 dark:hover:bg-red-600 hover:text-zinc-100"
                 onClick={handleCloseClick}
                 title="Close"
               >
-                <IoMdClose size={16} />
-              </button>
+                <X size={16} />
+              </Button>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Export Configuration Modal */}
-      <ExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        onExport={handleExportConfirm}
-        defaultFilename={metadata.title.trim() || 'Untitled_Project'}
-      />
     </>
   );
 };

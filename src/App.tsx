@@ -1,29 +1,18 @@
-import { Route, HashRouter as Router, Routes } from 'react-router-dom';
-import './App.css';
-import NewProject from './components/pages/NewProject';
-import NotFound from './components/pages/NotFound';
-import { VideoEditor } from './components/VideoEditor';
-import VideoEditorLayout from './layout/VideoEditorLayout';
-import { ThemeProvider } from './utility/ThemeProvider';
+import { RouterProvider } from 'react-router-dom';
+import { Toaster } from 'sonner';
+import { router } from './Routes';
+import './Styles/app.css';
+import { ThemeProvider } from './Utility/ThemeProvider';
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
-      <Router>
-        <Routes>
-          {/* Home route - Shows NewProject page with TitleBar */}
-          <Route path="/" element={<NewProject />} />
-
-          {/* Video Editor route - Shows full VideoEditorLayout */}
-          <Route path="/video-editor" element={<VideoEditorLayout />}>
-            <Route index element={<VideoEditor />} />
-          </Route>
-
-          {/* Fallback for any unknown routes */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Router>
-      {/*  <Toaster /> */}
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+      <RouterProvider router={router} />
+      <Toaster
+        richColors
+        position="bottom-right"
+        style={{ fontFamily: 'inherit' }}
+      />
     </ThemeProvider>
   );
 }

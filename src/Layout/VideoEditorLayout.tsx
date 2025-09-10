@@ -1,84 +1,55 @@
-import { PropertiesPanel } from '@/components/main/VideoPreview/PropertiesPanel';
-import { StylePanel } from '@/components/main/VideoPreview/StylePanel';
-import { Component, ErrorInfo, ReactNode } from 'react';
+import { ToolsPanel } from '@/Components/Main/VideoPreview/ToolsPanel';
+import { AppMenuBar } from '@/Components/sub/custom/AppMenuBar';
+import { ProjectGuard } from '@/Features/VideoEditor/Components/ProjectGuard';
+import { VideoEditorHeader } from '@/Features/VideoEditor/Components/VideoEditorHeader';
+import { useIsPanelVisible } from '@/Store/PanelStore';
 import { Outlet } from 'react-router-dom';
-import { Timeline } from '../components/main/Timeline/Timeline';
-import TitleBar from '../components/main/Titlebar';
-import Toolbar from '../components/main/Toolbar';
-import { useIsPanelVisible } from '../store/panelStore';
-// Error Boundary component
-class ErrorBoundary extends Component<
-  { children: ReactNode },
-  { hasError: boolean; error: Error | null }
-> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Error Detection
-    console.error('Error caught by boundary:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-4 text-center">
-          <h1 className="text-xl text-red-600">Something went wrong</h1>
-          <p className="text-gray-600">{this.state.error?.message}</p>
-          <button
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
-            onClick={() => this.setState({ hasError: false, error: null })}
-          >
-            Try again
-          </button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-// End of Error Detection
+import { Timeline } from '../Components/Main/Timeline/Timeline';
+import TitleBar from '../Components/Main/Titlebar';
+import Toolbar from '../Components/Main/Toolbar';
 
 const VideoEditorLayout = () => {
   const isPanelVisible = useIsPanelVisible();
 
   return (
-    <ErrorBoundary>
-      <div className="h-screen flex flex-col bg-body dark:bg-body-dark text-gray-900 dark:text-gray-100 pb-2 pr-2">
-        <TitleBar className="h-12 py-3 px-2" />
-        <div className="flex flex-1 overflow-hidden h-[calc(100vh-120px)]">
-          <Toolbar
-            className={`w-[55px] bg-primary dark:bg-primary-dark mx-2 mb-4 overflow-y-auto h-full transition-all duration-300 rounded`}
-          />
+    <ProjectGuard>
+      <div className="h-screen flex flex-col text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-900 p-4">
+        <TitleBar className="relative z-10 border-b border-accent -mx-4 px-4 -mt-4 py-2" />
+
+        <div className="grid grid-cols-[auto_1fr] grid-rows-[auto_1fr_auto] flex-1 min-h-0">
+          {/* Menubar and Project Additional controllers */}
+          <AppMenuBar />
+          <VideoEditorHeader />
+
+          {/* Left sidebar with toolbar and tools panel */}
+          <div className="flex flex-1 min-h-0 gap-2">
+            <Toolbar />
+            {isPanelVisible && (
+              <div className="flex-1 overflow-hidden">
+                <ToolsPanel className="h-full" />
+              </div>
+            )}
+          </div>
+
+          {/* Main content area */}
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className="flex flex-row flex-1 overflow-hidden">
-              {/* Dynamic StylePanel - only shows when a panel is active */}
-              {isPanelVisible && (
-                <StylePanel className="flex-shrink-0 mr-2 rounded" />
-              )}
-
               <main className="flex-1 overflow-auto">
                 {/* Based on Video Editor component*/}
                 <Outlet />
               </main>
 
               {/* Properties Panel - always visible */}
-              <PropertiesPanel />
+              {/* <PropertiesPanel />  */}
             </div>
-            <div className="h-[210px] md:h-[220px] lg:h-[280px] flex-shrink-0">
-              <Timeline />
-            </div>
+          </div>
+          {/* Timeline at bottom */}
+          <div className="flex-1 grid col-span-2 -mx-4 -mb-4">
+            <Timeline />
           </div>
         </div>
       </div>
-    </ErrorBoundary>
+    </ProjectGuard>
   );
 };
 

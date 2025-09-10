@@ -1,7 +1,8 @@
+import { cn } from '@/Lib/utils';
 import React from 'react';
+import { useVideoEditorStore } from '../../../../Store/VideoEditorStore';
+import { BasePanel } from './BasePanel';
 import { CustomPanelProps } from './PanelRegistry';
-import { useVideoEditorStore } from '../../../../store/videoEditorStore';
-import { cn } from '@/lib/utils';
 
 interface TextStyle {
   id: string;
@@ -56,12 +57,12 @@ const StyleButton: React.FC<{
   disabled?: boolean;
 }> = ({ style, onClick, isActive, disabled = false }) => (
   <button
-    className={`py-8 px-2 rounded-lg transition-all duration-200 text-center border-2 ${
+    className={`py-6 px-2 rounded-lg transition-all duration-200 text-center border-2 ${
       disabled
-        ? 'bg-gray-900 border-gray-800 cursor-not-allowed opacity-50'
+        ? 'bg-muted border-border cursor-not-allowed opacity-50'
         : isActive
-          ? 'bg-blue-600 hover:bg-blue-700 border-blue-500'
-          : 'bg-zinc-800 hover:bg-zinc-700 border-transparent'
+          ? 'bg-primary hover:bg-primary/90 border-primary'
+          : 'bg-muted/50 hover:bg-muted border-transparent'
     }`}
     title={
       disabled
@@ -71,16 +72,19 @@ const StyleButton: React.FC<{
     onClick={() => !disabled && onClick(style.id)}
     disabled={disabled}
   >
-    <div className={cn(style.className, 'truncate')} style={style.style}>
+    <div
+      className={cn(
+        'truncate text-xs',
+        isActive && !disabled ? 'text-primary-foreground' : 'text-foreground',
+      )}
+      style={style.style}
+    >
       {style.name}
     </div>
   </button>
 );
 
-export const TextToolsPanel: React.FC<CustomPanelProps> = ({
-  className,
-  onClose,
-}) => {
+export const TextToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const { tracks, textStyle, setActiveTextStyle } = useVideoEditorStore();
 
   // Check if there are any subtitle tracks
@@ -93,34 +97,24 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({
   };
 
   return (
-    <div className={` ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between p-4">
-        <div>
-          <h3 className="text-sm font-bold text-white">Text</h3>
-        </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
-            title="Close panel"
-          >
-            ×
-          </button>
+    <BasePanel
+      title="Text Tools"
+      description="Style and format text elements"
+      className={className}
+    >
+      <div className="space-y-4">
+        {/* Info Section */}
+        {!hasSubtitles && (
+          <div className="p-3 bg-muted/50 border border-border rounded-lg">
+            <p className="text-xs text-muted-foreground text-center">
+              💬 Import subtitle files to apply text styling
+            </p>
+          </div>
         )}
-      </div>
 
-      {/* Content */}
-      <div className="p-4 space-y-4">
         {/* Text Styles Section */}
         <div className="space-y-3">
-          {!hasSubtitles && (
-            <div className="mb-4 p-3 bg-gray-800/50 border border-gray-700 rounded-lg">
-              <p className="text-xs text-gray-400 text-center">
-                💬 Import subtitle files to apply text styling
-              </p>
-            </div>
-          )}
+          <h4 className="text-sm font-medium text-foreground">Text Styles</h4>
           <div className="grid grid-cols-2 gap-2">
             {textStyles.map((style) => (
               <StyleButton
@@ -134,6 +128,6 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </BasePanel>
   );
 };

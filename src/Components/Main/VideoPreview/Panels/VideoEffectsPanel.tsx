@@ -1,31 +1,24 @@
 import React from 'react';
+import { BasePanel } from './BasePanel';
 import { CustomPanelProps } from './PanelRegistry';
 
 export const VideoEffectsPanel: React.FC<CustomPanelProps> = ({
   className,
-  onClose,
 }) => {
   return (
-    <div className={`${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
-        <div>
-          <h3 className="text-sm font-bold text-white">Video Effects</h3>
-          <p className="text-xs text-gray-400">Apply effects and filters</p>
+    <BasePanel
+      title="Video Effects"
+      description="Apply effects and filters to video"
+      className={className}
+    >
+      <div className="space-y-4">
+        <div className="text-center text-muted-foreground">
+          <p className="text-sm">Coming soon</p>
+          <p className="text-xs mt-2">
+            Video effects and filters will be available in the next update.
+          </p>
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors duration-200 text-lg leading-none"
-            title="Close panel"
-          >
-            ×
-          </button>
-        )}
       </div>
-
-      {/* Content */}
-      <div className="p-4 space-y-4">Coming soon</div>
-    </div>
+    </BasePanel>
   );
 };

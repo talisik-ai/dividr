@@ -1,6 +1,7 @@
+import { cn } from '@/Lib/utils';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useVideoEditorStore } from '../../../store/videoEditorStore';
+import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 import { TimelineControls } from './TimelineControls';
 import { TimelinePlayhead } from './TimelinePlayhead';
 import { TimelineRuler } from './TimelineRuler';
@@ -177,7 +178,10 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   return (
     <div
       ref={timelineRef}
-      className={`timeline-container ${className || ''} flex flex-col h-full bg-primary dark:bg-primary-dark text-white overflow-hidden`}
+      className={cn(
+        'timeline-container flex flex-col flex-1 overflow-hidden',
+        className,
+      )}
     >
       {/* Timeline Header with Controls */}
       {/* TimelineHeader component removed as per edit hint */}
@@ -202,46 +206,48 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
         </div>
 
         {/* Timeline Tracks Area */}
-        <div
-          ref={tracksRef}
-          className="flex-1 relative overflow-auto"
-          onClick={handleTimelineClick}
-          onScroll={(e) => {
-            // Throttled scroll handling for better performance with many tracks
-            const scrollLeft = (e.target as HTMLElement).scrollLeft;
+        <div className="flex-1 relative overflow-visible">
+          <div
+            ref={tracksRef}
+            className="relative overflow-auto"
+            onClick={handleTimelineClick}
+            onScroll={(e) => {
+              // Throttled scroll handling for better performance with many tracks
+              const scrollLeft = (e.target as HTMLElement).scrollLeft;
 
-            // Clear previous timeout
-            if (scrollTimeoutRef.current) {
-              clearTimeout(scrollTimeoutRef.current);
-            }
+              // Clear previous timeout
+              if (scrollTimeoutRef.current) {
+                clearTimeout(scrollTimeoutRef.current);
+              }
 
-            // Set immediate update for smooth playhead movement
-            setScrollX(scrollLeft);
-
-            // Throttle additional updates for performance
-            scrollTimeoutRef.current = setTimeout(() => {
+              // Set immediate update for smooth playhead movement
               setScrollX(scrollLeft);
-            }, 16); // ~60fps throttling
-          }}
-        >
-          <TimelineTracks
-            tracks={tracks}
-            frameWidth={frameWidth}
-            timelineWidth={timelineWidth}
-            scrollX={timeline.scrollX}
-            selectedTrackIds={timeline.selectedTrackIds}
-            onTrackSelect={setSelectedTracks}
-          />
-        </div>
 
-        {/* Global Playhead - spans across ruler and tracks */}
-        <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-[999]">
-          <TimelinePlayhead
-            currentFrame={timeline.currentFrame}
-            frameWidth={frameWidth}
-            scrollX={timeline.scrollX}
-            visible={timeline.playheadVisible}
-          />
+              // Throttle additional updates for performance
+              scrollTimeoutRef.current = setTimeout(() => {
+                setScrollX(scrollLeft);
+              }, 16); // ~60fps throttling
+            }}
+          >
+            <TimelineTracks
+              tracks={tracks}
+              frameWidth={frameWidth}
+              timelineWidth={timelineWidth}
+              scrollX={timeline.scrollX}
+              selectedTrackIds={timeline.selectedTrackIds}
+              onTrackSelect={setSelectedTracks}
+            />
+          </div>
+
+          {/* Global Playhead - spans across ruler and tracks */}
+          <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-[999]">
+            <TimelinePlayhead
+              currentFrame={timeline.currentFrame}
+              frameWidth={frameWidth}
+              scrollX={timeline.scrollX}
+              visible={timeline.playheadVisible}
+            />
+          </div>
         </div>
       </div>
     </div>
