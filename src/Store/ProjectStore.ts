@@ -33,6 +33,7 @@ interface ProjectStore {
   openProject: (id: string) => Promise<void>;
   saveCurrentProject: () => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
+  renameProject: (id: string, newTitle: string) => Promise<void>;
   duplicateProject: (id: string, newTitle?: string) => Promise<string>;
   searchProjects: (query: string) => Promise<ProjectSummary[]>;
   getRecentProjects: (limit?: number) => Promise<ProjectSummary[]>;
@@ -196,6 +197,47 @@ export const useProjectStore = create<ProjectStore>()(
         await get().loadProjects();
       } catch (error) {
         console.error('Failed to delete project:', error);
+        throw error;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    renameProject: async (id, newTitle) => {
+      set({ isLoading: true });
+
+      try {
+        // Get the project
+        const project = await projectService.getProject(id);
+        if (!project) {
+          throw new Error('Project not found');
+        }
+
+        // Update the project title and metadata
+        const updatedProject = {
+          ...project,
+          metadata: {
+            ...project.metadata,
+            title: newTitle,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+
+        // Save to database
+        await projectService.updateProject(updatedProject);
+
+        // If this is the current project, update it
+        const state = get();
+        if (state.currentProject?.id === id) {
+          set({
+            currentProject: updatedProject,
+          });
+        }
+
+        // Refresh project list
+        await get().loadProjects();
+      } catch (error) {
+        console.error('Failed to rename project:', error);
         throw error;
       } finally {
         set({ isLoading: false });

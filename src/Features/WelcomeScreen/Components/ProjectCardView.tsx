@@ -5,11 +5,13 @@ import { formatDistanceToNow } from 'date-fns';
 import { Clock, Play } from 'lucide-react';
 import { useState } from 'react';
 import { formatDuration } from '../Lib/projectHelpers';
+import { InlineProjectNameEditor } from './InlineProjectNameEditor';
 import { ProjectActionsDropdown } from './ProjectActionsDropdown';
 
 interface ProjectCardViewProps {
   projects: ProjectSummary[];
   onOpen: (id: string) => void;
+  onRename: (id: string, newName: string) => void;
   onDuplicate: (id: string) => void;
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
@@ -18,14 +20,29 @@ interface ProjectCardViewProps {
 export const ProjectCardView = ({
   projects,
   onOpen,
+  onRename,
   onDuplicate,
   onExport,
   onDelete,
 }: ProjectCardViewProps) => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleOpen = (id: string) => {
     onOpen(id);
+  };
+
+  const handleRename = (id: string) => {
+    setEditingId(id);
+  };
+
+  const handleRenameSave = (id: string, newName: string) => {
+    onRename(id, newName);
+    setEditingId(null);
+  };
+
+  const handleRenameCancel = () => {
+    setEditingId(null);
   };
 
   return (
@@ -75,7 +92,14 @@ export const ProjectCardView = ({
 
             {/* details */}
             <div className="">
-              <h3 className="font-semibold line-clamp-1">{project.title}</h3>
+              <InlineProjectNameEditor
+                projectId={project.id}
+                initialValue={project.title}
+                isEditing={editingId === project.id}
+                onSave={handleRenameSave}
+                onCancel={handleRenameCancel}
+                variant="card"
+              />
 
               {project.description && (
                 <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
@@ -103,6 +127,7 @@ export const ProjectCardView = ({
                   onOpenChange={(open) =>
                     setOpenMenuId(open ? project.id : null)
                   }
+                  onRename={handleRename}
                   onDuplicate={onDuplicate}
                   onExport={onExport}
                   onDelete={onDelete}

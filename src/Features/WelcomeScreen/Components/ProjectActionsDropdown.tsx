@@ -12,6 +12,7 @@ interface ProjectActionsDropdownProps {
   projectId: string;
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onRename: (id: string) => void;
   onDuplicate: (id: string) => void;
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
@@ -23,12 +24,21 @@ export const ProjectActionsDropdown = ({
   projectId,
   isOpen,
   onOpenChange,
+  onRename,
   onDuplicate,
   onExport,
   onDelete,
   variant = 'hover',
   className = '',
 }: ProjectActionsDropdownProps) => {
+  const handleRename = () => {
+    // Close dropdown first, then trigger rename with minimal delay
+    onOpenChange?.(false);
+    setTimeout(() => {
+      onRename(projectId);
+    }, 50);
+  };
+
   const handleDuplicate = () => {
     onDuplicate(projectId);
     onOpenChange?.(false);
@@ -58,7 +68,7 @@ export const ProjectActionsDropdown = ({
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-fit p-1" align="end">
         <div className="space-y-1">
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={handleRename}>
             <PencilLine className="h-3 w-3" />
             Rename
           </DropdownMenuItem>

@@ -17,6 +17,7 @@ import {
   getProjectIcon,
   getProjectSize,
 } from '../Lib/projectHelpers';
+import { InlineProjectNameEditor } from './InlineProjectNameEditor';
 import { ProjectActionsDropdown } from './ProjectActionsDropdown';
 
 interface ProjectListViewProps {
@@ -25,6 +26,7 @@ interface ProjectListViewProps {
   onProjectSelect: (projectId: string, selected: boolean) => void;
   onSelectAll: (selected: boolean) => void;
   onOpen: (id: string) => void;
+  onRename: (id: string, newName: string) => void;
   onDuplicate: (id: string) => void;
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
@@ -36,11 +38,13 @@ export const ProjectListView = ({
   onProjectSelect,
   onSelectAll,
   onOpen,
+  onRename,
   onDuplicate,
   onExport,
   onDelete,
 }: ProjectListViewProps) => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleSelectAll = (checked: boolean) => {
     onSelectAll(checked);
@@ -48,6 +52,19 @@ export const ProjectListView = ({
 
   const handleProjectSelect = (projectId: string, checked: boolean) => {
     onProjectSelect(projectId, checked);
+  };
+
+  const handleRename = (id: string) => {
+    setEditingId(id);
+  };
+
+  const handleRenameSave = (id: string, newName: string) => {
+    onRename(id, newName);
+    setEditingId(null);
+  };
+
+  const handleRenameCancel = () => {
+    setEditingId(null);
   };
 
   const allSelected =
@@ -87,13 +104,25 @@ export const ProjectListView = ({
             <TableRow
               key={project.id}
               className="group cursor-pointer border-b hover:bg-muted/50"
-              onClick={() =>
+              onClick={(e) => {
+                // Don't trigger row selection if we're currently editing this project
+                if (editingId === project.id) {
+                  e.preventDefault();
+                  return;
+                }
                 handleProjectSelect(
                   project.id,
                   !selectedProjects.has(project.id),
-                )
-              }
-              onDoubleClick={() => onOpen(project.id)}
+                );
+              }}
+              onDoubleClick={(e) => {
+                // Don't trigger open if we're currently editing this project
+                if (editingId === project.id) {
+                  e.preventDefault();
+                  return;
+                }
+                onOpen(project.id);
+              }}
             >
               <TableCell>
                 <Checkbox
@@ -118,10 +147,23 @@ export const ProjectListView = ({
                       getProjectIcon(project)
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">
-                      {project.title}
-                    </div>
+                  <div
+                    className="flex-1 min-w-0"
+                    onClick={(e) => {
+                      // Prevent row click when clicking on the title area during editing
+                      if (editingId === project.id) {
+                        e.stopPropagation();
+                      }
+                    }}
+                  >
+                    <InlineProjectNameEditor
+                      projectId={project.id}
+                      initialValue={project.title}
+                      isEditing={editingId === project.id}
+                      onSave={handleRenameSave}
+                      onCancel={handleRenameCancel}
+                      variant="list"
+                    />
                     {project.description && (
                       <div className="text-xs text-muted-foreground truncate">
                         {project.description}
@@ -175,6 +217,7 @@ export const ProjectListView = ({
                       onOpenChange={(open) =>
                         setOpenMenuId(open ? project.id : null)
                       }
+                      onRename={handleRename}
                       onDuplicate={onDuplicate}
                       onExport={onExport}
                       onDelete={onDelete}

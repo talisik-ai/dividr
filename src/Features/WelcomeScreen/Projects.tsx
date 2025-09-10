@@ -34,6 +34,7 @@ const Projects = () => {
     createNewProject,
     openProject,
     deleteProject,
+    renameProject,
     duplicateProject,
     exportProject,
     importProject,
@@ -173,6 +174,16 @@ const Projects = () => {
     }
   };
 
+  const handleRenameProject = async (id: string, newName: string) => {
+    try {
+      await renameProject(id, newName);
+      toast.success('Project renamed successfully!');
+    } catch (error) {
+      console.error('Failed to rename project:', error);
+      toast.error('Failed to rename project');
+    }
+  };
+
   // Show loading state during initialization
   if (!isInitialized && isLoading) {
     return (
@@ -253,6 +264,7 @@ const Projects = () => {
                   key={project.id}
                   project={project}
                   onOpen={handleOpenProject}
+                  onRename={handleRenameProject}
                   onDuplicate={handleDuplicateProject}
                   onExport={handleExportProject}
                   onDelete={handleDeleteProject}
@@ -292,6 +304,7 @@ const Projects = () => {
             <ProjectCardView
               projects={projects}
               onOpen={handleOpenProject}
+              onRename={handleRenameProject}
               onDuplicate={handleDuplicateProject}
               onExport={handleExportProject}
               onDelete={handleDeleteProject}
@@ -303,6 +316,7 @@ const Projects = () => {
               onProjectSelect={handleProjectSelect}
               onSelectAll={handleSelectAll}
               onOpen={handleOpenProject}
+              onRename={handleRenameProject}
               onDuplicate={handleDuplicateProject}
               onExport={handleExportProject}
               onDelete={handleDeleteProject}
