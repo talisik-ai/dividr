@@ -2,6 +2,7 @@ import NewDark from '@/Assets/Logo/New-Dark.svg';
 import New from '@/Assets/Logo/New-Light.svg';
 import { ScrollArea } from '@/Components/sub/ui/Scroll-Area';
 import ProjectCard from '@/Features/WelcomeScreen/Components/ProjectCard';
+import { useLayout } from '@/Features/WelcomeScreen/Lib/Hooks/useLayout';
 import { useProjectStore } from '@/Store/ProjectStore';
 import { ProjectSummary } from '@/Types/Project';
 import { useTheme } from '@/Utility/ThemeProvider';
@@ -40,10 +41,12 @@ const Projects = () => {
   } = useProjectStore();
 
   const [recentProjects, setRecentProjects] = useState<ProjectSummary[]>([]);
-  const [currentView, setCurrentView] = useState<'grid' | 'list'>('grid');
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(
     new Set(),
   );
+
+  // Get current view mode from layout store
+  const { viewMode, isGridView } = useLayout();
 
   // Initialize projects on component mount
   useEffect(() => {
@@ -147,10 +150,10 @@ const Projects = () => {
     event.target.value = '';
   };
 
-  const handleViewChange = (view: 'grid' | 'list') => {
-    setCurrentView(view);
-    setSelectedProjects(new Set()); // Clear selections when switching views
-  };
+  // Clear selections when view mode changes
+  useEffect(() => {
+    setSelectedProjects(new Set());
+  }, [viewMode]);
 
   const handleProjectSelect = (projectId: string, selected: boolean) => {
     const newSelected = new Set(selectedProjects);
@@ -234,15 +237,12 @@ const Projects = () => {
     <div className="flex flex-col flex-1 min-h-0 p-6 lg:p-12">
       <div className="flex justify-between mb-6 gap-4">
         <Header numberOfProjects={projects.length} />
-        <LayoutTabContent
-          defaultView={currentView}
-          onViewChange={handleViewChange}
-        />
+        <LayoutTabContent />
       </div>
 
       <ScrollArea className="flex-1 min-h-0 overflow-y-auto -mx-16 px-16">
         {/* Recent Projects Section - Only show in grid view */}
-        {currentView === 'grid' && recentProjects.length > 0 && (
+        {isGridView && recentProjects.length > 0 && (
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
               Recent Projects
@@ -265,11 +265,13 @@ const Projects = () => {
         {/* All Projects Section */}
         <div className="flex-1">
           <div className="flex items-center justify-between mb-4">
-            {/* <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-              All Projects{' '}
-              {selectedProjects.size > 0 &&
-                `(${selectedProjects.size} selected)`}
-            </h2> */}
+            {isGridView && (
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                All Projects
+                {/* {selectedProjects.size > 0 &&
+                `(${selectedProjects.size} selected)`} */}
+              </h2>
+            )}
 
             {isLoading && (
               <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
@@ -286,7 +288,7 @@ const Projects = () => {
                 Try adjusting your search terms or create a new project.
               </p>
             </div>
-          ) : currentView === 'grid' ? (
+          ) : isGridView ? (
             <ProjectCardView
               projects={projects}
               onOpen={handleOpenProject}

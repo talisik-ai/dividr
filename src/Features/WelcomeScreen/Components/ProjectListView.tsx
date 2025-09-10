@@ -107,7 +107,7 @@ export const ProjectListView = ({
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-3">
-                  <div className="w-24 h-16 rounded overflow-hidden bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center flex-shrink-0">
+                  <div className="w-24 h-16 rounded overflow-hidden bg-accent/80 flex items-center justify-center flex-shrink-0">
                     {project.thumbnail ? (
                       <img
                         src={project.thumbnail}
