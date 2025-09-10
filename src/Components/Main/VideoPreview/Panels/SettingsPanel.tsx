@@ -3,10 +3,7 @@ import { useVideoEditorStore } from '../../../../Store/VideoEditorStore';
 import { BasePanel } from './BasePanel';
 import { CustomPanelProps } from './PanelRegistry';
 
-export const SettingsPanel: React.FC<CustomPanelProps> = ({
-  className,
-  onClose,
-}) => {
+export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const { preview } = useVideoEditorStore();
 
   return (
@@ -14,7 +11,6 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({
       title="Project Settings"
       description="Configure project and export settings"
       className={className}
-      onClose={onClose}
     >
       <div className="space-y-6">
         {/* Canvas Settings */}

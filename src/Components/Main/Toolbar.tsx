@@ -152,19 +152,24 @@ const Toolbar = ({
     
      */
 
-  // Panel toggle handlers
+  // Panel toggle handlers - only open panels, don't close them
   const handleTogglePanel = useCallback(
     (panelType: PanelType) => {
-      togglePanel(panelType);
+      // Only open the panel if it's not already active
+      if (activePanelType !== panelType) {
+        togglePanel(panelType);
+      }
     },
-    [togglePanel],
+    [togglePanel, activePanelType],
   );
 
   // File import using native Electron dialog
   const handleImportFiles = useCallback(async () => {
-    // Also show the media import panel
-    togglePanel('media-import');
-  }, [togglePanel]);
+    // Only show the media import panel if it's not already active
+    if (activePanelType !== 'media-import') {
+      togglePanel('media-import');
+    }
+  }, [togglePanel, activePanelType]);
 
   // Get the appropriate click handler for each button
   const getClickHandler = useCallback(

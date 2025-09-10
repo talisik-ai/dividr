@@ -52,7 +52,7 @@ const indicatorVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-primary dark:border-input dark:bg-input/30 rounded border border-transparent shadow-sm',
+          'bg-primary dark:border-input rounded border border-transparent shadow-sm',
         underline:
           'bg-primary h-0.5 bottom-0 rounded-none border-none shadow-none z-10',
         pill: 'bg-border-secondary rounded-[8px] border border-transparent shadow-sm',

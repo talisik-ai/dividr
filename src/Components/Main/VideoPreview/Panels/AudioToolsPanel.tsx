@@ -2,16 +2,12 @@ import React from 'react';
 import { BasePanel } from './BasePanel';
 import { CustomPanelProps } from './PanelRegistry';
 
-export const AudioToolsPanel: React.FC<CustomPanelProps> = ({
-  className,
-  onClose,
-}) => {
+export const AudioToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   return (
     <BasePanel
       title="Audio Tools"
       description="Edit and enhance audio tracks"
       className={className}
-      onClose={onClose}
     >
       <div className="space-y-4">
         <div className="text-center text-muted-foreground">

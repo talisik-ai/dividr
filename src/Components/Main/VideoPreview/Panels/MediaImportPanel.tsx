@@ -21,10 +21,7 @@ interface FilePreview {
   thumbnail?: string;
 }
 
-export const MediaImportPanel: React.FC<CustomPanelProps> = ({
-  className,
-  onClose,
-}) => {
+export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const { importMediaFromDialog, importMediaFromDrop } = useVideoEditorStore();
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
@@ -196,7 +193,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
   const uploadArea = (
     <div
       className={cn(
-        'relative border-2 border-dashed border-accent h-full flex items-center justify-center rounded-lg lg:p-8 text-center transition-all duration-200',
+        'cursor-pointer hover:!border-secondary hover:bg-secondary/10 relative border-2 border-dashed border-accent h-full flex items-center justify-center rounded-lg lg:p-8 text-center transition-all duration-200',
         dragActive
           ? 'border-primary bg-primary/10'
           : 'border-border hover:border-border/80',
@@ -205,57 +202,30 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       onDragLeave={handleDragOut}
       onDragOver={handleDrag}
       onDrop={handleDrop}
+      onClick={async () => {
+        const result = await importMediaFromDialog();
+        if (result.success && result.importedFiles.length > 0) {
+          // Add the imported files to the panel state
+          setSelectedFiles((prev) => [...prev, ...result.importedFiles]);
+          // Mark them as completed (100% progress)
+          result.importedFiles.forEach((file) => {
+            setUploadProgress((prev) => ({ ...prev, [file.id]: 100 }));
+          });
+        }
+      }}
     >
-      <div className="space-y-4">
-        <div className="mx-auto w-12 h-12 lg:w-16 lg:h-16 bg-muted rounded-full flex items-center justify-center">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="w-6 h-6 lg:w-8 lg:h-8 text-muted-foreground"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            preserveAspectRatio="xMidYMid meet"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            />
-          </svg>
-        </div>
+      <div className="hidden lg:block text-xs text-muted-foreground space-y-2">
+        <p>There's nothing here yet</p>
+        <p>Drag & drop media your files here</p>
 
-        <div className="hidden lg:block text-xs text-muted-foreground space-y-2">
-          <p>There's nothing here yet</p>
-          <p>Drag & drop media your files here</p>
-
-          <Button
-            onClick={async () => {
-              const result = await importMediaFromDialog();
-              if (result.success && result.importedFiles.length > 0) {
-                // Add the imported files to the panel state
-                setSelectedFiles((prev) => [...prev, ...result.importedFiles]);
-                // Mark them as completed (100% progress)
-                result.importedFiles.forEach((file) => {
-                  setUploadProgress((prev) => ({ ...prev, [file.id]: 100 }));
-                });
-              }
-            }}
-            size="sm"
-            className="text-xs"
-          >
-            Upload Files
-          </Button>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="video/*,audio/*,image/*,.srt,.vtt,.ass,.ssa,.sub,.sbv,.lrc"
-            onChange={handleFileInputChange}
-            className="hidden"
-          />
-        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="video/*,audio/*,image/*,.srt,.vtt,.ass,.ssa,.sub,.sbv,.lrc"
+          onChange={handleFileInputChange}
+          className="hidden"
+        />
       </div>
     </div>
   );
@@ -385,7 +355,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
       title="Your uploads"
       description="Import and manage media files"
       className={className}
-      onClose={onClose}
     >
       <div className="flex flex-col h-full gap-4">
         {/* Upload Button */}
@@ -403,8 +372,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({
           }}
           className="w-full"
         >
-          <Download className="w-4 h-4 mr-2" />
           Upload Files
+          <Download />
         </Button>
 
         {/* Tab Navigation and Content */}

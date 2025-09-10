@@ -3,8 +3,8 @@ import {
   hasCustomPanelComponent,
 } from '@/Components/Main/VideoPreview/Panels/PanelRegistry';
 import { initializePanelRegistry } from '@/Components/Main/VideoPreview/Panels/registerPanels';
-import { useActivePanelType, usePanelStore } from '@/Store/PanelStore';
-import React, { useCallback } from 'react';
+import { useActivePanelType } from '@/Store/PanelStore';
+import React from 'react';
 
 interface ToolsPanelProps {
   className?: string;
@@ -14,12 +14,7 @@ interface ToolsPanelProps {
 initializePanelRegistry();
 
 export const ToolsPanel: React.FC<ToolsPanelProps> = ({ className }) => {
-  const { hidePanel } = usePanelStore();
   const activePanelType = useActivePanelType();
-
-  const handleClosePanel = useCallback(() => {
-    hidePanel();
-  }, [hidePanel]);
 
   // If no panel is active, return nothing
   if (!activePanelType) {
@@ -41,7 +36,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ className }) => {
             </div>
           }
         >
-          <CustomComponent className={className} onClose={handleClosePanel} />
+          <CustomComponent className={className} />
         </React.Suspense>
       );
     }

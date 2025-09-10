@@ -61,7 +61,7 @@ const StyleButton: React.FC<{
       disabled
         ? 'bg-muted border-border cursor-not-allowed opacity-50'
         : isActive
-          ? 'bg-primary hover:bg-primary/90 border-primary text-primary-foreground'
+          ? 'bg-primary hover:bg-primary/90 border-primary'
           : 'bg-muted/50 hover:bg-muted border-transparent'
     }`}
     title={
@@ -75,7 +75,7 @@ const StyleButton: React.FC<{
     <div
       className={cn(
         'truncate text-xs',
-        isActive ? 'text-primary-foreground' : 'text-foreground',
+        isActive && !disabled ? 'text-primary-foreground' : 'text-foreground',
       )}
       style={style.style}
     >
@@ -84,10 +84,7 @@ const StyleButton: React.FC<{
   </button>
 );
 
-export const TextToolsPanel: React.FC<CustomPanelProps> = ({
-  className,
-  onClose,
-}) => {
+export const TextToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const { tracks, textStyle, setActiveTextStyle } = useVideoEditorStore();
 
   // Check if there are any subtitle tracks
@@ -104,7 +101,6 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({
       title="Text Tools"
       description="Style and format text elements"
       className={className}
-      onClose={onClose}
     >
       <div className="space-y-4">
         {/* Info Section */}

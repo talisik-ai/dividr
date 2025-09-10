@@ -2,16 +2,12 @@ import React from 'react';
 import { BasePanel } from './BasePanel';
 import { CustomPanelProps } from './PanelRegistry';
 
-export const ImageToolsPanel: React.FC<CustomPanelProps> = ({
-  className,
-  onClose,
-}) => {
+export const ImageToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   return (
     <BasePanel
       title="Image Tools"
       description="Edit and adjust image elements"
       className={className}
-      onClose={onClose}
     >
       <div className="space-y-4">
         <div className="text-center text-muted-foreground">

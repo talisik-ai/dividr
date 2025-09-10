@@ -4,14 +4,12 @@ import { CustomPanelProps } from './PanelRegistry';
 
 export const VideoEffectsPanel: React.FC<CustomPanelProps> = ({
   className,
-  onClose,
 }) => {
   return (
     <BasePanel
       title="Video Effects"
       description="Apply effects and filters to video"
       className={className}
-      onClose={onClose}
     >
       <div className="space-y-4">
         <div className="text-center text-muted-foreground">
