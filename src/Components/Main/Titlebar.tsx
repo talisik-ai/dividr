@@ -9,20 +9,21 @@
 import LogoDark from '@/Assets/Logo/Logo-Dark.svg';
 import LogoLight from '@/Assets/Logo/Logo-Light.svg';
 import { ModeToggle } from '@/Components/sub/custom/ModeToggle';
-import { Button } from '@/Components/sub/ui/Button';
+import { Button, buttonVariants } from '@/Components/sub/ui/Button';
 import { cn } from '@/Lib/utils';
 import { useProjectStore } from '@/Store/ProjectStore';
 import { useTheme } from '@/Utility/ThemeProvider';
-import { Copy, Minus, Plus, Square, X } from 'lucide-react';
+import { Copy, Minus, Plus, Square, Upload, X } from 'lucide-react';
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 interface TitleBarProps {
   className?: string;
 }
 
 const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
-  const { createNewProject, openProject } = useProjectStore();
+  const { createNewProject, openProject, importProject } = useProjectStore();
   const { theme } = useTheme();
 
   const location = useLocation();
@@ -47,6 +48,24 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
       console.error('Failed to create project:', error);
       // Could add toast notification here if needed
     }
+  };
+
+  const handleImportProject = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      await importProject(file);
+      toast.success('Project imported successfully!');
+    } catch (error) {
+      console.error('Failed to import project:', error);
+      toast.error('Failed to import project');
+    }
+
+    // Reset the input
+    event.target.value = '';
   };
 
   // Function to toggle maximize/restore
@@ -92,9 +111,30 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
           <div className="flex items-center gap-2 no-drag text-gray-800 dark:text-gray-100 ml-auto h-6">
             {/* New Project Button - Only show when not in video editor */}
             {!isInVideoEditor && (
-              <Button onClick={handleCreateProject} variant="secondary">
-                <Plus size={16} /> New Project
-              </Button>
+              <div className="flex items-center gap-2">
+                <label
+                  className={cn(
+                    'cursor-pointer',
+                    buttonVariants({ variant: 'outline', size: 'sm' }),
+                  )}
+                >
+                  <Upload size={16} />
+                  Import
+                  <input
+                    type="file"
+                    accept=".dividr,.json"
+                    onChange={handleImportProject}
+                    className="hidden"
+                  />
+                </label>
+                <Button
+                  onClick={handleCreateProject}
+                  variant="secondary"
+                  size="sm"
+                >
+                  <Plus size={16} /> New Project
+                </Button>
+              </div>
             )}
 
             {/* Dark Mode/Light Mode Toggle */}

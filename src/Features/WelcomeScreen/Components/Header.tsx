@@ -7,7 +7,7 @@ export const Header = ({
     <div className="space-y-2">
       <h2 className="text-3xl font-semibold">Your Projects</h2>
       <p className="text-sm text-muted-foreground">
-        {numberOfProjects} projects
+        {numberOfProjects} project{numberOfProjects > 1 ? 's' : ''}
       </p>
     </div>
   );

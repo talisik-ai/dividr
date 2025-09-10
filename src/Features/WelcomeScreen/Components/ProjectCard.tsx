@@ -1,24 +1,11 @@
 import { Badge } from '@/Components/sub/ui/Badge';
 import { Button } from '@/Components/sub/ui/Button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/Components/sub/ui/Dropdown-Menu';
 import { ProjectSummary } from '@/Types/Project';
 import { formatDistanceToNow } from 'date-fns';
-import {
-  Clock,
-  Copy,
-  Download,
-  MoreVertical,
-  PencilLine,
-  Play,
-  Trash2,
-} from 'lucide-react';
+import { Clock, Play } from 'lucide-react';
 import { useState } from 'react';
+import { formatDuration } from '../Lib/projectHelpers';
+import { ProjectActionsDropdown } from './ProjectActionsDropdown';
 
 interface ProjectCardProps {
   project: ProjectSummary;
@@ -54,21 +41,6 @@ const ProjectCard = ({
   const handleDelete = () => {
     onDelete(project.id);
     setIsMenuOpen(false);
-  };
-
-  const formatDuration = (seconds: number): string => {
-    if (seconds === 0) return '0:00';
-
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-
-    if (minutes < 60) {
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-    }
-
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    return `${hours}:${remainingMinutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -135,41 +107,15 @@ const ProjectCard = ({
               )}
             </div>
 
-            <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <MoreVertical size={14} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-fit p-1" align="end">
-                <div className="space-y-1">
-                  <DropdownMenuItem>
-                    <PencilLine size={14} />
-                    Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleDuplicate}>
-                    <Copy size={14} />
-                    Duplicate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleExport}>
-                    <Download size={14} />
-                    Export Project
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={handleDelete}
-                    className="text-red-600"
-                  >
-                    <Trash2 size={14} />
-                    Delete
-                  </DropdownMenuItem>
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ProjectActionsDropdown
+              projectId={project.id}
+              isOpen={isMenuOpen}
+              onOpenChange={setIsMenuOpen}
+              onDuplicate={onDuplicate}
+              onExport={onExport}
+              onDelete={onDelete}
+              variant="hover"
+            />
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import NewDark from '@/Assets/Logo/New-Dark.svg';
 import New from '@/Assets/Logo/New-Light.svg';
+import { ScrollArea } from '@/Components/sub/ui/Scroll-Area';
 import ProjectCard from '@/Features/WelcomeScreen/Components/ProjectCard';
-import { cn } from '@/Lib/utils';
 import { useProjectStore } from '@/Store/ProjectStore';
 import { ProjectSummary } from '@/Types/Project';
 import { useTheme } from '@/Utility/ThemeProvider';
@@ -9,8 +9,11 @@ import { Loader2, Plus, Search, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Button, buttonVariants } from '../../Components/sub/ui/Button';
+import { Button } from '../../Components/sub/ui/Button';
 import { Header } from './Components/Header';
+import { LayoutTabContent } from './Components/LayoutTabContent';
+import { ProjectCardView } from './Components/ProjectCardView';
+import { ProjectListView } from './Components/ProjectListView';
 
 /**
  * A custom React Sub Page
@@ -37,6 +40,10 @@ const Projects = () => {
   } = useProjectStore();
 
   const [recentProjects, setRecentProjects] = useState<ProjectSummary[]>([]);
+  const [currentView, setCurrentView] = useState<'grid' | 'list'>('grid');
+  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Initialize projects on component mount
   useEffect(() => {
@@ -140,6 +147,29 @@ const Projects = () => {
     event.target.value = '';
   };
 
+  const handleViewChange = (view: 'grid' | 'list') => {
+    setCurrentView(view);
+    setSelectedProjects(new Set()); // Clear selections when switching views
+  };
+
+  const handleProjectSelect = (projectId: string, selected: boolean) => {
+    const newSelected = new Set(selectedProjects);
+    if (selected) {
+      newSelected.add(projectId);
+    } else {
+      newSelected.delete(projectId);
+    }
+    setSelectedProjects(newSelected);
+  };
+
+  const handleSelectAll = (selected: boolean) => {
+    if (selected) {
+      setSelectedProjects(new Set(projects.map((p) => p.id)));
+    } else {
+      setSelectedProjects(new Set());
+    }
+  };
+
   // Show loading state during initialization
   if (!isInitialized && isLoading) {
     return (
@@ -203,29 +233,16 @@ const Projects = () => {
   return (
     <div className="flex flex-col flex-1 min-h-0 p-6 lg:p-12">
       <div className="flex justify-between mb-6 gap-4">
-        <Header />
-        <div className="flex items-center h-fit gap-3">
-          <label
-            className={cn(
-              'cursor-pointer',
-              buttonVariants({ variant: 'outline', size: 'sm' }),
-            )}
-          >
-            <Upload size={16} />
-            Import
-            <input
-              type="file"
-              accept=".dividr,.json"
-              onChange={handleImportProject}
-              className="hidden"
-            />
-          </label>
-        </div>
+        <Header numberOfProjects={projects.length} />
+        <LayoutTabContent
+          defaultView={currentView}
+          onViewChange={handleViewChange}
+        />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {/* Recent Projects Section */}
-        {recentProjects.length > 0 && (
+      <ScrollArea className="flex-1 min-h-0 overflow-y-auto -mx-16 px-16">
+        {/* Recent Projects Section - Only show in grid view */}
+        {currentView === 'grid' && recentProjects.length > 0 && (
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
               Recent Projects
@@ -248,9 +265,11 @@ const Projects = () => {
         {/* All Projects Section */}
         <div className="flex-1">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-              All Projects
-            </h2>
+            {/* <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              All Projects{' '}
+              {selectedProjects.size > 0 &&
+                `(${selectedProjects.size} selected)`}
+            </h2> */}
 
             {isLoading && (
               <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
@@ -267,22 +286,28 @@ const Projects = () => {
                 Try adjusting your search terms or create a new project.
               </p>
             </div>
+          ) : currentView === 'grid' ? (
+            <ProjectCardView
+              projects={projects}
+              onOpen={handleOpenProject}
+              onDuplicate={handleDuplicateProject}
+              onExport={handleExportProject}
+              onDelete={handleDeleteProject}
+            />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-              {projects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onOpen={handleOpenProject}
-                  onDuplicate={handleDuplicateProject}
-                  onExport={handleExportProject}
-                  onDelete={handleDeleteProject}
-                />
-              ))}
-            </div>
+            <ProjectListView
+              projects={projects}
+              selectedProjects={selectedProjects}
+              onProjectSelect={handleProjectSelect}
+              onSelectAll={handleSelectAll}
+              onOpen={handleOpenProject}
+              onDuplicate={handleDuplicateProject}
+              onExport={handleExportProject}
+              onDelete={handleDeleteProject}
+            />
           )}
         </div>
-      </div>
+      </ScrollArea>
     </div>
   );
 };
