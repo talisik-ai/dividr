@@ -195,7 +195,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       className={cn(
         'cursor-pointer hover:!border-secondary hover:bg-secondary/10 relative border-2 border-dashed border-accent h-full flex items-center justify-center rounded-lg lg:p-8 text-center transition-all duration-200',
         dragActive
-          ? 'border-primary bg-primary/10'
+          ? 'border-secondary bg-secondary/10'
           : 'border-border hover:border-border/80',
       )}
       onDragEnter={handleDragIn}

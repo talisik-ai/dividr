@@ -26,6 +26,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     textStyle,
     getTextStyleForSubtitle,
     importMediaFromDrop,
+    importMediaFromDialog,
     setCurrentFrame,
   } = useVideoEditorStore();
 
@@ -403,19 +404,25 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         );
       })()}
 
-      {/* Drag overlay */}
-      {dragActive && (
-        <div className="absolute inset-0 bg-blue-500 bg-opacity-30 border-2 border-blue-400 border-dashed flex items-center justify-center z-10">
-          <div className="text-white text-center">
-            <div className="text-4xl mb-2">📁</div>
-            <div className="text-lg font-bold">Drop media files here</div>
-          </div>
-        </div>
-      )}
-
       {/* Placeholder */}
       {!activeVideoTrack && tracks.length === 0 && (
-        <div className="absolute inset-0 flex flex-col gap-2 items-center justify-center border-2 border-dashed border-accent rounded-lg">
+        <div
+          className={cn(
+            'absolute inset-0 flex flex-col gap-2 items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-all duration-200',
+            dragActive
+              ? 'border-secondary bg-secondary/10'
+              : 'border-accent hover:!border-secondary hover:bg-secondary/10',
+          )}
+          onClick={async () => {
+            const result = await importMediaFromDialog();
+            if (result.success && result.importedFiles.length > 0) {
+              console.log(
+                'Files imported successfully from placeholder click:',
+                result.importedFiles,
+              );
+            }
+          }}
+        >
           <img src={theme === 'dark' ? NewDark : New} alt="New Project" />
           <p className="text-sm text-muted-foreground">
             Click to browse or drag and drop files here

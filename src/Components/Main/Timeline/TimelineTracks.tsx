@@ -1,3 +1,4 @@
+import { Film } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   useVideoEditorStore,
@@ -257,6 +258,8 @@ interface TrackRowProps {
     newEndFrame?: number,
   ) => void;
   onDrop: (rowId: string, files: FileList) => void;
+  allTracksCount: number;
+  onPlaceholderClick?: () => void;
 }
 
 const TrackRow: React.FC<TrackRowProps> = React.memo(
@@ -271,6 +274,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     onTrackMove,
     onTrackResize,
     onDrop,
+    allTracksCount,
+    onPlaceholderClick,
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
@@ -362,11 +367,21 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         </div>
 
         {/* Drop hint */}
-        {tracks.length === 0 && (
+        {allTracksCount === 0 && rowDef.id === 'subtitle' && (
           <div
-            className={`absolute top-1/2 left-5 transform -translate-y-1/2 text-xs pointer-events-none
-            ${isDragOver ? 'text-secondary font-bold' : 'text-gray-500 font-normal'}`}
-          ></div>
+            className={`absolute inset-0 flex items-center px-8 cursor-pointer transition-all duration-200 rounded-lg border-2 border-dashed
+            ${
+              isDragOver
+                ? 'border-secondary bg-secondary/10 text-secondary'
+                : 'border-accent hover:border-secondary hover:bg-secondary/10 bg-accent text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={onPlaceholderClick}
+          >
+            <div className="flex items-center gap-2 text-xs">
+              <Film className="h-4 w-4" />
+              <span>Drag and drop your media here</span>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -381,8 +396,12 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
   selectedTrackIds,
   onTrackSelect,
 }) => {
-  const { moveTrack, resizeTrack, importMediaFromFiles } =
-    useVideoEditorStore();
+  const {
+    moveTrack,
+    resizeTrack,
+    importMediaFromFiles,
+    importMediaFromDialog,
+  } = useVideoEditorStore();
 
   const handleTrackSelect = useCallback(
     (trackId: string, multiSelect = false) => {
@@ -448,6 +467,16 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
     [importMediaFromFiles],
   );
 
+  const handlePlaceholderClick = useCallback(async () => {
+    const result = await importMediaFromDialog();
+    if (result.success && result.importedFiles.length > 0) {
+      console.log(
+        'Files imported successfully from timeline placeholder:',
+        result.importedFiles,
+      );
+    }
+  }, [importMediaFromDialog]);
+
   // Group tracks by their designated rows with subtitle optimization
   const tracksByRow = React.useMemo(() => {
     const grouped: Record<string, VideoTrack[]> = {};
@@ -489,6 +518,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = ({
           onTrackMove={handleTrackMove}
           onTrackResize={handleTrackResize}
           onDrop={handleRowDrop}
+          allTracksCount={tracks.length}
+          onPlaceholderClick={handlePlaceholderClick}
         />
       ))}
     </div>
