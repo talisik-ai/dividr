@@ -25,8 +25,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     preview,
     textStyle,
     getTextStyleForSubtitle,
-    importMediaFromDrop,
     importMediaFromDialog,
+    importMediaToTimeline,
     setCurrentFrame,
   } = useVideoEditorStore();
 
@@ -309,10 +309,20 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       setDragActive(false);
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
-        await importMediaFromDrop(files);
+        console.log(`🎯 Dropping ${files.length} files onto video preview`);
+        const result = await importMediaToTimeline(files);
+        if (result.success) {
+          console.log(
+            `✅ Successfully imported ${result.importedFiles.length} files to timeline from video preview`,
+          );
+        } else {
+          console.error(
+            '❌ Failed to import files to timeline from video preview',
+          );
+        }
       }
     },
-    [importMediaFromDrop],
+    [importMediaToTimeline],
   );
 
   const { actualWidth, actualHeight } = calculateContentScale();

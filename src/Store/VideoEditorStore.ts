@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { projectService } from '@/Services/ProjectService';
 import { v4 as uuidv4 } from 'uuid';
 import { create } from 'zustand';
@@ -131,7 +132,10 @@ interface VideoEditorStore {
 
   // Track Actions
   addTrack: (track: Omit<VideoTrack, 'id'>) => string;
-  addTrackFromMediaLibrary: (mediaId: string, startFrame?: number) => string;
+  addTrackFromMediaLibrary: (
+    mediaId: string,
+    startFrame?: number,
+  ) => Promise<string>;
   removeTrack: (trackId: string) => void;
   updateTrack: (trackId: string, updates: Partial<VideoTrack>) => void;
   moveTrack: (trackId: string, newStartFrame: number) => void;
@@ -197,7 +201,7 @@ interface VideoEditorStore {
       url: string;
       thumbnail?: string;
     }>;
-  }>; // New method using native dialog
+  }>; // New method using native dialog - library only
   importMediaFromFiles: (files: File[]) => Promise<void>; // Keep for backward compatibility
   importMediaFromDrop: (files: File[]) => Promise<{
     success: boolean;
@@ -209,7 +213,18 @@ interface VideoEditorStore {
       url: string;
       thumbnail?: string;
     }>;
-  }>; // New method for drag-and-drop with proper file handling
+  }>; // New method for drag-and-drop - library only
+  importMediaToTimeline: (files: File[]) => Promise<{
+    success: boolean;
+    importedFiles: Array<{
+      id: string;
+      name: string;
+      type: string;
+      size: number;
+      url: string;
+      thumbnail?: string;
+    }>;
+  }>; // Import directly to timeline (also adds to library)
   exportProject: () => string;
   importProject: (data: string) => void;
 
@@ -446,6 +461,173 @@ const processSubtitleFile = async (
 const getTrackColor = (index: number) =>
   TRACK_COLORS[index % TRACK_COLORS.length];
 
+// Shared helper function to process imported files
+const processImportedFile = async (
+  fileInfo: any,
+  addToLibraryFn: (item: Omit<MediaLibraryItem, 'id'>) => string,
+  addToTimelineFn?: (track: Omit<VideoTrack, 'id'>) => string,
+  getFps?: () => number,
+) => {
+  // Get accurate duration using FFprobe
+  let actualDurationSeconds: number;
+  try {
+    actualDurationSeconds = await window.electronAPI.getDuration(fileInfo.path);
+  } catch (error) {
+    console.warn(
+      `⚠️ Failed to get duration for ${fileInfo.name}, using fallback:`,
+      error,
+    );
+    actualDurationSeconds = fileInfo.type === 'image' ? 5 : 30;
+  }
+
+  // Create preview URL for video and image files
+  let previewUrl: string | undefined;
+  if (fileInfo.type === 'video' || fileInfo.type === 'image') {
+    try {
+      const previewResult = await window.electronAPI.createPreviewUrl(
+        fileInfo.path,
+      );
+      if (previewResult.success) {
+        previewUrl = previewResult.url;
+      }
+    } catch (error) {
+      console.warn(
+        `⚠️ Error creating preview URL for ${fileInfo.name}:`,
+        error,
+      );
+    }
+  }
+
+  // Determine proper MIME type and track type
+  let mimeType = 'application/octet-stream';
+  let trackType: 'video' | 'audio' | 'image' | 'subtitle' = fileInfo.type;
+
+  console.log(`🔍 File type detection for: ${fileInfo.name}`);
+  console.log(`   - Original fileInfo.type: ${fileInfo.type}`);
+  console.log(
+    `   - isSubtitleFile(${fileInfo.name}): ${isSubtitleFile(fileInfo.name)}`,
+  );
+
+  // Check for subtitle files FIRST (override any incorrect type detection)
+  if (isSubtitleFile(fileInfo.name)) {
+    mimeType = `text/${fileInfo.extension}`;
+    trackType = 'subtitle';
+    console.log(
+      `🎬 ✅ Detected subtitle file: ${fileInfo.name} -> type: ${trackType}`,
+    );
+  } else if (fileInfo.type === 'video') {
+    mimeType = `video/${fileInfo.extension}`;
+    console.log(
+      `📹 Detected video file: ${fileInfo.name} -> type: ${trackType}`,
+    );
+  } else if (fileInfo.type === 'audio') {
+    mimeType = `audio/${fileInfo.extension}`;
+    console.log(
+      `🎵 Detected audio file: ${fileInfo.name} -> type: ${trackType}`,
+    );
+  } else if (fileInfo.type === 'image') {
+    mimeType = `image/${fileInfo.extension}`;
+    console.log(
+      `🖼️ Detected image file: ${fileInfo.name} -> type: ${trackType}`,
+    );
+  }
+
+  // Add to media library
+  const mediaLibraryItem: Omit<MediaLibraryItem, 'id'> = {
+    name: fileInfo.name,
+    type: trackType,
+    source: fileInfo.path,
+    previewUrl,
+    duration: actualDurationSeconds,
+    size: fileInfo.size,
+    mimeType,
+    metadata: {},
+  };
+
+  const mediaId = addToLibraryFn(mediaLibraryItem);
+
+  // Add to timeline if requested
+  if (addToTimelineFn && getFps) {
+    const fps = getFps();
+
+    if (trackType === 'subtitle' && isSubtitleFile(fileInfo.name)) {
+      // Handle subtitle files specially
+      try {
+        const subtitleContent = await window.electronAPI.readFile(
+          fileInfo.path,
+        );
+        if (subtitleContent) {
+          console.log(`📖 Processing subtitle file: ${fileInfo.name}`);
+          const subtitleTracks = await processSubtitleFile(
+            fileInfo,
+            subtitleContent,
+            0, // Will be repositioned by addTrack
+            fps,
+            previewUrl,
+          );
+
+          console.log(
+            `➕ Adding ${subtitleTracks.length} subtitle tracks to timeline`,
+          );
+          subtitleTracks.forEach((track, index) => {
+            console.log(
+              `📝 Adding subtitle track ${index + 1}: "${track.subtitleText?.substring(0, 50)}..."`,
+            );
+            const trackId = addToTimelineFn(track);
+            console.log(`✅ Added subtitle track with ID: ${trackId}`);
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Error processing subtitle file:`, error);
+        // Add single fallback track
+        const duration = Math.round(actualDurationSeconds * fps);
+        console.log(`📝 Adding fallback subtitle track for: ${fileInfo.name}`);
+        const trackId = addToTimelineFn({
+          type: 'subtitle',
+          name: fileInfo.name,
+          source: fileInfo.path,
+          previewUrl,
+          duration,
+          startFrame: 0,
+          endFrame: duration,
+          visible: true,
+          locked: false,
+          color: getTrackColor(0),
+          subtitleText: `Subtitle: ${fileInfo.name}`,
+        });
+        console.log(`✅ Added fallback subtitle track with ID: ${trackId}`);
+      }
+    } else {
+      // Add regular media to timeline
+      const duration = Math.round(actualDurationSeconds * fps);
+      console.log(
+        `📹 Adding ${trackType} track: ${fileInfo.name} (duration: ${duration} frames)`,
+      );
+      const trackId = addToTimelineFn({
+        type: trackType,
+        name: fileInfo.name,
+        source: fileInfo.path,
+        previewUrl,
+        duration,
+        startFrame: 0,
+        endFrame: duration,
+        visible: true,
+        locked: false,
+        color: getTrackColor(0),
+      });
+      console.log(`✅ Added ${trackType} track with ID: ${trackId}`);
+    }
+  }
+
+  return {
+    id: mediaId,
+    name: fileInfo.name,
+    type: mimeType,
+    size: fileInfo.size,
+    url: previewUrl || fileInfo.path,
+  };
+};
+
 // Helper function to find a non-overlapping position for a track
 function findNonOverlappingPosition(
   desiredStartFrame: number,
@@ -673,14 +855,76 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       return id;
     },
 
-    addTrackFromMediaLibrary: (mediaId, startFrame = 0) => {
+    addTrackFromMediaLibrary: async (mediaId, startFrame = 0) => {
       const mediaItem = get().mediaLibrary.find((item) => item.id === mediaId);
       if (!mediaItem) {
         console.error('Media item not found in library:', mediaId);
         return '';
       }
 
-      // Convert media library item to track
+      // Handle subtitle files specially - parse and create individual tracks
+      if (mediaItem.type === 'subtitle' && isSubtitleFile(mediaItem.name)) {
+        try {
+          // Read subtitle content
+          const subtitleContent = await window.electronAPI.readFile(
+            mediaItem.source,
+          );
+          if (subtitleContent) {
+            console.log(
+              `📖 Processing subtitle from media library: ${mediaItem.name}`,
+            );
+            // Parse subtitle content and create individual tracks
+            const subtitleTracks = await processSubtitleFile(
+              {
+                name: mediaItem.name,
+                path: mediaItem.source,
+                type: 'subtitle',
+                extension: mediaItem.name.split('.').pop() || '',
+                size: mediaItem.size,
+              },
+              subtitleContent,
+              get().tracks.length,
+              get().timeline.fps,
+              mediaItem.previewUrl,
+            );
+
+            console.log(
+              `➕ Adding ${subtitleTracks.length} subtitle tracks from media library`,
+            );
+            // Add each subtitle segment as a track at the specified start frame
+            const addedIds: string[] = [];
+            let currentStartFrame = startFrame;
+
+            subtitleTracks.forEach((track, index) => {
+              const adjustedTrack = {
+                ...track,
+                startFrame: currentStartFrame,
+                endFrame: currentStartFrame + track.duration,
+              };
+              console.log(
+                `📝 Adding subtitle segment ${index + 1}: "${track.subtitleText?.substring(0, 50)}..." at frame ${currentStartFrame}`,
+              );
+              const trackId = get().addTrack(adjustedTrack);
+              addedIds.push(trackId);
+              console.log(`✅ Added subtitle track with ID: ${trackId}`);
+              currentStartFrame = adjustedTrack.endFrame; // Stack subtitle segments
+            });
+
+            console.log(
+              `📋 Successfully added ${subtitleTracks.length} subtitle tracks to timeline for ${mediaItem.name}`,
+            );
+            return addedIds[0] || ''; // Return first track ID
+          }
+        } catch (error) {
+          console.error(
+            `❌ Error processing subtitle file ${mediaItem.name}:`,
+            error,
+          );
+          // Fall through to single track creation
+        }
+      }
+
+      // Convert media library item to single track (for non-subtitles or fallback)
       const duration = Math.round(mediaItem.duration * get().timeline.fps);
       const track: Omit<VideoTrack, 'id'> = {
         type: mediaItem.type,
@@ -1118,121 +1362,16 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           thumbnail?: string;
         }> = [];
 
-        // Files are now processed above and added to media library
-
-        // Process files and add to media library instead of directly to timeline
-        const processedFiles = await Promise.all(
+        // Process files and add to media library only (no timeline)
+        await Promise.all(
           result.files.map(async (fileInfo) => {
-            // Get accurate duration using FFprobe
-            let actualDurationSeconds: number;
-            try {
-              actualDurationSeconds = await window.electronAPI.getDuration(
-                fileInfo.path,
-              );
-            } catch (error) {
-              console.warn(
-                `⚠️ Failed to get duration for ${fileInfo.name}, using fallback:`,
-                error,
-              );
-              actualDurationSeconds = fileInfo.type === 'image' ? 5 : 30; // 5s for images, 30s for others
-            }
-
-            // Create preview URL for video and image files
-            let previewUrl: string | undefined;
-            if (fileInfo.type === 'video' || fileInfo.type === 'image') {
-              try {
-                const previewResult = await window.electronAPI.createPreviewUrl(
-                  fileInfo.path,
-                );
-                if (previewResult.success) {
-                  previewUrl = previewResult.url;
-                }
-              } catch (error) {
-                console.warn(
-                  `⚠️ Error creating preview URL for ${fileInfo.name}:`,
-                  error,
-                );
-              }
-            }
-
-            // Determine proper MIME type
-            let mimeType = 'application/octet-stream';
-            if (fileInfo.type === 'video') {
-              mimeType = `video/${fileInfo.extension}`;
-            } else if (fileInfo.type === 'audio') {
-              mimeType = `audio/${fileInfo.extension}`;
-            } else if (fileInfo.type === 'image') {
-              mimeType = `image/${fileInfo.extension}`;
-            } else if (isSubtitleFile(fileInfo.name)) {
-              mimeType = `text/${fileInfo.extension}`;
-            }
-
-            // Add to media library
-            const mediaLibraryItem: Omit<MediaLibraryItem, 'id'> = {
-              name: fileInfo.name,
-              type: fileInfo.type as 'video' | 'audio' | 'image' | 'subtitle',
-              source: fileInfo.path,
-              previewUrl,
-              duration: actualDurationSeconds,
-              size: fileInfo.size,
-              mimeType,
-              metadata: {
-                // Add metadata if available
-              },
-            };
-
-            const mediaId = get().addToMediaLibrary(mediaLibraryItem);
-
-            // For subtitle files, also automatically add to timeline
-            if (isSubtitleFile(fileInfo.name)) {
-              // Handle subtitle files specially
-              try {
-                // Read subtitle content if available
-                const subtitleContent = await window.electronAPI.readFile(
-                  fileInfo.path,
-                );
-                if (subtitleContent) {
-                  // Parse subtitle content and create individual tracks
-                  const subtitleTracks = await processSubtitleFile(
-                    fileInfo,
-                    subtitleContent,
-                    get().tracks.length,
-                    get().timeline.fps,
-                    previewUrl,
-                  );
-
-                  // Add each subtitle segment as a track
-                  subtitleTracks.forEach((track) => {
-                    get().addTrack(track);
-                  });
-
-                  console.log(
-                    `📋 Added ${subtitleTracks.length} subtitle tracks to timeline for ${fileInfo.name}`,
-                  );
-                } else {
-                  // Fallback: add single subtitle track
-                  get().addTrackFromMediaLibrary(mediaId);
-                }
-              } catch (error) {
-                console.error(
-                  `❌ Error processing subtitle file ${fileInfo.name}:`,
-                  error,
-                );
-                // Fallback: add single subtitle track
-                get().addTrackFromMediaLibrary(mediaId);
-              }
-            }
-
-            // Add to imported files list for UI feedback
-            importedFiles.push({
-              id: mediaId,
-              name: fileInfo.name,
-              type: mimeType,
-              size: fileInfo.size,
-              url: previewUrl || fileInfo.path,
-            });
-
-            return mediaId;
+            const fileData = await processImportedFile(
+              fileInfo,
+              get().addToMediaLibrary,
+              undefined, // No timeline addition
+              () => get().timeline.fps,
+            );
+            importedFiles.push(fileData);
           }),
         );
 
@@ -1333,7 +1472,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     importMediaFromDrop: async (files) => {
       try {
         console.log(
-          '🎯 importMediaFromDrop called with files:',
+          '🎯 importMediaFromDrop called with files (library only):',
           files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
         );
 
@@ -1375,177 +1514,89 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           thumbnail?: string;
         }> = [];
 
-        const newTracks = await Promise.all(
-          result.files.map(async (fileInfo, index) => {
-            console.log(
-              `🔍 Processing file: ${fileInfo.name}, path: ${fileInfo.path}`,
+        // Process files and add to media library only (no timeline)
+        await Promise.all(
+          result.files.map(async (fileInfo) => {
+            const fileData = await processImportedFile(
+              fileInfo,
+              get().addToMediaLibrary,
+              undefined, // No timeline addition
+              () => get().timeline.fps,
             );
-
-            // Get accurate duration using FFprobe
-            let actualDuration: number;
-            try {
-              const durationSeconds = await window.electronAPI.getDuration(
-                fileInfo.path,
-              );
-              console.log(
-                `⏱️ Duration for ${fileInfo.name}: ${durationSeconds}s`,
-              );
-              actualDuration = Math.round(
-                durationSeconds * (get().timeline.fps || 30),
-              );
-            } catch (error) {
-              console.warn(
-                `⚠️ Failed to get duration for ${fileInfo.name}:`,
-                error,
-              );
-              const estimatedDuration = fileInfo.type === 'image' ? 150 : 1500;
-              actualDuration = estimatedDuration;
-            }
-
-            // Create preview URL
-            let previewUrl: string | undefined;
-            if (fileInfo.type === 'video' || fileInfo.type === 'image') {
-              try {
-                const previewResult = await window.electronAPI.createPreviewUrl(
-                  fileInfo.path,
-                );
-                if (previewResult.success) {
-                  previewUrl = previewResult.url;
-                  console.log(`✅ Preview URL created for: ${fileInfo.name}`);
-                } else {
-                  console.warn(
-                    `⚠️ Failed to create preview URL for ${fileInfo.name}:`,
-                    previewResult.error,
-                  );
-                }
-              } catch (error) {
-                console.warn(
-                  `⚠️ Error creating preview URL for ${fileInfo.name}:`,
-                  error,
-                );
-              }
-            }
-
-            // Determine proper MIME type and track type
-            let mimeType = 'application/octet-stream';
-            let trackType: 'video' | 'audio' | 'image' | 'subtitle' =
-              fileInfo.type;
-
-            // Check for subtitle files if not already detected
-            console.log('🔍 File info:', fileInfo);
-            console.log('🔍 File buffers:', fileBuffers);
-
-            if (isSubtitleFile(fileInfo.name)) {
-              trackType = 'subtitle';
-              mimeType = `text/${fileInfo.extension}`;
-
-              // Get corresponding file buffer for content reading
-              const fileBuffer = fileBuffers.find(
-                (fb) => fb.name === fileInfo.name,
-              );
-
-              // Parse subtitle content from buffer if available
-              if (fileBuffer) {
-                try {
-                  // Convert buffer to text
-                  const textDecoder = new TextDecoder('utf-8');
-                  const subtitleContent = textDecoder.decode(fileBuffer.buffer);
-
-                  // Process subtitle file using helper
-                  const subtitleTracks = await processSubtitleFile(
-                    fileInfo,
-                    subtitleContent,
-                    get().tracks.length + index,
-                    get().timeline.fps,
-                    previewUrl,
-                  );
-
-                  // Add to imported files list for MediaImportPanel
-                  importedFiles.push({
-                    id: Math.random().toString(36).substr(2, 9),
-                    name: fileInfo.name,
-                    type: mimeType,
-                    size: fileInfo.size,
-                    url: previewUrl || fileInfo.path,
-                  });
-
-                  return subtitleTracks;
-                } catch (error) {
-                  console.error(
-                    `❌ Error parsing subtitle file ${fileInfo.name}:`,
-                    error,
-                  );
-                }
-              }
-            } else if (fileInfo.type === 'video') {
-              mimeType = `video/${fileInfo.extension}`;
-            } else if (fileInfo.type === 'audio') {
-              mimeType = `audio/${fileInfo.extension}`;
-            } else if (fileInfo.type === 'image') {
-              mimeType = `image/${fileInfo.extension}`;
-            }
-
-            // Add to imported files list for MediaImportPanel (for non-subtitle files)
-            if (trackType !== 'subtitle') {
-              importedFiles.push({
-                id: Math.random().toString(36).substr(2, 9),
-                name: fileInfo.name,
-                type: mimeType,
-                size: fileInfo.size,
-                url: previewUrl || fileInfo.path,
-              });
-            }
-
-            const track = {
-              type: trackType,
-              name: fileInfo.name,
-              source: fileInfo.path, // Use actual file path for FFmpeg compatibility
-              previewUrl, // Use preview URL for display
-              duration: actualDuration,
-              startFrame: 0, // Start at 0, let smart positioning handle arrangement
-              endFrame: actualDuration,
-              visible: true,
-              locked: false,
-              color: getTrackColor(get().tracks.length + index),
-              ...(trackType === 'subtitle' && {
-                subtitleText: `Subtitle: ${fileInfo.name}`,
-              }),
-            };
-
-            console.log(`📋 Created track for ${fileInfo.name}:`, track);
-            return track;
+            importedFiles.push(fileData);
           }),
         );
 
-        // Flatten tracks array (subtitle files return arrays of tracks) and filter out null/undefined
-        const validTracks = newTracks.flat().filter(Boolean);
-
         console.log(
-          `✅ Adding ${validTracks.length} tracks to timeline:`,
-          validTracks.map((t) => ({
-            name: t.name,
-            type: t.type,
-            previewUrl: !!t.previewUrl,
-          })),
+          `✅ Added ${importedFiles.length} files to media library only`,
         );
-        console.log(
-          `📊 Current tracks count before adding: ${get().tracks.length}`,
-        );
-        validTracks.forEach((track) => {
-          const addedId = get().addTrack(track);
-          console.log(`➕ Added track with ID: ${addedId} for ${track.name}`);
-        });
-        console.log(
-          `📊 Current tracks count after adding: ${get().tracks.length}`,
-        );
-        console.log(
-          `📋 All tracks in store:`,
-          get().tracks.map((t) => ({ id: t.id, name: t.name, type: t.type })),
-        );
-
         return { success: true, importedFiles };
       } catch (error) {
         console.error('Failed to import media from drop:', error);
+        return { success: false, importedFiles: [] };
+      }
+    },
+
+    importMediaToTimeline: async (files) => {
+      try {
+        console.log(
+          '🎯 importMediaToTimeline called with files:',
+          files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+        );
+
+        // Convert File objects to ArrayBuffers for IPC transfer
+        const fileBuffers = await Promise.all(
+          files.map(async (file) => {
+            const buffer = await file.arrayBuffer();
+            return {
+              name: file.name,
+              type: file.type,
+              size: file.size,
+              buffer,
+            };
+          }),
+        );
+
+        // Process files in main process to get real file paths
+        const result =
+          await window.electronAPI.processDroppedFiles(fileBuffers);
+
+        if (!result.success) {
+          console.error(
+            '❌ Failed to process files in main process:',
+            result.error,
+          );
+          return { success: false, importedFiles: [] };
+        }
+
+        const importedFiles: Array<{
+          id: string;
+          name: string;
+          type: string;
+          size: number;
+          url: string;
+          thumbnail?: string;
+        }> = [];
+
+        // Process files and add to both media library AND timeline
+        await Promise.all(
+          result.files.map(async (fileInfo) => {
+            const fileData = await processImportedFile(
+              fileInfo,
+              get().addToMediaLibrary,
+              get().addTrack, // Also add to timeline
+              () => get().timeline.fps,
+            );
+            importedFiles.push(fileData);
+          }),
+        );
+
+        console.log(
+          `✅ Added ${importedFiles.length} files to both library and timeline`,
+        );
+        return { success: true, importedFiles };
+      } catch (error) {
+        console.error('Failed to import media to timeline:', error);
         return { success: false, importedFiles: [] };
       }
     },

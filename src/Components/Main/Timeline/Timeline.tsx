@@ -29,6 +29,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     setOutPoint,
     setSelectedTracks,
     addTrackFromMediaLibrary,
+    importMediaToTimeline,
   } = useVideoEditorStore();
 
   // Calculate effective timeline duration based on actual track content
@@ -52,25 +53,51 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   }, []);
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault();
       setDropActive(false);
 
+      // Check if this is a media library item (internal drag)
       const mediaId = e.dataTransfer.getData('text/plain');
-      if (!mediaId) return;
+      if (mediaId) {
+        // Calculate drop position based on mouse position
+        const timelineRect = timelineRef.current?.getBoundingClientRect();
+        if (!timelineRect) return;
 
-      // Calculate drop position based on mouse position
-      const timelineRect = timelineRef.current?.getBoundingClientRect();
-      if (!timelineRect) return;
+        const relativeX = e.clientX - timelineRect.left - timeline.scrollX;
+        const frameWidth = 2 * timeline.zoom; // Same calculation as in TimelineRuler
+        const dropFrame = Math.max(0, Math.round(relativeX / frameWidth));
 
-      const relativeX = e.clientX - timelineRect.left - timeline.scrollX;
-      const frameWidth = 2 * timeline.zoom; // Same calculation as in TimelineRuler
-      const dropFrame = Math.max(0, Math.round(relativeX / frameWidth));
+        console.log(`🎯 Dropping media library item at frame ${dropFrame}`);
+        addTrackFromMediaLibrary(mediaId, dropFrame).catch(console.error);
+        return;
+      }
 
-      console.log(`🎯 Dropping media at frame ${dropFrame}`);
-      addTrackFromMediaLibrary(mediaId, dropFrame);
+      // Check if this is a file drop (external)
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const files = Array.from(e.dataTransfer.files);
+        console.log(`🎯 Dropping ${files.length} files onto timeline`);
+
+        try {
+          const result = await importMediaToTimeline(files);
+          if (result.success) {
+            console.log(
+              `✅ Successfully imported ${result.importedFiles.length} files to timeline`,
+            );
+          } else {
+            console.error('❌ Failed to import files to timeline');
+          }
+        } catch (error) {
+          console.error('❌ Error importing files to timeline:', error);
+        }
+      }
     },
-    [timeline.scrollX, timeline.zoom, addTrackFromMediaLibrary],
+    [
+      timeline.scrollX,
+      timeline.zoom,
+      addTrackFromMediaLibrary,
+      importMediaToTimeline,
+    ],
   );
 
   // Animation loop for playback

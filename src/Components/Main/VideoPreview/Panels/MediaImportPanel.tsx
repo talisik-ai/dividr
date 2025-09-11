@@ -272,10 +272,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                       : 'bg-muted/50 border-border hover:bg-muted',
                   draggedMediaId === file.id && 'opacity-50',
                 )}
-                onClick={() => {
+                onClick={async () => {
                   if (!file.isOnTimeline) {
                     // Add to timeline at current playhead position
-                    addTrackFromMediaLibrary(file.id, timeline.currentFrame);
+                    await addTrackFromMediaLibrary(
+                      file.id,
+                      timeline.currentFrame,
+                    );
                   }
                 }}
                 title={
