@@ -48,6 +48,8 @@ const ExportButton: React.FC<ExportButtonProps> = ({
 
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
+  console.log(isExportModalOpen);
+
   // Function to generate .ass content from subtitle tracks using the subtitle exporter
   const generateAssContent = useCallback(
     (subtitleTracks: VideoTrack[]): string => {

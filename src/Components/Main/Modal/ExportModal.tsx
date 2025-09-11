@@ -3,7 +3,6 @@
  * Export Configuration Modal
  * Modal for configuring video export settings including filename and format
  */
-import React, { useState } from 'react';
 import { Button } from '@/Components/sub/ui/Button';
 import {
   Dialog,
@@ -20,6 +19,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/Components/sub/ui/Select';
+import React, { useState } from 'react';
 
 interface ExportConfig {
   filename: string;
@@ -151,9 +151,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   return (
     <Dialog
-      isOpen={isOpen}
-      onClose={onClose}
-      className="text-white bg-primary z-[9999]"
+      open={isOpen}
+      onOpenChange={(open) => !open && onClose()}
+      // className="text-white bg-primary z-[9999]"
     >
       <DialogContent>
         <DialogHeader>
