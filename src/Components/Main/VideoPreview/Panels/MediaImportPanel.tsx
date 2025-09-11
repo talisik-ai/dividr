@@ -6,26 +6,46 @@ import {
   TabsTrigger,
 } from '@/Components/sub/ui/Tabs';
 import { cn } from '@/Lib/utils';
-import { Download, X } from 'lucide-react';
+import { Download, GripVertical, X } from 'lucide-react';
 import React, { useCallback, useRef, useState } from 'react';
 import { useVideoEditorStore } from '../../../../Store/VideoEditorStore';
 import { BasePanel } from './BasePanel';
 import { CustomPanelProps } from './PanelRegistry';
 
-interface FilePreview {
+// Keeping for potential future use
+// interface FilePreview {
+//   id: string;
+//   name: string;
+//   size: number;
+//   type: string;
+//   url: string;
+//   thumbnail?: string;
+// }
+
+interface MediaItem {
   id: string;
   name: string;
-  size: number;
   type: string;
+  size: number;
   url: string;
-  thumbnail?: string;
+  duration?: number;
+  isOnTimeline?: boolean;
+  trackId?: string;
 }
 
 export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
-  const { importMediaFromDialog, importMediaFromDrop } = useVideoEditorStore();
+  const {
+    importMediaFromDialog,
+    importMediaFromDrop,
+    mediaLibrary,
+    tracks,
+    addTrackFromMediaLibrary,
+    removeFromMediaLibrary,
+    timeline,
+  } = useVideoEditorStore();
   const [dragActive, setDragActive] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
-  const [, setUploadProgress] = useState<Record<string, number>>({});
+  // Removed setUploadProgress as it's no longer needed
+  const [draggedMediaId, setDraggedMediaId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle drag events
@@ -52,68 +72,20 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           files.map((f) => f.name),
         );
 
-        // Create initial previews for immediate UI feedback
-        const initialPreviews: FilePreview[] = files.map((file) => ({
-          id: Math.random().toString(36).substr(2, 9),
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          url: URL.createObjectURL(file), // Temporary preview URL
-        }));
-
-        setSelectedFiles((prev) => [...prev, ...initialPreviews]);
-
-        // Start upload progress simulation
-        initialPreviews.forEach((preview) => {
-          setUploadProgress((prev) => ({ ...prev, [preview.id]: 0 }));
-        });
-
         // Actually import the files using the proper Electron method
         console.log('🚀 Calling importMediaFromDrop...');
         const result = await importMediaFromDrop(files);
         console.log('📦 importMediaFromDrop result:', result);
 
         if (result.success) {
-          // Update the previews with the actual imported file data
-          const updatedPreviews = initialPreviews.map((initial, index) => {
-            const imported = result.importedFiles[index];
-            if (imported) {
-              return {
-                ...initial,
-                id: imported.id,
-                url: imported.url, // Use the proper preview URL from Electron
-                thumbnail: imported.thumbnail,
-              };
-            }
-            return initial;
-          });
-
-          setSelectedFiles((prev) => {
-            // Replace the initial previews with updated ones
-            const filteredPrev = prev.filter(
-              (p) => !initialPreviews.some((ip) => ip.id === p.id),
-            );
-            return [...filteredPrev, ...updatedPreviews];
-          });
-
-          // Complete the progress for all files
-          initialPreviews.forEach((preview) => {
-            setUploadProgress((prev) => ({ ...prev, [preview.id]: 100 }));
-          });
+          console.log(
+            `✅ Successfully imported ${result.importedFiles.length} files to media library`,
+          );
         } else {
-          // If import failed, still show progress completion but mark as error
           console.error('Failed to import dropped files');
-          initialPreviews.forEach((preview) => {
-            setUploadProgress((prev) => ({ ...prev, [preview.id]: 100 }));
-          });
         }
       } catch (error) {
         console.error('Error handling files:', error);
-        // Still complete progress to avoid stuck UI
-        files.forEach(() => {
-          const id = Math.random().toString(36).substr(2, 9);
-          setUploadProgress((prev) => ({ ...prev, [id]: 100 }));
-        });
       }
     },
     [importMediaFromDrop],
@@ -149,13 +121,48 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     [handleFiles],
   );
 
-  const removeFile = useCallback((id: string) => {
-    setSelectedFiles((prev) => prev.filter((file) => file.id !== id));
-    setUploadProgress((prev) => {
-      const newProgress = { ...prev };
-      delete newProgress[id];
-      return newProgress;
-    });
+  const removeFile = useCallback(
+    (id: string) => {
+      // Remove from media library
+      removeFromMediaLibrary(id);
+    },
+    [removeFromMediaLibrary],
+  );
+
+  // Drag and drop handlers for media items
+  const handleMediaDragStart = useCallback(
+    (e: React.DragEvent, mediaId: string) => {
+      setDraggedMediaId(mediaId);
+      e.dataTransfer.setData('text/plain', mediaId);
+      e.dataTransfer.effectAllowed = 'copy';
+
+      // Create a custom drag image
+      const mediaItem = mediaLibrary.find((item) => item.id === mediaId);
+      if (mediaItem) {
+        const dragImage = document.createElement('div');
+        dragImage.textContent = `🎬 ${mediaItem.name}`;
+        dragImage.style.padding = '8px 12px';
+        dragImage.style.backgroundColor = '#1f2937';
+        dragImage.style.color = 'white';
+        dragImage.style.borderRadius = '6px';
+        dragImage.style.fontSize = '12px';
+        dragImage.style.position = 'absolute';
+        dragImage.style.top = '-1000px';
+        document.body.appendChild(dragImage);
+
+        e.dataTransfer.setDragImage(dragImage, 10, 10);
+
+        // Clean up the drag image after a short delay
+        setTimeout(() => {
+          document.body.removeChild(dragImage);
+        }, 0);
+      }
+    },
+    [mediaLibrary],
+  );
+
+  const handleMediaDragEnd = useCallback(() => {
+    setDraggedMediaId(null);
   }, []);
 
   const formatFileSize = (bytes: number): string => {
@@ -205,12 +212,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       onClick={async () => {
         const result = await importMediaFromDialog();
         if (result.success && result.importedFiles.length > 0) {
-          // Add the imported files to the panel state
-          setSelectedFiles((prev) => [...prev, ...result.importedFiles]);
-          // Mark them as completed (100% progress)
-          result.importedFiles.forEach((file) => {
-            setUploadProgress((prev) => ({ ...prev, [file.id]: 100 }));
-          });
+          console.log(
+            `✅ Successfully imported ${result.importedFiles.length} files via dialog`,
+          );
         }
       }}
     >
@@ -230,41 +234,10 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     </div>
   );
 
-  // Subtitle File Display Component
-  const renderSubtitleFile = (file: FilePreview) => (
-    <div className="flex items-center space-x-3 flex-1 min-w-0">
-      <div className="text-2xl">💬</div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-foreground truncate">
-          {file.name}
-        </p>
-        <p className="text-xs text-purple-400">
-          Subtitle • {formatFileSize(file.size)}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {file.name.split('.').pop()?.toUpperCase()} format
-        </p>
-      </div>
-    </div>
-  );
-
-  // Media File Display Component
-  const renderMediaFile = (file: FilePreview) => (
-    <div className="flex items-center space-x-3 flex-1 min-w-0">
-      <div className="text-2xl">{getFileIcon(file.type, file.name)}</div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-foreground truncate">
-          {file.name}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {formatFileSize(file.size)}
-        </p>
-      </div>
-    </div>
-  );
+  // These render functions are now integrated into the fileListContent
 
   // File List Component
-  const fileListContent = (files: FilePreview[], tabType: string) => (
+  const fileListContent = (files: MediaItem[], tabType: string) => (
     <div className="flex-1 overflow-auto">
       <div className="">
         <h4 className="text-xs font-semibold text-muted-foreground mb-3">
@@ -273,29 +246,83 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
         <div className="space-y-2">
           {files.map((file) => {
-            const isSubtitle = isSubtitleFile(file.name);
+            const isSubtitle =
+              file.type.startsWith('text/') || isSubtitleFile(file.name);
 
             return (
               <div
                 key={file.id}
+                draggable={!file.isOnTimeline}
+                onDragStart={(e) => {
+                  if (!file.isOnTimeline) {
+                    handleMediaDragStart(e, file.id);
+                  } else {
+                    e.preventDefault();
+                  }
+                }}
+                onDragEnd={handleMediaDragEnd}
                 className={cn(
                   'rounded-lg p-3 border transition-colors duration-200',
+                  !file.isOnTimeline && 'cursor-grab active:cursor-grabbing',
+                  file.isOnTimeline && 'cursor-default',
                   isSubtitle
                     ? 'bg-purple-500/10 border-purple-500/30 hover:bg-purple-500/20'
-                    : 'bg-muted/50 border-border hover:bg-muted',
+                    : file.isOnTimeline
+                      ? 'bg-green-500/10 border-green-500/30 hover:bg-green-500/20'
+                      : 'bg-muted/50 border-border hover:bg-muted',
+                  draggedMediaId === file.id && 'opacity-50',
                 )}
+                onClick={() => {
+                  if (!file.isOnTimeline) {
+                    // Add to timeline at current playhead position
+                    addTrackFromMediaLibrary(file.id, timeline.currentFrame);
+                  }
+                }}
+                title={
+                  file.isOnTimeline
+                    ? 'Already on timeline'
+                    : 'Click to add to timeline or drag to timeline position'
+                }
               >
                 <div className="flex items-start justify-between">
-                  {isSubtitle
-                    ? renderSubtitleFile(file)
-                    : renderMediaFile(file)}
+                  <div className="flex items-center space-x-3 flex-1 min-w-0">
+                    {!file.isOnTimeline && (
+                      <div className="text-muted-foreground hover:text-foreground cursor-grab">
+                        <GripVertical className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className="text-2xl">
+                      {getFileIcon(file.type, file.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">
+                        {file.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatFileSize(file.size)}
+                        {file.duration && ` • ${file.duration.toFixed(1)}s`}
+                      </p>
+                      {file.isOnTimeline ? (
+                        <p className="text-xs text-green-400 font-medium">
+                          ✓ On Timeline
+                        </p>
+                      ) : (
+                        <p className="text-xs text-blue-400 font-medium">
+                          📍 Drag to Timeline
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
                   <Button
-                    onClick={() => removeFile(file.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFile(file.id);
+                    }}
                     variant="ghost"
                     size="sm"
                     className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive ml-2"
-                    title="Remove file"
+                    title="Remove from media library"
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -308,19 +335,39 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     </div>
   );
 
+  // Convert media library items to MediaItem format
+  const getMediaItems = (): MediaItem[] => {
+    return mediaLibrary.map((item) => {
+      // Check if this media is used in any track
+      const usedInTrack = tracks.find((track) => track.source === item.source);
+
+      return {
+        id: item.id,
+        name: item.name,
+        type: item.mimeType,
+        size: item.size,
+        url: item.previewUrl || item.source,
+        duration: item.duration,
+        isOnTimeline: !!usedInTrack,
+        trackId: usedInTrack?.id,
+      };
+    });
+  };
+
   const getFilteredFiles = (
     type: 'all' | 'videos' | 'audio' | 'images' | 'subtitles',
   ) => {
-    return selectedFiles.filter((file) => {
+    const mediaItems = getMediaItems();
+    return mediaItems.filter((item) => {
       switch (type) {
         case 'videos':
-          return file.type.startsWith('video/');
+          return item.type.startsWith('video/');
         case 'audio':
-          return file.type.startsWith('audio/');
+          return item.type.startsWith('audio/');
         case 'images':
-          return file.type.startsWith('image/');
+          return item.type.startsWith('image/');
         case 'subtitles':
-          return isSubtitleFile(file.name);
+          return item.type.startsWith('text/') || isSubtitleFile(item.name);
         default:
           return true;
       }
@@ -345,7 +392,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const getTabContent = (
     type: 'all' | 'videos' | 'audio' | 'images' | 'subtitles',
   ) => {
-    return selectedFiles.length > 0
+    const mediaItems = getMediaItems();
+    return mediaItems.length > 0
       ? fileListContent(getFilteredFiles(type), type)
       : uploadArea;
   };
@@ -362,12 +410,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           onClick={async () => {
             const result = await importMediaFromDialog();
             if (result.success && result.importedFiles.length > 0) {
-              // Add the imported files to the panel state
-              setSelectedFiles((prev) => [...prev, ...result.importedFiles]);
-              // Mark them as completed (100% progress)
-              result.importedFiles.forEach((file) => {
-                setUploadProgress((prev) => ({ ...prev, [file.id]: 100 }));
-              });
+              console.log(
+                `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
+              );
             }
           }}
           className="w-full"

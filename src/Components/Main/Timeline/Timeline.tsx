@@ -1,5 +1,5 @@
 import { cn } from '@/Lib/utils';
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 import { TimelineControls } from './TimelineControls';
@@ -15,6 +15,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [dropActive, setDropActive] = useState(false);
 
   const {
     timeline,
@@ -27,6 +28,7 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     setInPoint,
     setOutPoint,
     setSelectedTracks,
+    addTrackFromMediaLibrary,
   } = useVideoEditorStore();
 
   // Calculate effective timeline duration based on actual track content
@@ -34,6 +36,42 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
     tracks.length > 0
       ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
       : timeline.totalFrames;
+
+  // Drop handlers for media from library
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDropActive(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only set dropActive to false if we're actually leaving the timeline area
+    if (!timelineRef.current?.contains(e.relatedTarget as Node)) {
+      setDropActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDropActive(false);
+
+      const mediaId = e.dataTransfer.getData('text/plain');
+      if (!mediaId) return;
+
+      // Calculate drop position based on mouse position
+      const timelineRect = timelineRef.current?.getBoundingClientRect();
+      if (!timelineRect) return;
+
+      const relativeX = e.clientX - timelineRect.left - timeline.scrollX;
+      const frameWidth = 2 * timeline.zoom; // Same calculation as in TimelineRuler
+      const dropFrame = Math.max(0, Math.round(relativeX / frameWidth));
+
+      console.log(`🎯 Dropping media at frame ${dropFrame}`);
+      addTrackFromMediaLibrary(mediaId, dropFrame);
+    },
+    [timeline.scrollX, timeline.zoom, addTrackFromMediaLibrary],
+  );
 
   // Animation loop for playback
   useEffect(() => {
@@ -209,8 +247,15 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
         <div className="flex-1 relative overflow-visible">
           <div
             ref={tracksRef}
-            className="relative overflow-auto"
+            className={cn(
+              'relative overflow-auto transition-colors duration-200',
+              dropActive &&
+                'bg-blue-500/10 border-2 border-dashed border-blue-500',
+            )}
             onClick={handleTimelineClick}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
             onScroll={(e) => {
               // Throttled scroll handling for better performance with many tracks
               const scrollLeft = (e.target as HTMLElement).scrollLeft;
