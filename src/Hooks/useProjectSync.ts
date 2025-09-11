@@ -1,151 +1,105 @@
 import { useProjectStore } from '@/Store/ProjectStore';
 import { useVideoEditorStore } from '@/Store/VideoEditorStore';
-import { VideoEditorProjectData } from '@/Types/Project';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 
 /**
- * Custom hook that handles synchronization between the project store and video editor store
- * This ensures that changes in the video editor are reflected in the current project
- * and that loading a project updates the video editor state
+ * Hook to synchronize project state between ProjectStore and VideoEditorStore
+ * This ensures that changes in the video editor are persisted to the project
  */
 export const useProjectSync = () => {
-  const { currentProject, updateCurrentProjectData } = useProjectStore();
-  const videoEditorStore = useVideoEditorStore();
-  const hasLoadedProject = useRef(false);
+  const currentProject = useProjectStore((state) => state.currentProject);
+  const currentProjectId = useVideoEditorStore(
+    (state) => state.currentProjectId,
+  );
+  const hasUnsavedChanges = useVideoEditorStore(
+    (state) => state.hasUnsavedChanges,
+  );
+  const isAutoSaveEnabled = useVideoEditorStore(
+    (state) => state.isAutoSaveEnabled,
+  );
+  const saveProjectData = useVideoEditorStore((state) => state.saveProjectData);
+  const setCurrentProjectId = useVideoEditorStore(
+    (state) => state.setCurrentProjectId,
+  );
+  const loadProjectData = useVideoEditorStore((state) => state.loadProjectData);
 
-  // Load project data into video editor when a project is opened
+  // Sync current project ID when project changes
   useEffect(() => {
-    if (currentProject && !hasLoadedProject.current) {
-      const { videoEditor } = currentProject;
-
-      // Reset the video editor state first
-      videoEditorStore.reset();
-
-      // Load the project data
-      if (videoEditor.tracks?.length > 0) {
-        // Set tracks
-        videoEditor.tracks.forEach((track) => {
-          videoEditorStore.addTrack(track);
-        });
+    if (currentProject?.id !== currentProjectId) {
+      if (currentProject) {
+        console.log(`🔄 Syncing project: ${currentProject.metadata.title}`);
+        setCurrentProjectId(currentProject.id);
+        loadProjectData(currentProject.id).catch(console.error);
+      } else {
+        setCurrentProjectId(null);
       }
-
-      // Set timeline state
-      if (videoEditor.timeline) {
-        Object.entries(videoEditor.timeline).forEach(([key, value]) => {
-          switch (key) {
-            case 'currentFrame':
-              videoEditorStore.setCurrentFrame(value as number);
-              break;
-            case 'totalFrames':
-              videoEditorStore.setTotalFrames(value as number);
-              break;
-            case 'fps':
-              videoEditorStore.setFps(value as number);
-              break;
-            case 'zoom':
-              videoEditorStore.setZoom(value as number);
-              break;
-            case 'scrollX':
-              videoEditorStore.setScrollX(value as number);
-              break;
-            case 'inPoint':
-              videoEditorStore.setInPoint(value as number | undefined);
-              break;
-            case 'outPoint':
-              videoEditorStore.setOutPoint(value as number | undefined);
-              break;
-            case 'selectedTrackIds':
-              videoEditorStore.setSelectedTracks(value as string[]);
-              break;
-          }
-        });
-      }
-
-      // Set preview state
-      if (videoEditor.preview) {
-        if (
-          videoEditor.preview.canvasWidth &&
-          videoEditor.preview.canvasHeight
-        ) {
-          videoEditorStore.setCanvasSize(
-            videoEditor.preview.canvasWidth,
-            videoEditor.preview.canvasHeight,
-          );
-        }
-        if (videoEditor.preview.previewScale) {
-          videoEditorStore.setPreviewScale(videoEditor.preview.previewScale);
-        }
-        if (videoEditor.preview.backgroundColor) {
-          videoEditorStore.setBackgroundColor(
-            videoEditor.preview.backgroundColor,
-          );
-        }
-      }
-
-      // Set playback state
-      if (videoEditor.playback) {
-        if (videoEditor.playback.playbackRate) {
-          videoEditorStore.setPlaybackRate(videoEditor.playback.playbackRate);
-        }
-        if (videoEditor.playback.volume !== undefined) {
-          videoEditorStore.setVolume(videoEditor.playback.volume);
-        }
-      }
-
-      hasLoadedProject.current = true;
-    } else if (!currentProject) {
-      // Reset when no project is loaded
-      hasLoadedProject.current = false;
     }
-  }, [currentProject, videoEditorStore]);
+  }, [currentProject, currentProjectId, setCurrentProjectId, loadProjectData]);
 
-  // Create a function to sync current video editor state to project
-  const syncToProject = () => {
-    if (!currentProject) return;
+  // Auto-save when leaving the page if there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges && currentProjectId) {
+        event.preventDefault();
+        event.returnValue =
+          'You have unsaved changes. Are you sure you want to leave?';
 
-    const videoEditorData: VideoEditorProjectData = {
-      tracks: videoEditorStore.tracks,
-      timeline: videoEditorStore.timeline,
-      preview: videoEditorStore.preview,
-      playback: videoEditorStore.playback,
+        // Try to save before leaving
+        saveProjectData().catch(console.error);
+
+        return event.returnValue;
+      }
     };
 
-    // Calculate total duration from tracks
-    const maxDuration =
-      videoEditorStore.tracks.length > 0
-        ? Math.max(
-            ...videoEditorStore.tracks.map(
-              (track) => track.endFrame / videoEditorStore.timeline.fps,
-            ),
-          )
-        : 0;
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges, currentProjectId, saveProjectData]);
 
-    // Update the current project with new video editor data
-    updateCurrentProjectData({
-      videoEditor: videoEditorData,
-    });
-  };
-
-  // Set up periodic sync (optional - could be triggered by specific actions instead)
+  // Periodic auto-save for extra safety
   useEffect(() => {
-    if (!currentProject) return;
+    if (!isAutoSaveEnabled || !currentProjectId) return;
 
     const interval = setInterval(() => {
-      syncToProject();
-    }, 5000); // Sync every 5 seconds
+      if (hasUnsavedChanges) {
+        console.log('🔄 Periodic auto-save triggered');
+        saveProjectData().catch(console.error);
+      }
+    }, 30000); // Save every 30 seconds if there are changes
 
     return () => clearInterval(interval);
-  }, [currentProject, videoEditorStore.tracks.length]);
-
-  // Sync immediately when tracks change
-  useEffect(() => {
-    if (currentProject && hasLoadedProject.current) {
-      syncToProject();
-    }
-  }, [videoEditorStore.tracks.length]);
+  }, [isAutoSaveEnabled, currentProjectId, hasUnsavedChanges, saveProjectData]);
 
   return {
-    syncToProject,
-    hasLoadedProject: hasLoadedProject.current,
+    currentProject,
+    hasUnsavedChanges,
+    isAutoSaveEnabled,
+    saveProjectData,
+  };
+};
+
+/**
+ * Hook to manually save the current project
+ */
+export const useSaveProject = () => {
+  const saveProjectData = useVideoEditorStore((state) => state.saveProjectData);
+  const currentProjectId = useVideoEditorStore(
+    (state) => state.currentProjectId,
+  );
+  const hasUnsavedChanges = useVideoEditorStore(
+    (state) => state.hasUnsavedChanges,
+  );
+
+  const saveProject = async () => {
+    if (!currentProjectId) {
+      throw new Error('No project is currently open');
+    }
+
+    await saveProjectData();
+  };
+
+  return {
+    saveProject,
+    canSave: !!currentProjectId,
+    hasUnsavedChanges,
   };
 };

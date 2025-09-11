@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-inferrable-types */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
+  MediaLibraryItem,
   PlaybackState,
   PreviewState,
   TimelineState,
@@ -27,6 +28,7 @@ export interface ProjectMetadata {
 
 export interface VideoEditorProjectData {
   tracks: VideoTrack[];
+  mediaLibrary?: MediaLibraryItem[]; // Optional for backward compatibility
   timeline: TimelineState;
   preview: PreviewState;
   playback: PlaybackState;

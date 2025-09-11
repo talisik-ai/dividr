@@ -25,6 +25,7 @@ interface ProjectStore {
     updates: Partial<ProjectData['metadata']>,
   ) => void;
   updateCurrentProjectData: (updates: Partial<ProjectData>) => void;
+  syncVideoEditorState: () => Promise<void>;
 
   // Actions for project management
   initializeProjects: () => Promise<void>;
@@ -129,6 +130,12 @@ export const useProjectStore = create<ProjectStore>()(
         await projectService.createProject(newProject);
         await get().loadProjects();
 
+        // Set up VideoEditorStore for the new project
+        const { useVideoEditorStore } = await import('./VideoEditorStore');
+        const videoEditorStore = useVideoEditorStore.getState();
+        videoEditorStore.reset();
+        videoEditorStore.setCurrentProjectId(newProject.id);
+
         return newProject.id;
       } catch (error) {
         console.error('Failed to create project:', error);
@@ -152,6 +159,11 @@ export const useProjectStore = create<ProjectStore>()(
 
         // Set as current project
         set({ currentProject: project });
+
+        // Load project data into VideoEditorStore
+        const { useVideoEditorStore } = await import('./VideoEditorStore');
+        const videoEditorStore = useVideoEditorStore.getState();
+        await videoEditorStore.loadProjectData(id);
 
         // Refresh project list to update lastOpenedAt
         await get().loadProjects();
@@ -322,12 +334,34 @@ export const useProjectStore = create<ProjectStore>()(
       }
     },
 
-    reset: () =>
+    syncVideoEditorState: async () => {
+      try {
+        const { useVideoEditorStore } = await import('./VideoEditorStore');
+        const videoEditorStore = useVideoEditorStore.getState();
+
+        if (videoEditorStore.currentProjectId) {
+          await videoEditorStore.saveProjectData();
+          await get().loadProjects();
+        }
+      } catch (error) {
+        console.error('Failed to sync video editor state:', error);
+      }
+    },
+
+    reset: () => {
       set({
         currentProject: null,
         projects: [],
         isLoading: false,
         isInitialized: false,
-      }),
+      });
+
+      // Also reset VideoEditorStore
+      import('./VideoEditorStore').then(({ useVideoEditorStore }) => {
+        const videoEditorStore = useVideoEditorStore.getState();
+        videoEditorStore.reset();
+        videoEditorStore.setCurrentProjectId(null);
+      });
+    },
   })),
 );

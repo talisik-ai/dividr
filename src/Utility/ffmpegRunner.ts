@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Renderer-side FFmpeg wrapper using IPC to main process
-import { VideoEditJob } from '../schema/ffmpegConfig';
+import { VideoEditJob } from '@/Schema/ffmpegConfig';
 
 // Progress interface for FFmpeg output
 export interface FfmpegProgress {
