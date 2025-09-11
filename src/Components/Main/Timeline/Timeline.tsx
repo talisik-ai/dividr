@@ -276,8 +276,8 @@ export const Timeline: React.FC<TimelineProps> = ({ className }) => {
             ref={tracksRef}
             className={cn(
               'relative overflow-auto transition-colors duration-200',
-              dropActive &&
-                'bg-blue-500/10 border-2 border-dashed border-blue-500',
+              // dropActive &&
+              //   'bg-blue-500/10 border-2 border-dashed border-blue-500',
             )}
             onClick={handleTimelineClick}
             onDragOver={handleDragOver}
