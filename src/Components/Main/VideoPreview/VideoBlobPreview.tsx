@@ -216,7 +216,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           video.pause();
         }
       }
-      video.volume = playback.muted ? 0 : Math.min(playback.volume, 1);
+      // Check if current track is muted OR global playback is muted
+      const isTrackMuted = activeVideoTrack?.muted === true;
+      const shouldMute = playback.muted || isTrackMuted;
+      video.volume = shouldMute ? 0 : Math.min(playback.volume, 1);
       video.playbackRate = Math.max(0.25, Math.min(playback.playbackRate, 4));
     } catch (err) {
       console.warn('Video sync error:', err);
@@ -228,6 +231,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     playback.playbackRate,
     activeVideoTrack?.id, // <-- add this
     activeVideoTrack?.previewUrl, // (optional, for extra safety)
+    activeVideoTrack?.muted, // Track mute state
   ]);
 
   // Sync timeline to video frames

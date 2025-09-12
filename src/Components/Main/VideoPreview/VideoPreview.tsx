@@ -465,10 +465,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         }
 
         // Sync volume and playback rate
-        videoElement.element.volume = playback.muted
-          ? 0
-          : playback.volume * 0.8;
-        videoElement.element.muted = playback.muted;
+        // Check if current track is muted OR global playback is muted
+        const isTrackMuted = track.muted === true;
+        const shouldMute = playback.muted || isTrackMuted;
+        videoElement.element.volume = shouldMute ? 0 : playback.volume * 0.8;
+        videoElement.element.muted = shouldMute;
         videoElement.element.playbackRate = playback.playbackRate;
       }
     });

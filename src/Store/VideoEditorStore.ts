@@ -24,6 +24,7 @@ export interface VideoTrack {
   volume?: number;
   visible: boolean;
   locked: boolean;
+  muted?: boolean; // For audio tracks
   color: string;
   subtitleText?: string; // For subtitle tracks, store the actual subtitle content
 }
@@ -147,6 +148,8 @@ interface VideoEditorStore {
   duplicateTrack: (trackId: string) => string;
   splitTrack: (trackId: string, frame: number) => void;
   splitAtPlayhead: () => boolean;
+  toggleTrackVisibility: (trackId: string) => void;
+  toggleTrackMute: (trackId: string) => void;
 
   // Media Library Actions
   addToMediaLibrary: (item: Omit<MediaLibraryItem, 'id'>) => string;
@@ -843,6 +846,10 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         endFrame: startFrame + duration,
         sourceStartTime: trackData.sourceStartTime || 0, // Default to beginning of source file
         color: getTrackColor(get().tracks.length),
+        muted:
+          trackData.type === 'audio' || trackData.type === 'video'
+            ? false
+            : undefined, // Initialize muted for audio and video tracks
       };
 
       set((state) => ({
@@ -1123,6 +1130,28 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         `✅ Successfully split ${splitCount} track(s) at frame ${currentFrame}`,
       );
       return true;
+    },
+
+    toggleTrackVisibility: (trackId) => {
+      set((state) => ({
+        tracks: state.tracks.map((track) =>
+          track.id === trackId ? { ...track, visible: !track.visible } : track,
+        ),
+      }));
+
+      // Mark as having unsaved changes
+      get().markUnsavedChanges();
+    },
+
+    toggleTrackMute: (trackId) => {
+      set((state) => ({
+        tracks: state.tracks.map((track) =>
+          track.id === trackId ? { ...track, muted: !track.muted } : track,
+        ),
+      }));
+
+      // Mark as having unsaved changes
+      get().markUnsavedChanges();
     },
 
     // Playback Actions

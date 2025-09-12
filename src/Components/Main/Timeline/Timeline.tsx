@@ -11,6 +11,7 @@ import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 import { TimelineControls } from './TimelineControls';
 import { TimelinePlayhead } from './TimelinePlayhead';
 import { TimelineRuler } from './TimelineRuler';
+import { TimelineTrackControllers } from './TimelineTrackControllers';
 import { TimelineTracks } from './TimelineTracks';
 
 interface TimelineProps {
@@ -22,7 +23,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const timelineRef = useRef<HTMLDivElement>(null);
     const tracksRef = useRef<HTMLDivElement>(null);
     const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const [dropActive, setDropActive] = useState(false);
+    const [, setDropActive] = useState(false);
 
     // Selectively subscribe to store to prevent unnecessary re-renders
     const timeline = useVideoEditorStore((state) => state.timeline);
@@ -279,71 +280,78 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         {/* Timeline Controls */}
         <TimelineControls />
 
-        {/* Timeline Content Area */}
-        <div className="flex flex-col flex-1 relative overflow-hidden">
-          {/* Timeline Ruler - Fixed at top but scrolls horizontally */}
-          <div className="relative overflow-hidden z-10">
-            <TimelineRuler
-              frameWidth={frameWidth}
-              totalFrames={timeline.totalFrames}
-              scrollX={timeline.scrollX}
-              fps={timeline.fps}
-              tracks={tracks}
-              inPoint={timeline.inPoint}
-              outPoint={timeline.outPoint}
-              onClick={handleTimelineClick}
-            />
-          </div>
-
-          {/* Timeline Tracks Area */}
-          <div className="flex-1 relative overflow-visible">
-            <div
-              ref={tracksRef}
-              className={cn(
-                'relative overflow-auto transition-colors duration-200',
-                // dropActive &&
-                //   'bg-blue-500/10 border-2 border-dashed border-blue-500',
-              )}
-              onClick={handleTimelineClick}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onScroll={(e) => {
-                // Throttled scroll handling for better performance with many tracks
-                const scrollLeft = (e.target as HTMLElement).scrollLeft;
-
-                // Clear previous timeout
-                if (scrollTimeoutRef.current) {
-                  clearTimeout(scrollTimeoutRef.current);
-                }
-
-                // Set immediate update for smooth playhead movement
-                setScrollX(scrollLeft);
-
-                // Throttle additional updates for performance
-                scrollTimeoutRef.current = setTimeout(() => {
-                  setScrollX(scrollLeft);
-                }, 16); // ~60fps throttling
-              }}
-            >
-              <TimelineTracks
-                tracks={tracks}
+        <div className="flex flex-1">
+          {/* Timeline Track Controllers */}
+          <TimelineTrackControllers
+            tracks={tracks}
+            className="w-fit flex-shrink-0"
+          />
+          {/* Timeline Content Area */}
+          <div className="flex flex-col flex-1 relative overflow-hidden">
+            {/* Timeline Ruler - Fixed at top but scrolls horizontally */}
+            <div className="relative overflow-hidden z-10">
+              <TimelineRuler
                 frameWidth={frameWidth}
-                timelineWidth={timelineWidth}
+                totalFrames={timeline.totalFrames}
                 scrollX={timeline.scrollX}
-                selectedTrackIds={timeline.selectedTrackIds}
-                onTrackSelect={setSelectedTracks}
+                fps={timeline.fps}
+                tracks={tracks}
+                inPoint={timeline.inPoint}
+                outPoint={timeline.outPoint}
+                onClick={handleTimelineClick}
               />
             </div>
 
-            {/* Global Playhead - spans across ruler and tracks */}
-            <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-[999]">
-              <TimelinePlayhead
-                currentFrame={timeline.currentFrame}
-                frameWidth={frameWidth}
-                scrollX={timeline.scrollX}
-                visible={timeline.playheadVisible}
-              />
+            {/* Timeline Tracks Area */}
+            <div className="flex-1 relative overflow-visible">
+              <div
+                ref={tracksRef}
+                className={cn(
+                  'relative overflow-auto transition-colors duration-200',
+                  // dropActive &&
+                  //   'bg-blue-500/10 border-2 border-dashed border-blue-500',
+                )}
+                onClick={handleTimelineClick}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onScroll={(e) => {
+                  // Throttled scroll handling for better performance with many tracks
+                  const scrollLeft = (e.target as HTMLElement).scrollLeft;
+
+                  // Clear previous timeout
+                  if (scrollTimeoutRef.current) {
+                    clearTimeout(scrollTimeoutRef.current);
+                  }
+
+                  // Set immediate update for smooth playhead movement
+                  setScrollX(scrollLeft);
+
+                  // Throttle additional updates for performance
+                  scrollTimeoutRef.current = setTimeout(() => {
+                    setScrollX(scrollLeft);
+                  }, 16); // ~60fps throttling
+                }}
+              >
+                <TimelineTracks
+                  tracks={tracks}
+                  frameWidth={frameWidth}
+                  timelineWidth={timelineWidth}
+                  scrollX={timeline.scrollX}
+                  selectedTrackIds={timeline.selectedTrackIds}
+                  onTrackSelect={setSelectedTracks}
+                />
+              </div>
+
+              {/* Global Playhead - spans across ruler and tracks */}
+              <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-[999]">
+                <TimelinePlayhead
+                  currentFrame={timeline.currentFrame}
+                  frameWidth={frameWidth}
+                  scrollX={timeline.scrollX}
+                  visible={timeline.playheadVisible}
+                />
+              </div>
             </div>
           </div>
         </div>
