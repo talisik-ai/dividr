@@ -44,9 +44,25 @@ interface MediaItem {
   trackId?: string;
 }
 
+// Stable utility function outside component to prevent re-renders
+const getTabLabel = (tabType: string, count: number) => {
+  switch (tabType) {
+    case 'videos':
+      return `Video Files (${count})`;
+    case 'audio':
+      return `Audio Files (${count})`;
+    case 'images':
+      return `Image Files (${count})`;
+    case 'subtitles':
+      return `Subtitle Files (${count})`;
+    default:
+      return `Uploaded Files (${count})`;
+  }
+};
+
 export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
   ({ className }) => {
-    // Selective store subscriptions to prevent unnecessary re-renders
+    // Selective store subscriptions - completely isolated from timeline state
     const importMediaFromDialog = useVideoEditorStore(
       (state) => state.importMediaFromDialog,
     );
@@ -61,7 +77,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
     const removeFromMediaLibrary = useVideoEditorStore(
       (state) => state.removeFromMediaLibrary,
     );
-    const timeline = useVideoEditorStore((state) => state.timeline);
+    // Access store directly when needed (non-reactive)
     const [dragActive, setDragActive] = useState(false);
     // Removed setUploadProgress as it's no longer needed
     const [draggedMediaId, setDraggedMediaId] = useState<string | null>(null);
@@ -365,21 +381,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
       );
     });
 
-    const getTabLabel = (tabType: string, count: number) => {
-      switch (tabType) {
-        case 'videos':
-          return `Video Files (${count})`;
-        case 'audio':
-          return `Audio Files (${count})`;
-        case 'images':
-          return `Image Files (${count})`;
-        case 'subtitles':
-          return `Subtitle Files (${count})`;
-        default:
-          return `Uploaded Files (${count})`;
-      }
-    };
-
     // Individual File Item Component - memoized to prevent unnecessary re-renders
     const FileItem: React.FC<{ file: MediaItem }> = React.memo(
       ({ file }) => (
@@ -403,8 +404,10 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
             )}
             onClick={async () => {
               if (!file.isOnTimeline) {
-                // Add to timeline at current playhead position
-                await addTrackFromMediaLibrary(file.id, timeline.currentFrame);
+                // Add to timeline at current playhead position - get frame directly when needed
+                const currentFrame =
+                  useVideoEditorStore.getState().timeline.currentFrame;
+                await addTrackFromMediaLibrary(file.id, currentFrame);
               }
             }}
             title={
@@ -505,7 +508,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
           </div>
         </div>
       ),
-      [getTabLabel],
+      [],
     );
 
     // Create a stable mapping of sources to track IDs - only changes when tracks are added/removed
