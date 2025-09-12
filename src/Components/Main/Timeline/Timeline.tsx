@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
+import { ProjectThumbnailSetter } from './ProjectThumbnailSetter';
 import { TimelineControls } from './TimelineControls';
 import { TimelinePlayhead } from './TimelinePlayhead';
 import { TimelineRuler } from './TimelineRuler';
@@ -286,6 +287,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             tracks={tracks}
             className="w-fit flex-shrink-0"
           />
+
+          {/* Project Thumbnail Setter - Only show if there are video tracks */}
+          {tracks.some((track) => track.type === 'video') && (
+            <ProjectThumbnailSetter />
+          )}
           {/* Timeline Content Area */}
           <div className="flex flex-col flex-1 relative overflow-hidden">
             {/* Timeline Ruler - Fixed at top but scrolls horizontally */}

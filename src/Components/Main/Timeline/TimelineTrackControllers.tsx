@@ -15,8 +15,6 @@ interface TrackControllerRowProps {
 
 const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
   ({ rowDef, tracks }) => {
-    const { toggleTrackVisibility, toggleTrackMute } = useVideoEditorStore();
-
     // Check if any tracks in this row are visible/audible
     const hasVisibleTracks = tracks.some((track) => track.visible);
     const hasAudibleTracks = tracks.some(
@@ -25,20 +23,22 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     );
 
     const handleToggleVisibility = useCallback(() => {
-      // Toggle visibility for all tracks in this row
+      // Toggle visibility for all tracks in this row using non-reactive access
+      const { toggleTrackVisibility } = useVideoEditorStore.getState();
       tracks.forEach((track) => {
         toggleTrackVisibility(track.id);
       });
-    }, [tracks, toggleTrackVisibility]);
+    }, [tracks]);
 
     const handleToggleMute = useCallback(() => {
-      // Toggle mute for audio and video tracks in this row
+      // Toggle mute for audio and video tracks in this row using non-reactive access
+      const { toggleTrackMute } = useVideoEditorStore.getState();
       tracks
         .filter((track) => track.type === 'audio' || track.type === 'video')
         .forEach((track) => {
           toggleTrackMute(track.id);
         });
-    }, [tracks, toggleTrackMute]);
+    }, [tracks]);
 
     return (
       <div className="flex items-center justify-between px-2 mb-2 sm:h-6 md:h-8 lg:h-12 border-b border-border/20">
@@ -97,6 +97,22 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       </div>
     );
   },
+  (prevProps, nextProps) => {
+    // Custom comparison - only re-render if tracks data actually changes
+    if (prevProps.rowDef.id !== nextProps.rowDef.id) return false;
+    if (prevProps.tracks.length !== nextProps.tracks.length) return false;
+
+    // Deep check on relevant track properties that affect the UI
+    return prevProps.tracks.every((prevTrack, index) => {
+      const nextTrack = nextProps.tracks[index];
+      return (
+        prevTrack.id === nextTrack.id &&
+        prevTrack.visible === nextTrack.visible &&
+        prevTrack.muted === nextTrack.muted &&
+        prevTrack.type === nextTrack.type
+      );
+    });
+  },
 );
 
 interface TimelineTrackControllersProps {
@@ -105,37 +121,55 @@ interface TimelineTrackControllersProps {
 }
 
 export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
-  React.memo(({ tracks, className }) => {
-    // Group tracks by their designated rows
-    const tracksByRow = React.useMemo(() => {
-      const grouped: Record<string, VideoTrack[]> = {};
+  React.memo(
+    ({ tracks, className }) => {
+      // Group tracks by their designated rows
+      const tracksByRow = React.useMemo(() => {
+        const grouped: Record<string, VideoTrack[]> = {};
 
-      TRACK_ROWS.forEach((row) => {
-        grouped[row.id] = tracks.filter((track) =>
-          row.trackTypes.includes(track.type),
+        TRACK_ROWS.forEach((row) => {
+          grouped[row.id] = tracks.filter((track) =>
+            row.trackTypes.includes(track.type),
+          );
+        });
+
+        return grouped;
+      }, [tracks]);
+
+      return (
+        <div className={cn('', className)}>
+          {/* Header spacer to align with timeline ruler */}
+          <div className="h-8 border-b border-border/20 flex items-center px-2">
+            <span className="text-xs font-medium text-muted-foreground"></span>
+          </div>
+
+          {/* Track controller rows */}
+          <div className="flex flex-col items-center">
+            {TRACK_ROWS.map((rowDef) => (
+              <TrackControllerRow
+                key={rowDef.id}
+                rowDef={rowDef}
+                tracks={tracksByRow[rowDef.id] || []}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    },
+    (prevProps, nextProps) => {
+      // Custom comparison - only re-render if tracks or className change
+      if (prevProps.className !== nextProps.className) return false;
+      if (prevProps.tracks.length !== nextProps.tracks.length) return false;
+
+      // Deep check on relevant track properties that affect controllers
+      return prevProps.tracks.every((prevTrack, index) => {
+        const nextTrack = nextProps.tracks[index];
+        return (
+          prevTrack.id === nextTrack.id &&
+          prevTrack.visible === nextTrack.visible &&
+          prevTrack.muted === nextTrack.muted &&
+          prevTrack.type === nextTrack.type
         );
       });
-
-      return grouped;
-    }, [tracks]);
-
-    return (
-      <div className={cn('', className)}>
-        {/* Header spacer to align with timeline ruler */}
-        <div className="h-8 border-b border-border/20 flex items-center px-2">
-          <span className="text-xs font-medium text-muted-foreground"></span>
-        </div>
-
-        {/* Track controller rows */}
-        <div className="flex flex-col items-center">
-          {TRACK_ROWS.map((rowDef) => (
-            <TrackControllerRow
-              key={rowDef.id}
-              rowDef={rowDef}
-              tracks={tracksByRow[rowDef.id] || []}
-            />
-          ))}
-        </div>
-      </div>
-    );
-  });
+    },
+  );
