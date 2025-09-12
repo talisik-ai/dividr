@@ -790,13 +790,14 @@ function handleMultipleInputsNoConcatWorkflow(
 // Step handlers
 // -------------------------
 const steps: ((job: VideoEditJob, cmd: CommandParts) => void)[] = [
+  handleThreads,
+  handlePreset,
   handleInputs,
   handleTrim,
   handleCrop,
   handleSubtitles,
   handleAspect,
   handleReplaceAudio,
-  handlePreset,
 ];
 
 function escapePath(filePath: string) {
@@ -876,6 +877,14 @@ function handlePreset(job: VideoEditJob, cmd: CommandParts) {
   console.log(`🚀 Applied encoding preset: ${job.operations.preset}`);
 }
 
+function handleThreads(job: VideoEditJob, cmd: CommandParts) {
+  //if(!job.operations.threads) return;
+
+  cmd.args.push('-threads', "8");
+
+  console.log(`🚀 Applied thread limit: ${job.operations.threads}`);
+  
+}
 // -------------------------
 // Main builder
 // -------------------------
