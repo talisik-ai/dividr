@@ -7,7 +7,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/Components/sub/ui/Select';
-import { useTimelineDuration } from '@/Hooks/useTimelineDuration';
 import {
   CopyPlus,
   Maximize,
@@ -24,95 +23,193 @@ import React, { useCallback, useMemo } from 'react';
 // eslint-disable-next-line import/no-unresolved
 import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 
-export const TimelineControls: React.FC = React.memo(() => {
-  const {
-    playback,
-    timeline,
-    tracks,
-    setCurrentFrame,
-    togglePlayback,
-    stop,
-    setPlaybackRate,
-    splitAtPlayhead,
-  } = useVideoEditorStore();
-  const duration = useTimelineDuration();
+// Separate component for time display that only re-renders when currentFrame changes
+const TimeDisplay: React.FC = React.memo(() => {
+  const currentFrame = useVideoEditorStore(
+    (state) => state.timeline.currentFrame,
+  );
+  const fps = useVideoEditorStore((state) => state.timeline.fps);
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  const totalFrames = useVideoEditorStore(
+    (state) => state.timeline.totalFrames,
+  );
 
-  // Helper: Snap to next segment if in blank
-  const snapToNextSegmentIfBlank = useCallback(() => {
-    const isInBlank = !tracks.some(
-      (track) =>
-        track.type === 'video' &&
-        track.visible &&
-        track.previewUrl &&
-        timeline.currentFrame >= track.startFrame &&
-        timeline.currentFrame < track.endFrame,
-    );
-    if (isInBlank) {
-      const nextSegment = tracks
-        .filter(
-          (track) =>
-            track.type === 'video' &&
-            track.visible &&
-            track.previewUrl &&
-            track.startFrame > timeline.currentFrame,
-        )
-        .sort((a, b) => a.startFrame - b.startFrame)[0];
-      if (nextSegment) {
-        setCurrentFrame(nextSegment.startFrame);
-        return true;
-      }
-    }
-    return false;
-  }, [tracks, timeline.currentFrame, setCurrentFrame]);
+  const formatTime = useCallback(
+    (frame: number) => {
+      const totalSeconds = frame / fps;
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = Math.floor(totalSeconds % 60);
+      const frames = Math.floor((totalSeconds % 1) * fps);
+      return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
+    },
+    [fps],
+  );
 
-  // Wrap the play toggle
-  const handlePlayToggle = useCallback(() => {
-    if (!playback.isPlaying) {
-      const snapped = snapToNextSegmentIfBlank();
-      if (snapped) {
-        setTimeout(() => {
-          togglePlayback();
-        }, 0);
-        return;
-      }
-    }
-    togglePlayback();
-  }, [playback.isPlaying, snapToNextSegmentIfBlank, togglePlayback]);
-
-  // Calculate effective end frame considering all tracks - memoized
   const effectiveEndFrame = useMemo(() => {
     return tracks.length > 0
-      ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
-      : timeline.totalFrames;
-  }, [tracks, timeline.totalFrames]);
+      ? Math.max(...tracks.map((track) => track.endFrame), totalFrames)
+      : totalFrames;
+  }, [tracks, totalFrames]);
 
-  const formatTime = (frame: number) => {
-    const totalSeconds = frame / timeline.fps;
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = Math.floor(totalSeconds % 60);
-    const frames = Math.floor((totalSeconds % 1) * timeline.fps);
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
-  };
+  const formattedDuration = formatTime(effectiveEndFrame);
 
   return (
-    <div className="h-10 grid grid-cols-[364px_1fr] px-4 border-t border-accent">
-      {/* Playback Controls */}
-      <div className="flex items-center gap-6">
-        <Button variant="native" onClick={splitAtPlayhead} title="Split">
-          <SplitSquareHorizontal />
-        </Button>
-        <Button variant="native" onClick={stop} title="Duplicate">
-          <CopyPlus />
-        </Button>
-        <Button variant="native" onClick={stop} title="Duplicate">
-          <Trash />
-        </Button>
-      </div>
+    <div className="text-xs p-2 text-muted-foreground font-semibold min-w-[140px] text-center">
+      {formatTime(currentFrame)} / {formattedDuration}
+    </div>
+  );
+});
 
-      <div className="flex items-center flex-1 justify-center relative">
-        {/* Additional Controls */}
-        <div className="flex justify-start gap-2 w-full">
-          {/* Loop Toggle 
+// Separate component for play/pause button that only re-renders when isPlaying changes
+const PlayPauseButton: React.FC<{
+  onPlayToggle: () => void;
+}> = React.memo(({ onPlayToggle }) => {
+  const isPlaying = useVideoEditorStore((state) => state.playback.isPlaying);
+
+  return (
+    <Button
+      onClick={onPlayToggle}
+      title={isPlaying ? 'Pause' : 'Play'}
+      variant="native"
+      size="icon"
+    >
+      {isPlaying ? (
+        <Pause className="fill-zinc-900 dark:fill-zinc-100" />
+      ) : (
+        <Play className="fill-zinc-900 dark:fill-zinc-100" />
+      )}
+    </Button>
+  );
+});
+
+// Separate component for playback rate selector
+const PlaybackRateSelector: React.FC = React.memo(() => {
+  const playbackRate = useVideoEditorStore(
+    (state) => state.playback.playbackRate,
+  );
+  const setPlaybackRate = useVideoEditorStore((state) => state.setPlaybackRate);
+
+  return (
+    <div className="flex items-center justify-center gap-2">
+      <label className="text-xs">Speed:</label>
+      <Select
+        value={playbackRate.toString()}
+        onValueChange={(value) => setPlaybackRate(Number(value))}
+      >
+        <SelectTrigger variant="underline" className="text-xs w-[50px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="0.25">0.25x</SelectItem>
+          <SelectItem value="0.5">0.5x</SelectItem>
+          <SelectItem value="1">1x</SelectItem>
+          <SelectItem value="1.5">1.5x</SelectItem>
+          <SelectItem value="2">2x</SelectItem>
+          <SelectItem value="4">4x</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+});
+
+export const TimelineControls: React.FC = React.memo(
+  () => {
+    // NO subscriptions at all - everything accessed non-reactively when needed
+
+    // Get current frame non-reactively
+    const getCurrentFrame = useCallback(() => {
+      return useVideoEditorStore.getState().timeline.currentFrame;
+    }, []);
+
+    // Get other values non-reactively when needed
+    const getEffectiveEndFrame = useCallback(() => {
+      const { tracks, timeline } = useVideoEditorStore.getState();
+      return tracks.length > 0
+        ? Math.max(
+            ...tracks.map((track) => track.endFrame),
+            timeline.totalFrames,
+          )
+        : timeline.totalFrames;
+    }, []);
+
+    // Helper: Snap to next segment if in blank
+    const snapToNextSegmentIfBlank = useCallback(() => {
+      const currentFrame = getCurrentFrame();
+      const { tracks } = useVideoEditorStore.getState();
+      const isInBlank = !tracks.some(
+        (track) =>
+          track.type === 'video' &&
+          track.visible &&
+          track.previewUrl &&
+          currentFrame >= track.startFrame &&
+          currentFrame < track.endFrame,
+      );
+      if (isInBlank) {
+        const nextSegment = tracks
+          .filter(
+            (track) =>
+              track.type === 'video' &&
+              track.visible &&
+              track.previewUrl &&
+              track.startFrame > currentFrame,
+          )
+          .sort((a, b) => a.startFrame - b.startFrame)[0];
+        if (nextSegment) {
+          useVideoEditorStore
+            .getState()
+            .setCurrentFrame(nextSegment.startFrame);
+          return true;
+        }
+      }
+      return false;
+    }, [getCurrentFrame]);
+
+    // Wrap the play toggle - all non-reactive
+    const handlePlayToggle = useCallback(() => {
+      const { playback, togglePlayback } = useVideoEditorStore.getState();
+      if (!playback.isPlaying) {
+        const snapped = snapToNextSegmentIfBlank();
+        if (snapped) {
+          setTimeout(() => {
+            useVideoEditorStore.getState().togglePlayback();
+          }, 0);
+          return;
+        }
+      }
+      togglePlayback();
+    }, [snapToNextSegmentIfBlank]);
+
+    return (
+      <div className="h-10 grid grid-cols-[364px_1fr] px-4 border-t border-accent">
+        {/* Playback Controls */}
+        <div className="flex items-center gap-6">
+          <Button
+            variant="native"
+            onClick={() => useVideoEditorStore.getState().splitAtPlayhead()}
+            title="Split"
+          >
+            <SplitSquareHorizontal />
+          </Button>
+          <Button
+            variant="native"
+            onClick={() => useVideoEditorStore.getState().stop()}
+            title="Duplicate"
+          >
+            <CopyPlus />
+          </Button>
+          <Button
+            variant="native"
+            onClick={() => useVideoEditorStore.getState().stop()}
+            title="Duplicate"
+          >
+            <Trash />
+          </Button>
+        </div>
+
+        <div className="flex items-center flex-1 justify-center relative">
+          {/* Additional Controls */}
+          <div className="flex justify-start gap-2 w-full">
+            {/* Loop Toggle 
         <button
           onClick={toggleLoop}
           
@@ -121,28 +218,10 @@ export const TimelineControls: React.FC = React.memo(() => {
           🔁
         </button>
         */}
-          {/* Playback Rate */}
-          <div className="flex items-center justify-center gap-2">
-            <label className="text-xs">Speed:</label>
-            <Select
-              value={playback.playbackRate.toString()}
-              onValueChange={(value) => setPlaybackRate(Number(value))}
-            >
-              <SelectTrigger variant="underline" className="text-xs w-[50px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="0.25">0.25x</SelectItem>
-                <SelectItem value="0.5">0.5x</SelectItem>
-                <SelectItem value="1">1x</SelectItem>
-                <SelectItem value="1.5">1.5x</SelectItem>
-                <SelectItem value="2">2x</SelectItem>
-                <SelectItem value="4">4x</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            {/* Playback Rate */}
+            <PlaybackRateSelector />
 
-          {/* Volume Control 
+            {/* Volume Control 
         <div 
         className='flex items-center justify-center gap-2 border-none focus-none'>
           <button
@@ -169,11 +248,11 @@ export const TimelineControls: React.FC = React.memo(() => {
           </span>
         </div>
         */}
-        </div>
+          </div>
 
-        {/* Time Display */}
-        <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2">
-          {/* 
+          {/* Time Display */}
+          <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2">
+            {/* 
         <button
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
           title="Go to start"
@@ -181,43 +260,36 @@ export const TimelineControls: React.FC = React.memo(() => {
           <FaFastBackward />
         </button>
         */}
-          <Button
-            onClick={() =>
-              setCurrentFrame(Math.max(0, timeline.currentFrame - 1))
-            }
-            title="Previous frame"
-            variant="native"
-            size="icon"
-          >
-            <SkipBack />
-          </Button>
+            <Button
+              onClick={() =>
+                useVideoEditorStore
+                  .getState()
+                  .setCurrentFrame(Math.max(0, getCurrentFrame() - 1))
+              }
+              title="Previous frame"
+              variant="native"
+              size="icon"
+            >
+              <SkipBack />
+            </Button>
 
-          <Button
-            onClick={handlePlayToggle}
-            title={playback.isPlaying ? 'Pause' : 'Play'}
-            variant="native"
-            size="icon"
-          >
-            {playback.isPlaying ? (
-              <Pause className="fill-zinc-900 dark:fill-zinc-100" />
-            ) : (
-              <Play className="fill-zinc-900 dark:fill-zinc-100" />
-            )}
-          </Button>
+            <PlayPauseButton onPlayToggle={handlePlayToggle} />
 
-          <Button
-            onClick={() =>
-              setCurrentFrame(
-                Math.min(effectiveEndFrame - 1, timeline.currentFrame + 1),
-              )
-            }
-            title="Next frame"
-            variant="native"
-            size="icon"
-          >
-            <SkipForward />
-          </Button>
-          {/* 
+            <Button
+              onClick={() =>
+                useVideoEditorStore
+                  .getState()
+                  .setCurrentFrame(
+                    Math.min(getEffectiveEndFrame() - 1, getCurrentFrame() + 1),
+                  )
+              }
+              title="Next frame"
+              variant="native"
+              size="icon"
+            >
+              <SkipForward />
+            </Button>
+            {/* 
         <button
           onClick={() => setCurrentFrame(timeline.totalFrames - 1)}
           className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
@@ -226,26 +298,34 @@ export const TimelineControls: React.FC = React.memo(() => {
           <FaFastForward />
         </button>
         */}
-          <div className="text-xs p-2 text-muted-foreground font-semibold min-w-[140px] text-center">
-            {formatTime(timeline.currentFrame)} / {duration.formattedTime}
+            <TimeDisplay />
+          </div>
+
+          <div className="flex justify-end items-center gap-4 w-full">
+            <ElasticSlider
+              leftIcon={
+                <ZoomOut className="translate scale-x-[-1]" size={16} />
+              }
+              rightIcon={
+                <ZoomIn className="translate scale-x-[-1]" size={16} />
+              }
+              startingValue={500}
+              defaultValue={750}
+              maxValue={1000}
+              showLabel={false}
+              thickness={4}
+            />
+            <Button variant="native" size="icon">
+              <Maximize className="translate scale-x-[-1]" size={16} />
+            </Button>
           </div>
         </div>
-
-        <div className="flex justify-end items-center gap-4 w-full">
-          <ElasticSlider
-            leftIcon={<ZoomOut className="translate scale-x-[-1]" size={16} />}
-            rightIcon={<ZoomIn className="translate scale-x-[-1]" size={16} />}
-            startingValue={500}
-            defaultValue={750}
-            maxValue={1000}
-            showLabel={false}
-            thickness={4}
-          />
-          <Button variant="native" size="icon">
-            <Maximize className="translate scale-x-[-1]" size={16} />
-          </Button>
-        </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+  () => {
+    // Custom comparison - TimelineControls should never re-render based on props (it has none)
+    // This makes it completely stable except for internal state changes
+    return true;
+  },
+);

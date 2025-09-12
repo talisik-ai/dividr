@@ -1617,6 +1617,11 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           ...state,
           tracks: projectData.tracks || [],
           timeline: { ...state.timeline, ...projectData.timeline },
+          playback: {
+            ...state.playback,
+            ...(projectData.playback || {}),
+            isPlaying: false, // Always start paused when importing a project
+          },
           preview: { ...state.preview, ...projectData.preview },
           hasUnsavedChanges: false,
         }));
@@ -1643,7 +1648,11 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           tracks: videoEditor.tracks || [],
           mediaLibrary: (videoEditor as any).mediaLibrary || [], // Support for legacy projects
           timeline: { ...state.timeline, ...videoEditor.timeline },
-          playback: { ...state.playback, ...videoEditor.playback },
+          playback: {
+            ...state.playback,
+            ...videoEditor.playback,
+            isPlaying: false, // Always start paused when loading a project
+          },
           preview: { ...state.preview, ...videoEditor.preview },
           currentProjectId: projectId,
           hasUnsavedChanges: false,
