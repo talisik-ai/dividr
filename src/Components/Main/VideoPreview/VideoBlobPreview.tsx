@@ -30,13 +30,28 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     setCurrentFrame,
   } = useVideoEditorStore();
 
-  // Active video track
+  // Active video track for visual display (must be visible)
   const activeVideoTrack = React.useMemo(() => {
     try {
       return tracks.find(
         (track) =>
           track.type === 'video' &&
           track.visible &&
+          track.previewUrl &&
+          timeline.currentFrame >= track.startFrame &&
+          timeline.currentFrame < track.endFrame,
+      );
+    } catch {
+      return undefined;
+    }
+  }, [tracks, timeline.currentFrame]);
+
+  // Active video track for audio (doesn't need to be visible)
+  const activeAudioTrack = React.useMemo(() => {
+    try {
+      return tracks.find(
+        (track) =>
+          track.type === 'video' &&
           track.previewUrl &&
           timeline.currentFrame >= track.startFrame &&
           timeline.currentFrame < track.endFrame,
@@ -216,8 +231,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           video.pause();
         }
       }
-      // Check if current track is muted OR global playback is muted
-      const isTrackMuted = activeVideoTrack?.muted === true;
+      // Check if current audio track is muted OR global playback is muted
+      const isTrackMuted = activeAudioTrack?.muted === true;
       const shouldMute = playback.muted || isTrackMuted;
       video.volume = shouldMute ? 0 : Math.min(playback.volume, 1);
       video.playbackRate = Math.max(0.25, Math.min(playback.playbackRate, 4));
@@ -231,13 +246,13 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     playback.playbackRate,
     activeVideoTrack?.id, // <-- add this
     activeVideoTrack?.previewUrl, // (optional, for extra safety)
-    activeVideoTrack?.muted, // Track mute state
+    activeAudioTrack?.muted, // Track mute state (use audio track for muting)
   ]);
 
   // Sync timeline to video frames
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeVideoTrack) return;
+    if (!video || !activeAudioTrack) return;
 
     let handle: number;
     const fps = timeline.fps;
@@ -248,8 +263,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     ) => {
       if (!video.paused && playback.isPlaying) {
         const elapsedFrames =
-          (metadata.mediaTime - (activeVideoTrack.sourceStartTime || 0)) * fps +
-          activeVideoTrack.startFrame;
+          (metadata.mediaTime - (activeAudioTrack.sourceStartTime || 0)) * fps +
+          activeAudioTrack.startFrame;
         setCurrentFrame(Math.floor(elapsedFrames));
       }
       handle = video.requestVideoFrameCallback(step);
@@ -257,22 +272,22 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
     handle = video.requestVideoFrameCallback(step);
     return () => video.cancelVideoFrameCallback(handle);
-  }, [activeVideoTrack?.id, playback.isPlaying, timeline.fps, setCurrentFrame]);
+  }, [activeAudioTrack?.id, playback.isPlaying, timeline.fps, setCurrentFrame]);
 
   // Sync on scrubbing/seek (user interaction)
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeVideoTrack) return;
-    if (playback.isPlaying) return; // don’t fight playback
+    if (!video || !activeAudioTrack) return;
+    if (playback.isPlaying) return; // don't fight playback
 
     const relativeFrame = Math.max(
       0,
-      timeline.currentFrame - activeVideoTrack.startFrame,
+      timeline.currentFrame - activeAudioTrack.startFrame,
     );
     const trackTime = relativeFrame / timeline.fps;
-    const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+    const targetTime = (activeAudioTrack.sourceStartTime || 0) + trackTime;
     const clampedTargetTime = Math.max(
-      activeVideoTrack.sourceStartTime || 0,
+      activeAudioTrack.sourceStartTime || 0,
       Math.min(targetTime, video.duration || 0),
     );
 
@@ -284,7 +299,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         'for frame',
         timeline.currentFrame,
         'in track',
-        activeVideoTrack.id,
+        activeAudioTrack.id,
       );
       video.currentTime = clampedTargetTime;
     }
@@ -292,7 +307,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     timeline.currentFrame,
     timeline.fps,
     playback.isPlaying,
-    activeVideoTrack,
+    activeAudioTrack,
   ]);
 
   // Drag/drop
@@ -337,7 +352,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       className={cn(
         'relative overflow-hidden  rounded-lg',
         className,
-        activeVideoTrack ? 'bg-transparent' : 'bg-zinc-100 dark:bg-zinc-900',
+        activeAudioTrack ? 'bg-transparent' : 'bg-zinc-100 dark:bg-zinc-900',
       )}
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}
@@ -345,7 +360,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onDrop={handleDrop}
     >
       {/* Video */}
-      {activeVideoTrack && (
+      {activeAudioTrack && (
         <div
           className="absolute inset-0 flex items-center justify-center"
           style={{
@@ -354,16 +369,19 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             left: '50%',
             top: '50%',
             transform: 'translate(-50%, -50%)',
+            // Hide video visually if track is not visible, but keep element for audio
+            opacity: activeVideoTrack ? 1 : 0,
+            pointerEvents: activeVideoTrack ? 'auto' : 'none',
           }}
         >
           <video
             ref={videoRef}
-            key={activeVideoTrack.previewUrl}
+            key={activeAudioTrack.previewUrl}
             className="w-full h-full object-contain"
             playsInline
             controls={false}
             preload="metadata"
-            src={activeVideoTrack.previewUrl}
+            src={activeAudioTrack.previewUrl}
             onLoadedMetadata={handleLoadedMetadata}
           />
         </div>
@@ -419,7 +437,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       })()}
 
       {/* Placeholder */}
-      {!activeVideoTrack && tracks.length === 0 && (
+      {!activeAudioTrack && tracks.length === 0 && (
         <div
           className={cn(
             'absolute inset-0 flex flex-col gap-2 items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-all duration-200',
