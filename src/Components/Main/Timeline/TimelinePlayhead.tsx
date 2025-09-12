@@ -17,13 +17,13 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
       <>
         {/* Playhead line */}
         <div
-          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-[100] pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
+          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-30 pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
           style={{ left: left }}
         />
 
         {/* Playhead handle */}
         <div
-          className="absolute -top-6 pointer-events-none z-[101]"
+          className="absolute -top-6 pointer-events-none z-30"
           style={{
             left: left - 11,
             width: 24,
@@ -42,7 +42,7 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
 
         {/* Frame number indicator */}
         <div
-          className="absolute top-0.5 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-[102] pointer-events-none"
+          className="absolute top-0.5 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-30 pointer-events-none"
           style={{ left: left + 8 }}
         >
           {currentFrame}

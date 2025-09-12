@@ -22,30 +22,29 @@ interface BasePanelProps {
  * Wrap your panel content with this component to ensure consistency
  * across all panels in the video editor interface.
  */
-export const BasePanel: React.FC<BasePanelProps> = ({
-  title,
-  description,
-  children,
-  className,
-}) => {
-  return (
-    <div className={cn('w-80 flex flex-col border-l border-accent', className)}>
-      {/* Header */}
-      <div className="px-4">
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-foreground text-sm truncate">
-            {title}
-          </h3>
-          {description && (
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">
-              {description}
-            </p>
-          )}
+export const BasePanel: React.FC<BasePanelProps> = React.memo(
+  ({ title, description, children, className }) => {
+    return (
+      <div
+        className={cn('w-80 flex flex-col border-l border-accent', className)}
+      >
+        {/* Header */}
+        <div className="px-4">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-foreground text-sm truncate">
+              {title}
+            </h3>
+            {description && (
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                {description}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Content with consistent padding */}
-      <div className="flex-1 overflow-hidden p-4">{children}</div>
-    </div>
-  );
-};
+        {/* Content with consistent padding */}
+        <div className="flex-1 overflow-hidden p-4">{children}</div>
+      </div>
+    );
+  },
+);
