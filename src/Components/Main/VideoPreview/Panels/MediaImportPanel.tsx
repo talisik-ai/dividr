@@ -1,3 +1,4 @@
+import { Badge } from '@/Components/sub/ui/Badge';
 import { Button } from '@/Components/sub/ui/Button';
 import {
   Tabs,
@@ -6,7 +7,17 @@ import {
   TabsTrigger,
 } from '@/Components/sub/ui/Tabs';
 import { cn } from '@/Lib/utils';
-import { Download, GripVertical, X } from 'lucide-react';
+import {
+  Clock,
+  ClosedCaption,
+  Download,
+  File,
+  Image,
+  MoreHorizontal,
+  Music,
+  Video,
+  X,
+} from 'lucide-react';
 import React, { useCallback, useRef, useState } from 'react';
 import { useVideoEditorStore } from '../../../../Store/VideoEditorStore';
 import { BasePanel } from './BasePanel';
@@ -173,6 +184,22 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const formatDuration = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${Math.round(seconds)}s`;
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = Math.round(seconds % 60);
+      return remainingSeconds > 0
+        ? `${minutes}m ${remainingSeconds}s`
+        : `${minutes}m`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    }
+  };
+
   const isSubtitleFile = (fileName: string): boolean => {
     const subtitleExtensions = [
       '.srt',
@@ -188,12 +215,16 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     );
   };
 
-  const getFileIcon = (type: string, fileName?: string): string => {
-    if (type.startsWith('video/')) return '🎬';
-    if (type.startsWith('audio/')) return '🎵';
-    if (type.startsWith('image/')) return '🖼️';
-    if (fileName && isSubtitleFile(fileName)) return '💬';
-    return '📄';
+  const getFileIcon = (type: string, fileName?: string) => {
+    if (type.startsWith('video/'))
+      return <Video className="size-6 text-black" />;
+    if (type.startsWith('audio/'))
+      return <Music className="size-6 text-black" />;
+    if (type.startsWith('image/'))
+      return <Image className="size-6 text-black" />;
+    if (fileName && isSubtitleFile(fileName))
+      return <ClosedCaption className="size-6 text-black" />;
+    return <File className="size-6 text-black" />;
   };
 
   // Upload Area Component
@@ -236,72 +267,171 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   // These render functions are now integrated into the fileListContent
 
-  // File List Component
+  // Media Cover Component
+  const MediaCover: React.FC<{ file: MediaItem }> = ({ file }) => {
+    const isVideo = file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    const [hasError, setHasError] = useState(false);
+
+    if (isImage || isVideo) {
+      if (hasError) {
+        // Show fallback gradient with icon if media failed to load
+        return (
+          <div className="w-full h-full bg-gradient-to-br from-secondary via-blue-300/50 to-secondary rounded-md flex items-center justify-center text-muted-foreground relative">
+            {getFileIcon(file.type, file.name)}
+            {/* Duration badge for fallback state */}
+            {file.duration && (
+              <Badge className="absolute bottom-2 left-2 bg-black/50 text-white group-hover:opacity-0 transition-opacity duration-200">
+                <Clock
+                  className="-ms-0.5 opacity-60"
+                  size={12}
+                  aria-hidden="true"
+                />
+                {formatDuration(file.duration)}
+              </Badge>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div className="w-full h-full bg-muted rounded-md overflow-hidden relative">
+          {isImage ? (
+            <img
+              src={file.url}
+              alt={file.name}
+              className="w-full h-full object-cover"
+              loading="lazy"
+              onError={() => setHasError(true)}
+            />
+          ) : (
+            // For videos, create a video element to show first frame as thumbnail
+            <video
+              src={file.url}
+              className="w-full h-full object-cover"
+              muted
+              preload="metadata"
+              onError={() => setHasError(true)}
+              onLoadedMetadata={(e) => {
+                // Seek to 1 second to get a better thumbnail frame
+                const video = e.target as HTMLVideoElement;
+                video.currentTime = 1;
+              }}
+            />
+          )}
+
+          {/* Duration badge - only show for media with duration (videos/audio) */}
+          {file.duration && (
+            <Badge className="absolute bottom-2 left-2 bg-black/50 text-white group-hover:opacity-0 transition-opacity duration-200">
+              <Clock
+                className="-ms-0.5 opacity-60"
+                size={12}
+                aria-hidden="true"
+              />
+              {formatDuration(file.duration)}
+            </Badge>
+          )}
+        </div>
+      );
+    }
+
+    // Gradient cover for audio and subtitle files
+    return (
+      <div className="w-full h-full bg-gradient-to-br from-secondary via-blue-300/50 to-secondary rounded-md flex items-center justify-center text-muted-foreground relative">
+        {getFileIcon(file.type, file.name)}
+        {/* Duration badge for audio files */}
+        {file.duration && (
+          <Badge className="absolute bottom-2 left-2 bg-black/50 text-white group-hover:opacity-0 transition-opacity duration-200">
+            <Clock
+              className="-ms-0.5 opacity-60"
+              size={12}
+              aria-hidden="true"
+            />
+            {formatDuration(file.duration)}
+          </Badge>
+        )}
+      </div>
+    );
+  };
+
+  // File List Component with Card Layout
   const fileListContent = (files: MediaItem[], tabType: string) => (
     <div className="flex-1 overflow-auto">
       <div className="">
         <h4 className="text-xs font-semibold text-muted-foreground mb-3">
           {getTabLabel(tabType, files.length)}
         </h4>
-
-        <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-3">
           {files.map((file) => {
-            const isSubtitle =
-              file.type.startsWith('text/') || isSubtitleFile(file.name);
-
             return (
-              <div
-                key={file.id}
-                draggable={!file.isOnTimeline}
-                onDragStart={(e) => {
-                  if (!file.isOnTimeline) {
-                    handleMediaDragStart(e, file.id);
-                  } else {
-                    e.preventDefault();
+              <div key={file.id} className="flex flex-col space-y-2">
+                {/* Card Container */}
+                <div
+                  draggable={!file.isOnTimeline}
+                  onDragStart={(e) => {
+                    if (!file.isOnTimeline) {
+                      handleMediaDragStart(e, file.id);
+                    } else {
+                      e.preventDefault();
+                    }
+                  }}
+                  onDragEnd={handleMediaDragEnd}
+                  className={cn(
+                    'group relative h-[98px] rounded-md transition-all duration-200 overflow-hidden',
+                    !file.isOnTimeline && 'cursor-grab active:cursor-grabbing',
+                    file.isOnTimeline && 'cursor-default',
+                    draggedMediaId === file.id && 'opacity-50',
+                  )}
+                  onClick={async () => {
+                    if (!file.isOnTimeline) {
+                      // Add to timeline at current playhead position
+                      await addTrackFromMediaLibrary(
+                        file.id,
+                        timeline.currentFrame,
+                      );
+                    }
+                  }}
+                  title={
+                    file.isOnTimeline
+                      ? 'Already on timeline'
+                      : 'Click to add to timeline or drag to timeline position'
                   }
-                }}
-                onDragEnd={handleMediaDragEnd}
-                className={cn(
-                  'rounded-lg p-3 border transition-colors duration-200',
-                  !file.isOnTimeline && 'cursor-grab active:cursor-grabbing',
-                  file.isOnTimeline && 'cursor-default',
-                  isSubtitle
-                    ? 'bg-purple-500/10 border-purple-500/30 hover:bg-purple-500/20'
-                    : file.isOnTimeline
-                      ? 'bg-green-500/10 border-green-500/30 hover:bg-green-500/20'
-                      : 'bg-muted/50 border-border hover:bg-muted',
-                  draggedMediaId === file.id && 'opacity-50',
-                )}
-                onClick={async () => {
-                  if (!file.isOnTimeline) {
-                    // Add to timeline at current playhead position
-                    await addTrackFromMediaLibrary(
-                      file.id,
-                      timeline.currentFrame,
-                    );
-                  }
-                }}
-                title={
-                  file.isOnTimeline
-                    ? 'Already on timeline'
-                    : 'Click to add to timeline or drag to timeline position'
-                }
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3 flex-1 min-w-0">
-                    {!file.isOnTimeline && (
-                      <div className="text-muted-foreground hover:text-foreground cursor-grab">
-                        <GripVertical className="h-4 w-4" />
-                      </div>
-                    )}
-                    <div className="text-2xl">
-                      {getFileIcon(file.type, file.name)}
+                >
+                  {/* Media Cover/Thumbnail */}
+                  <MediaCover file={file} />
+
+                  {/* Hover overlay with actions only */}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <div className="absolute top-2 right-2 flex items-center space-x-1">
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Additional actions can be added here
+                        }}
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-white/80 hover:text-white hover:bg-white/20"
+                        title="More options"
+                      >
+                        <MoreHorizontal className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFile(file.id);
+                        }}
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-white/80 hover:text-red-400 hover:bg-red-500/20"
+                        title="Remove from media library"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground truncate">
-                        {file.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
+
+                    {/* Status info on hover */}
+                    <div className="absolute bottom-2 left-2">
+                      <p className="text-xs text-white/80">
                         {formatFileSize(file.size)}
                         {file.duration && ` • ${file.duration.toFixed(1)}s`}
                       </p>
@@ -317,18 +447,17 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                     </div>
                   </div>
 
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFile(file.id);
-                    }}
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive ml-2"
-                    title="Remove from media library"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+                  {/* Status indicator */}
+                  {file.isOnTimeline && (
+                    <div className="absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full"></div>
+                  )}
+                </div>
+
+                {/* Title at bottom */}
+                <div className="px-1">
+                  <p className="text-xs font-medium text-foreground truncate">
+                    {file.name}
+                  </p>
                 </div>
               </div>
             );
