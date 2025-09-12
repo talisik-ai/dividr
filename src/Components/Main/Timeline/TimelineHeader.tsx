@@ -1,7 +1,7 @@
 import React from 'react';
 import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 
-export const TimelineHeader: React.FC = () => {
+export const TimelineHeader: React.FC = React.memo(() => {
   const { timeline, setZoom, setFps } = useVideoEditorStore();
 
   return (
@@ -50,4 +50,4 @@ export const TimelineHeader: React.FC = () => {
       </div>
     </div>
   );
-};
+});

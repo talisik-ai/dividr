@@ -65,7 +65,7 @@ interface TrackItemProps {
 }
 
 export const TrackItem: React.FC<TrackItemProps> = React.memo(
-  ({ track, frameWidth, scrollX, isSelected, onSelect, onMove, onResize }) => {
+  ({ track, frameWidth, isSelected, onSelect, onMove, onResize }) => {
     const nodeRef = useRef<HTMLDivElement>(null);
     const [isResizing, setIsResizing] = useState<'left' | 'right' | false>(
       false,
@@ -241,6 +241,22 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       </>
     );
   },
+  (prevProps, nextProps) => {
+    // Custom equality check to prevent unnecessary re-renders
+    return (
+      prevProps.track.id === nextProps.track.id &&
+      prevProps.track.startFrame === nextProps.track.startFrame &&
+      prevProps.track.endFrame === nextProps.track.endFrame &&
+      prevProps.track.name === nextProps.track.name &&
+      prevProps.track.visible === nextProps.track.visible &&
+      prevProps.track.locked === nextProps.track.locked &&
+      prevProps.track.subtitleText === nextProps.track.subtitleText &&
+      prevProps.track.volume === nextProps.track.volume &&
+      prevProps.frameWidth === nextProps.frameWidth &&
+      prevProps.scrollX === nextProps.scrollX &&
+      prevProps.isSelected === nextProps.isSelected
+    );
+  },
 );
 
 interface TrackRowProps {
@@ -320,9 +336,6 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       },
       [rowDef.id, onDrop],
     );
-    {
-      /* border of time line tracks previously here */
-    }
 
     return (
       <div
@@ -386,142 +399,208 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       </div>
     );
   },
+  (prevProps, nextProps) => {
+    // Custom equality check for TrackRow
+    return (
+      prevProps.rowDef.id === nextProps.rowDef.id &&
+      prevProps.tracks.length === nextProps.tracks.length &&
+      prevProps.tracks.every((track, index) => {
+        const nextTrack = nextProps.tracks[index];
+        return (
+          track &&
+          nextTrack &&
+          track.id === nextTrack.id &&
+          track.startFrame === nextTrack.startFrame &&
+          track.endFrame === nextTrack.endFrame &&
+          track.visible === nextTrack.visible &&
+          track.locked === nextTrack.locked
+        );
+      }) &&
+      prevProps.frameWidth === nextProps.frameWidth &&
+      prevProps.timelineWidth === nextProps.timelineWidth &&
+      prevProps.scrollX === nextProps.scrollX &&
+      JSON.stringify(prevProps.selectedTrackIds) ===
+        JSON.stringify(nextProps.selectedTrackIds) &&
+      prevProps.allTracksCount === nextProps.allTracksCount
+    );
+  },
 );
 
-export const TimelineTracks: React.FC<TimelineTracksProps> = ({
-  tracks,
-  frameWidth,
-  timelineWidth,
-  scrollX,
-  selectedTrackIds,
-  onTrackSelect,
-}) => {
-  const {
-    moveTrack,
-    resizeTrack,
-    importMediaFromFiles,
-    importMediaFromDialog,
-  } = useVideoEditorStore();
+export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
+  ({
+    tracks,
+    frameWidth,
+    timelineWidth,
+    scrollX,
+    selectedTrackIds,
+    onTrackSelect,
+  }) => {
+    const {
+      moveTrack,
+      resizeTrack,
+      importMediaFromFiles,
+      importMediaFromDialog,
+    } = useVideoEditorStore();
 
-  const handleTrackSelect = useCallback(
-    (trackId: string, multiSelect = false) => {
-      if (multiSelect) {
-        const newSelection = selectedTrackIds.includes(trackId)
-          ? selectedTrackIds.filter((id) => id !== trackId)
-          : [...selectedTrackIds, trackId];
-        onTrackSelect(newSelection);
-      } else {
-        onTrackSelect([trackId]);
-      }
-    },
-    [selectedTrackIds, onTrackSelect],
-  );
-
-  const handleTrackMove = useCallback(
-    (trackId: string, newStartFrame: number) => {
-      moveTrack(trackId, newStartFrame);
-    },
-    [moveTrack],
-  );
-
-  const handleTrackResize = useCallback(
-    (trackId: string, newStartFrame?: number, newEndFrame?: number) => {
-      resizeTrack(trackId, newStartFrame, newEndFrame);
-    },
-    [resizeTrack],
-  );
-
-  const handleRowDrop = useCallback(
-    async (rowId: string, files: FileList) => {
-      //console.log(`🎯 Dropped ${files.length} files on ${rowId} row`);
-
-      // Filter files based on row type
-      const fileArray = Array.from(files);
-      const rowDef = TRACK_ROWS.find((row) => row.id === rowId);
-
-      if (!rowDef) return;
-
-      // Filter files that match the row's accepted types
-      const validFiles = fileArray.filter((file) => {
-        if (rowDef.trackTypes.includes('video')) {
-          return file.type.startsWith('video/');
+    const handleTrackSelect = useCallback(
+      (trackId: string, multiSelect = false) => {
+        if (multiSelect) {
+          const newSelection = selectedTrackIds.includes(trackId)
+            ? selectedTrackIds.filter((id) => id !== trackId)
+            : [...selectedTrackIds, trackId];
+          onTrackSelect(newSelection);
+        } else {
+          onTrackSelect([trackId]);
         }
-        if (rowDef.trackTypes.includes('audio')) {
-          return file.type.startsWith('audio/');
-        }
-        if (rowDef.trackTypes.includes('image')) {
-          return file.type.startsWith('image/');
-        }
-        return false;
-      });
+      },
+      [selectedTrackIds, onTrackSelect],
+    );
 
-      if (validFiles.length > 0) {
-        // Import files using the existing store method
-        await importMediaFromFiles(validFiles);
-      } else {
-        console.warn(
-          `No valid ${rowDef.trackTypes.join('/')} files found for ${rowId} row`,
+    const handleTrackMove = useCallback(
+      (trackId: string, newStartFrame: number) => {
+        moveTrack(trackId, newStartFrame);
+      },
+      [moveTrack],
+    );
+
+    const handleTrackResize = useCallback(
+      (trackId: string, newStartFrame?: number, newEndFrame?: number) => {
+        resizeTrack(trackId, newStartFrame, newEndFrame);
+      },
+      [resizeTrack],
+    );
+
+    const handleRowDrop = useCallback(
+      async (rowId: string, files: FileList) => {
+        // Filter files based on row type
+        const fileArray = Array.from(files);
+        const rowDef = TRACK_ROWS.find((row) => row.id === rowId);
+
+        if (!rowDef) return;
+
+        // Filter files that match the row's accepted types
+        const validFiles = fileArray.filter((file) => {
+          if (rowDef.trackTypes.includes('video')) {
+            return file.type.startsWith('video/');
+          }
+          if (rowDef.trackTypes.includes('audio')) {
+            return file.type.startsWith('audio/');
+          }
+          if (rowDef.trackTypes.includes('image')) {
+            return file.type.startsWith('image/');
+          }
+          return false;
+        });
+
+        if (validFiles.length > 0) {
+          // Import files using the existing store method
+          await importMediaFromFiles(validFiles);
+        } else {
+          console.warn(
+            `No valid ${rowDef.trackTypes.join('/')} files found for ${rowId} row`,
+          );
+        }
+      },
+      [importMediaFromFiles],
+    );
+
+    const handlePlaceholderClick = useCallback(async () => {
+      const result = await importMediaFromDialog();
+      if (result.success && result.importedFiles.length > 0) {
+        console.log(
+          'Files imported successfully from timeline placeholder:',
+          result.importedFiles,
         );
       }
-    },
-    [importMediaFromFiles],
-  );
+    }, [importMediaFromDialog]);
 
-  const handlePlaceholderClick = useCallback(async () => {
-    const result = await importMediaFromDialog();
-    if (result.success && result.importedFiles.length > 0) {
-      console.log(
-        'Files imported successfully from timeline placeholder:',
-        result.importedFiles,
-      );
-    }
-  }, [importMediaFromDialog]);
+    // Group tracks by their designated rows with subtitle optimization
+    const tracksByRow = useMemo(() => {
+      const grouped: Record<string, VideoTrack[]> = {};
 
-  // Group tracks by their designated rows with subtitle optimization
-  const tracksByRow = React.useMemo(() => {
-    const grouped: Record<string, VideoTrack[]> = {};
+      TRACK_ROWS.forEach((row) => {
+        grouped[row.id] = tracks.filter((track) =>
+          row.trackTypes.includes(track.type),
+        );
 
-    TRACK_ROWS.forEach((row) => {
-      grouped[row.id] = tracks.filter((track) =>
-        row.trackTypes.includes(track.type),
-      );
+        // Sort subtitle tracks by start time for better performance and visual organization
+        if (row.id === 'subtitle' && grouped[row.id].length > 0) {
+          grouped[row.id].sort((a, b) => a.startFrame - b.startFrame);
+        }
+      });
 
-      // Sort subtitle tracks by start time for better performance and visual organization
-      if (row.id === 'subtitle' && grouped[row.id].length > 0) {
-        grouped[row.id].sort((a, b) => a.startFrame - b.startFrame);
-      }
-    });
+      // Tracks organized by row type for rendering
+      return grouped;
+    }, [tracks]);
 
-    // Tracks organized by row type for rendering
-    return grouped;
-  }, [tracks]);
+    // Memoize individual callback handlers to prevent re-creation
+    const memoizedHandlers = useMemo(
+      () => ({
+        onTrackSelect: (trackId: string) => handleTrackSelect(trackId),
+        onTrackMove: handleTrackMove,
+        onTrackResize: handleTrackResize,
+        onDrop: handleRowDrop,
+        onPlaceholderClick: handlePlaceholderClick,
+      }),
+      [
+        handleTrackSelect,
+        handleTrackMove,
+        handleTrackResize,
+        handleRowDrop,
+        handlePlaceholderClick,
+      ],
+    );
 
-  return (
-    <div
-      className="relative min-h-full overflow-visible"
-      style={{
-        width: timelineWidth,
-        minWidth: timelineWidth,
-      }}
-    >
-      {/* Render each track row */}
-      {TRACK_ROWS.map((rowDef) => (
-        <TrackRow
-          key={rowDef.id}
-          rowDef={rowDef}
-          tracks={tracksByRow[rowDef.id] || []}
-          frameWidth={frameWidth}
-          timelineWidth={timelineWidth}
-          scrollX={scrollX}
-          selectedTrackIds={selectedTrackIds}
-          onTrackSelect={(trackId) => handleTrackSelect(trackId)}
-          onTrackMove={handleTrackMove}
-          onTrackResize={handleTrackResize}
-          onDrop={handleRowDrop}
-          allTracksCount={tracks.length}
-          onPlaceholderClick={handlePlaceholderClick}
-        />
-      ))}
-    </div>
-  );
-};
+    return (
+      <div
+        className="relative min-h-full overflow-visible"
+        style={{
+          width: timelineWidth,
+          minWidth: timelineWidth,
+        }}
+      >
+        {/* Render each track row */}
+        {TRACK_ROWS.map((rowDef) => (
+          <TrackRow
+            key={rowDef.id}
+            rowDef={rowDef}
+            tracks={tracksByRow[rowDef.id] || []}
+            frameWidth={frameWidth}
+            timelineWidth={timelineWidth}
+            scrollX={scrollX}
+            selectedTrackIds={selectedTrackIds}
+            onTrackSelect={memoizedHandlers.onTrackSelect}
+            onTrackMove={memoizedHandlers.onTrackMove}
+            onTrackResize={memoizedHandlers.onTrackResize}
+            onDrop={memoizedHandlers.onDrop}
+            allTracksCount={tracks.length}
+            onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
+          />
+        ))}
+      </div>
+    );
+  },
+  (prevProps, nextProps) => {
+    // Custom equality check for TimelineTracks
+    return (
+      prevProps.tracks.length === nextProps.tracks.length &&
+      prevProps.tracks.every((track, index) => {
+        const nextTrack = nextProps.tracks[index];
+        return (
+          track &&
+          nextTrack &&
+          track.id === nextTrack.id &&
+          track.startFrame === nextTrack.startFrame &&
+          track.endFrame === nextTrack.endFrame &&
+          track.visible === nextTrack.visible &&
+          track.locked === nextTrack.locked
+        );
+      }) &&
+      prevProps.frameWidth === nextProps.frameWidth &&
+      prevProps.timelineWidth === nextProps.timelineWidth &&
+      prevProps.scrollX === nextProps.scrollX &&
+      JSON.stringify(prevProps.selectedTrackIds) ===
+        JSON.stringify(nextProps.selectedTrackIds)
+    );
+  },
+);

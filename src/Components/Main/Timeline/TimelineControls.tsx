@@ -20,11 +20,11 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 // eslint-disable-next-line import/no-unresolved
 import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
 
-export const TimelineControls: React.FC = () => {
+export const TimelineControls: React.FC = React.memo(() => {
   const {
     playback,
     timeline,
@@ -79,11 +79,12 @@ export const TimelineControls: React.FC = () => {
     togglePlayback();
   }, [playback.isPlaying, snapToNextSegmentIfBlank, togglePlayback]);
 
-  // Calculate effective end frame considering all tracks
-  const effectiveEndFrame =
-    tracks.length > 0
+  // Calculate effective end frame considering all tracks - memoized
+  const effectiveEndFrame = useMemo(() => {
+    return tracks.length > 0
       ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
       : timeline.totalFrames;
+  }, [tracks, timeline.totalFrames]);
 
   const formatTime = (frame: number) => {
     const totalSeconds = frame / timeline.fps;
@@ -247,4 +248,4 @@ export const TimelineControls: React.FC = () => {
       </div>
     </div>
   );
-};
+});
