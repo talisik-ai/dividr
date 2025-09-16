@@ -1,11 +1,11 @@
 // import { MakerPKG } from '@electron-forge/maker-pkg';
+import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
-import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 // import fs from 'fs/promises';
 // import path from 'path';
 
@@ -14,7 +14,7 @@ const config: ForgeConfig = {
     asar: {
       unpack: '**/node_modules/{ffmpeg-static,ffprobe-static}/**/*',
     },
-    icon: './src/Assets/Logo/256x256',
+    icon: './favicon.ico',
     name: 'Dividr',
     executableName: 'Dividr',
     extraResource: ['./src/Assets/Logo'],
@@ -37,7 +37,7 @@ const config: ForgeConfig = {
     // Windows Squirrel installer
     new MakerSquirrel({
       iconUrl: 'https://example.com/icon.ico', // Replace with your actual icon URL
-      setupIcon: './src/Assets/Logo/256x256.ico',
+      setupIcon: './favicon.ico',
       name: 'Dividr',
       authors: 'Dividr Team',
       description:
