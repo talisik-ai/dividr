@@ -53,6 +53,12 @@ function convertToFfmpegPath(filePath: string): string {
 
 const GAP_MARKER = '__GAP__' as const;
 
+function escapePath(filePath: string) {
+  // For Node.js spawn(), we don't need shell escaping or quotes
+  // Just return the path as-is since spawn() passes arguments directly
+  return filePath;
+}
+
 const FILE_EXTENSIONS = {
   VIDEO: /\.(mp4|mov|mkv|avi|webm)$/i,
   AUDIO: /\.(mp3|wav|aac|flac)$/i,
@@ -403,6 +409,15 @@ function processAudioForConcatenation(
       const silentResult = createSilentAudioFilters(originalIndex, duration);
       silentAudioFilters.push(...silentResult.filters);
       concatAudioInputs.push(silentResult.filterRef);
+    } else if (trackInfo.muted && trackInfo.trackType === 'video') {
+      // Generate silent audio for muted video tracks
+      const duration = trackInfo.duration || 1;
+      const silentResult = createSilentAudioFilters(originalIndex, duration);
+      silentAudioFilters.push(...silentResult.filters);
+      concatAudioInputs.push(silentResult.filterRef);
+      console.log(
+        `🔇 Muted video track - using silent audio for track at index ${originalIndex}`,
+      );
     } else {
       // Handle regular video files with audio
       const context: AudioProcessingContext = {
@@ -446,9 +461,36 @@ function createSingleTrackTrimFilters(
   }
 
   const paramString = params.join(':');
+
+  let videoFilter: string;
+  let audioFilter: string;
+
+  // Handle video visibility
+  if (
+    trackInfo.visible === false &&
+    (trackInfo.trackType === 'video' || trackInfo.trackType === 'image')
+  ) {
+    // Generate black video for hidden tracks
+    const duration = trackInfo.duration || 1;
+    videoFilter = `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${VIDEO_DEFAULTS.FPS}[outv]`;
+    console.log(`🖤 Single hidden track - using black video`);
+  } else {
+    videoFilter = `[0:v]trim=${paramString}[outv]`;
+  }
+
+  // Handle audio muting
+  if (trackInfo.muted && trackInfo.trackType === 'video') {
+    // Generate silent audio for muted video tracks
+    const duration = trackInfo.duration || 1;
+    audioFilter = `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+    console.log(`🔇 Single track trim with muted video - using silent audio`);
+  } else {
+    audioFilter = `[0:a]atrim=${paramString}[outa]`;
+  }
+
   return {
-    videoFilter: `[0:v]trim=${paramString}[outv]`,
-    audioFilter: `[0:a]atrim=${paramString}[outa]`,
+    videoFilter,
+    audioFilter,
   };
 }
 
@@ -589,6 +631,23 @@ function handleConcatenationWorkflow(
       );
       trimFilters.push(...gapResult.filters);
       videoStreamRef = gapResult.filterRef;
+    } else if (
+      trackInfo.visible === false &&
+      (trackInfo.trackType === 'video' || trackInfo.trackType === 'image')
+    ) {
+      // Handle hidden video/image tracks - generate black video
+      const duration = trackInfo.duration || 1;
+      const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+      const blackVideoResult = createGapVideoFilters(
+        originalIndex,
+        duration,
+        targetFps,
+      );
+      trimFilters.push(...blackVideoResult.filters);
+      videoStreamRef = blackVideoResult.filterRef;
+      console.log(
+        `🖤 Hidden track - using black video for track at index ${originalIndex}`,
+      );
     } else {
       // Handle regular video file
       const context: VideoProcessingContext = {
@@ -729,10 +788,26 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
 
       cmd.args.push('-filter_complex', filterComplex);
       cmd.args.push('-map', '[outv]', '-map', '[outa]');
-    } else if (job.operations.subtitles || job.operations.crop) {
-      // No trimming but we have subtitles and/or cropping
+    } else if (
+      job.operations.subtitles ||
+      job.operations.crop ||
+      (trackInfo.visible === false &&
+        (trackInfo.trackType === 'video' || trackInfo.trackType === 'image'))
+    ) {
+      // No trimming but we have subtitles, cropping, or hidden track
       let filterComplex = '';
       let videoInput = '[0:v]';
+
+      // Handle hidden video tracks first
+      if (
+        trackInfo.visible === false &&
+        (trackInfo.trackType === 'video' || trackInfo.trackType === 'image')
+      ) {
+        const duration = trackInfo.duration || 1;
+        filterComplex = `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${VIDEO_DEFAULTS.FPS}[hidden_black]`;
+        videoInput = '[hidden_black]';
+        console.log(`🖤 Single hidden track without trim - using black video`);
+      }
 
       // Handle cropping first if needed
       if (job.operations.crop) {
@@ -760,8 +835,15 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
         }
       }
 
-      // Add audio passthrough
-      filterComplex += ';[0:a]acopy[outa]';
+      // Add audio handling (passthrough or silent for muted tracks)
+      if (trackInfo.muted && trackInfo.trackType === 'video') {
+        // Generate silent audio for muted video tracks
+        const duration = trackInfo.duration || 1;
+        filterComplex += `;anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+        console.log(`🔇 Single muted video track - using silent audio`);
+      } else {
+        filterComplex += ';[0:a]acopy[outa]';
+      }
 
       cmd.args.push('-filter_complex', filterComplex);
       cmd.args.push('-map', '[outv]', '-map', '[outa]');
@@ -799,12 +881,6 @@ const steps: ((job: VideoEditJob, cmd: CommandParts) => void)[] = [
   handleReplaceAudio,
   handlePreset,
 ];
-
-function escapePath(filePath: string) {
-  // For Node.js spawn(), we don't need shell escaping or quotes
-  // Just return the path as-is since spawn() passes arguments directly
-  return filePath;
-}
 
 function handleInputs(job: VideoEditJob, cmd: CommandParts) {
   const inputCount = job.inputs.length;
@@ -883,7 +959,6 @@ function handleThreads(job: VideoEditJob, cmd: CommandParts) {
   cmd.args.push('-threads', String(job.operations.threads));
 
   console.log(`🚀 Applied thread limit: ${job.operations.threads}`);
-  
 }
 // -------------------------
 // Main builder

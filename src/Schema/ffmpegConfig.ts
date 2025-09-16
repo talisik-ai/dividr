@@ -3,6 +3,9 @@ export interface TrackInfo {
   startTime?: number; // in seconds
   duration?: number; // in seconds
   endTime?: number; // in seconds
+  muted?: boolean; // Whether this track's audio should be muted
+  trackType?: 'video' | 'audio' | 'image' | 'subtitle'; // Type of the track
+  visible?: boolean; // Whether this track's video should be visible (if false, show black)
 }
 
 export interface TextStyleConfig {

@@ -101,7 +101,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
             <Link to="/" className="cursor-pointer">
               <img
                 src={theme === 'dark' ? LogoDark : LogoLight}
-                className="h-5 w-auto"
+                className="h-10 w-auto"
                 alt="Dividr Logo"
               />
             </Link>

@@ -5,7 +5,7 @@
  */
 import { ExportModal } from '@/Components/Main/Modal/ExportModal';
 import { Button } from '@/Components/sub/ui/Button';
-import { VideoEditJob } from '@/Schema/ffmpegConfig';
+import { TrackInfo, VideoEditJob } from '@/Schema/ffmpegConfig';
 import { useProjectStore } from '@/Store/ProjectStore';
 import { useVideoEditorStore, VideoTrack } from '@/Store/VideoEditorStore';
 import { FfmpegCallbacks, runFfmpegWithProgress } from '@/Utility/ffmpegRunner';
@@ -89,8 +89,15 @@ const ExportButton: React.FC<ExportButtonProps> = ({
 
       // Sort non-subtitle tracks by timeline position to process them in order
       const sortedTracks = [...tracks]
-        .filter((track) => track.visible) // Only include visible tracks
         .filter((track) => track.type !== 'subtitle') // Exclude subtitle tracks - they'll be handled as .srt file
+        .filter((track) => {
+          // For audio tracks, exclude if muted
+          if (track.type === 'audio') {
+            return !track.muted;
+          }
+          // For video and image tracks, always include (visibility/mute state will be handled in FFmpeg)
+          return true;
+        })
         .sort((a, b) => a.startFrame - b.startFrame);
 
       if (sortedTracks.length === 0) {
@@ -102,11 +109,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         };
       }
 
-      const trackInfos: Array<{
-        path: string;
-        startTime?: number;
-        duration?: number;
-      }> = [];
+      const trackInfos: TrackInfo[] = [];
 
       // Process tracks in timeline order, adding black video for gaps
       let currentTimelineFrame = 0;
@@ -145,6 +148,9 @@ const ExportButton: React.FC<ExportButtonProps> = ({
           path: track.source,
           startTime: sourceStartTime,
           duration: Math.max(0.033, trackDurationSeconds),
+          muted: track.muted || false,
+          trackType: track.type,
+          visible: track.visible,
         });
 
         // Update current position to the end of this track
