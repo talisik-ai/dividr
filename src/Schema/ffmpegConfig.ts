@@ -38,6 +38,7 @@ export interface VideoEditJob {
     targetFrameRate?: number;
     textStyle?: TextStyleConfig; // Text styling for subtitles
     preset?: EncodingPreset; // FFmpeg encoding preset for speed/quality tradeoff
+    threads?: number; // Limit used threads
   };
   subtitleContent?: string; // SRT content to be written to a temporary file
   subtitleFormat?: 'srt' | 'vtt' | 'ass'; // Subtitle format for export

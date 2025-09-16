@@ -170,6 +170,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         operations: {
           concat: trackInfos.length > 1,
           preset: 'superfast', // ⚡ This adds -preset superfast to the FFmpeg command
+          threads: 8, // uses 8 threads
           targetFrameRate: timeline.fps,
           normalizeFrameRate: trackInfos.length > 1,
           subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
