@@ -320,19 +320,24 @@ export const TimelineControls: React.FC = React.memo(
               stepSize={0.1}
               onChange={(value) => setZoom(value)}
             />
-            <Button 
-              variant="native" 
+            <Button
+              variant="native"
               size="icon"
               onClick={() => {
                 // Zoom to fit timeline content
                 const { tracks, timeline } = useVideoEditorStore.getState();
-                const effectiveEndFrame = tracks.length > 0
-                  ? Math.max(...tracks.map(track => track.endFrame), timeline.totalFrames)
-                  : timeline.totalFrames;
-                
+                const effectiveEndFrame =
+                  tracks.length > 0
+                    ? Math.max(
+                        ...tracks.map((track) => track.endFrame),
+                        timeline.totalFrames,
+                      )
+                    : timeline.totalFrames;
+
                 // Calculate zoom to fit content in viewport (with some padding)
                 const viewportWidth = window.innerWidth - 400; // Account for sidebars
-                const idealFrameWidth = (viewportWidth * 0.8) / effectiveEndFrame;
+                const idealFrameWidth =
+                  (viewportWidth * 0.8) / effectiveEndFrame;
                 const idealZoom = idealFrameWidth / 2; // frameWidth = 2 * zoom
                 const clampedZoom = Math.max(0.2, Math.min(idealZoom, 5));
                 setZoom(clampedZoom);
