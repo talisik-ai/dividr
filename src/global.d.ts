@@ -1,5 +1,5 @@
-import { VideoEditJob } from './schema/ffmpegConfig';
 import { FfmpegEventHandlers } from './preload';
+import { VideoEditJob } from './schema/ffmpegConfig';
 
 // Type definitions for the exposed API
 declare global {
@@ -137,6 +137,57 @@ declare global {
         success: boolean;
         message?: string;
       }>;
+      runCustomFFmpeg: (
+        args: string[],
+        outputDir: string,
+      ) => Promise<{
+        success: boolean;
+        error?: string;
+        output?: string[];
+      }>;
+
+      // Background sprite sheet generation methods
+      generateSpriteSheetBackground: (options: {
+        jobId: string;
+        videoPath: string;
+        outputDir: string;
+        commands: string[][];
+      }) => Promise<{
+        success: boolean;
+        jobId?: string;
+        message?: string;
+        error?: string;
+      }>;
+
+      getSpriteSheetProgress: (jobId: string) => Promise<{
+        success: boolean;
+        progress?: {
+          current: number;
+          total: number;
+          stage: string;
+        };
+        elapsedTime?: number;
+        error?: string;
+      }>;
+
+      cancelSpriteSheetJob: (jobId: string) => Promise<{
+        success: boolean;
+        message?: string;
+        error?: string;
+      }>;
+
+      // Sprite sheet event listeners
+      onSpriteSheetJobCompleted: (
+        callback: (data: {
+          jobId: string;
+          outputFiles: string[];
+          outputDir: string;
+        }) => void,
+      ) => void;
+      onSpriteSheetJobError: (
+        callback: (data: { jobId: string; error: string }) => void,
+      ) => void;
+      removeSpriteSheetListeners: () => void;
     };
     appControl: {
       showWindow: () => Promise<boolean>;

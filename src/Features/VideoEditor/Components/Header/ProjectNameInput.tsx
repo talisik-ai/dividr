@@ -101,7 +101,7 @@ const ProjectNameInput: React.FC<ProjectNameInputProps> = ({
             isSaving && 'text-blue-600 dark:text-blue-400',
             className,
           )}
-          style={{ 'field-sizing': 'content' } as any}
+          style={{ fieldSizing: 'content' } as any}
           placeholder={placeholder}
           value={localTitle}
           onChange={handleChange}

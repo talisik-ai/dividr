@@ -64,6 +64,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runFfmpeg: (job: VideoEditJob) => ipcRenderer.invoke('run-ffmpeg', job),
   getDuration: (filePath: string) =>
     ipcRenderer.invoke('ffmpeg:get-duration', filePath),
+  runCustomFFmpeg: (args: string[], outputDir: string) =>
+    ipcRenderer.invoke('run-custom-ffmpeg', args, outputDir),
+
+  // Background sprite sheet generation methods
+  generateSpriteSheetBackground: (options: {
+    jobId: string;
+    videoPath: string;
+    outputDir: string;
+    commands: string[][];
+  }) => ipcRenderer.invoke('generate-sprite-sheet-background', options),
+
+  getSpriteSheetProgress: (jobId: string) =>
+    ipcRenderer.invoke('get-sprite-sheet-progress', jobId),
+
+  cancelSpriteSheetJob: (jobId: string) =>
+    ipcRenderer.invoke('cancel-sprite-sheet-job', jobId),
+
+  // Sprite sheet event listeners
+  onSpriteSheetJobCompleted: (
+    callback: (data: {
+      jobId: string;
+      outputFiles: string[];
+      outputDir: string;
+    }) => void,
+  ) =>
+    ipcRenderer.on('sprite-sheet-job-completed', (event, data) =>
+      callback(data),
+    ),
+
+  onSpriteSheetJobError: (
+    callback: (data: { jobId: string; error: string }) => void,
+  ) =>
+    ipcRenderer.on('sprite-sheet-job-error', (event, data) => callback(data)),
+
+  removeSpriteSheetListeners: () => {
+    ipcRenderer.removeAllListeners('sprite-sheet-job-completed');
+    ipcRenderer.removeAllListeners('sprite-sheet-job-error');
+  },
 
   // FFmpeg diagnostics
   getFFmpegStatus: () => ipcRenderer.invoke('ffmpeg:status'),

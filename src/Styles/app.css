@@ -114,6 +114,20 @@ input[type='number'] {
   animation: spin 1s linear infinite;
 }
 
+/* Shimmer animation for thumbnail loading */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
 /* Drag and drop styling */
 .drag-over {
   border: 2px dashed #4caf50 !important;
