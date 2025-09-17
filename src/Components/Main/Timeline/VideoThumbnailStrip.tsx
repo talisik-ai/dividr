@@ -11,7 +11,7 @@ import {
 } from '../../../Store/VideoEditorStore';
 import VideoThumbnailGenerator, {
   VideoThumbnail,
-} from '../../../Utils/VideoThumbnailGenerator';
+} from '../../../Utility/VideoThumbnailGenerator';
 
 interface VideoThumbnailStripProps {
   track: VideoTrack;

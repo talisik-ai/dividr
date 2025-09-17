@@ -14,7 +14,7 @@ import {
   default as VideoSpriteSheetGenerator,
   SpriteSheet,
   SpriteSheetThumbnail,
-} from '../../../Utils/VideoSpriteSheetGenerator';
+} from './VideoSpriteSheetGenerator';
 
 interface VideoSpriteSheetStripProps {
   track: VideoTrack;

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { cn } from '../../../Lib/utils';
 import { VideoTrack } from '../../../Store/VideoEditorStore';
 
@@ -24,28 +24,32 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     outPoint,
     onClick,
   }) => {
-    // Calculate effective timeline duration based on actual tracks
-    const effectiveEndFrame =
-      tracks.length > 0
+    // Memoize effective timeline duration calculation
+    const effectiveEndFrame = useMemo(() => {
+      return tracks.length > 0
         ? Math.max(...tracks.map((track) => track.endFrame), totalFrames)
         : totalFrames;
+    }, [tracks, totalFrames]);
 
-    // Format time with better precision and readability
-    const formatTime = (frame: number) => {
-      const totalSeconds = frame / fps;
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = Math.floor(totalSeconds % 60);
-      const frameRemainder = Math.floor((totalSeconds % 1) * fps);
+    // Memoize format time function
+    const formatTime = useCallback(
+      (frame: number) => {
+        const totalSeconds = frame / fps;
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = Math.floor(totalSeconds % 60);
+        const frameRemainder = Math.floor((totalSeconds % 1) * fps);
 
-      if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
-      }
-      return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
-    };
+        if (hours > 0) {
+          return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
+        }
+        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
+      },
+      [fps],
+    );
 
-    // Smart tick interval calculation based on zoom level
-    const getTickInterval = () => {
+    // Memoize tick interval calculation based on zoom level
+    const tickInterval = useMemo(() => {
       const pixelsPerSecond = frameWidth * fps;
 
       if (pixelsPerSecond >= 100) return fps / 4; // 0.25 second intervals (very zoomed in)
@@ -56,54 +60,60 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
       if (pixelsPerSecond >= 2) return fps * 10; // 10 second intervals
       if (pixelsPerSecond >= 1) return fps * 30; // 30 second intervals
       return fps * 60; // 1 minute intervals (very zoomed out)
-    };
+    }, [frameWidth, fps]);
+    // Memoize ticks calculation
+    const ticks = useMemo(() => {
+      const ticksArray = [];
 
-    const tickInterval = getTickInterval();
-    const ticks = [];
-
-    // Generate ticks with better viewport culling
-    const viewportStart = Math.max(0, Math.floor(scrollX / frameWidth) - 100);
-    const viewportEnd = Math.min(
-      effectiveEndFrame,
-      Math.ceil((scrollX + window.innerWidth) / frameWidth) + 100,
-    );
-
-    for (
-      let frame = Math.floor(viewportStart / tickInterval) * tickInterval;
-      frame <= viewportEnd;
-      frame += tickInterval
-    ) {
-      if (frame >= 0) {
-        const x = frame * frameWidth - scrollX;
-        ticks.push({
-          frame,
-          x,
-          time: formatTime(frame),
-          isSecond: frame % fps === 0,
-          isMinute: frame % (fps * 60) === 0,
-          isHour: frame % (fps * 3600) === 0,
-        });
-      }
-    }
-
-    // Calculate track content regions for visualization
-    const trackRegions = tracks
-      .filter((track) => track.visible)
-      .map((track) => {
-        const region = {
-          startX: track.startFrame * frameWidth - scrollX,
-          endX: track.endFrame * frameWidth - scrollX,
-          type: track.type,
-          color: 'green',
-        };
-
-        // Track regions for visualization
-
-        return region;
-      })
-      .filter(
-        (region) => region.endX > -50 && region.startX < window.innerWidth + 50,
+      // Generate ticks with better viewport culling
+      const viewportStart = Math.max(0, Math.floor(scrollX / frameWidth) - 100);
+      const viewportEnd = Math.min(
+        effectiveEndFrame,
+        Math.ceil((scrollX + window.innerWidth) / frameWidth) + 100,
       );
+
+      for (
+        let frame = Math.floor(viewportStart / tickInterval) * tickInterval;
+        frame <= viewportEnd;
+        frame += tickInterval
+      ) {
+        if (frame >= 0) {
+          const x = frame * frameWidth - scrollX;
+          ticksArray.push({
+            frame,
+            x,
+            time: formatTime(frame),
+            isSecond: frame % fps === 0,
+            isMinute: frame % (fps * 60) === 0,
+            isHour: frame % (fps * 3600) === 0,
+          });
+        }
+      }
+
+      return ticksArray;
+    }, [scrollX, frameWidth, effectiveEndFrame, tickInterval, formatTime, fps]);
+
+    // Memoize track content regions calculation
+    const trackRegions = useMemo(() => {
+      return tracks
+        .filter((track) => track.visible)
+        .map((track) => {
+          const region = {
+            startX: track.startFrame * frameWidth - scrollX,
+            endX: track.endFrame * frameWidth - scrollX,
+            type: track.type,
+            color: 'green',
+          };
+
+          // Track regions for visualization
+
+          return region;
+        })
+        .filter(
+          (region) =>
+            region.endX > -50 && region.startX < window.innerWidth + 50,
+        );
+    }, [tracks, frameWidth, scrollX]);
 
     return (
       <div
@@ -217,26 +227,27 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     );
   },
   (prevProps, nextProps) => {
-    // Custom equality check to prevent unnecessary re-renders
-    const tracksChanged =
-      prevProps.tracks.length !== nextProps.tracks.length ||
-      prevProps.tracks.some((track, index) => {
-        const nextTrack = nextProps.tracks[index];
-        return (
-          !nextTrack ||
-          track.endFrame !== nextTrack.endFrame ||
-          track.visible !== nextTrack.visible
-        );
-      });
+    // Custom equality check - only check properties that affect ruler display
+    if (prevProps.frameWidth !== nextProps.frameWidth) return false;
+    if (prevProps.totalFrames !== nextProps.totalFrames) return false;
+    if (prevProps.scrollX !== nextProps.scrollX) return false;
+    if (prevProps.fps !== nextProps.fps) return false;
+    if (prevProps.inPoint !== nextProps.inPoint) return false;
+    if (prevProps.outPoint !== nextProps.outPoint) return false;
 
-    return (
-      !tracksChanged &&
-      prevProps.frameWidth === nextProps.frameWidth &&
-      prevProps.totalFrames === nextProps.totalFrames &&
-      prevProps.scrollX === nextProps.scrollX &&
-      prevProps.fps === nextProps.fps &&
-      prevProps.inPoint === nextProps.inPoint &&
-      prevProps.outPoint === nextProps.outPoint
-    );
+    // Check tracks - only properties that affect ruler display
+    if (prevProps.tracks.length !== nextProps.tracks.length) return false;
+
+    const tracksChanged = prevProps.tracks.some((track, index) => {
+      const nextTrack = nextProps.tracks[index];
+      return (
+        !nextTrack ||
+        track.endFrame !== nextTrack.endFrame ||
+        track.visible !== nextTrack.visible ||
+        track.startFrame !== nextTrack.startFrame
+      );
+    });
+
+    return !tracksChanged;
   },
 );
