@@ -1,6 +1,17 @@
 import { spawn } from 'child_process';
 import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import started from 'electron-squirrel-startup';
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { VideoEditJob } from './Schema/ffmpegConfig';
+import { buildFfmpegCommand } from './Utility/commandBuilder';
+import {
+  cancelCurrentFfmpeg,
+  runFfmpeg,
+  runFfmpegWithProgress,
+} from './Utility/ffmpegRunner';
 
 // Import Vite dev server URL
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -13,6 +24,23 @@ let isWindowFocused = true;
 // Dynamic import of ffmpeg binaries to avoid module resolution issues
 let ffmpegPath: string | null = null;
 let ffprobePath: { path: string } | null = null;
+
+// Background worker management for sprite sheet generation
+interface SpriteSheetJob {
+  id: string;
+  videoPath: string;
+  outputDir: string;
+  commands: string[][];
+  progress: {
+    current: number;
+    total: number;
+    stage: string;
+  };
+  startTime: number;
+}
+
+const activeSpriteSheetJobs = new Map<string, SpriteSheetJob>();
+let spriteSheetJobCounter = 0;
 
 // Initialize ffmpeg paths dynamically with fallbacks
 function initializeFfmpegPaths() {
@@ -312,6 +340,7 @@ import {
   runFfmpegWithProgress,
 } from './Utility/ffmpegRunner';
 
+
 if (started) {
   app.quit();
 }
@@ -585,6 +614,436 @@ ipcMain.handle('run-ffmpeg-with-progress', async (event, job: VideoEditJob) => {
     return { success: false, error: error.message };
   }
 });
+
+// IPC Handler for custom FFmpeg commands (specifically for thumbnail extraction)
+ipcMain.handle(
+  'run-custom-ffmpeg',
+  async (event, args: string[], outputDir: string) => {
+    console.log('🎯 MAIN PROCESS: runCustomFFmpeg handler called!');
+    console.log('🎯 MAIN PROCESS: FFmpeg args:', args);
+    console.log('🎯 MAIN PROCESS: Output directory:', outputDir);
+
+    if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
+      return {
+        success: false,
+        error: 'Another FFmpeg process is already running',
+      };
+    }
+
+    if (!ffmpegPath) {
+      return {
+        success: false,
+        error:
+          'FFmpeg binary not available. Please ensure ffmpeg-static is properly installed.',
+      };
+    }
+
+    // Ensure output directory exists
+    const absoluteOutputDir = path.isAbsolute(outputDir)
+      ? outputDir
+      : path.resolve(outputDir);
+
+    try {
+      if (!fs.existsSync(absoluteOutputDir)) {
+        fs.mkdirSync(absoluteOutputDir, { recursive: true });
+        console.log('📁 Created output directory:', absoluteOutputDir);
+      }
+    } catch (dirError) {
+      console.error('❌ Failed to create output directory:', dirError);
+      return {
+        success: false,
+        error: `Failed to create output directory: ${dirError.message}`,
+      };
+    }
+
+    // Update output path in args to use absolute path
+    const finalArgs = args.map((arg) => {
+      if (arg.includes(outputDir) && !path.isAbsolute(arg)) {
+        return arg.replace(outputDir, absoluteOutputDir);
+      }
+      return arg;
+    });
+
+    console.log('🎬 COMPLETE CUSTOM FFMPEG COMMAND:');
+    console.log(['ffmpeg', ...finalArgs].join(' '));
+
+    return new Promise((resolve) => {
+      const ffmpeg = spawn(ffmpegPath, finalArgs);
+      currentFfmpegProcess = ffmpeg;
+
+      let stdout = '';
+      let stderr = '';
+
+      ffmpeg.stdout.on('data', (data) => {
+        const text = data.toString();
+        stdout += text;
+        console.log(`[FFmpeg stdout] ${text.trim()}`);
+      });
+
+      ffmpeg.stderr.on('data', (data) => {
+        const text = data.toString();
+        stderr += text;
+        console.log(`[FFmpeg stderr] ${text.trim()}`);
+      });
+
+      ffmpeg.on('close', (code) => {
+        currentFfmpegProcess = null;
+        console.log(`🎬 FFmpeg process exited with code: ${code}`);
+
+        if (code === 0) {
+          // List generated files
+          try {
+            const outputFiles = fs
+              .readdirSync(absoluteOutputDir)
+              .filter(
+                (file) => file.startsWith('thumb_') && file.endsWith('.jpg'),
+              )
+              .sort();
+
+            console.log(
+              `✅ Generated ${outputFiles.length} thumbnail files:`,
+              outputFiles,
+            );
+
+            resolve({
+              success: true,
+              output: outputFiles,
+            });
+          } catch (listError) {
+            console.error('❌ Error listing output files:', listError);
+            resolve({
+              success: false,
+              error: `FFmpeg succeeded but failed to list output files: ${listError.message}`,
+            });
+          }
+        } else {
+          console.error(`❌ FFmpeg failed with exit code: ${code}`);
+          resolve({
+            success: false,
+            error: `FFmpeg process failed with exit code ${code}. stderr: ${stderr}`,
+          });
+        }
+      });
+
+      ffmpeg.on('error', (error) => {
+        currentFfmpegProcess = null;
+        console.error('❌ FFmpeg spawn error:', error);
+        resolve({
+          success: false,
+          error: `Failed to spawn FFmpeg process: ${error.message}`,
+        });
+      });
+    });
+  },
+);
+
+// IPC Handler for background sprite sheet generation
+ipcMain.handle(
+  'generate-sprite-sheet-background',
+  async (
+    event,
+    options: {
+      jobId: string;
+      videoPath: string;
+      outputDir: string;
+      commands: string[][];
+    },
+  ) => {
+    const { jobId, videoPath, outputDir, commands } = options;
+
+    console.log('🎬 Starting background sprite sheet generation:', jobId);
+    console.log('📹 Video:', videoPath);
+    console.log('📁 Output:', outputDir);
+    console.log('🔧 Commands:', commands.length);
+
+    if (!ffmpegPath) {
+      return {
+        success: false,
+        error:
+          'FFmpeg binary not available. Please ensure ffmpeg-static is properly installed.',
+      };
+    }
+
+    // Check if job already exists
+    if (activeSpriteSheetJobs.has(jobId)) {
+      return {
+        success: false,
+        error: 'Job already in progress',
+      };
+    }
+
+    // Create job entry
+    const job: SpriteSheetJob = {
+      id: jobId,
+      videoPath,
+      outputDir,
+      commands,
+      progress: {
+        current: 0,
+        total: commands.length,
+        stage: 'Starting...',
+      },
+      startTime: Date.now(),
+    };
+
+    activeSpriteSheetJobs.set(jobId, job);
+
+    // Process commands sequentially in background
+    processSpriteSheetsInBackground(jobId, job);
+
+    return {
+      success: true,
+      jobId,
+      message: 'Sprite sheet generation started in background',
+    };
+  },
+);
+
+// IPC Handler to get sprite sheet job progress
+ipcMain.handle('get-sprite-sheet-progress', async (event, jobId: string) => {
+  const job = activeSpriteSheetJobs.get(jobId);
+  if (!job) {
+    return {
+      success: false,
+      error: 'Job not found',
+    };
+  }
+
+  return {
+    success: true,
+    progress: job.progress,
+    elapsedTime: Date.now() - job.startTime,
+  };
+});
+
+// IPC Handler to cancel sprite sheet generation
+ipcMain.handle('cancel-sprite-sheet-job', async (event, jobId: string) => {
+  const job = activeSpriteSheetJobs.get(jobId);
+  if (!job) {
+    return {
+      success: false,
+      error: 'Job not found',
+    };
+  }
+
+  activeSpriteSheetJobs.delete(jobId);
+
+  console.log('🛑 Cancelled sprite sheet job:', jobId);
+  return {
+    success: true,
+    message: 'Job cancelled',
+  };
+});
+
+// Background sprite sheet processing function
+async function processSpriteSheetsInBackground(
+  jobId: string,
+  job: SpriteSheetJob,
+) {
+  const path = require('path');
+  const fs = require('fs');
+
+  try {
+    // Ensure output directory exists
+    const absoluteOutputDir = path.isAbsolute(job.outputDir)
+      ? job.outputDir
+      : path.resolve(job.outputDir);
+
+    if (!fs.existsSync(absoluteOutputDir)) {
+      fs.mkdirSync(absoluteOutputDir, { recursive: true });
+      console.log(
+        '📁 Created sprite sheet output directory:',
+        absoluteOutputDir,
+      );
+    }
+
+    // Process each command sequentially
+    for (let i = 0; i < job.commands.length; i++) {
+      const currentJob = activeSpriteSheetJobs.get(jobId);
+      if (!currentJob) {
+        console.log('🛑 Job cancelled during processing:', jobId);
+        return;
+      }
+
+      const command = job.commands[i];
+      const adjustedCommand = command.map((arg) => {
+        if (arg.includes(job.outputDir) && !path.isAbsolute(arg)) {
+          return arg.replace(job.outputDir, absoluteOutputDir);
+        }
+        return arg;
+      });
+
+      // Update progress
+      currentJob.progress = {
+        current: i,
+        total: job.commands.length,
+        stage: `Generating sprite sheet ${i + 1}/${job.commands.length}`,
+      };
+
+      console.log(
+        `🎬 Processing sprite sheet ${i + 1}/${job.commands.length} for job ${jobId}`,
+      );
+      console.log(
+        '🔧 FFmpeg command:',
+        ['ffmpeg', ...adjustedCommand].join(' '),
+      );
+
+      // Execute FFmpeg command with improved error handling and timeout
+      const result = await new Promise<{ success: boolean; error?: string }>(
+        (resolve) => {
+          const ffmpeg = spawn(ffmpegPath!, adjustedCommand, {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true, // Hide console window on Windows
+          });
+
+          let stderr = '';
+          let stdout = '';
+          let processTimeout: NodeJS.Timeout;
+
+          // Set adaptive timeout based on video complexity
+          const timeoutMs = Math.min(300000, 30000 + i * 15000); // Max 5 minutes, min 30s + 15s per sheet
+          processTimeout = setTimeout(() => {
+            ffmpeg.kill('SIGKILL');
+            resolve({
+              success: false,
+              error: `FFmpeg process timed out after ${timeoutMs / 1000} seconds`,
+            });
+          }, timeoutMs);
+
+          ffmpeg.stdout.on('data', (data) => {
+            stdout += data.toString();
+            // Optional: Could parse progress from stdout for more detailed progress
+          });
+
+          ffmpeg.stderr.on('data', (data) => {
+            const text = data.toString();
+            stderr += text;
+            // Progress updates could be parsed here if needed
+          });
+
+          ffmpeg.on('close', (code) => {
+            clearTimeout(processTimeout);
+            if (code === 0) {
+              console.log(`✅ Sprite sheet ${i + 1} generated successfully`);
+              resolve({ success: true });
+            } else {
+              console.error(
+                `❌ Sprite sheet ${i + 1} failed with exit code: ${code}`,
+              );
+              // Try to extract meaningful error from stderr
+              const errorMatch =
+                stderr.match(/Error: (.+)/i) || stderr.match(/\[error\] (.+)/i);
+              const meaningfulError = errorMatch
+                ? errorMatch[1]
+                : `Process failed with code ${code}`;
+              resolve({
+                success: false,
+                error: `FFmpeg: ${meaningfulError}`,
+              });
+            }
+          });
+
+          ffmpeg.on('error', (error) => {
+            clearTimeout(processTimeout);
+            console.error('❌ FFmpeg spawn error:', error);
+            resolve({
+              success: false,
+              error: `Failed to spawn FFmpeg process: ${error.message}`,
+            });
+          });
+
+          // Handle process being killed
+          ffmpeg.on('exit', (code, signal) => {
+            clearTimeout(processTimeout);
+            if (signal === 'SIGKILL') {
+              resolve({
+                success: false,
+                error: 'Process was terminated due to timeout',
+              });
+            }
+          });
+        },
+      );
+
+      if (!result.success) {
+        console.error(
+          `❌ Failed to generate sprite sheet ${i + 1}/${job.commands.length}:`,
+          result.error,
+        );
+
+        // Update job with error
+        currentJob.progress.stage = `Failed at sheet ${i + 1}: ${result.error}`;
+
+        // Notify renderer about error with more context
+        if (mainWindow) {
+          mainWindow.webContents.send('sprite-sheet-job-error', {
+            jobId,
+            error: `Sheet ${i + 1}/${job.commands.length}: ${result.error}`,
+            sheetIndex: i,
+            totalSheets: job.commands.length,
+          });
+        }
+
+        activeSpriteSheetJobs.delete(jobId);
+        return;
+      }
+
+      console.log(
+        `✅ Successfully generated sprite sheet ${i + 1}/${job.commands.length}`,
+      );
+    }
+
+    // Job completed successfully
+    const finalJob = activeSpriteSheetJobs.get(jobId);
+    if (finalJob) {
+      finalJob.progress = {
+        current: job.commands.length,
+        total: job.commands.length,
+        stage: 'Completed',
+      };
+
+      // List generated files
+      try {
+        const outputFiles = fs
+          .readdirSync(absoluteOutputDir)
+          .filter(
+            (file: string) =>
+              file.startsWith('sprite_') && file.endsWith('.jpg'),
+          )
+          .sort();
+
+        console.log(
+          `✅ Generated ${outputFiles.length} sprite sheet files for job ${jobId}`,
+        );
+
+        // Notify renderer about completion
+        if (mainWindow) {
+          mainWindow.webContents.send('sprite-sheet-job-completed', {
+            jobId,
+            outputFiles,
+            outputDir: absoluteOutputDir,
+          });
+        }
+      } catch (listError) {
+        console.error('❌ Error listing sprite sheet output files:', listError);
+      }
+
+      activeSpriteSheetJobs.delete(jobId);
+    }
+  } catch (error) {
+    console.error('❌ Background sprite sheet processing error:', error);
+
+    // Notify renderer about error
+    if (mainWindow) {
+      mainWindow.webContents.send('sprite-sheet-job-error', {
+        jobId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    activeSpriteSheetJobs.delete(jobId);
+  }
+}
 
 // IPC Handler to cancel FFmpeg operation
 ipcMain.handle('cancel-ffmpeg', async () => {

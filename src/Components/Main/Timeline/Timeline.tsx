@@ -344,6 +344,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   frameWidth={frameWidth}
                   timelineWidth={timelineWidth}
                   scrollX={timeline.scrollX}
+                  zoomLevel={timeline.zoom}
                   selectedTrackIds={timeline.selectedTrackIds}
                   onTrackSelect={setSelectedTracks}
                 />
