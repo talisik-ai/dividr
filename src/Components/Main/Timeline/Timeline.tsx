@@ -80,13 +80,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         // Check if this is a media library item (internal drag)
         const mediaId = e.dataTransfer.getData('text/plain');
         if (mediaId) {
-          // Calculate drop position based on mouse position
-          const timelineRect = timelineRef.current?.getBoundingClientRect();
-          if (!timelineRect) return;
-
-          const relativeX = e.clientX - timelineRect.left - timeline.scrollX;
-          const frameWidth = 2 * timeline.zoom; // Same calculation as in TimelineRuler
-          const dropFrame = Math.max(0, Math.round(relativeX / frameWidth));
+          // Always start at frame 0 when dragging from MediaImportPanel
+          const dropFrame = 0;
 
           console.log(`🎯 Dropping media library item at frame ${dropFrame}`);
           addTrackFromMediaLibrary(mediaId, dropFrame).catch(console.error);

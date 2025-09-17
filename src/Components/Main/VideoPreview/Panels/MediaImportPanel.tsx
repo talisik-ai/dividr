@@ -404,16 +404,14 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
             )}
             onClick={async () => {
               if (!file.isOnTimeline) {
-                // Add to timeline at current playhead position - get frame directly when needed
-                const currentFrame =
-                  useVideoEditorStore.getState().timeline.currentFrame;
-                await addTrackFromMediaLibrary(file.id, currentFrame);
+                // Add to timeline at frame 0 - consistent with drag and drop behavior
+                await addTrackFromMediaLibrary(file.id, 0);
               }
             }}
             title={
               file.isOnTimeline
                 ? 'Already on timeline'
-                : 'Click to add to timeline or drag to timeline position'
+                : 'Click or drag to add to timeline (starts at frame 0)'
             }
           >
             {/* Media Cover/Thumbnail */}

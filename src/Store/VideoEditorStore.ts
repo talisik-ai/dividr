@@ -981,7 +981,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       get().markUnsavedChanges();
     },
 
-    moveTrack: (trackId, newStartFrame) =>
+    moveTrack: (trackId, newStartFrame) => {
       set((state) => ({
         tracks: state.tracks.map((track) => {
           if (track.id === trackId) {
@@ -1020,9 +1020,13 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           }
           return track;
         }),
-      })),
+      }));
 
-    resizeTrack: (trackId, newStartFrame, newEndFrame) =>
+      // Mark as having unsaved changes
+      get().markUnsavedChanges();
+    },
+
+    resizeTrack: (trackId, newStartFrame, newEndFrame) => {
       set((state) => ({
         tracks: state.tracks.map((track) => {
           if (track.id === trackId) {
@@ -1037,7 +1041,11 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           }
           return track;
         }),
-      })),
+      }));
+
+      // Mark as having unsaved changes
+      get().markUnsavedChanges();
+    },
 
     duplicateTrack: (trackId) => {
       const originalTrack = get().tracks.find((t) => t.id === trackId);
@@ -1057,6 +1065,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       set((state) => ({
         tracks: [...state.tracks, duplicatedTrack],
       }));
+
+      // Mark as having unsaved changes
+      get().markUnsavedChanges();
 
       return newId;
     },
@@ -1099,6 +1110,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           .map((t) => (t.id === trackId ? firstPart : t))
           .concat(secondPart),
       }));
+
+      // Mark as having unsaved changes
+      get().markUnsavedChanges();
     },
 
     splitAtPlayhead: () => {
@@ -1821,7 +1835,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     },
 
     clearMediaLibrary: () => {
-      set((state) => ({
+      set(() => ({
         mediaLibrary: [],
       }));
 
