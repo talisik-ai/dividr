@@ -328,6 +328,17 @@ function initializeFfmpegPaths() {
     console.error('📋 Or install FFmpeg system-wide as a fallback');
   }
 }
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { VideoEditJob } from './Schema/ffmpegConfig';
+import { buildFfmpegCommand } from './Utility/commandBuilder';
+import {
+  cancelCurrentFfmpeg,
+  runFfmpeg,
+  runFfmpegWithProgress,
+} from './Utility/ffmpegRunner';
 
 if (started) {
   app.quit();
