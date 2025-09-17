@@ -114,7 +114,9 @@ const PlaybackRateSelector: React.FC = React.memo(() => {
 
 export const TimelineControls: React.FC = React.memo(
   () => {
-    // NO subscriptions at all - everything accessed non-reactively when needed
+    // Get current zoom level reactively for the slider
+    const currentZoom = useVideoEditorStore((state) => state.timeline.zoom);
+    const setZoom = useVideoEditorStore((state) => state.setZoom);
 
     // Get current frame non-reactively
     const getCurrentFrame = useCallback(() => {
@@ -309,13 +311,34 @@ export const TimelineControls: React.FC = React.memo(
               rightIcon={
                 <ZoomIn className="translate scale-x-[-1]" size={16} />
               }
-              startingValue={500}
-              defaultValue={750}
-              maxValue={1000}
+              startingValue={0.2}
+              defaultValue={currentZoom}
+              maxValue={5}
               showLabel={false}
               thickness={4}
+              isStepped={true}
+              stepSize={0.1}
+              onChange={(value) => setZoom(value)}
             />
-            <Button variant="native" size="icon">
+            <Button 
+              variant="native" 
+              size="icon"
+              onClick={() => {
+                // Zoom to fit timeline content
+                const { tracks, timeline } = useVideoEditorStore.getState();
+                const effectiveEndFrame = tracks.length > 0
+                  ? Math.max(...tracks.map(track => track.endFrame), timeline.totalFrames)
+                  : timeline.totalFrames;
+                
+                // Calculate zoom to fit content in viewport (with some padding)
+                const viewportWidth = window.innerWidth - 400; // Account for sidebars
+                const idealFrameWidth = (viewportWidth * 0.8) / effectiveEndFrame;
+                const idealZoom = idealFrameWidth / 2; // frameWidth = 2 * zoom
+                const clampedZoom = Math.max(0.2, Math.min(idealZoom, 5));
+                setZoom(clampedZoom);
+              }}
+              title="Zoom to fit"
+            >
               <Maximize className="translate scale-x-[-1]" size={16} />
             </Button>
           </div>
@@ -324,8 +347,8 @@ export const TimelineControls: React.FC = React.memo(
     );
   },
   () => {
-    // Custom comparison - TimelineControls should never re-render based on props (it has none)
-    // This makes it completely stable except for internal state changes
+    // Custom comparison - TimelineControls should re-render only when zoom changes
+    // (currentZoom subscription is needed for the slider)
     return true;
   },
 );
