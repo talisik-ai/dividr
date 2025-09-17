@@ -155,7 +155,6 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
               sourceStartTime: track.sourceStartTime || 0,
               thumbWidth: 120,
               thumbHeight: 68,
-              quality: 3,
             });
 
           if (cacheResult && cacheResult.success) {
