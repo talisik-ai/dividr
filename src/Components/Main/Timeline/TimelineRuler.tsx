@@ -31,19 +31,41 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
         : totalFrames;
     }, [tracks, totalFrames]);
 
-    // Memoize format time function
+    // Memoize format time function with zoom-responsive precision
     const formatTime = useCallback(
-      (frame: number) => {
+      (frame: number, pixelsPerSecond: number) => {
         const totalSeconds = frame / fps;
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = Math.floor(totalSeconds % 60);
         const frameRemainder = Math.floor((totalSeconds % 1) * fps);
 
-        if (hours > 0) {
-          return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
+        // Adjust precision based on zoom level
+        if (pixelsPerSecond >= 150) {
+          // Very zoomed in - show frames
+          if (hours > 0) {
+            return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
+          }
+          return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
+        } else if (pixelsPerSecond >= 25) {
+          // Medium zoom - show seconds
+          if (hours > 0) {
+            return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+          }
+          return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        } else if (pixelsPerSecond >= 5) {
+          // Low zoom - show minutes
+          if (hours > 0) {
+            return `${hours}:${minutes.toString().padStart(2, '0')}`;
+          }
+          return `${minutes}m`;
+        } else {
+          // Very zoomed out - show hours
+          if (hours > 0) {
+            return `${hours}h`;
+          }
+          return `${minutes}m`;
         }
-        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
       },
       [fps],
     );
@@ -64,6 +86,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     // Memoize ticks calculation
     const ticks = useMemo(() => {
       const ticksArray = [];
+      const pixelsPerSecond = frameWidth * fps;
 
       // Generate ticks with better viewport culling
       const viewportStart = Math.max(0, Math.floor(scrollX / frameWidth) - 100);
@@ -82,7 +105,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
           ticksArray.push({
             frame,
             x,
-            time: formatTime(frame),
+            time: formatTime(frame, pixelsPerSecond),
             isSecond: frame % fps === 0,
             isMinute: frame % (fps * 60) === 0,
             isHour: frame % (fps * 3600) === 0,
@@ -151,7 +174,29 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
 
         {/* Time Ticks */}
         {ticks.map(({ frame, x, time, isSecond, isMinute, isHour }) => {
-          const tickHeight = isHour ? 20 : isMinute ? 16 : isSecond ? 12 : 8;
+          // Responsive tick height based on zoom level
+          const pixelsPerSecond = frameWidth * fps;
+          const getTickHeight = () => {
+            if (isHour) {
+              return pixelsPerSecond >= 50 ? 24 : 20;
+            }
+            if (isMinute) {
+              return pixelsPerSecond >= 100
+                ? 20
+                : pixelsPerSecond >= 50
+                  ? 16
+                  : 14;
+            }
+            if (isSecond) {
+              return pixelsPerSecond >= 150
+                ? 16
+                : pixelsPerSecond >= 100
+                  ? 12
+                  : 10;
+            }
+            return pixelsPerSecond >= 200 ? 10 : 8;
+          };
+          const tickHeight = getTickHeight();
 
           // Theme-aware tick styling
           const tickClasses = isHour
@@ -170,9 +215,51 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
                 ? 'text-muted-foreground'
                 : 'text-muted-foreground/60';
 
-          const showLabel =
-            isSecond ||
-            (frameWidth > 2 && frame % Math.max(1, Math.floor(fps / 4)) === 0);
+          // Smart label visibility based on zoom level and spacing
+          const getShowLabel = () => {
+            const pixelsPerSecond = frameWidth * fps;
+
+            // Very zoomed in (> 100px per second) - show all labels
+            if (pixelsPerSecond >= 100) {
+              return true;
+            }
+
+            // Zoomed in (50-100px per second) - show second and minute labels
+            if (pixelsPerSecond >= 50) {
+              return isSecond || isMinute || isHour;
+            }
+
+            // Medium zoom (25-50px per second) - show only minute and hour labels
+            if (pixelsPerSecond >= 25) {
+              return isMinute || isHour;
+            }
+
+            // Medium-low zoom (10-25px per second) - show every 2nd minute and hours
+            if (pixelsPerSecond >= 10) {
+              return (
+                isHour || (isMinute && Math.floor(frame / fps) % 120 === 0)
+              ); // every 2 minutes
+            }
+
+            // Low zoom (5-10px per second) - show every 5th minute and hours
+            if (pixelsPerSecond >= 5) {
+              return (
+                isHour || (isMinute && Math.floor(frame / fps) % 300 === 0)
+              ); // every 5 minutes
+            }
+
+            // Very low zoom (2-5px per second) - show every 10th minute and hours
+            if (pixelsPerSecond >= 2) {
+              return (
+                isHour || (isMinute && Math.floor(frame / fps) % 600 === 0)
+              ); // every 10 minutes
+            }
+
+            // Extremely zoomed out (< 2px per second) - show only hours
+            return isHour;
+          };
+
+          const showLabel = getShowLabel();
 
           return (
             <div key={frame} className="absolute top-0" style={{ left: x }}>
@@ -188,10 +275,30 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
                   className={cn(
                     '-translate-x-1/2 whitespace-nowrap',
                     labelClasses,
-                    isMinute ? 'font-semibold' : 'font-normal',
+                    isHour
+                      ? 'font-bold'
+                      : isMinute
+                        ? 'font-semibold'
+                        : 'font-normal',
                   )}
                   style={{
-                    fontSize: isMinute ? '11px' : '10px',
+                    fontSize: (() => {
+                      const pixelsPerSecond = frameWidth * fps;
+
+                      // Larger font sizes for higher zoom levels
+                      if (isHour) {
+                        return pixelsPerSecond >= 50 ? '13px' : '12px';
+                      }
+                      if (isMinute) {
+                        return pixelsPerSecond >= 100
+                          ? '12px'
+                          : pixelsPerSecond >= 50
+                            ? '11px'
+                            : '10px';
+                      }
+                      // Seconds
+                      return pixelsPerSecond >= 150 ? '11px' : '10px';
+                    })(),
                   }}
                 >
                   {time}
