@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { default as VideoSpriteSheetGenerator } from '@/Components/Main/Timeline/VideoSpriteSheetGenerator';
 import { projectService } from '@/Services/ProjectService';
+import { VideoThumbnailGenerator } from '@/Utility/VideoThumbnailGenerator';
 import { v4 as uuidv4 } from 'uuid';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
@@ -190,6 +191,8 @@ interface VideoEditorStore {
   ) => MediaLibraryItem['spriteSheets'] | undefined;
   isGeneratingSpriteSheet: (mediaId: string) => boolean;
   setGeneratingSpriteSheet: (mediaId: string, isGenerating: boolean) => void;
+  generateThumbnailForMedia: (mediaId: string) => Promise<boolean>;
+  updateProjectThumbnailFromTimeline: () => Promise<void>;
   clearMediaLibrary: () => void;
 
   // Playback Actions
@@ -506,6 +509,7 @@ const processImportedFile = async (
   addToTimelineFn?: (track: Omit<VideoTrack, 'id'>) => string,
   getFps?: () => number,
   generateSpriteFn?: (mediaId: string) => Promise<boolean>,
+  generateThumbnailFn?: (mediaId: string) => Promise<boolean>,
 ) => {
   // Get accurate duration using FFprobe
   let actualDurationSeconds: number;
@@ -585,16 +589,31 @@ const processImportedFile = async (
 
   const mediaId = addToLibraryFn(mediaLibraryItem);
 
-  // Generate sprite sheets for video files (async, don't wait)
-  if (trackType === 'video' && generateSpriteFn) {
-    console.log(`🎬 Triggering sprite sheet generation for: ${fileInfo.name}`);
-    // Run sprite sheet generation in background without blocking import
-    generateSpriteFn(mediaId).catch((error) => {
-      console.warn(
-        `⚠️ Sprite sheet generation failed for ${fileInfo.name}:`,
-        error,
+  // Generate sprite sheets and thumbnails for video files (async, don't wait)
+  if (trackType === 'video') {
+    if (generateSpriteFn) {
+      console.log(
+        `🎬 Triggering sprite sheet generation for: ${fileInfo.name}`,
       );
-    });
+      // Run sprite sheet generation in background without blocking import
+      generateSpriteFn(mediaId).catch((error) => {
+        console.warn(
+          `⚠️ Sprite sheet generation failed for ${fileInfo.name}:`,
+          error,
+        );
+      });
+    }
+
+    if (generateThumbnailFn) {
+      console.log(`📸 Triggering thumbnail generation for: ${fileInfo.name}`);
+      // Run thumbnail generation in background without blocking import
+      generateThumbnailFn(mediaId).catch((error) => {
+        console.warn(
+          `⚠️ Thumbnail generation failed for ${fileInfo.name}:`,
+          error,
+        );
+      });
+    }
   }
 
   // Add to timeline if requested
@@ -678,6 +697,29 @@ const processImportedFile = async (
     url: previewUrl || fileInfo.path,
   };
 };
+
+// Helper function to convert image URL to base64
+async function convertImageToBase64(imageUrl: string): Promise<string> {
+  try {
+    const response = await fetch(imageUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to convert image to base64'));
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read image blob'));
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error converting image to base64:', error);
+    throw error;
+  }
+}
 
 // Helper function to find a non-overlapping position for a track
 function findNonOverlappingPosition(
@@ -910,6 +952,15 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       // Mark as having unsaved changes
       get().markUnsavedChanges();
 
+      // Update project thumbnail if this is a video track
+      if (trackData.type === 'video') {
+        get()
+          .updateProjectThumbnailFromTimeline()
+          .catch((error) => {
+            console.warn('Failed to update project thumbnail:', error);
+          });
+      }
+
       return id;
     },
 
@@ -1007,6 +1058,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     },
 
     removeTrack: (trackId) => {
+      const trackToRemove = get().tracks.find((t) => t.id === trackId);
+      const isVideoTrack = trackToRemove?.type === 'video';
+
       set((state) => ({
         tracks: state.tracks.filter((t) => t.id !== trackId),
         timeline: {
@@ -1019,6 +1073,15 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
 
       // Mark as having unsaved changes
       get().markUnsavedChanges();
+
+      // Update project thumbnail if a video track was removed
+      if (isVideoTrack) {
+        get()
+          .updateProjectThumbnailFromTimeline()
+          .catch((error) => {
+            console.warn('Failed to update project thumbnail:', error);
+          });
+      }
     },
 
     updateTrack: (trackId, updates) => {
@@ -1465,6 +1528,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               undefined, // No timeline addition
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
+              get().generateThumbnailForMedia, // Generate thumbnails on import
             );
             importedFiles.push(fileData);
           }),
@@ -1618,6 +1682,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               undefined, // No timeline addition
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
+              get().generateThumbnailForMedia, // Generate thumbnails on import
             );
             importedFiles.push(fileData);
           }),
@@ -1683,6 +1748,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               get().addTrack, // Also add to timeline
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
+              get().generateThumbnailForMedia, // Generate thumbnails on import
             );
             importedFiles.push(fileData);
           }),
@@ -2007,6 +2073,161 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       } finally {
         // Clear generating state
         get().setGeneratingSpriteSheet(mediaId, false);
+      }
+    },
+
+    generateThumbnailForMedia: async (mediaId) => {
+      const mediaItem = get().mediaLibrary.find((item) => item.id === mediaId);
+      if (!mediaItem) {
+        console.error('Media item not found:', mediaId);
+        return false;
+      }
+
+      // Only generate thumbnails for video files
+      if (mediaItem.type !== 'video') {
+        console.log(
+          `Skipping thumbnail generation for non-video: ${mediaItem.name}`,
+        );
+        return true; // Not an error, just not applicable
+      }
+
+      // Skip if thumbnail already exists
+      if (mediaItem.thumbnail) {
+        console.log(`Thumbnail already exists for: ${mediaItem.name}`);
+        return true;
+      }
+
+      const videoPath = mediaItem.tempFilePath || mediaItem.source;
+
+      // Skip blob URLs (they won't work with FFmpeg)
+      if (videoPath.startsWith('blob:')) {
+        console.warn(
+          `Cannot generate thumbnail from blob URL: ${mediaItem.name}`,
+        );
+        return false;
+      }
+
+      try {
+        console.log(
+          `📸 Generating thumbnail for media library item: ${mediaItem.name}`,
+        );
+
+        // Generate a single thumbnail at 1 second (or 10% of duration, whichever is smaller)
+        const thumbnailTime = Math.min(1, mediaItem.duration * 0.1);
+
+        const result = await VideoThumbnailGenerator.generateThumbnails({
+          videoPath,
+          duration: 0.1, // Very short duration, just one frame
+          fps: 30,
+          intervalSeconds: 0.1,
+          width: 320, // Higher quality thumbnail for project display
+          height: 180, // 16:9 aspect ratio
+          sourceStartTime: thumbnailTime,
+        });
+
+        if (result.success && result.thumbnails.length > 0) {
+          const thumbnailUrl = result.thumbnails[0].url;
+
+          // Convert thumbnail to base64 for storage
+          const base64Thumbnail = await convertImageToBase64(thumbnailUrl);
+
+          // Update the media library item with thumbnail data
+          set((state) => ({
+            mediaLibrary: state.mediaLibrary.map((item) =>
+              item.id === mediaId
+                ? {
+                    ...item,
+                    thumbnail: base64Thumbnail,
+                  }
+                : item,
+            ),
+          }));
+
+          // Mark as having unsaved changes
+          get().markUnsavedChanges();
+
+          console.log(
+            `✅ Thumbnail generated and cached for: ${mediaItem.name}`,
+          );
+          return true;
+        } else {
+          console.error(
+            `❌ Failed to generate thumbnail for ${mediaItem.name}:`,
+            result.error,
+          );
+          return false;
+        }
+      } catch (error) {
+        console.error(
+          `❌ Error generating thumbnail for ${mediaItem.name}:`,
+          error,
+        );
+        return false;
+      }
+    },
+
+    updateProjectThumbnailFromTimeline: async () => {
+      const state = get();
+
+      // Find the first video track on the timeline
+      const firstVideoTrack = state.tracks
+        .filter((track) => track.type === 'video' && track.visible)
+        .sort((a, b) => a.startFrame - b.startFrame)[0];
+
+      if (!firstVideoTrack) {
+        console.log(
+          'No video tracks on timeline, skipping project thumbnail update',
+        );
+        return;
+      }
+
+      // Find the corresponding media library item
+      const mediaItem = state.mediaLibrary.find(
+        (item) =>
+          item.source === firstVideoTrack.source ||
+          item.tempFilePath === firstVideoTrack.source,
+      );
+
+      if (!mediaItem) {
+        console.log('Media library item not found for first video track');
+        return;
+      }
+
+      // Generate thumbnail if it doesn't exist
+      if (!mediaItem.thumbnail) {
+        const success = await get().generateThumbnailForMedia(mediaItem.id);
+        if (!success) {
+          console.error('Failed to generate thumbnail for project');
+          return;
+        }
+      }
+
+      // Update project thumbnail if we have a current project
+      if (state.currentProjectId && mediaItem.thumbnail) {
+        try {
+          const currentProject = await projectService.getProject(
+            state.currentProjectId,
+          );
+          if (currentProject) {
+            const updatedProject = {
+              ...currentProject,
+              metadata: {
+                ...currentProject.metadata,
+                thumbnail: mediaItem.thumbnail,
+                updatedAt: new Date().toISOString(),
+              },
+            };
+
+            await projectService.updateProject(updatedProject);
+            get().syncWithProjectStore();
+
+            console.log(
+              `📸 Updated project thumbnail from: ${firstVideoTrack.name}`,
+            );
+          }
+        } catch (error) {
+          console.error('Failed to update project thumbnail:', error);
+        }
       }
     },
 

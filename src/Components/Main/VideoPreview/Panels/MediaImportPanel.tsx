@@ -305,6 +305,39 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
       const isImage = file.type.startsWith('image/');
       const [hasError, setHasError] = useState(false);
 
+      // For videos, check if we have a generated thumbnail first
+      if (isVideo) {
+        const mediaLibraryItem = mediaLibrary.find(
+          (item) => item.id === file.id,
+        );
+        const hasGeneratedThumbnail = mediaLibraryItem?.thumbnail;
+
+        if (hasGeneratedThumbnail && !hasError) {
+          return (
+            <div className="w-full h-full bg-muted rounded-md overflow-hidden relative">
+              <img
+                src={mediaLibraryItem.thumbnail}
+                alt={file.name}
+                className="w-full h-full object-cover"
+                loading="lazy"
+                onError={() => setHasError(true)}
+              />
+              {/* Duration badge */}
+              {file.duration && (
+                <Badge className="absolute bottom-2 left-2 bg-black/50 text-white group-hover:opacity-0 transition-opacity duration-200">
+                  <Clock
+                    className="-ms-0.5 opacity-60"
+                    size={12}
+                    aria-hidden="true"
+                  />
+                  {formatDuration(file.duration)}
+                </Badge>
+              )}
+            </div>
+          );
+        }
+      }
+
       if (isImage || isVideo) {
         if (hasError) {
           // Show fallback gradient with icon if media failed to load
