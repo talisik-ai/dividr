@@ -13,6 +13,7 @@ import {
   Download,
   File,
   Image,
+  Loader2,
   MoreHorizontal,
   Music,
   Video,
@@ -42,6 +43,7 @@ interface MediaItem {
   duration?: number;
   isOnTimeline?: boolean;
   trackId?: string;
+  isGeneratingSprites?: boolean;
 }
 
 // Stable utility function outside component to prevent re-renders
@@ -76,6 +78,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
     );
     const removeFromMediaLibrary = useVideoEditorStore(
       (state) => state.removeFromMediaLibrary,
+    );
+    const isGeneratingSpriteSheet = useVideoEditorStore(
+      (state) => state.isGeneratingSpriteSheet,
     );
     // Access store directly when needed (non-reactive)
     const [dragActive, setDragActive] = useState(false);
@@ -387,9 +392,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
         <div className="flex flex-col space-y-2">
           {/* Card Container */}
           <div
-            draggable={!file.isOnTimeline}
+            draggable={!file.isOnTimeline && !file.isGeneratingSprites}
             onDragStart={(e) => {
-              if (!file.isOnTimeline) {
+              if (!file.isOnTimeline && !file.isGeneratingSprites) {
                 handleMediaDragStart(e, file.id);
               } else {
                 e.preventDefault();
@@ -398,24 +403,40 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
             onDragEnd={handleMediaDragEnd}
             className={cn(
               'group relative h-[98px] rounded-md transition-all duration-200 overflow-hidden',
-              !file.isOnTimeline && 'cursor-grab active:cursor-grabbing',
-              file.isOnTimeline && 'cursor-default',
+              !file.isOnTimeline &&
+                !file.isGeneratingSprites &&
+                'cursor-grab active:cursor-grabbing',
+              (file.isOnTimeline || file.isGeneratingSprites) &&
+                'cursor-default',
               draggedMediaId === file.id && 'opacity-50',
+              file.isGeneratingSprites && 'opacity-60 pointer-events-none',
             )}
             onClick={async () => {
-              if (!file.isOnTimeline) {
+              if (!file.isOnTimeline && !file.isGeneratingSprites) {
                 // Add to timeline at frame 0 - consistent with drag and drop behavior
                 await addTrackFromMediaLibrary(file.id, 0);
               }
             }}
             title={
-              file.isOnTimeline
-                ? 'Already on timeline'
-                : 'Click or drag to add to timeline (starts at frame 0)'
+              file.isGeneratingSprites
+                ? 'Generating sprite sheets...'
+                : file.isOnTimeline
+                  ? 'Already on timeline'
+                  : 'Click or drag to add to timeline (starts at frame 0)'
             }
           >
             {/* Media Cover/Thumbnail */}
             <MediaCover file={file} />
+
+            {/* Loading overlay for sprite generation */}
+            {file.isGeneratingSprites && (
+              <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                <div className="flex flex-col items-center text-white">
+                  <Loader2 className="w-6 h-6 animate-spin mb-2" />
+                  <p className="text-xs font-medium">Generating Sprites...</p>
+                </div>
+              </div>
+            )}
 
             {/* Hover overlay with actions only */}
             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -485,7 +506,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
           prevProps.file.name === nextProps.file.name &&
           prevProps.file.isOnTimeline === nextProps.file.isOnTimeline &&
           prevProps.file.size === nextProps.file.size &&
-          prevProps.file.duration === nextProps.file.duration
+          prevProps.file.duration === nextProps.file.duration &&
+          prevProps.file.isGeneratingSprites ===
+            nextProps.file.isGeneratingSprites
         );
       },
     );
@@ -539,9 +562,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
           duration: item.duration,
           isOnTimeline: isUsed,
           trackId: trackId,
+          isGeneratingSprites:
+            item.type === 'video' ? isGeneratingSpriteSheet(item.id) : false,
         };
       });
-    }, [mediaLibrary, sourceToTrackMap]);
+    }, [mediaLibrary, sourceToTrackMap, isGeneratingSpriteSheet]);
 
     const getFilteredFiles = useCallback(
       (type: 'all' | 'videos' | 'audio' | 'images' | 'subtitles') => {

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { default as VideoSpriteSheetGenerator } from '@/Components/Main/Timeline/VideoSpriteSheetGenerator';
 import { projectService } from '@/Services/ProjectService';
 import { v4 as uuidv4 } from 'uuid';
 import { create } from 'zustand';
@@ -89,6 +90,31 @@ export interface MediaLibraryItem {
     channels?: number;
     sampleRate?: number;
   };
+  spriteSheets?: {
+    success: boolean;
+    spriteSheets: Array<{
+      id: string;
+      url: string;
+      width: number;
+      height: number;
+      thumbnailsPerRow: number;
+      thumbnailsPerColumn: number;
+      thumbnailWidth: number;
+      thumbnailHeight: number;
+      thumbnails: Array<{
+        id: string;
+        timestamp: number;
+        frameNumber: number;
+        sheetIndex: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>;
+    }>;
+    cacheKey: string;
+    generatedAt?: number; // timestamp when generated
+  };
 }
 
 export interface TextStyleState {
@@ -120,6 +146,9 @@ interface VideoEditorStore {
   isAutoSaveEnabled: boolean;
   lastSavedAt: string | null;
   hasUnsavedChanges: boolean;
+
+  // Sprite sheet generation tracking
+  generatingSpriteSheets: Set<string>; // Set of media IDs currently generating sprite sheets
 
   // Timeline Actions
   setCurrentFrame: (frame: number) => void;
@@ -155,6 +184,12 @@ interface VideoEditorStore {
   addToMediaLibrary: (item: Omit<MediaLibraryItem, 'id'>) => string;
   removeFromMediaLibrary: (mediaId: string) => void;
   getMediaLibraryItem: (mediaId: string) => MediaLibraryItem | undefined;
+  generateSpriteSheetForMedia: (mediaId: string) => Promise<boolean>;
+  getSpriteSheetsBySource: (
+    source: string,
+  ) => MediaLibraryItem['spriteSheets'] | undefined;
+  isGeneratingSpriteSheet: (mediaId: string) => boolean;
+  setGeneratingSpriteSheet: (mediaId: string, isGenerating: boolean) => void;
   clearMediaLibrary: () => void;
 
   // Playback Actions
@@ -470,6 +505,7 @@ const processImportedFile = async (
   addToLibraryFn: (item: Omit<MediaLibraryItem, 'id'>) => string,
   addToTimelineFn?: (track: Omit<VideoTrack, 'id'>) => string,
   getFps?: () => number,
+  generateSpriteFn?: (mediaId: string) => Promise<boolean>,
 ) => {
   // Get accurate duration using FFprobe
   let actualDurationSeconds: number;
@@ -548,6 +584,18 @@ const processImportedFile = async (
   };
 
   const mediaId = addToLibraryFn(mediaLibraryItem);
+
+  // Generate sprite sheets for video files (async, don't wait)
+  if (trackType === 'video' && generateSpriteFn) {
+    console.log(`🎬 Triggering sprite sheet generation for: ${fileInfo.name}`);
+    // Run sprite sheet generation in background without blocking import
+    generateSpriteFn(mediaId).catch((error) => {
+      console.warn(
+        `⚠️ Sprite sheet generation failed for ${fileInfo.name}:`,
+        error,
+      );
+    });
+  }
 
   // Add to timeline if requested
   if (addToTimelineFn && getFps) {
@@ -759,6 +807,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     isAutoSaveEnabled: true,
     lastSavedAt: null as string | null,
     hasUnsavedChanges: false,
+
+    // Sprite sheet generation tracking
+    generatingSpriteSheets: new Set<string>(),
 
     // Timeline Actions
     setCurrentFrame: (frame) =>
@@ -1413,6 +1464,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               get().addToMediaLibrary,
               undefined, // No timeline addition
               () => get().timeline.fps,
+              get().generateSpriteSheetForMedia, // Generate sprite sheets on import
             );
             importedFiles.push(fileData);
           }),
@@ -1565,6 +1617,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               get().addToMediaLibrary,
               undefined, // No timeline addition
               () => get().timeline.fps,
+              get().generateSpriteSheetForMedia, // Generate sprite sheets on import
             );
             importedFiles.push(fileData);
           }),
@@ -1629,6 +1682,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               get().addToMediaLibrary,
               get().addTrack, // Also add to timeline
               () => get().timeline.fps,
+              get().generateSpriteSheetForMedia, // Generate sprite sheets on import
             );
             importedFiles.push(fileData);
           }),
@@ -1832,6 +1886,128 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
 
     getMediaLibraryItem: (mediaId) => {
       return get().mediaLibrary.find((item) => item.id === mediaId);
+    },
+
+    getSpriteSheetsBySource: (source) => {
+      const mediaItem = get().mediaLibrary.find(
+        (item) => item.source === source || item.tempFilePath === source,
+      );
+      return mediaItem?.spriteSheets;
+    },
+
+    isGeneratingSpriteSheet: (mediaId) => {
+      return get().generatingSpriteSheets.has(mediaId);
+    },
+
+    setGeneratingSpriteSheet: (mediaId, isGenerating) => {
+      set((state) => {
+        const newGeneratingSet = new Set(state.generatingSpriteSheets);
+        if (isGenerating) {
+          newGeneratingSet.add(mediaId);
+        } else {
+          newGeneratingSet.delete(mediaId);
+        }
+        return {
+          generatingSpriteSheets: newGeneratingSet,
+        };
+      });
+    },
+
+    generateSpriteSheetForMedia: async (mediaId) => {
+      const mediaItem = get().mediaLibrary.find((item) => item.id === mediaId);
+      if (!mediaItem) {
+        console.error('Media item not found:', mediaId);
+        return false;
+      }
+
+      // Only generate sprite sheets for video files
+      if (mediaItem.type !== 'video') {
+        console.log(
+          `Skipping sprite sheet generation for non-video: ${mediaItem.name}`,
+        );
+        return true; // Not an error, just not applicable
+      }
+
+      // Skip if sprite sheets already exist
+      if (mediaItem.spriteSheets?.success) {
+        console.log(`Sprite sheets already exist for: ${mediaItem.name}`);
+        return true;
+      }
+
+      // Skip if already generating
+      if (get().isGeneratingSpriteSheet(mediaId)) {
+        console.log(`Sprite sheets already generating for: ${mediaItem.name}`);
+        return true;
+      }
+
+      const videoPath = mediaItem.tempFilePath || mediaItem.source;
+
+      // Skip blob URLs (they won't work with FFmpeg)
+      if (videoPath.startsWith('blob:')) {
+        console.warn(
+          `Cannot generate sprite sheets from blob URL: ${mediaItem.name}`,
+        );
+        return false;
+      }
+
+      try {
+        // Set generating state
+        get().setGeneratingSpriteSheet(mediaId, true);
+        console.log(
+          `🎬 Generating sprite sheets for media library item: ${mediaItem.name}`,
+        );
+
+        const result = await VideoSpriteSheetGenerator.generateSpriteSheets({
+          videoPath,
+          duration: mediaItem.duration,
+          fps: mediaItem.metadata?.fps || 30,
+          thumbWidth: 120,
+          thumbHeight: 68,
+          maxThumbnailsPerSheet: 100,
+        });
+
+        if (result.success) {
+          // Update the media library item with sprite sheet data
+          set((state) => ({
+            mediaLibrary: state.mediaLibrary.map((item) =>
+              item.id === mediaId
+                ? {
+                    ...item,
+                    spriteSheets: {
+                      success: result.success,
+                      spriteSheets: result.spriteSheets,
+                      cacheKey: result.cacheKey,
+                      generatedAt: Date.now(),
+                    },
+                  }
+                : item,
+            ),
+          }));
+
+          // Mark as having unsaved changes
+          get().markUnsavedChanges();
+
+          console.log(
+            `✅ Sprite sheets generated and cached for: ${mediaItem.name}`,
+          );
+          return true;
+        } else {
+          console.error(
+            `❌ Failed to generate sprite sheets for ${mediaItem.name}:`,
+            result.error,
+          );
+          return false;
+        }
+      } catch (error) {
+        console.error(
+          `❌ Error generating sprite sheets for ${mediaItem.name}:`,
+          error,
+        );
+        return false;
+      } finally {
+        // Clear generating state
+        get().setGeneratingSpriteSheet(mediaId, false);
+      }
     },
 
     clearMediaLibrary: () => {
