@@ -11,6 +11,7 @@ interface TimelineRulerProps {
   inPoint?: number;
   outPoint?: number;
   onClick: (e: React.MouseEvent) => void;
+  className?: string;
 }
 
 export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
@@ -23,6 +24,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     inPoint,
     outPoint,
     onClick,
+    className,
   }) => {
     // Memoize effective timeline duration calculation
     const effectiveEndFrame = useMemo(() => {
@@ -140,7 +142,10 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
 
     return (
       <div
-        className="h-[36px] lg:h-[40px] border-t border-accent relative overflow-hidden cursor-pointer"
+        className={cn(
+          'h-[36px] lg:h-[40px] border-t border-accent relative overflow-hidden',
+          className,
+        )}
         onClick={onClick}
       >
         {/* Background Grid */}

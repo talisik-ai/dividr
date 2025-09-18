@@ -28,8 +28,15 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const lastFrameUpdateRef = useRef<number>(0);
     const isManualScrollingRef = useRef<boolean>(false);
+    const isDraggingRef = useRef<boolean>(false);
+    const dragStartXRef = useRef<number>(0);
+    const dragStartScrollXRef = useRef<number>(0);
+    const lastClickTimeRef = useRef<number>(0);
+    const hasDraggedRef = useRef<boolean>(false);
+    const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [, setDropActive] = useState(false);
     const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
+    const [isDragging, setIsDragging] = useState(false);
 
     // Selectively subscribe to store to prevent unnecessary re-renders
     const timeline = useVideoEditorStore((state) => state.timeline);
@@ -238,6 +245,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         if (playbackIntervalRef.current) {
           clearInterval(playbackIntervalRef.current);
         }
+        if (seekTimeoutRef.current) {
+          clearTimeout(seekTimeoutRef.current);
+        }
       };
     }, []);
 
@@ -363,37 +373,218 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       }
     }, [playback.isPlaying]);
 
-    // Handle timeline click to set current frame and pause if playing
-    const handleTimelineClick = useCallback(
+    // Handle double-click event (works better with touchpads)
+    const handleDoubleClick = useCallback(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
 
-        // Always pause playback when clicking on timeline - no matter the current state
-        pause();
+        // Cancel any pending seek operation
+        if (seekTimeoutRef.current) {
+          clearTimeout(seekTimeoutRef.current);
+          seekTimeoutRef.current = null;
+        }
 
-        // Set manual scrolling flags
+        // Pause playback when entering drag mode
+        if (playback.isPlaying) {
+          pause();
+        }
+
+        // Double-click detected: start drag-to-scroll mode
+        isDraggingRef.current = true;
+        setIsDragging(true);
+        hasDraggedRef.current = false; // Reset drag flag
+        dragStartXRef.current = e.clientX;
+        dragStartScrollXRef.current = tracksRef.current.scrollLeft;
+        lastClickTimeRef.current = 0; // Reset to prevent conflicts
+
+        // Disable auto-follow during drag
         isManualScrollingRef.current = true;
         setAutoFollowEnabled(false);
 
-        const rect = tracksRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
-        const frame = Math.floor(x / frameWidth);
-        const clampedFrame = Math.max(
-          0,
-          Math.min(frame, effectiveEndFrame - 1),
-        );
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      [pause, playback.isPlaying],
+    );
 
-        lastFrameUpdateRef.current = clampedFrame;
-        setCurrentFrame(clampedFrame);
+    // Handle mouse down for both single click and double-click detection
+    const handleMouseDown = useCallback(
+      (e: React.MouseEvent) => {
+        if (!tracksRef.current) return;
 
-        // Re-enable auto follow after a short delay, but don't restart playback
+        const currentTime = Date.now();
+        const isDoubleClick = currentTime - lastClickTimeRef.current < 400;
+
+        if (isDoubleClick) {
+          // Cancel any pending seek
+          if (seekTimeoutRef.current) {
+            clearTimeout(seekTimeoutRef.current);
+            seekTimeoutRef.current = null;
+          }
+
+          // Pause playback when entering drag mode
+          if (playback.isPlaying) {
+            pause();
+          }
+
+          // Double-click: start drag-to-scroll mode
+          lastClickTimeRef.current = 0; // Reset to prevent triple-click issues
+          isDraggingRef.current = true;
+          setIsDragging(true);
+          hasDraggedRef.current = false; // Reset drag flag
+          dragStartXRef.current = e.clientX;
+          dragStartScrollXRef.current = tracksRef.current.scrollLeft;
+
+          // Disable auto-follow during drag
+          isManualScrollingRef.current = true;
+          setAutoFollowEnabled(false);
+
+          e.preventDefault();
+          e.stopPropagation();
+        } else {
+          // First click: record time and position for potential seek
+          lastClickTimeRef.current = currentTime;
+          dragStartXRef.current = e.clientX;
+
+          // Store click position for potential seek
+          const rect = tracksRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
+          const frame = Math.floor(x / frameWidth);
+          const clampedFrame = Math.max(
+            0,
+            Math.min(frame, effectiveEndFrame - 1),
+          );
+
+          // Delay seek to allow for double-click detection
+          seekTimeoutRef.current = setTimeout(() => {
+            if (
+              !isDraggingRef.current &&
+              Date.now() - lastClickTimeRef.current > 350
+            ) {
+              // Single click confirmed: seek to frame
+              pause();
+              isManualScrollingRef.current = true;
+              setAutoFollowEnabled(false);
+
+              lastFrameUpdateRef.current = clampedFrame;
+              setCurrentFrame(clampedFrame);
+
+              setTimeout(() => {
+                setAutoFollowEnabled(true);
+                isManualScrollingRef.current = false;
+              }, 200);
+            }
+            seekTimeoutRef.current = null;
+          }, 350);
+        }
+      },
+      [
+        frameWidth,
+        effectiveEndFrame,
+        setCurrentFrame,
+        pause,
+        playback.isPlaying,
+      ],
+    );
+
+    // Handle mouse move for dragging
+    const handleMouseMove = useCallback(
+      (e: React.MouseEvent) => {
+        if (!isDraggingRef.current || !tracksRef.current) return;
+
+        const deltaX = e.clientX - dragStartXRef.current;
+
+        // Mark as actually dragged if moved more than a few pixels
+        if (Math.abs(deltaX) > 3) {
+          hasDraggedRef.current = true;
+        }
+
+        const newScrollX = Math.max(0, dragStartScrollXRef.current - deltaX);
+
+        // Immediately update both the DOM and store to sync ruler and timeline
+        tracksRef.current.scrollLeft = newScrollX;
+        setScrollX(newScrollX);
+
+        e.preventDefault();
+      },
+      [setScrollX],
+    );
+
+    // Handle mouse up to end dragging
+    const handleMouseUp = useCallback(() => {
+      if (isDraggingRef.current) {
+        const hadActualDrag = hasDraggedRef.current;
+
+        isDraggingRef.current = false;
+        setIsDragging(false);
+        hasDraggedRef.current = false;
+
+        // If we actually dragged, cancel any pending seek
+        if (hadActualDrag && seekTimeoutRef.current) {
+          clearTimeout(seekTimeoutRef.current);
+          seekTimeoutRef.current = null;
+        }
+
+        // Re-enable auto-follow after drag
         setTimeout(() => {
           setAutoFollowEnabled(true);
           isManualScrollingRef.current = false;
         }, 200);
-      },
-      [frameWidth, effectiveEndFrame, setCurrentFrame, pause],
-    );
+      }
+    }, []);
+
+    // Add global mouse event listeners for dragging
+    useEffect(() => {
+      const handleGlobalMouseMove = (e: MouseEvent) => {
+        if (!isDraggingRef.current || !tracksRef.current) return;
+
+        const deltaX = e.clientX - dragStartXRef.current;
+
+        // Mark as actually dragged if moved more than a few pixels
+        if (Math.abs(deltaX) > 3) {
+          hasDraggedRef.current = true;
+        }
+
+        const newScrollX = Math.max(0, dragStartScrollXRef.current - deltaX);
+
+        // Immediately update both the DOM and store to sync ruler and timeline
+        tracksRef.current.scrollLeft = newScrollX;
+        setScrollX(newScrollX);
+
+        e.preventDefault();
+      };
+
+      const handleGlobalMouseUp = () => {
+        if (isDraggingRef.current) {
+          const hadActualDrag = hasDraggedRef.current;
+
+          isDraggingRef.current = false;
+          setIsDragging(false);
+          hasDraggedRef.current = false;
+
+          // If we actually dragged, cancel any pending seek
+          if (hadActualDrag && seekTimeoutRef.current) {
+            clearTimeout(seekTimeoutRef.current);
+            seekTimeoutRef.current = null;
+          }
+
+          setTimeout(() => {
+            setAutoFollowEnabled(true);
+            isManualScrollingRef.current = false;
+          }, 200);
+        }
+      };
+
+      if (isDragging) {
+        document.addEventListener('mousemove', handleGlobalMouseMove);
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+
+        return () => {
+          document.removeEventListener('mousemove', handleGlobalMouseMove);
+          document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+      }
+    }, [isDragging, setScrollX]);
 
     return (
       <div
@@ -423,7 +614,17 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           {/* Timeline Content Area */}
           <div className="flex flex-col flex-1 relative overflow-hidden">
             {/* Timeline Ruler - Fixed at top but scrolls horizontally */}
-            <div className="relative overflow-hidden z-10">
+            <div
+              className={cn(
+                'relative overflow-hidden z-10',
+                isDragging ? 'cursor-grabbing select-none' : 'cursor-pointer',
+              )}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onDoubleClick={handleDoubleClick}
+              title="Click to seek • Double-click and drag to scroll"
+            >
               <TimelineRuler
                 frameWidth={frameWidth}
                 totalFrames={timeline.totalFrames}
@@ -432,7 +633,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 tracks={tracks}
                 inPoint={timeline.inPoint}
                 outPoint={timeline.outPoint}
-                onClick={handleTimelineClick}
+                onClick={undefined} // Handle clicks at parent level
               />
             </div>
 
@@ -442,14 +643,19 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 ref={tracksRef}
                 className={cn(
                   'relative overflow-auto transition-colors duration-200',
+                  isDragging ? 'cursor-grabbing select-none' : 'cursor-pointer',
                   // dropActive &&
                   //   'bg-blue-500/10 border-2 border-dashed border-blue-500',
                 )}
+                title="Click to seek • Double-click and drag to scroll"
                 style={{
                   scrollBehavior:
                     autoFollowEnabled && playback.isPlaying ? 'smooth' : 'auto',
                 }}
-                onClick={handleTimelineClick}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onDoubleClick={handleDoubleClick}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -460,7 +666,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     scrollLeft - timeline.scrollX,
                   );
 
-                  // Only handle auto-follow disabling during playback, don't affect manual pausing
+                  // Only handle auto-follow disabling during playback
                   if (
                     playback.isPlaying &&
                     autoFollowEnabled &&
@@ -476,9 +682,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                       if (autoFollowTimeoutRef.current) {
                         clearTimeout(autoFollowTimeoutRef.current);
                       }
-                      // Reduced timeout to be less aggressive
                       autoFollowTimeoutRef.current = setTimeout(() => {
-                        // Only re-enable if still playing
                         if (playback.isPlaying) {
                           setAutoFollowEnabled(true);
                         }
