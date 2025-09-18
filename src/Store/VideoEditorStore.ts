@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { default as VideoSpriteSheetGenerator } from '@/Components/Main/Timeline/VideoSpriteSheetGenerator';
 import { projectService } from '@/Services/ProjectService';
+import { default as VideoSpriteSheetGenerator } from '@/Utility/VideoSpriteSheetGenerator';
 import { VideoThumbnailGenerator } from '@/Utility/VideoThumbnailGenerator';
 import { v4 as uuidv4 } from 'uuid';
 import { create } from 'zustand';

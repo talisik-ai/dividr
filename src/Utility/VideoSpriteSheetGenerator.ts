@@ -1,4 +1,4 @@
-import { VideoTrack } from '../../../Store/VideoEditorStore';
+import { VideoTrack } from '../Store/VideoEditorStore';
 
 export interface SpriteSheetOptions {
   videoPath: string;

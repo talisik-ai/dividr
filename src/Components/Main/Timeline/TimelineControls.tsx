@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Button } from '@/Components/sub/ui/Button';
 import ElasticSlider from '@/Components/sub/ui/Elastic-Slider';
 import {
@@ -19,9 +20,51 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 // eslint-disable-next-line import/no-unresolved
 import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
+
+// Throttle utility for zoom operations to prevent lag
+const useThrottledCallback = <T extends (...args: any[]) => void>(
+  callback: T,
+  delay: number,
+): T => {
+  const lastCall = useRef<number>(0);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  return useCallback(
+    ((...args: Parameters<T>) => {
+      const now = Date.now();
+
+      // Clear any pending timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      // If enough time has passed, call immediately
+      if (now - lastCall.current >= delay) {
+        lastCall.current = now;
+        callback(...args);
+      } else {
+        // Otherwise, schedule for later
+        timeoutRef.current = setTimeout(
+          () => {
+            lastCall.current = Date.now();
+            callback(...args);
+          },
+          delay - (now - lastCall.current),
+        );
+      }
+    }) as T,
+    [callback, delay],
+  );
+};
 
 // Separate component for time display that only re-renders when currentFrame changes
 const TimeDisplay: React.FC = React.memo(() => {
@@ -112,10 +155,62 @@ const PlaybackRateSelector: React.FC = React.memo(() => {
   );
 });
 
+// Optimized zoom slider component to prevent timeline lag
+const ZoomSlider: React.FC = React.memo(() => {
+  // Get current zoom level from store
+  const storeZoom = useVideoEditorStore((state) => state.timeline.zoom);
+  const setZoom = useVideoEditorStore((state) => state.setZoom);
+
+  // Local state for smooth slider interaction
+  const [localZoom, setLocalZoom] = useState(storeZoom);
+  const isUserInteracting = useRef(false);
+
+  // Sync local zoom with store zoom when not user-controlled
+  useEffect(() => {
+    if (!isUserInteracting.current) {
+      setLocalZoom(storeZoom);
+    }
+  }, [storeZoom]);
+
+  // Throttled zoom update to store (key optimization)
+  const throttledSetZoom = useThrottledCallback((value: number) => {
+    setZoom(value);
+  }, 16); // ~60fps throttle for smooth performance
+
+  // Handle zoom change with local state + throttled store update
+  const handleZoomChange = useCallback(
+    (value: number) => {
+      isUserInteracting.current = true;
+      setLocalZoom(value);
+      throttledSetZoom(value);
+
+      // Reset interaction flag after a delay
+      setTimeout(() => {
+        isUserInteracting.current = false;
+      }, 100);
+    },
+    [throttledSetZoom],
+  );
+
+  return (
+    <ElasticSlider
+      leftIcon={<ZoomOut className="translate scale-x-[-1]" size={16} />}
+      rightIcon={<ZoomIn className="translate scale-x-[-1]" size={16} />}
+      startingValue={0.2}
+      defaultValue={localZoom}
+      maxValue={5}
+      showLabel={false}
+      thickness={4}
+      isStepped={true}
+      stepSize={0.1}
+      onChange={handleZoomChange}
+    />
+  );
+});
+
 export const TimelineControls: React.FC = React.memo(
   () => {
-    // Get current zoom level reactively for the slider
-    const currentZoom = useVideoEditorStore((state) => state.timeline.zoom);
+    // Remove reactive zoom subscription to prevent unnecessary re-renders
     const setZoom = useVideoEditorStore((state) => state.setZoom);
 
     // Get current frame non-reactively
@@ -304,22 +399,7 @@ export const TimelineControls: React.FC = React.memo(
           </div>
 
           <div className="flex justify-end items-center gap-4 w-full">
-            <ElasticSlider
-              leftIcon={
-                <ZoomOut className="translate scale-x-[-1]" size={16} />
-              }
-              rightIcon={
-                <ZoomIn className="translate scale-x-[-1]" size={16} />
-              }
-              startingValue={0.2}
-              defaultValue={currentZoom}
-              maxValue={5}
-              showLabel={false}
-              thickness={4}
-              isStepped={true}
-              stepSize={0.1}
-              onChange={(value) => setZoom(value)}
-            />
+            <ZoomSlider />
             <Button
               variant="native"
               size="icon"
@@ -352,8 +432,10 @@ export const TimelineControls: React.FC = React.memo(
     );
   },
   () => {
-    // Custom comparison - TimelineControls should re-render only when zoom changes
-    // (currentZoom subscription is needed for the slider)
+    // TimelineControls should almost never re-render since we removed zoom subscription
+    // and moved zoom slider to its own optimized component
     return true;
   },
 );
+
+ZoomSlider.displayName = 'ZoomSlider';
