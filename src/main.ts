@@ -340,6 +340,9 @@ import {
   runFfmpegWithProgress,
 } from './Utility/ffmpegRunner';
 
+
+
+
 if (started) {
   app.quit();
 }

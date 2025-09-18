@@ -139,3 +139,5 @@ typings/
 
 # Electron-Forge
 out/
+
+public/
