@@ -91,7 +91,7 @@ export class VideoThumbnailGenerator {
       const totalThumbnails = Math.ceil(duration / intervalSeconds);
 
       console.log(
-        `🎬 Generating ${totalThumbnails} thumbnails for ${options.videoPath} starting at ${sourceStartTime}s`,
+        `🎬 Generating ${totalThumbnails} thumbnails for ${options.videoPath} starting at ${sourceStartTime}s (duration: ${duration}s)`,
       );
 
       // Generate output directory path
@@ -253,9 +253,11 @@ export class VideoThumbnailGenerator {
       '-t',
       duration.toString(), // Duration
       '-vf',
-      `fps=1/${intervalSeconds},scale=${width}:${height}`, // Extract every N seconds and scale
+      `fps=1/${intervalSeconds},scale=${width}:${height}:flags=fast_bilinear`, // Extract every N seconds and scale, fast_bilinear = fastest scaling method
       '-q:v',
-      '2', // High quality
+      '5', // Lower quality
+      '-vsync',
+      '0',
       '-f',
       'image2', // Image sequence format
       `${outputDir}/thumb_%04d.jpg`, // Output pattern

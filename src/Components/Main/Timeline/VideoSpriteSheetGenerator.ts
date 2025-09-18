@@ -346,7 +346,7 @@ export class VideoSpriteSheetGenerator {
     const exactThumbnails = Math.floor(duration / intervalSeconds) + 1; // +1 for the first frame
 
     // Limit total thumbnails to prevent memory issues with large files
-    const maxThumbnails = Math.min(exactThumbnails, 2000); // Reasonable limit
+    const maxThumbnails = Math.min(exactThumbnails, 5000); // Reasonable limit
     const adjustedTotalThumbnails = Math.max(5, maxThumbnails); // Minimum 5 thumbnails
 
     // Ensure we don't exceed actual video content
@@ -489,18 +489,20 @@ export class VideoSpriteSheetGenerator {
             `crop=${thumbWidth}:${thumbHeight}`, // Crop to exact dimensions (no padding/black strips)
             `tile=${optimalCols}x${optimalRows}`, // Use calculated grid dimensions
           ].join(','),
-          '-compression_level',
-          '6', // PNG compression level (0-9, 6 is good balance)
-          '-f',
+          '-q:v',
+          '5',
+          '-f', 
           'image2',
           '-avoid_negative_ts',
           'make_zero', // Handle negative timestamps
           '-vsync',
           '0', // Prevent frame dropping
+          '-threads',
+          '4',
           '-frames:v',
           '1', // Generate exactly one output image (the tiled sprite sheet)
           '-y', // Overwrite output files
-          `${outputDir}/sprite_${sheetIndex.toString().padStart(3, '0')}.png`,
+          `${outputDir}/sprite_${sheetIndex.toString().padStart(3, '0')}.jpg`,
         ];
 
         // Update metadata with actual dimensions
@@ -587,7 +589,7 @@ export class VideoSpriteSheetGenerator {
       const spriteSheets: SpriteSheet[] = [];
 
       for (const metadata of sheetMetadata) {
-        const spriteSheetUrl = `http://localhost:3001/${outputDir}/sprite_${metadata.index.toString().padStart(3, '0')}.png`;
+        const spriteSheetUrl = `http://localhost:3001/${outputDir}/sprite_${metadata.index.toString().padStart(3, '0')}.jpg`;
         const thumbnails: SpriteSheetThumbnail[] = [];
 
         // Only create thumbnails for actual frames (not empty grid slots)
@@ -872,8 +874,12 @@ export class VideoSpriteSheetGenerator {
       return 0.5; // Good coverage for medium videos
     } else if (duration <= 600) {
       return 1.0; // Reasonable coverage for long videos
+    } else if (duration <= 3599 && duration >= 601) {
+      return duration/300;
+    }else if (duration >= 3600) {
+      return duration/1200; // Sparse coverage for very long videos to prevent memory issues
     } else {
-      return 2.0; // Sparse coverage for very long videos to prevent memory issues
+      return 2.0;
     }
   }
 
@@ -1035,7 +1041,7 @@ export class VideoSpriteSheetGenerator {
 
     const videoPath = track.tempFilePath || track.source;
     const durationSeconds = (track.endFrame - track.startFrame) / fps;
-
+    console.log("calculated seconds: " + durationSeconds);
     // Handle blob URLs (won't work with FFmpeg)
     if (videoPath.startsWith('blob:')) {
       throw new Error('Cannot generate sprite sheets from blob URL');
@@ -1049,6 +1055,7 @@ export class VideoSpriteSheetGenerator {
       thumbWidth: 120, // Optimized size for timeline display
       thumbHeight: 68, // 16:9 aspect ratio
       maxThumbnailsPerSheet: 100, // Balance between file size and HTTP requests
+      intervalSeconds: 6 // larger interval
     });
   }
 }
