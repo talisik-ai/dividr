@@ -41,6 +41,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const setScrollX = useVideoEditorStore((state) => state.setScrollX);
     const setZoom = useVideoEditorStore((state) => state.setZoom);
     const togglePlayback = useVideoEditorStore((state) => state.togglePlayback);
+    const pause = useVideoEditorStore((state) => state.pause);
     const setInPoint = useVideoEditorStore((state) => state.setInPoint);
     const setOutPoint = useVideoEditorStore((state) => state.setOutPoint);
     const setSelectedTracks = useVideoEditorStore(
@@ -355,9 +356,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       autoFollowEnabled,
     ]);
 
-    // Re-enable auto-follow when playback starts
+    // Re-enable auto-follow when playback starts, but only if not manually scrolling
     useEffect(() => {
-      if (playback.isPlaying) {
+      if (playback.isPlaying && !isManualScrollingRef.current) {
         setAutoFollowEnabled(true);
       }
     }, [playback.isPlaying]);
@@ -367,11 +368,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
 
+        // Always pause playback when clicking on timeline - no matter the current state
+        pause();
+
+        // Set manual scrolling flags
         isManualScrollingRef.current = true;
         setAutoFollowEnabled(false);
-        if (playback.isPlaying) {
-          togglePlayback();
-        }
 
         const rect = tracksRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
@@ -383,18 +385,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         lastFrameUpdateRef.current = clampedFrame;
         setCurrentFrame(clampedFrame);
+
+        // Re-enable auto follow after a short delay, but don't restart playback
         setTimeout(() => {
           setAutoFollowEnabled(true);
           isManualScrollingRef.current = false;
         }, 200);
       },
-      [
-        frameWidth,
-        effectiveEndFrame,
-        setCurrentFrame,
-        playback.isPlaying,
-        togglePlayback,
-      ],
+      [frameWidth, effectiveEndFrame, setCurrentFrame, pause],
     );
 
     return (
@@ -462,6 +460,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     scrollLeft - timeline.scrollX,
                   );
 
+                  // Only handle auto-follow disabling during playback, don't affect manual pausing
                   if (
                     playback.isPlaying &&
                     autoFollowEnabled &&
@@ -477,10 +476,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                       if (autoFollowTimeoutRef.current) {
                         clearTimeout(autoFollowTimeoutRef.current);
                       }
+                      // Reduced timeout to be less aggressive
                       autoFollowTimeoutRef.current = setTimeout(() => {
-                        setAutoFollowEnabled(true);
+                        // Only re-enable if still playing
+                        if (playback.isPlaying) {
+                          setAutoFollowEnabled(true);
+                        }
                         isManualScrollingRef.current = false;
-                      }, 2000);
+                      }, 1500);
                     }
                   }
 
