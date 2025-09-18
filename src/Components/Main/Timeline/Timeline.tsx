@@ -25,6 +25,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const tracksRef = useRef<HTMLDivElement>(null);
     const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const autoFollowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const lastFrameUpdateRef = useRef<number>(0);
+    const isManualScrollingRef = useRef<boolean>(false);
     const [, setDropActive] = useState(false);
     const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
 
@@ -119,12 +122,22 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
     // Animation loop for playback
     useEffect(() => {
-      if (!playback.isPlaying) return;
+      if (!playback.isPlaying) {
+        if (playbackIntervalRef.current) {
+          clearInterval(playbackIntervalRef.current);
+          playbackIntervalRef.current = null;
+        }
+        return;
+      }
 
-      const targetFPS = Math.min(15, timeline.fps); // Cap at 15fps for smoother performance
-      const interval = setInterval(() => {
-        const currentFrame = timeline.currentFrame;
-        // --- Snap to next segment if in blank during playback ---
+      const targetFPS = Math.min(20, timeline.fps);
+      const intervalMs = 1000 / targetFPS;
+
+      playbackIntervalRef.current = setInterval(() => {
+        // Use ref to prevent race conditions
+        const currentFrame = lastFrameUpdateRef.current;
+
+        // Snap to next segment if in blank during playback
         const isInBlank = !tracks.some(
           (track) =>
             track.type === 'video' &&
@@ -133,6 +146,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             currentFrame >= track.startFrame &&
             currentFrame < track.endFrame,
         );
+
         if (isInBlank) {
           const nextSegment = tracks
             .filter(
@@ -144,31 +158,53 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             )
             .sort((a, b) => a.startFrame - b.startFrame)[0];
           if (nextSegment) {
-            setCurrentFrame(nextSegment.startFrame);
-            return; // Don't advance frame this tick
+            const clampedFrame = Math.max(
+              0,
+              Math.min(nextSegment.startFrame, effectiveEndFrame - 1),
+            );
+            lastFrameUpdateRef.current = clampedFrame;
+            setCurrentFrame(clampedFrame);
+            return;
           }
         }
-        // --- End snap logic ---
-        const nextFrame =
-          currentFrame + Math.max(1, Math.round(timeline.fps / targetFPS)); // Skip frames for better performance
-        if (nextFrame >= effectiveEndFrame) {
-          setCurrentFrame(playback.isLooping ? 0 : effectiveEndFrame - 1);
-        } else {
-          setCurrentFrame(nextFrame);
-        }
-      }, 1000 / targetFPS);
 
-      return () => clearInterval(interval);
+        const nextFrame = currentFrame + 1;
+
+        if (nextFrame >= effectiveEndFrame) {
+          const finalFrame = playback.isLooping
+            ? 0
+            : Math.max(0, effectiveEndFrame - 1);
+          lastFrameUpdateRef.current = finalFrame;
+          setCurrentFrame(finalFrame);
+        } else {
+          const clampedFrame = Math.max(
+            0,
+            Math.min(nextFrame, effectiveEndFrame - 1),
+          );
+          lastFrameUpdateRef.current = clampedFrame;
+          setCurrentFrame(clampedFrame);
+        }
+      }, intervalMs);
+
+      return () => {
+        if (playbackIntervalRef.current) {
+          clearInterval(playbackIntervalRef.current);
+          playbackIntervalRef.current = null;
+        }
+      };
     }, [
       playback.isPlaying,
       playback.isLooping,
       timeline.fps,
-      timeline.totalFrames,
-      timeline.currentFrame,
       effectiveEndFrame,
       setCurrentFrame,
       tracks,
     ]);
+
+    // Sync lastFrameUpdateRef with actual currentFrame changes
+    useEffect(() => {
+      lastFrameUpdateRef.current = timeline.currentFrame;
+    }, [timeline.currentFrame]);
 
     // Keyboard shortcuts
     useHotkeys('space', (e) => {
@@ -189,7 +225,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     useHotkeys('i', () => setInPoint(timeline.currentFrame));
     useHotkeys('o', () => setOutPoint(timeline.currentFrame));
 
-    // Cleanup timeouts on unmount
+    // Cleanup timeouts and intervals on unmount
     useEffect(() => {
       return () => {
         if (scrollTimeoutRef.current) {
@@ -197,6 +233,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         }
         if (autoFollowTimeoutRef.current) {
           clearTimeout(autoFollowTimeoutRef.current);
+        }
+        if (playbackIntervalRef.current) {
+          clearInterval(playbackIntervalRef.current);
         }
       };
     }, []);
@@ -250,9 +289,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       [effectiveEndFrame, frameWidth],
     );
 
-    // Smooth auto-follow playhead during playback
-    useEffect(() => {
-      if (!playback.isPlaying || !tracksRef.current || !autoFollowEnabled) {
+    // Auto-follow playhead during playback
+    const autoFollowPlayhead = useCallback(() => {
+      if (
+        !playback.isPlaying ||
+        !tracksRef.current ||
+        !autoFollowEnabled ||
+        isManualScrollingRef.current
+      ) {
         return;
       }
 
@@ -265,33 +309,48 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       const leftBound = currentScrollX;
       const rightBound = currentScrollX + viewportWidth;
 
-      // Smart auto-follow strategy: Keep playhead in optimal viewing position
-      const optimalPosition = viewportWidth * 0.3; // 30% from left edge for better preview
-      const scrollBuffer = viewportWidth * 0.1; // 10% buffer zone for smoother transitions
+      const optimalPosition = viewportWidth * 0.3;
+      const scrollBuffer = viewportWidth * 0.1;
 
       let targetScrollX = currentScrollX;
 
-      // If playhead is approaching the right edge, scroll to keep it at optimal position
       if (playheadPosition > rightBound - scrollBuffer) {
         targetScrollX = playheadPosition - optimalPosition;
-      }
-      // If playhead is too far left (behind the visible area), scroll to show it
-      else if (playheadPosition < leftBound + scrollBuffer) {
+      } else if (playheadPosition < leftBound + scrollBuffer) {
         targetScrollX = Math.max(0, playheadPosition - optimalPosition);
       }
 
-      // Only scroll if the change is significant enough (prevents micro-adjustments)
       const scrollDifference = Math.abs(targetScrollX - currentScrollX);
       if (scrollDifference > 5) {
-        // Use smooth scrolling for better UX
+        isManualScrollingRef.current = false;
         tracksElement.scrollTo({
           left: Math.max(0, targetScrollX),
           behavior: 'smooth',
         });
+        setTimeout(() => {
+          setScrollX(Math.max(0, targetScrollX));
+        }, 16);
       }
     }, [
       timeline.currentFrame,
       frameWidth,
+      playback.isPlaying,
+      autoFollowEnabled,
+      setScrollX,
+    ]);
+
+    // Auto-follow effect
+    useEffect(() => {
+      if (!playback.isPlaying || !autoFollowEnabled) {
+        return;
+      }
+
+      const throttleTimeout = setTimeout(autoFollowPlayhead, 16);
+
+      return () => clearTimeout(throttleTimeout);
+    }, [
+      timeline.currentFrame,
+      autoFollowPlayhead,
       playback.isPlaying,
       autoFollowEnabled,
     ]);
@@ -308,10 +367,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
 
-        // Temporarily disable auto-follow during click navigation
+        isManualScrollingRef.current = true;
         setAutoFollowEnabled(false);
-
-        // Pause playback if currently playing
         if (playback.isPlaying) {
           togglePlayback();
         }
@@ -323,12 +380,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           0,
           Math.min(frame, effectiveEndFrame - 1),
         );
-        setCurrentFrame(clampedFrame);
 
-        // Re-enable auto-follow after a brief delay to allow the seek to complete
+        lastFrameUpdateRef.current = clampedFrame;
+        setCurrentFrame(clampedFrame);
         setTimeout(() => {
           setAutoFollowEnabled(true);
-        }, 150);
+          isManualScrollingRef.current = false;
+        }, 200);
       },
       [
         frameWidth,
@@ -398,42 +456,49 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onScroll={(e) => {
-                  // Throttled scroll handling for better performance with many tracks
+                  // Scroll handling
                   const scrollLeft = (e.target as HTMLElement).scrollLeft;
+                  const scrollDifference = Math.abs(
+                    scrollLeft - timeline.scrollX,
+                  );
 
-                  // Detect manual scrolling during playback and temporarily disable auto-follow
-                  if (playback.isPlaying && autoFollowEnabled) {
-                    const scrollDifference = Math.abs(
-                      scrollLeft - timeline.scrollX,
-                    );
-
-                    // Only treat as manual scroll if the difference is significant
-                    // This prevents auto-follow from disabling itself during smooth auto-scroll
-                    if (scrollDifference > 20) {
+                  if (
+                    playback.isPlaying &&
+                    autoFollowEnabled &&
+                    scrollDifference > 10
+                  ) {
+                    if (
+                      !isManualScrollingRef.current &&
+                      scrollDifference > 30
+                    ) {
+                      isManualScrollingRef.current = true;
                       setAutoFollowEnabled(false);
 
-                      // Re-enable auto-follow after 3 seconds of no manual scrolling
                       if (autoFollowTimeoutRef.current) {
                         clearTimeout(autoFollowTimeoutRef.current);
                       }
                       autoFollowTimeoutRef.current = setTimeout(() => {
                         setAutoFollowEnabled(true);
-                      }, 3000);
+                        isManualScrollingRef.current = false;
+                      }, 2000);
                     }
                   }
 
-                  // Clear previous timeout
                   if (scrollTimeoutRef.current) {
                     clearTimeout(scrollTimeoutRef.current);
                   }
 
-                  // Set immediate update for smooth playhead movement
                   setScrollX(scrollLeft);
 
-                  // Throttle additional updates for performance
                   scrollTimeoutRef.current = setTimeout(() => {
-                    setScrollX(scrollLeft);
-                  }, 16); // ~60fps throttling
+                    if (
+                      Math.abs(
+                        (e.target as HTMLElement).scrollLeft - scrollLeft,
+                      ) < 2
+                    ) {
+                      setScrollX((e.target as HTMLElement).scrollLeft);
+                    }
+                  }, 16);
                 }}
               >
                 <TimelineTracks

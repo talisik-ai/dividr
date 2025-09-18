@@ -249,10 +249,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     activeAudioTrack?.muted, // Track mute state (use audio track for muting)
   ]);
 
-  // Sync timeline to video frames
+  // Sync timeline to video frames - DISABLED during timeline-controlled playback
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeAudioTrack) return;
+    if (!video || !activeAudioTrack || playback.isPlaying) return; // Don't sync during playback
 
     let handle: number;
     const fps = timeline.fps;
@@ -261,7 +261,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       _now: DOMHighResTimeStamp,
       metadata: VideoFrameCallbackMetadata,
     ) => {
-      if (!video.paused && playback.isPlaying) {
+      // Only sync when video is playing but timeline playback is NOT active
+      if (!video.paused && !playback.isPlaying) {
         const elapsedFrames =
           (metadata.mediaTime - (activeAudioTrack.sourceStartTime || 0)) * fps +
           activeAudioTrack.startFrame;
