@@ -245,10 +245,15 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       [effectiveEndFrame, frameWidth],
     );
 
-    // Handle timeline click to set current frame
+    // Handle timeline click to set current frame and pause if playing
     const handleTimelineClick = useCallback(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
+
+        // Pause playback if currently playing
+        if (playback.isPlaying) {
+          togglePlayback();
+        }
 
         const rect = tracksRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
@@ -259,7 +264,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         );
         setCurrentFrame(clampedFrame);
       },
-      [frameWidth, effectiveEndFrame, setCurrentFrame],
+      [
+        frameWidth,
+        effectiveEndFrame,
+        setCurrentFrame,
+        playback.isPlaying,
+        togglePlayback,
+      ],
     );
 
     return (
