@@ -17,7 +17,7 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
       <>
         {/* Playhead line */}
         <div
-          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-30 pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
+          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-30 pointer-events-none"
           style={{ left: left }}
         />
 

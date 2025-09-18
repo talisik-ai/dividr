@@ -24,7 +24,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const timelineRef = useRef<HTMLDivElement>(null);
     const tracksRef = useRef<HTMLDivElement>(null);
     const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const autoFollowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [, setDropActive] = useState(false);
+    const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
 
     // Selectively subscribe to store to prevent unnecessary re-renders
     const timeline = useVideoEditorStore((state) => state.timeline);
@@ -187,11 +189,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     useHotkeys('i', () => setInPoint(timeline.currentFrame));
     useHotkeys('o', () => setOutPoint(timeline.currentFrame));
 
-    // Cleanup scroll timeout on unmount
+    // Cleanup timeouts on unmount
     useEffect(() => {
       return () => {
         if (scrollTimeoutRef.current) {
           clearTimeout(scrollTimeoutRef.current);
+        }
+        if (autoFollowTimeoutRef.current) {
+          clearTimeout(autoFollowTimeoutRef.current);
         }
       };
     }, []);
@@ -245,10 +250,66 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       [effectiveEndFrame, frameWidth],
     );
 
+    // Smooth auto-follow playhead during playback
+    useEffect(() => {
+      if (!playback.isPlaying || !tracksRef.current || !autoFollowEnabled) {
+        return;
+      }
+
+      const tracksElement = tracksRef.current;
+      const playheadPosition = timeline.currentFrame * frameWidth;
+      const viewportWidth = tracksElement.clientWidth;
+      const currentScrollX = tracksElement.scrollLeft;
+
+      // Calculate visible range
+      const leftBound = currentScrollX;
+      const rightBound = currentScrollX + viewportWidth;
+
+      // Smart auto-follow strategy: Keep playhead in optimal viewing position
+      const optimalPosition = viewportWidth * 0.3; // 30% from left edge for better preview
+      const scrollBuffer = viewportWidth * 0.1; // 10% buffer zone for smoother transitions
+
+      let targetScrollX = currentScrollX;
+
+      // If playhead is approaching the right edge, scroll to keep it at optimal position
+      if (playheadPosition > rightBound - scrollBuffer) {
+        targetScrollX = playheadPosition - optimalPosition;
+      }
+      // If playhead is too far left (behind the visible area), scroll to show it
+      else if (playheadPosition < leftBound + scrollBuffer) {
+        targetScrollX = Math.max(0, playheadPosition - optimalPosition);
+      }
+
+      // Only scroll if the change is significant enough (prevents micro-adjustments)
+      const scrollDifference = Math.abs(targetScrollX - currentScrollX);
+      if (scrollDifference > 5) {
+        // Use smooth scrolling for better UX
+        tracksElement.scrollTo({
+          left: Math.max(0, targetScrollX),
+          behavior: 'smooth',
+        });
+      }
+    }, [
+      timeline.currentFrame,
+      frameWidth,
+      playback.isPlaying,
+      autoFollowEnabled,
+    ]);
+
+    // Re-enable auto-follow when playback starts
+    useEffect(() => {
+      if (playback.isPlaying) {
+        setAutoFollowEnabled(true);
+      }
+    }, [playback.isPlaying]);
+
     // Handle timeline click to set current frame and pause if playing
     const handleTimelineClick = useCallback(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
+
+        // Temporarily disable auto-follow during click navigation
+        setAutoFollowEnabled(false);
 
         // Pause playback if currently playing
         if (playback.isPlaying) {
@@ -263,6 +324,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           Math.min(frame, effectiveEndFrame - 1),
         );
         setCurrentFrame(clampedFrame);
+
+        // Re-enable auto-follow after a brief delay to allow the seek to complete
+        setTimeout(() => {
+          setAutoFollowEnabled(true);
+        }, 150);
       },
       [
         frameWidth,
@@ -323,6 +389,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   // dropActive &&
                   //   'bg-blue-500/10 border-2 border-dashed border-blue-500',
                 )}
+                style={{
+                  scrollBehavior:
+                    autoFollowEnabled && playback.isPlaying ? 'smooth' : 'auto',
+                }}
                 onClick={handleTimelineClick}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -330,6 +400,27 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 onScroll={(e) => {
                   // Throttled scroll handling for better performance with many tracks
                   const scrollLeft = (e.target as HTMLElement).scrollLeft;
+
+                  // Detect manual scrolling during playback and temporarily disable auto-follow
+                  if (playback.isPlaying && autoFollowEnabled) {
+                    const scrollDifference = Math.abs(
+                      scrollLeft - timeline.scrollX,
+                    );
+
+                    // Only treat as manual scroll if the difference is significant
+                    // This prevents auto-follow from disabling itself during smooth auto-scroll
+                    if (scrollDifference > 20) {
+                      setAutoFollowEnabled(false);
+
+                      // Re-enable auto-follow after 3 seconds of no manual scrolling
+                      if (autoFollowTimeoutRef.current) {
+                        clearTimeout(autoFollowTimeoutRef.current);
+                      }
+                      autoFollowTimeoutRef.current = setTimeout(() => {
+                        setAutoFollowEnabled(true);
+                      }, 3000);
+                    }
+                  }
 
                   // Clear previous timeout
                   if (scrollTimeoutRef.current) {
