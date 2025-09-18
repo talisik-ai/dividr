@@ -341,6 +341,8 @@ import {
 } from './Utility/ffmpegRunner';
 
 
+
+
 if (started) {
   app.quit();
 }

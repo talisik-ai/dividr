@@ -42,8 +42,11 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         lastGeneratedZoom: 0,
       });
 
-      // Get FPS from timeline state
+      // Get FPS from timeline state and sprite sheet getter
       const fps = useVideoEditorStore((state) => state.timeline.fps);
+      const getSpriteSheetsBySource = useVideoEditorStore(
+        (state) => state.getSpriteSheetsBySource,
+      );
 
       // Calculate duration in seconds
       const durationSeconds = useMemo(() => {
@@ -145,7 +148,27 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
           return;
         }
 
-        // Check cache first (now async)
+        // First, check for preloaded sprite sheets from media library
+        const preloadedSpriteSheets = getSpriteSheetsBySource(track.source);
+        if (
+          preloadedSpriteSheets?.success &&
+          preloadedSpriteSheets.spriteSheets.length > 0
+        ) {
+          console.log(
+            '📸 Using preloaded sprite sheets from media library for',
+            track.name,
+          );
+          setState((prev) => ({
+            ...prev,
+            spriteSheets: preloadedSpriteSheets.spriteSheets,
+            isLoading: false,
+            error: null,
+            lastGeneratedZoom: zoomLevel,
+          }));
+          return;
+        }
+
+        // Check cache second (fallback)
         try {
           const cacheResult =
             await VideoSpriteSheetGenerator.getCachedSpriteSheets({
@@ -223,6 +246,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         durationSeconds,
         fps,
         zoomLevel,
+        getSpriteSheetsBySource,
         // Note: Removed state dependencies to prevent circular updates
       ]);
 
