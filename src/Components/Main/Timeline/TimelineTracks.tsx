@@ -4,6 +4,7 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../../../Store/VideoEditorStore';
+import { TrackContextMenu } from './TrackContextMenu';
 import { VideoSpriteSheetStrip } from './VideoSpriteSheetStrip';
 
 // Define track row types - easy to extend in the future
@@ -177,80 +178,82 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     return (
       <>
         {/* Main track - positioned absolutely within the shared container */}
-        <div
-          ref={nodeRef}
-          className={`
-          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] z-10 flex items-center overflow-hidden select-none
-          ${isSelected ? 'border-2 border-secondary rounded-none' : 'rounded'}
-          ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
-          ${track.visible ? 'opacity-100' : 'opacity-50'}
-        `}
-          style={{
-            left: `${left}px`,
-            width: `${clampedWidth}px`,
-            background:
-              track.type === 'video'
-                ? 'transparent'
-                : getTrackGradient(track.type),
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect();
-          }}
-          onMouseDown={(e) => {
-            if (track.locked) return;
-            e.stopPropagation();
-            setIsDragging(true);
-            setDragStart({
-              x: e.clientX,
-              startFrame: track.startFrame,
-              endFrame: track.endFrame,
-            });
-          }}
-        >
-          {/* Video sprite sheet strip for video tracks */}
-          {track.type === 'video' && (
-            <VideoSpriteSheetStrip
-              track={track}
-              frameWidth={frameWidth}
-              width={clampedWidth}
-              height={
-                window.innerWidth <= 640
-                  ? 24
-                  : window.innerWidth <= 768
-                    ? 26
-                    : 40
-              }
-              zoomLevel={zoomLevel}
-            />
-          )}
+        <TrackContextMenu track={track}>
+          <div
+            ref={nodeRef}
+            className={`
+            absolute sm:h-[24px] md:h-[26px] lg:h-[40px] z-10 flex items-center overflow-hidden select-none
+            ${isSelected ? 'border-2 border-secondary rounded-none' : 'rounded'}
+            ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
+            ${track.visible ? 'opacity-100' : 'opacity-50'}
+          `}
+            style={{
+              left: `${left}px`,
+              width: `${clampedWidth}px`,
+              background:
+                track.type === 'video'
+                  ? 'transparent'
+                  : getTrackGradient(track.type),
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect();
+            }}
+            onMouseDown={(e) => {
+              if (track.locked) return;
+              e.stopPropagation();
+              setIsDragging(true);
+              setDragStart({
+                x: e.clientX,
+                startFrame: track.startFrame,
+                endFrame: track.endFrame,
+              });
+            }}
+          >
+            {/* Video sprite sheet strip for video tracks */}
+            {track.type === 'video' && (
+              <VideoSpriteSheetStrip
+                track={track}
+                frameWidth={frameWidth}
+                width={clampedWidth}
+                height={
+                  window.innerWidth <= 640
+                    ? 24
+                    : window.innerWidth <= 768
+                      ? 26
+                      : 40
+                }
+                zoomLevel={zoomLevel}
+              />
+            )}
 
-          {/* Text content for non-video tracks */}
-          {track.type !== 'video' && (
-            <div
-              className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
-              style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
-            >
-              {track.type === 'subtitle' && track.subtitleText
-                ? track.subtitleText
-                : track.name}
-            </div>
-          )}
+            {/* Text content for non-video tracks */}
+            {track.type !== 'video' && (
+              <div
+                className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
+                style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
+              >
+                {track.type === 'subtitle' && track.subtitleText
+                  ? track.subtitleText
+                  : track.name}
+              </div>
+            )}
 
-          {/* Volume indicator for audio tracks */}
-          {track.type === 'audio' && track.volume !== undefined && (
-            <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
-              {Math.round(track.volume * 100)}%
-            </div>
-          )}
+            {/* Volume indicator for audio tracks */}
+            {track.type === 'audio' && track.volume !== undefined && (
+              <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
+                {Math.round(track.volume * 100)}%
+              </div>
+            )}
 
-          {/* Lock indicator */}
-          {track.locked && (
-            <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
-              🔒
-            </div>
-          )}
-        </div>
+            {/* Lock indicator */}
+            {track.locked && (
+              <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
+                🔒
+              </div>
+            )}
+          </div>
+        </TrackContextMenu>
 
         {/* Left resize handle */}
         {!track.locked && isSelected && (
@@ -292,7 +295,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.volume === nextProps.track.volume &&
       prevProps.frameWidth === nextProps.frameWidth &&
       Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Only re-render for significant scroll changes
-      Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) < 0.1 && // Only re-render for significant zoom changes
+      prevProps.zoomLevel === nextProps.zoomLevel && // Re-render on any zoom change for proper positioning
       prevProps.isSelected === nextProps.isSelected
     );
   },

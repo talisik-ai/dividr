@@ -235,6 +235,26 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     );
     useHotkeys('i', () => setInPoint(timeline.currentFrame));
     useHotkeys('o', () => setOutPoint(timeline.currentFrame));
+    useHotkeys('s', () => {
+      const { splitAtPlayhead } = useVideoEditorStore.getState();
+      splitAtPlayhead();
+    });
+    useHotkeys('ctrl+d', (e) => {
+      e.preventDefault();
+      const { duplicateTrack } = useVideoEditorStore.getState();
+      const selectedTracks = timeline.selectedTrackIds;
+      selectedTracks.forEach((trackId) => duplicateTrack(trackId));
+    });
+    useHotkeys('v', () => {
+      const { toggleTrackVisibility } = useVideoEditorStore.getState();
+      const selectedTracks = timeline.selectedTrackIds;
+      selectedTracks.forEach((trackId) => toggleTrackVisibility(trackId));
+    });
+    useHotkeys('m', () => {
+      const { toggleTrackMute } = useVideoEditorStore.getState();
+      const selectedTracks = timeline.selectedTrackIds;
+      selectedTracks.forEach((trackId) => toggleTrackMute(trackId));
+    });
     useHotkeys(
       'del',
       (e) => {
