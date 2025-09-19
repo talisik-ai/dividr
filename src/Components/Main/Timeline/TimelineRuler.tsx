@@ -12,6 +12,7 @@ interface TimelineRulerProps {
   outPoint?: number;
   onClick: (e: React.MouseEvent) => void;
   className?: string;
+  timelineScrollElement?: HTMLElement | null;
 }
 
 export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
@@ -25,6 +26,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     outPoint,
     onClick,
     className,
+    timelineScrollElement,
   }) => {
     // Memoize effective timeline duration calculation
     const effectiveEndFrame = useMemo(() => {
@@ -85,16 +87,22 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
       if (pixelsPerSecond >= 1) return fps * 30; // 30 second intervals
       return fps * 60; // 1 minute intervals (very zoomed out)
     }, [frameWidth, fps]);
-    // Memoize ticks calculation
+    // Memoize ticks calculation with real-time scroll position
     const ticks = useMemo(() => {
       const ticksArray = [];
       const pixelsPerSecond = frameWidth * fps;
 
+      // Use actual scroll position if available, otherwise fallback to prop
+      const currentScrollX = timelineScrollElement?.scrollLeft ?? scrollX;
+
       // Generate ticks with better viewport culling
-      const viewportStart = Math.max(0, Math.floor(scrollX / frameWidth) - 100);
+      const viewportStart = Math.max(
+        0,
+        Math.floor(currentScrollX / frameWidth) - 100,
+      );
       const viewportEnd = Math.min(
         effectiveEndFrame,
-        Math.ceil((scrollX + window.innerWidth) / frameWidth) + 100,
+        Math.ceil((currentScrollX + window.innerWidth) / frameWidth) + 100,
       );
 
       for (
@@ -103,7 +111,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
         frame += tickInterval
       ) {
         if (frame >= 0) {
-          const x = frame * frameWidth - scrollX;
+          const x = frame * frameWidth - currentScrollX;
           ticksArray.push({
             frame,
             x,
@@ -116,16 +124,27 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
       }
 
       return ticksArray;
-    }, [scrollX, frameWidth, effectiveEndFrame, tickInterval, formatTime, fps]);
+    }, [
+      scrollX,
+      frameWidth,
+      effectiveEndFrame,
+      tickInterval,
+      formatTime,
+      fps,
+      timelineScrollElement,
+    ]);
 
-    // Memoize track content regions calculation
+    // Memoize track content regions calculation with real-time scroll position
     const trackRegions = useMemo(() => {
+      // Use actual scroll position if available, otherwise fallback to prop
+      const currentScrollX = timelineScrollElement?.scrollLeft ?? scrollX;
+
       return tracks
         .filter((track) => track.visible)
         .map((track) => {
           const region = {
-            startX: track.startFrame * frameWidth - scrollX,
-            endX: track.endFrame * frameWidth - scrollX,
+            startX: track.startFrame * frameWidth - currentScrollX,
+            endX: track.endFrame * frameWidth - currentScrollX,
             type: track.type,
             color: 'green',
           };
@@ -138,7 +157,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
           (region) =>
             region.endX > -50 && region.startX < window.innerWidth + 50,
         );
-    }, [tracks, frameWidth, scrollX]);
+    }, [tracks, frameWidth, scrollX, timelineScrollElement]);
 
     return (
       <div
@@ -152,7 +171,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
         <div
           className="absolute top-0 h-full bg-gradient-to-r from-transparent via-transparent to-transparent"
           style={{
-            left: -scrollX,
+            left: -(timelineScrollElement?.scrollLeft ?? scrollX),
             width: Math.max(effectiveEndFrame * frameWidth, window.innerWidth),
             backgroundImage:
               'repeating-linear-gradient(90deg, transparent, transparent 9px, hsl(var(--foreground) / 0.05) 9px, hsl(var(--foreground) / 0.05) 10px)',
@@ -318,7 +337,9 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
           <div
             className="absolute top-0 w-[3px] h-full bg-accent z-10"
             style={{
-              left: inPoint * frameWidth - scrollX,
+              left:
+                inPoint * frameWidth -
+                (timelineScrollElement?.scrollLeft ?? scrollX),
               boxShadow: '0 0 4px rgba(76, 175, 80, 0.5)',
             }}
           />
@@ -328,7 +349,9 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
           <div
             className="absolute top-0 w-[3px] h-full bg-[#f44336] z-10"
             style={{
-              left: outPoint * frameWidth - scrollX,
+              left:
+                outPoint * frameWidth -
+                (timelineScrollElement?.scrollLeft ?? scrollX),
               boxShadow: '0 0 4px rgba(244, 67, 54, 0.5)',
             }}
           />

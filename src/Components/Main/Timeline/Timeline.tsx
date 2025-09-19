@@ -339,7 +339,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       const tracksElement = tracksRef.current;
       if (
         tracksElement &&
-        Math.abs(tracksElement.scrollLeft - timeline.scrollX) > 1
+        Math.abs(tracksElement.scrollLeft - timeline.scrollX) > 1 &&
+        !isManualScrollingRef.current &&
+        !isDraggingRef.current
       ) {
         tracksElement.scrollLeft = timeline.scrollX;
       }
@@ -358,7 +360,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         !playback.isPlaying ||
         !tracksRef.current ||
         !autoFollowEnabled ||
-        isManualScrollingRef.current
+        isManualScrollingRef.current ||
+        isDraggingRef.current
       ) {
         return;
       }
@@ -385,14 +388,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
       const scrollDifference = Math.abs(targetScrollX - currentScrollX);
       if (scrollDifference > 5) {
-        isManualScrollingRef.current = false;
-        tracksElement.scrollTo({
-          left: Math.max(0, targetScrollX),
-          behavior: 'smooth',
-        });
-        setTimeout(() => {
-          setScrollX(Math.max(0, targetScrollX));
-        }, 16);
+        const finalScrollX = Math.max(0, targetScrollX);
+
+        // Update both DOM and store immediately for sync
+        tracksElement.scrollLeft = finalScrollX;
+        setScrollX(finalScrollX);
       }
     }, [
       timeline.currentFrame,
@@ -418,9 +418,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       autoFollowEnabled,
     ]);
 
-    // Re-enable auto-follow when playback starts, but only if not manually scrolling
+    // Re-enable auto-follow when playback starts, but only if not manually scrolling or dragging
     useEffect(() => {
-      if (playback.isPlaying && !isManualScrollingRef.current) {
+      if (
+        playback.isPlaying &&
+        !isManualScrollingRef.current &&
+        !isDraggingRef.current
+      ) {
         setAutoFollowEnabled(true);
       }
     }, [playback.isPlaying]);
@@ -553,7 +557,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         const newScrollX = Math.max(0, dragStartScrollXRef.current - deltaX);
 
-        // Immediately update both the DOM and store to sync ruler and timeline
+        // Update DOM immediately and sync store for ruler synchronization
         tracksRef.current.scrollLeft = newScrollX;
         setScrollX(newScrollX);
 
@@ -599,7 +603,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         const newScrollX = Math.max(0, dragStartScrollXRef.current - deltaX);
 
-        // Immediately update both the DOM and store to sync ruler and timeline
+        // Update DOM immediately and sync store for ruler synchronization
         tracksRef.current.scrollLeft = newScrollX;
         setScrollX(newScrollX);
 
@@ -687,6 +691,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 inPoint={timeline.inPoint}
                 outPoint={timeline.outPoint}
                 onClick={undefined} // Handle clicks at parent level
+                timelineScrollElement={tracksRef.current}
               />
             </div>
 
@@ -719,6 +724,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     scrollLeft - timeline.scrollX,
                   );
 
+                  // Immediately update store to keep ruler in sync
+                  setScrollX(scrollLeft);
+
                   // Only handle auto-follow disabling during playback
                   if (
                     playback.isPlaying &&
@@ -744,19 +752,16 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     }
                   }
 
+                  // Debounced scroll finalization for performance
                   if (scrollTimeoutRef.current) {
                     clearTimeout(scrollTimeoutRef.current);
                   }
 
-                  setScrollX(scrollLeft);
-
                   scrollTimeoutRef.current = setTimeout(() => {
-                    if (
-                      Math.abs(
-                        (e.target as HTMLElement).scrollLeft - scrollLeft,
-                      ) < 2
-                    ) {
-                      setScrollX((e.target as HTMLElement).scrollLeft);
+                    const currentScrollLeft = (e.target as HTMLElement)
+                      .scrollLeft;
+                    if (Math.abs(currentScrollLeft - scrollLeft) < 2) {
+                      setScrollX(currentScrollLeft);
                     }
                   }, 16);
                 }}
@@ -779,6 +784,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   frameWidth={frameWidth}
                   scrollX={timeline.scrollX}
                   visible={timeline.playheadVisible}
+                  timelineScrollElement={tracksRef.current}
                 />
               </div>
             </div>

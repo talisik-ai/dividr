@@ -5,15 +5,18 @@ interface TimelinePlayheadProps {
   frameWidth: number;
   scrollX: number;
   visible: boolean;
+  timelineScrollElement?: HTMLElement | null;
 }
 
 export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
-  ({ currentFrame, frameWidth, scrollX, visible }) => {
+  ({ currentFrame, frameWidth, scrollX, visible, timelineScrollElement }) => {
     if (!visible) return null;
 
     const left = useMemo(
-      () => currentFrame * frameWidth - scrollX,
-      [currentFrame, frameWidth, scrollX],
+      () =>
+        currentFrame * frameWidth -
+        (timelineScrollElement?.scrollLeft ?? scrollX),
+      [currentFrame, frameWidth, scrollX, timelineScrollElement],
     );
 
     const styles = useMemo(
@@ -71,7 +74,8 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
       prevProps.currentFrame === nextProps.currentFrame &&
       prevProps.frameWidth === nextProps.frameWidth &&
       prevProps.scrollX === nextProps.scrollX &&
-      prevProps.visible === nextProps.visible
+      prevProps.visible === nextProps.visible &&
+      prevProps.timelineScrollElement === nextProps.timelineScrollElement
     );
   },
 );
