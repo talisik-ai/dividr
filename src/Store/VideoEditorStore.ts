@@ -1607,19 +1607,33 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       const trackToUnlink = get().tracks.find((t) => t.id === trackId);
       if (!trackToUnlink?.isLinked) return;
 
+      const linkedTrack = get().tracks.find(
+        (t) => t.id === trackToUnlink.linkedTrackId,
+      );
+
       set((state) => ({
         tracks: state.tracks.map((track) => {
           if (
             track.id === trackId ||
             track.id === trackToUnlink.linkedTrackId
           ) {
-            return { ...track, linkedTrackId: undefined, isLinked: false };
+            // Remove linking properties - tracks become independent
+            return {
+              ...track,
+              linkedTrackId: undefined,
+              isLinked: false,
+            };
           }
           return track;
         }),
       }));
 
-      console.log(`🔓 Unlinked track: ${trackId}`);
+      console.log(
+        `🔓 Unlinked tracks: "${trackToUnlink.name}" and "${linkedTrack?.name}"`,
+      );
+      console.log(
+        `📍 Tracks are now independent and can be moved/played separately`,
+      );
       get().markUnsavedChanges();
     },
 

@@ -148,30 +148,27 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         // Use ref to prevent race conditions
         const currentFrame = lastFrameUpdateRef.current;
 
-        // Snap to next segment if in blank during playback
-        const isInBlank = !tracks.some(
+        // Smart playhead jumping - skip gaps and only play where tracks exist
+        const hasActiveTracksAtCurrentFrame = tracks.some(
           (track) =>
-            track.type === 'video' &&
             track.visible &&
-            track.previewUrl &&
             currentFrame >= track.startFrame &&
             currentFrame < track.endFrame,
         );
 
-        if (isInBlank) {
-          const nextSegment = tracks
-            .filter(
-              (track) =>
-                track.type === 'video' &&
-                track.visible &&
-                track.previewUrl &&
-                track.startFrame > currentFrame,
-            )
+        if (!hasActiveTracksAtCurrentFrame) {
+          // No tracks at current position, jump to next track
+          const nextTrack = tracks
+            .filter((track) => track.visible && track.startFrame > currentFrame)
             .sort((a, b) => a.startFrame - b.startFrame)[0];
-          if (nextSegment) {
+
+          if (nextTrack) {
             const clampedFrame = Math.max(
               0,
-              Math.min(nextSegment.startFrame, effectiveEndFrame - 1),
+              Math.min(nextTrack.startFrame, effectiveEndFrame - 1),
+            );
+            console.log(
+              `[Timeline] Jumping from frame ${currentFrame} to ${clampedFrame} (next track: ${nextTrack.name})`,
             );
             lastFrameUpdateRef.current = clampedFrame;
             setCurrentFrame(clampedFrame);

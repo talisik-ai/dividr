@@ -222,27 +222,24 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
           (audioTrack.name === videoTrack.name ||
             audioTrack.name === `${videoTrack.name} (Audio)`),
       );
-      console.log(
-        `🔍 Video track "${videoTrack.name}" source: "${videoTrack.source}" - matching audio:`,
-        matchingAudio
-          ? `"${matchingAudio.name}" source: "${matchingAudio.source}"`
-          : 'NONE',
-      );
+      // Debug: Log track matching for troubleshooting
+      if (!matchingAudio) {
+        console.log(
+          `🔍 No matching audio found for video track: "${videoTrack.name}"`,
+        );
+      }
       return !!matchingAudio;
     });
 
-    console.log('🔍 Link State Debug:', {
-      selectedTrackIds,
-      selectedTracks: selectedTracks.map(
-        (t) => `${t.type}: ${t.name} (linked: ${t.isLinked})`,
-      ),
-      videoTracks: videoTracks.length,
-      audioTracks: audioTracks.length,
-      unlinkedVideoTracks: unlinkedVideoTracks.length,
-      unlinkedAudioTracks: unlinkedAudioTracks.length,
-      hasLinkedTracks,
-      canLink,
-    });
+    // Only log when there are issues for easier debugging
+    if (selectedTracks.length > 0 && !canLink && !hasLinkedTracks) {
+      console.log('🔍 Link State Debug:', {
+        canLink,
+        hasLinkedTracks,
+        unlinkedVideoTracks: unlinkedVideoTracks.length,
+        unlinkedAudioTracks: unlinkedAudioTracks.length,
+      });
+    }
 
     return {
       canLink,
@@ -407,32 +404,22 @@ export const TimelineControls: React.FC = React.memo(
         : timeline.totalFrames;
     }, []);
 
-    // Helper: Snap to next segment if in blank
-    const snapToNextSegmentIfBlank = useCallback(() => {
+    // Helper: Snap to next track if in blank (any track type)
+    const snapToNextTrackIfBlank = useCallback(() => {
       const currentFrame = getCurrentFrame();
       const { tracks } = useVideoEditorStore.getState();
       const isInBlank = !tracks.some(
         (track) =>
-          track.type === 'video' &&
           track.visible &&
-          track.previewUrl &&
           currentFrame >= track.startFrame &&
           currentFrame < track.endFrame,
       );
       if (isInBlank) {
-        const nextSegment = tracks
-          .filter(
-            (track) =>
-              track.type === 'video' &&
-              track.visible &&
-              track.previewUrl &&
-              track.startFrame > currentFrame,
-          )
+        const nextTrack = tracks
+          .filter((track) => track.visible && track.startFrame > currentFrame)
           .sort((a, b) => a.startFrame - b.startFrame)[0];
-        if (nextSegment) {
-          useVideoEditorStore
-            .getState()
-            .setCurrentFrame(nextSegment.startFrame);
+        if (nextTrack) {
+          useVideoEditorStore.getState().setCurrentFrame(nextTrack.startFrame);
           return true;
         }
       }
@@ -443,7 +430,7 @@ export const TimelineControls: React.FC = React.memo(
     const handlePlayToggle = useCallback(() => {
       const { playback, togglePlayback } = useVideoEditorStore.getState();
       if (!playback.isPlaying) {
-        const snapped = snapToNextSegmentIfBlank();
+        const snapped = snapToNextTrackIfBlank();
         if (snapped) {
           setTimeout(() => {
             useVideoEditorStore.getState().togglePlayback();
@@ -452,7 +439,7 @@ export const TimelineControls: React.FC = React.memo(
         }
       }
       togglePlayback();
-    }, [snapToNextSegmentIfBlank]);
+    }, [snapToNextTrackIfBlank]);
 
     return (
       <div className="h-10 grid grid-cols-[364px_1fr] px-4 border-t border-accent">
