@@ -29,6 +29,8 @@ export interface VideoTrack {
   muted?: boolean; // For audio tracks
   color: string;
   subtitleText?: string; // For subtitle tracks, store the actual subtitle content
+  linkedTrackId?: string; // For linking video and audio tracks from the same source
+  isLinked?: boolean; // Whether this track is part of a video/audio pair
 }
 
 export interface TimelineState {
@@ -181,6 +183,11 @@ interface VideoEditorStore {
   splitAtPlayhead: () => boolean;
   toggleTrackVisibility: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
+
+  // Linked track management
+  linkTracks: (videoTrackId: string, audioTrackId: string) => void;
+  unlinkTracks: (trackId: string) => void;
+  toggleLinkedAudioMute: (videoTrackId: string) => void;
 
   // Media Library Actions
   addToMediaLibrary: (item: Omit<MediaLibraryItem, 'id'>) => string;
@@ -920,49 +927,112 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     addTrack: (trackData) => {
       const id = uuidv4();
 
-      // Get existing tracks of the same type for smart positioning
-      const existingTracks = get().tracks.filter(
-        (t) => t.type === trackData.type,
-      );
-      const duration = trackData.endFrame - trackData.startFrame;
-
-      // Find a non-overlapping position for the new track
-      const startFrame = findNonOverlappingPosition(
-        trackData.startFrame,
-        duration,
-        existingTracks,
-      );
-
-      const track: VideoTrack = {
-        ...trackData,
-        id,
-        startFrame,
-        endFrame: startFrame + duration,
-        sourceStartTime: trackData.sourceStartTime || 0, // Default to beginning of source file
-        color: getTrackColor(get().tracks.length),
-        muted:
-          trackData.type === 'audio' || trackData.type === 'video'
-            ? false
-            : undefined, // Initialize muted for audio and video tracks
-      };
-
-      set((state) => ({
-        tracks: [...state.tracks, track],
-      }));
-
-      // Mark as having unsaved changes
-      get().markUnsavedChanges();
-
-      // Update project thumbnail if this is a video track
+      // Check if this is a video file that should be split into video and audio tracks
       if (trackData.type === 'video') {
+        const audioId = uuidv4();
+        const duration = trackData.endFrame - trackData.startFrame;
+
+        // Get existing tracks for smart positioning
+        const existingVideoTracks = get().tracks.filter(
+          (t) => t.type === 'video',
+        );
+        const existingAudioTracks = get().tracks.filter(
+          (t) => t.type === 'audio',
+        );
+
+        // Find non-overlapping positions for both tracks
+        const videoStartFrame = findNonOverlappingPosition(
+          trackData.startFrame,
+          duration,
+          existingVideoTracks,
+        );
+        const audioStartFrame = findNonOverlappingPosition(
+          trackData.startFrame,
+          duration,
+          existingAudioTracks,
+        );
+
+        // Create video track
+        const videoTrack: VideoTrack = {
+          ...trackData,
+          id,
+          type: 'video',
+          startFrame: videoStartFrame,
+          endFrame: videoStartFrame + duration,
+          sourceStartTime: trackData.sourceStartTime || 0,
+          color: getTrackColor(get().tracks.length),
+          muted: false, // Video tracks keep muted state for export compatibility
+          linkedTrackId: audioId,
+          isLinked: true,
+        };
+
+        // Create corresponding audio track
+        const audioTrack: VideoTrack = {
+          ...trackData,
+          id: audioId,
+          type: 'audio',
+          name: `${trackData.name} (Audio)`,
+          startFrame: audioStartFrame,
+          endFrame: audioStartFrame + duration,
+          sourceStartTime: trackData.sourceStartTime || 0,
+          color: getTrackColor(get().tracks.length + 1),
+          muted: false,
+          linkedTrackId: id,
+          isLinked: true,
+          previewUrl: undefined, // Audio tracks don't need preview URLs
+        };
+
+        set((state) => ({
+          tracks: [...state.tracks, videoTrack, audioTrack],
+        }));
+
+        // Mark as having unsaved changes
+        get().markUnsavedChanges();
+
+        // Update project thumbnail for video track
         get()
           .updateProjectThumbnailFromTimeline()
           .catch((error) => {
             console.warn('Failed to update project thumbnail:', error);
           });
-      }
 
-      return id;
+        console.log(
+          `✅ Created linked video track (${id}) and audio track (${audioId})`,
+        );
+        return id; // Return video track ID as primary
+      } else {
+        // Handle non-video tracks normally
+        const existingTracks = get().tracks.filter(
+          (t) => t.type === trackData.type,
+        );
+        const duration = trackData.endFrame - trackData.startFrame;
+
+        // Find a non-overlapping position for the new track
+        const startFrame = findNonOverlappingPosition(
+          trackData.startFrame,
+          duration,
+          existingTracks,
+        );
+
+        const track: VideoTrack = {
+          ...trackData,
+          id,
+          startFrame,
+          endFrame: startFrame + duration,
+          sourceStartTime: trackData.sourceStartTime || 0,
+          color: getTrackColor(get().tracks.length),
+          muted: trackData.type === 'audio' ? false : undefined, // Initialize muted for audio tracks
+        };
+
+        set((state) => ({
+          tracks: [...state.tracks, track],
+        }));
+
+        // Mark as having unsaved changes
+        get().markUnsavedChanges();
+
+        return id;
+      }
     },
 
     addTrackFromMediaLibrary: async (mediaId, startFrame = 0) => {
@@ -1061,13 +1131,22 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     removeTrack: (trackId) => {
       const trackToRemove = get().tracks.find((t) => t.id === trackId);
       const isVideoTrack = trackToRemove?.type === 'video';
+      let tracksToRemove = [trackId];
+
+      // If this is a linked track, also remove its linked counterpart
+      if (trackToRemove?.isLinked && trackToRemove.linkedTrackId) {
+        tracksToRemove = [...tracksToRemove, trackToRemove.linkedTrackId];
+        console.log(
+          `🔗 Removing linked track pair: ${trackId} and ${trackToRemove.linkedTrackId}`,
+        );
+      }
 
       set((state) => ({
-        tracks: state.tracks.filter((t) => t.id !== trackId),
+        tracks: state.tracks.filter((t) => !tracksToRemove.includes(t.id)),
         timeline: {
           ...state.timeline,
           selectedTrackIds: state.timeline.selectedTrackIds.filter(
-            (id) => id !== trackId,
+            (id) => !tracksToRemove.includes(id),
           ),
         },
       }));
@@ -1143,66 +1222,119 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     },
 
     moveTrack: (trackId, newStartFrame) => {
-      set((state) => ({
-        tracks: state.tracks.map((track) => {
-          if (track.id === trackId) {
-            const duration = track.endFrame - track.startFrame;
+      set((state) => {
+        const trackToMove = state.tracks.find((t) => t.id === trackId);
 
-            // For video tracks, prevent overlaps with other video tracks
-            // For audio/image tracks, allow them to overlap with different types but not same type
-            const conflictingTracks = state.tracks.filter((t) => {
-              if (t.id === trackId) return false;
+        return {
+          tracks: state.tracks.map((track) => {
+            if (track.id === trackId) {
+              const duration = track.endFrame - track.startFrame;
 
-              // Video tracks can't overlap with any other video tracks
-              if (track.type === 'video' && t.type === 'video') return true;
+              // For video tracks, prevent overlaps with other video tracks
+              // For audio/image tracks, allow them to overlap with different types but not same type
+              const conflictingTracks = state.tracks.filter((t) => {
+                if (t.id === trackId) return false;
+                // Exclude linked track from conflicts
+                if (trackToMove?.isLinked && t.id === trackToMove.linkedTrackId)
+                  return false;
 
-              // Non-video tracks can't overlap with same type
-              if (track.type !== 'video' && t.type === track.type) return true;
+                // Video tracks can't overlap with any other video tracks
+                if (track.type === 'video' && t.type === 'video') return true;
 
-              return false;
-            });
+                // Non-video tracks can't overlap with same type
+                if (track.type !== 'video' && t.type === track.type)
+                  return true;
 
-            // Check for collisions and find the best position
-            const finalStartFrame = findNonOverlappingPosition(
-              newStartFrame,
-              duration,
-              conflictingTracks,
-            );
+                return false;
+              });
 
-            console.log(
-              `🎬 Moving ${track.type} track "${track.name}" from ${track.startFrame} to ${finalStartFrame}`,
-            );
+              // Check for collisions and find the best position
+              const finalStartFrame = findNonOverlappingPosition(
+                newStartFrame,
+                duration,
+                conflictingTracks,
+              );
 
-            return {
-              ...track,
-              startFrame: finalStartFrame,
-              endFrame: finalStartFrame + duration,
-            };
-          }
-          return track;
-        }),
-      }));
+              console.log(
+                `🎬 Moving ${track.type} track "${track.name}" from ${track.startFrame} to ${finalStartFrame}`,
+              );
+
+              return {
+                ...track,
+                startFrame: finalStartFrame,
+                endFrame: finalStartFrame + duration,
+              };
+            }
+            // Also move linked track if this track is linked
+            if (
+              trackToMove?.isLinked &&
+              track.id === trackToMove.linkedTrackId
+            ) {
+              const linkedDuration = track.endFrame - track.startFrame;
+              const finalStartFrame = findNonOverlappingPosition(
+                newStartFrame,
+                linkedDuration,
+                state.tracks.filter((t) => {
+                  if (t.id === track.id || t.id === trackToMove.id)
+                    return false;
+                  return t.type === track.type;
+                }),
+              );
+              console.log(
+                `🔗 Moving linked ${track.type} track "${track.name}" to frame ${finalStartFrame}`,
+              );
+              return {
+                ...track,
+                startFrame: finalStartFrame,
+                endFrame: finalStartFrame + linkedDuration,
+              };
+            }
+            return track;
+          }),
+        };
+      });
 
       // Mark as having unsaved changes
       get().markUnsavedChanges();
     },
 
     resizeTrack: (trackId, newStartFrame, newEndFrame) => {
-      set((state) => ({
-        tracks: state.tracks.map((track) => {
-          if (track.id === trackId) {
-            const updatedStartFrame = newStartFrame || track.startFrame;
-            const updatedEndFrame = newEndFrame || track.endFrame;
-            return {
-              ...track,
-              startFrame: updatedStartFrame,
-              endFrame: updatedEndFrame,
-              duration: updatedEndFrame - updatedStartFrame, // Keep duration in sync
-            };
-          }
-          return track;
-        }),
-      }));
+      set((state) => {
+        const trackToResize = state.tracks.find((t) => t.id === trackId);
+
+        return {
+          tracks: state.tracks.map((track) => {
+            if (track.id === trackId) {
+              const updatedStartFrame = newStartFrame || track.startFrame;
+              const updatedEndFrame = newEndFrame || track.endFrame;
+              return {
+                ...track,
+                startFrame: updatedStartFrame,
+                endFrame: updatedEndFrame,
+                duration: updatedEndFrame - updatedStartFrame, // Keep duration in sync
+              };
+            }
+            // Also resize linked track if this track is linked
+            if (
+              trackToResize?.isLinked &&
+              track.id === trackToResize.linkedTrackId
+            ) {
+              const updatedStartFrame = newStartFrame || track.startFrame;
+              const updatedEndFrame = newEndFrame || track.endFrame;
+              console.log(
+                `🔗 Resizing linked ${track.type} track "${track.name}" to match`,
+              );
+              return {
+                ...track,
+                startFrame: updatedStartFrame,
+                endFrame: updatedEndFrame,
+                duration: updatedEndFrame - updatedStartFrame,
+              };
+            }
+            return track;
+          }),
+        };
+      });
 
       // Mark as having unsaved changes
       get().markUnsavedChanges();
@@ -1213,19 +1345,56 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       if (!originalTrack) return '';
 
       const newId = uuidv4();
-      const duplicatedTrack: VideoTrack = {
-        ...originalTrack,
-        id: newId,
-        name: `${originalTrack.name} Copy`,
-        startFrame: originalTrack.endFrame,
-        endFrame:
-          originalTrack.endFrame +
-          (originalTrack.endFrame - originalTrack.startFrame),
-      };
+      const duration = originalTrack.endFrame - originalTrack.startFrame;
 
-      set((state) => ({
-        tracks: [...state.tracks, duplicatedTrack],
-      }));
+      // If this is a linked track, duplicate both tracks
+      if (originalTrack.isLinked && originalTrack.linkedTrackId) {
+        const linkedTrack = get().tracks.find(
+          (t) => t.id === originalTrack.linkedTrackId,
+        );
+        if (linkedTrack) {
+          const newLinkedId = uuidv4();
+
+          const duplicatedTrack: VideoTrack = {
+            ...originalTrack,
+            id: newId,
+            name: `${originalTrack.name} Copy`,
+            startFrame: originalTrack.endFrame,
+            endFrame: originalTrack.endFrame + duration,
+            linkedTrackId: newLinkedId,
+          };
+
+          const duplicatedLinkedTrack: VideoTrack = {
+            ...linkedTrack,
+            id: newLinkedId,
+            name: `${linkedTrack.name} Copy`,
+            startFrame: linkedTrack.endFrame,
+            endFrame: linkedTrack.endFrame + duration,
+            linkedTrackId: newId,
+          };
+
+          set((state) => ({
+            tracks: [...state.tracks, duplicatedTrack, duplicatedLinkedTrack],
+          }));
+
+          console.log(
+            `🔗 Duplicated linked track pair: ${newId} and ${newLinkedId}`,
+          );
+        }
+      } else {
+        // Duplicate single track normally
+        const duplicatedTrack: VideoTrack = {
+          ...originalTrack,
+          id: newId,
+          name: `${originalTrack.name} Copy`,
+          startFrame: originalTrack.endFrame,
+          endFrame: originalTrack.endFrame + duration,
+        };
+
+        set((state) => ({
+          tracks: [...state.tracks, duplicatedTrack],
+        }));
+      }
 
       // Mark as having unsaved changes
       get().markUnsavedChanges();
@@ -1239,37 +1408,89 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       if (!track || frame <= track.startFrame || frame >= track.endFrame)
         return;
 
-      const newId = uuidv4();
+      const tracksToSplit = [track];
 
-      // Calculate timing for split parts
-      const splitTimeInSeconds =
-        (frame - track.startFrame) / state.timeline.fps;
-      const originalSourceStartTime = track.sourceStartTime || 0;
+      // If this is a linked track, also split the linked track
+      if (track.isLinked && track.linkedTrackId) {
+        const linkedTrack = state.tracks.find(
+          (t) => t.id === track.linkedTrackId,
+        );
+        if (linkedTrack) {
+          tracksToSplit.push(linkedTrack);
+          console.log(
+            `✂️ Splitting linked track pair: ${track.name} and ${linkedTrack.name}`,
+          );
+        }
+      }
 
-      const firstPart = {
-        ...track,
-        endFrame: frame,
-        duration: frame - track.startFrame, // Update duration for first part
-        sourceStartTime: originalSourceStartTime, // Keep original source start time
-      };
+      const splitParts: VideoTrack[] = [];
+      let videoTrackNewId: string | undefined;
+      let audioTrackNewId: string | undefined;
 
-      const secondPart: VideoTrack = {
-        ...track,
-        id: newId,
-        name: `${track.name} (2)`,
-        startFrame: frame,
-        duration: track.endFrame - frame, // Update duration for second part
-        sourceStartTime: originalSourceStartTime + splitTimeInSeconds, // Start from split point in source
-      };
+      tracksToSplit.forEach((trackToSplit) => {
+        const newId = uuidv4();
+
+        // Store new IDs for linking
+        if (trackToSplit.type === 'video') {
+          videoTrackNewId = newId;
+        } else if (trackToSplit.type === 'audio') {
+          audioTrackNewId = newId;
+        }
+
+        // Calculate timing for split parts
+        const splitTimeInSeconds =
+          (frame - trackToSplit.startFrame) / state.timeline.fps;
+        const originalSourceStartTime = trackToSplit.sourceStartTime || 0;
+
+        const firstPart = {
+          ...trackToSplit,
+          endFrame: frame,
+          duration: frame - trackToSplit.startFrame,
+          sourceStartTime: originalSourceStartTime,
+        };
+
+        const secondPart: VideoTrack = {
+          ...trackToSplit,
+          id: newId,
+          name: `${trackToSplit.name} (2)`,
+          startFrame: frame,
+          duration: trackToSplit.endFrame - frame,
+          sourceStartTime: originalSourceStartTime + splitTimeInSeconds,
+        };
+
+        splitParts.push(firstPart, secondPart);
+      });
+
+      // Update linkage for split parts
+      if (tracksToSplit.length === 2 && videoTrackNewId && audioTrackNewId) {
+        // Find and update the split parts with proper linkage
+        splitParts.forEach((part) => {
+          if (part.isLinked) {
+            if (part.type === 'video') {
+              if (part.id === videoTrackNewId) {
+                // Second video part links to second audio part
+                part.linkedTrackId = audioTrackNewId;
+              }
+              // First video part keeps original linkage (will be updated below)
+            } else if (part.type === 'audio') {
+              if (part.id === audioTrackNewId) {
+                // Second audio part links to second video part
+                part.linkedTrackId = videoTrackNewId;
+              }
+              // First audio part keeps original linkage (will be updated below)
+            }
+          }
+        });
+      }
 
       console.log(
-        `✂️ Split timing: First part source start: ${firstPart.sourceStartTime}s, Second part source start: ${secondPart.sourceStartTime}s`,
+        `✂️ Split operation: Created ${splitParts.length} track parts from ${tracksToSplit.length} original tracks`,
       );
 
       set((state) => ({
         tracks: state.tracks
-          .map((t) => (t.id === trackId ? firstPart : t))
-          .concat(secondPart),
+          .filter((t) => !tracksToSplit.some((ts) => ts.id === t.id)) // Remove original tracks
+          .concat(splitParts), // Add split parts
       }));
 
       // Mark as having unsaved changes
@@ -1308,10 +1529,26 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     },
 
     toggleTrackVisibility: (trackId) => {
+      const targetTrack = get().tracks.find((t) => t.id === trackId);
+      if (!targetTrack) return;
+
+      const newVisibleState = !targetTrack.visible;
+
       set((state) => ({
-        tracks: state.tracks.map((track) =>
-          track.id === trackId ? { ...track, visible: !track.visible } : track,
-        ),
+        tracks: state.tracks.map((track) => {
+          if (track.id === trackId) {
+            return { ...track, visible: newVisibleState };
+          }
+          // For video tracks, don't sync visibility to audio tracks
+          // Audio tracks don't affect visual output, only video tracks do
+          // But log if this is a linked track
+          if (targetTrack.isLinked && targetTrack.type === 'video') {
+            console.log(
+              `📹 Toggling video track visibility: ${trackId} (${newVisibleState ? 'showing' : 'hiding'})`,
+            );
+          }
+          return track;
+        }),
       }));
 
       // Mark as having unsaved changes
@@ -1319,13 +1556,103 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     },
 
     toggleTrackMute: (trackId) => {
+      const targetTrack = get().tracks.find((t) => t.id === trackId);
+      if (!targetTrack) return;
+
+      const newMutedState = !targetTrack.muted;
+
       set((state) => ({
-        tracks: state.tracks.map((track) =>
-          track.id === trackId ? { ...track, muted: !track.muted } : track,
-        ),
+        tracks: state.tracks.map((track) => {
+          if (track.id === trackId) {
+            return { ...track, muted: newMutedState };
+          }
+          // If this is a linked audio track, also update the linked video track
+          if (
+            targetTrack.isLinked &&
+            targetTrack.type === 'audio' &&
+            track.id === targetTrack.linkedTrackId
+          ) {
+            console.log(
+              `🔗 Syncing video track mute state: ${track.id} (${newMutedState ? 'muting' : 'unmuting'})`,
+            );
+            return { ...track, muted: newMutedState };
+          }
+          return track;
+        }),
       }));
 
       // Mark as having unsaved changes
+      get().markUnsavedChanges();
+    },
+
+    // Linked track management
+    linkTracks: (videoTrackId, audioTrackId) => {
+      set((state) => ({
+        tracks: state.tracks.map((track) => {
+          if (track.id === videoTrackId) {
+            return { ...track, linkedTrackId: audioTrackId, isLinked: true };
+          }
+          if (track.id === audioTrackId) {
+            return { ...track, linkedTrackId: videoTrackId, isLinked: true };
+          }
+          return track;
+        }),
+      }));
+
+      console.log(`🔗 Linked tracks: ${videoTrackId} ↔ ${audioTrackId}`);
+      get().markUnsavedChanges();
+    },
+
+    unlinkTracks: (trackId) => {
+      const trackToUnlink = get().tracks.find((t) => t.id === trackId);
+      if (!trackToUnlink?.isLinked) return;
+
+      set((state) => ({
+        tracks: state.tracks.map((track) => {
+          if (
+            track.id === trackId ||
+            track.id === trackToUnlink.linkedTrackId
+          ) {
+            return { ...track, linkedTrackId: undefined, isLinked: false };
+          }
+          return track;
+        }),
+      }));
+
+      console.log(`🔓 Unlinked track: ${trackId}`);
+      get().markUnsavedChanges();
+    },
+
+    toggleLinkedAudioMute: (videoTrackId) => {
+      const videoTrack = get().tracks.find((t) => t.id === videoTrackId);
+      if (!videoTrack?.isLinked || !videoTrack.linkedTrackId) {
+        console.warn(
+          `⚠️ Video track ${videoTrackId} is not linked to an audio track`,
+        );
+        return;
+      }
+
+      const newMutedState = !videoTrack.muted;
+
+      set((state) => ({
+        tracks: state.tracks.map((track) => {
+          // Update both video track and linked audio track
+          if (track.id === videoTrackId) {
+            console.log(
+              `🔇 Toggling video track mute state: ${track.id} (${newMutedState ? 'muting' : 'unmuting'})`,
+            );
+            return { ...track, muted: newMutedState };
+          }
+          if (track.id === videoTrack.linkedTrackId) {
+            console.log(
+              `🔇 Toggling linked audio track mute: ${track.id} (${newMutedState ? 'muting' : 'unmuting'})`,
+            );
+            return { ...track, muted: newMutedState };
+          }
+          return track;
+        }),
+      }));
+
       get().markUnsavedChanges();
     },
 

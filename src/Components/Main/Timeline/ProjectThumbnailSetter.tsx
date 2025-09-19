@@ -53,6 +53,9 @@ export const ProjectThumbnailSetter: React.FC<ProjectThumbnailSetterProps> =
         <div className="h-8 pointer-events-none"></div>
         {/* Subtitle row spacer */}
         <div className="sm:h-6 md:h-8 lg:h-12 pointer-events-none"></div>
+        {/* Assets row spacer */}
+        <div className="sm:h-6 md:h-8 lg:h-12 pointer-events-none"></div>
+
         {/* Video row - this is where we place the thumbnail setter */}
         <div className="sm:h-6 md:h-8 lg:h-12 flex items-center group pointer-events-auto">
           <Button

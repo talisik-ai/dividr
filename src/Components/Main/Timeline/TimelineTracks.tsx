@@ -25,18 +25,18 @@ export const TRACK_ROWS: TrackRowDefinition[] = [
     icon: '💬',
   },
   {
+    id: 'logo',
+    name: 'Images/Overlays',
+    trackTypes: ['image'],
+    color: '#e67e22',
+    icon: '🖼️',
+  },
+  {
     id: 'video',
     name: 'Video',
     trackTypes: ['video'],
     color: '#8e44ad',
     icon: '🎬',
-  },
-  {
-    id: 'logo',
-    name: 'Logo/Overlay',
-    trackTypes: ['image'],
-    color: '#e67e22',
-    icon: '🖼️',
   },
   {
     id: 'audio',
@@ -250,6 +250,16 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             {track.locked && (
               <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
                 🔒
+              </div>
+            )}
+
+            {/* Link indicator for linked video/audio tracks */}
+            {track.isLinked && (
+              <div
+                className="absolute top-0.5 left-0.5 text-[10px] text-blue-400 z-20"
+                title="Linked track"
+              >
+                🔗
               </div>
             )}
           </div>
@@ -490,13 +500,42 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handleTrackSelect = useCallback(
       (trackId: string, multiSelect = false) => {
+        const { tracks: allTracks } = useVideoEditorStore.getState();
+        const selectedTrack = allTracks.find((t) => t.id === trackId);
+
+        // Get tracks to select (include linked track if applicable)
+        const tracksToSelect = [trackId];
+        if (selectedTrack?.isLinked && selectedTrack.linkedTrackId) {
+          tracksToSelect.push(selectedTrack.linkedTrackId);
+          console.log(
+            `🔗 Selecting linked track pair: ${trackId} and ${selectedTrack.linkedTrackId}`,
+          );
+        }
+
         if (multiSelect) {
-          const newSelection = selectedTrackIds.includes(trackId)
-            ? selectedTrackIds.filter((id) => id !== trackId)
-            : [...selectedTrackIds, trackId];
+          // Handle multi-select with linked tracks
+          let newSelection = [...selectedTrackIds];
+
+          const isCurrentlySelected = tracksToSelect.some((id) =>
+            selectedTrackIds.includes(id),
+          );
+          if (isCurrentlySelected) {
+            // Remove both tracks from selection
+            newSelection = newSelection.filter(
+              (id) => !tracksToSelect.includes(id),
+            );
+          } else {
+            // Add both tracks to selection
+            tracksToSelect.forEach((id) => {
+              if (!newSelection.includes(id)) {
+                newSelection.push(id);
+              }
+            });
+          }
           onTrackSelect(newSelection);
         } else {
-          onTrackSelect([trackId]);
+          // Single select - select both linked tracks
+          onTrackSelect(tracksToSelect);
         }
       },
       [selectedTrackIds, onTrackSelect],

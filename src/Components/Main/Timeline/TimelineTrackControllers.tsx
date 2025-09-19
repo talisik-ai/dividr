@@ -1,6 +1,6 @@
 import { cn } from '@/Lib/utils';
 import { Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   useVideoEditorStore,
   VideoTrack,
@@ -15,30 +15,54 @@ interface TrackControllerRowProps {
 
 const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
   ({ rowDef, tracks }) => {
+    const { toggleTrackVisibility, toggleTrackMute, toggleLinkedAudioMute } =
+      useVideoEditorStore();
+
     // Check if any tracks in this row are visible/audible
     const hasVisibleTracks = tracks.some((track) => track.visible);
-    const hasAudibleTracks = tracks.some(
-      (track) =>
-        (track.type === 'audio' || track.type === 'video') && !track.muted,
-    );
 
-    const handleToggleVisibility = useCallback(() => {
-      // Toggle visibility for all tracks in this row using non-reactive access
-      const { toggleTrackVisibility } = useVideoEditorStore.getState();
-      tracks.forEach((track) => {
-        toggleTrackVisibility(track.id);
+    // For audible tracks, check the track's own muted state (both video and audio tracks now have muted states)
+    const hasAudibleTracks = useMemo(() => {
+      return tracks.some((track) => {
+        if (track.type === 'audio' || track.type === 'video') {
+          // Both audio and video tracks now have muted state that represents the audio output
+          return !track.muted;
+        }
+        return false;
       });
     }, [tracks]);
 
+    const handleToggleVisibility = useCallback(() => {
+      // For video tracks, also toggle visibility of linked audio track
+      // For other tracks, toggle normally
+      tracks.forEach((track) => {
+        toggleTrackVisibility(track.id);
+
+        // If this is a linked video track, also toggle its linked audio track visibility
+        if (track.type === 'video' && track.isLinked && track.linkedTrackId) {
+          // Note: Video track visibility doesn't affect audio track visibility
+          // Audio tracks remain visible but the video track controls the visual output
+          console.log(`📹 Toggling video track visibility: ${track.id}`);
+        }
+      });
+    }, [tracks, toggleTrackVisibility]);
+
     const handleToggleMute = useCallback(() => {
-      // Toggle mute for audio and video tracks in this row using non-reactive access
-      const { toggleTrackMute } = useVideoEditorStore.getState();
-      tracks
-        .filter((track) => track.type === 'audio' || track.type === 'video')
-        .forEach((track) => {
+      tracks.forEach((track) => {
+        if (track.type === 'audio') {
+          // For audio tracks, toggle their own mute state
           toggleTrackMute(track.id);
-        });
-    }, [tracks]);
+          console.log(`🎵 Toggling audio track mute: ${track.id}`);
+        } else if (
+          track.type === 'video' &&
+          track.isLinked &&
+          track.linkedTrackId
+        ) {
+          // For video tracks, toggle their linked audio track's mute state
+          toggleLinkedAudioMute(track.id);
+        }
+      });
+    }, [tracks, toggleTrackMute, toggleLinkedAudioMute]);
 
     return (
       <div className="flex items-center justify-between px-2 mb-2 sm:h-6 md:h-8 lg:h-12 border-b border-border/20">
@@ -59,23 +83,27 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
 
         {/* Track controls */}
         <div className="flex items-center justify-center gap-1">
-          {/* Visibility toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0"
-            onClick={handleToggleVisibility}
-            disabled={tracks.length === 0}
-            title={hasVisibleTracks ? 'Hide tracks' : 'Show tracks'}
-          >
-            {hasVisibleTracks ? (
-              <Eye className="h-3 w-3" />
-            ) : (
-              <EyeOff className="h-3 w-3 text-muted-foreground/50" />
-            )}
-          </Button>
+          {/* Show visibility toggle for video, image, and subtitle tracks */}
+          {(rowDef.trackTypes.includes('video') ||
+            rowDef.trackTypes.includes('image') ||
+            rowDef.trackTypes.includes('subtitle')) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={handleToggleVisibility}
+              disabled={tracks.length === 0}
+              title={hasVisibleTracks ? 'Hide tracks' : 'Show tracks'}
+            >
+              {hasVisibleTracks ? (
+                <Eye className="h-3 w-3" />
+              ) : (
+                <EyeOff className="h-3 w-3 text-muted-foreground/50" />
+              )}
+            </Button>
+          )}
 
-          {/* Audio control (for audio and video tracks) */}
+          {/* Show audio control for both audio tracks AND video tracks (for their linked audio) */}
           {(rowDef.trackTypes.includes('audio') ||
             rowDef.trackTypes.includes('video')) && (
             <Button
@@ -84,7 +112,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               className="h-6 w-6 p-0"
               onClick={handleToggleMute}
               disabled={tracks.length === 0}
-              title={hasAudibleTracks ? 'Mute tracks' : 'Unmute tracks'}
+              title={hasAudibleTracks ? 'Mute audio' : 'Unmute audio'}
             >
               {hasAudibleTracks ? (
                 <Volume2 className="h-3 w-3" />
@@ -124,7 +152,7 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
   React.memo(
     ({ tracks, className }) => {
       // Group tracks by their designated rows
-      const tracksByRow = React.useMemo(() => {
+      const tracksByRow = useMemo(() => {
         const grouped: Record<string, VideoTrack[]> = {};
 
         TRACK_ROWS.forEach((row) => {

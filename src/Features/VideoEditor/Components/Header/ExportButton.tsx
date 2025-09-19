@@ -85,18 +85,63 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         (track) => track.type === 'subtitle',
       );
 
-      // Sort non-subtitle tracks by timeline position to process them in order
-      const sortedTracks = [...tracks]
-        .filter((track) => track.type !== 'subtitle') // Exclude subtitle tracks - they'll be handled as .srt file
-        .filter((track) => {
-          // For audio tracks, exclude if muted
-          if (track.type === 'audio') {
-            return !track.muted;
+      // Process linked video/audio tracks into combined tracks for export
+      const videoTracks = tracks.filter((track) => track.type === 'video');
+      const audioTracks = tracks.filter((track) => track.type === 'audio');
+      const imageTracks = tracks.filter((track) => track.type === 'image');
+
+      const processedTracks: VideoTrack[] = [];
+      const processedTrackIds = new Set<string>();
+
+      // Combine linked video/audio tracks for export
+      for (const videoTrack of videoTracks) {
+        if (processedTrackIds.has(videoTrack.id)) continue;
+
+        if (videoTrack.isLinked && videoTrack.linkedTrackId) {
+          const linkedAudioTrack = audioTracks.find(
+            (t) => t.id === videoTrack.linkedTrackId,
+          );
+          if (linkedAudioTrack) {
+            // Create a combined track that represents the original video file
+            const combinedTrack: VideoTrack = {
+              ...videoTrack,
+              // Use video track's visibility
+              visible: videoTrack.visible,
+              // Use synchronized mute state (both tracks should have same mute state)
+              muted: videoTrack.muted,
+            };
+            processedTracks.push(combinedTrack);
+            processedTrackIds.add(videoTrack.id);
+            processedTrackIds.add(linkedAudioTrack.id);
+            console.log(
+              `🔗 Combined linked tracks for export: ${videoTrack.name} (visible: ${videoTrack.visible}, muted: ${videoTrack.muted})`,
+            );
+          } else {
+            // Video track without linked audio (shouldn't happen but handle it)
+            processedTracks.push(videoTrack);
+            processedTrackIds.add(videoTrack.id);
           }
-          // For video and image tracks, always include (visibility/mute state will be handled in FFmpeg)
-          return true;
-        })
-        .sort((a, b) => a.startFrame - b.startFrame);
+        } else {
+          // Standalone video track (old format)
+          processedTracks.push(videoTrack);
+          processedTrackIds.add(videoTrack.id);
+        }
+      }
+
+      // Add standalone audio tracks that aren't linked
+      for (const audioTrack of audioTracks) {
+        if (!processedTrackIds.has(audioTrack.id)) {
+          processedTracks.push(audioTrack);
+        }
+      }
+
+      // Add image tracks
+      processedTracks.push(...imageTracks);
+
+      // Sort by timeline position
+      const sortedTracks = processedTracks.sort(
+        (a, b) => a.startFrame - b.startFrame,
+      );
 
       if (sortedTracks.length === 0) {
         return {
