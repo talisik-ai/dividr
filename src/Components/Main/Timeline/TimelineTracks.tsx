@@ -63,7 +63,7 @@ interface TrackItemProps {
   scrollX: number;
   zoomLevel: number;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (multiSelect?: boolean) => void;
   onMove: (newStartFrame: number) => void;
   onResize: (newStartFrame?: number, newEndFrame?: number) => void;
 }
@@ -197,7 +197,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             }}
             onClick={(e) => {
               e.stopPropagation();
-              onSelect();
+              onSelect(e.altKey); // Pass Alt key state for multi-select
             }}
             onMouseDown={(e) => {
               if (track.locked) return;
@@ -256,12 +256,23 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             {/* Link indicator for linked video/audio tracks */}
             {track.isLinked && (
               <div
-                className="absolute top-0.5 left-0.5 text-[10px] text-blue-400 z-20"
-                title="Linked track"
+                className="absolute top-0.5 left-0.5 text-[10px] text-blue-400 z-20 animate-pulse"
+                title={`Linked to ${track.type === 'video' ? 'audio' : 'video'} track`}
               >
                 🔗
               </div>
             )}
+
+            {/* Unlinked indicator for tracks that could be linked */}
+            {!track.isLinked &&
+              (track.type === 'video' || track.type === 'audio') && (
+                <div
+                  className="absolute top-0.5 left-0.5 text-[10px] text-gray-400 z-20 opacity-50"
+                  title="Unlinked track - can be linked"
+                >
+                  ⚪
+                </div>
+              )}
           </div>
         </TrackContextMenu>
 
@@ -303,6 +314,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.locked === nextProps.track.locked &&
       prevProps.track.subtitleText === nextProps.track.subtitleText &&
       prevProps.track.volume === nextProps.track.volume &&
+      prevProps.track.isLinked === nextProps.track.isLinked &&
+      prevProps.track.linkedTrackId === nextProps.track.linkedTrackId &&
       prevProps.frameWidth === nextProps.frameWidth &&
       Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Only re-render for significant scroll changes
       prevProps.zoomLevel === nextProps.zoomLevel && // Re-render on any zoom change for proper positioning
@@ -319,7 +332,7 @@ interface TrackRowProps {
   scrollX: number;
   zoomLevel: number;
   selectedTrackIds: string[];
-  onTrackSelect: (trackId: string) => void;
+  onTrackSelect: (trackId: string, multiSelect?: boolean) => void;
   onTrackMove: (trackId: string, newStartFrame: number) => void;
   onTrackResize: (
     trackId: string,
@@ -425,7 +438,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
               scrollX={scrollX}
               zoomLevel={zoomLevel}
               isSelected={selectedTrackIds.includes(track.id)}
-              onSelect={() => onTrackSelect(track.id)}
+              onSelect={(multiSelect) => onTrackSelect(track.id, multiSelect)}
               onMove={(newStartFrame) => onTrackMove(track.id, newStartFrame)}
               onResize={(newStartFrame, newEndFrame) =>
                 onTrackResize(track.id, newStartFrame, newEndFrame)
@@ -468,7 +481,9 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           track.startFrame === nextTrack.startFrame &&
           track.endFrame === nextTrack.endFrame &&
           track.visible === nextTrack.visible &&
-          track.locked === nextTrack.locked
+          track.locked === nextTrack.locked &&
+          track.isLinked === nextTrack.isLinked &&
+          track.linkedTrackId === nextTrack.linkedTrackId
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -621,7 +636,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
     // Memoize individual callback handlers to prevent re-creation
     const memoizedHandlers = useMemo(
       () => ({
-        onTrackSelect: (trackId: string) => handleTrackSelect(trackId),
+        onTrackSelect: (trackId: string, multiSelect?: boolean) =>
+          handleTrackSelect(trackId, multiSelect || false),
         onTrackMove: handleTrackMove,
         onTrackResize: handleTrackResize,
         onDrop: handleRowDrop,
@@ -680,7 +696,9 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           track.endFrame === nextTrack.endFrame &&
           track.source === nextTrack.source &&
           track.visible === nextTrack.visible &&
-          track.locked === nextTrack.locked
+          track.locked === nextTrack.locked &&
+          track.isLinked === nextTrack.isLinked &&
+          track.linkedTrackId === nextTrack.linkedTrackId
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&

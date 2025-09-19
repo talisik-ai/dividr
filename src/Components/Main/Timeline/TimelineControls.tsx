@@ -10,6 +10,7 @@ import {
 } from '@/Components/sub/ui/Select';
 import {
   CopyPlus,
+  Link,
   Maximize,
   Pause,
   Play,
@@ -17,6 +18,7 @@ import {
   SkipForward,
   SplitSquareHorizontal,
   Trash,
+  Unlink,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -180,6 +182,157 @@ const DeleteButton: React.FC = React.memo(() => {
   );
 });
 
+// Link/Unlink button component
+const LinkUnlinkButton: React.FC = React.memo(() => {
+  const selectedTrackIds = useVideoEditorStore(
+    (state) => state.timeline.selectedTrackIds,
+  );
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  const { linkTracks, unlinkTracks, setSelectedTracks } = useVideoEditorStore();
+
+  // Determine link state of selected tracks
+  const linkState = useMemo(() => {
+    const selectedTracks = tracks.filter((track) =>
+      selectedTrackIds.includes(track.id),
+    );
+
+    if (selectedTracks.length === 0) {
+      return { canLink: false, canUnlink: false, hasLinked: false };
+    }
+
+    const videoTracks = selectedTracks.filter(
+      (track) => track.type === 'video',
+    );
+    const audioTracks = selectedTracks.filter(
+      (track) => track.type === 'audio',
+    );
+
+    // Check if we have linked tracks in selection
+    const hasLinkedTracks = selectedTracks.some((track) => track.isLinked);
+
+    // Check if we can link (unlinked video + audio with same source)
+    // Look for unlinked video tracks that have matching unlinked audio tracks
+    const unlinkedVideoTracks = videoTracks.filter((track) => !track.isLinked);
+    const unlinkedAudioTracks = audioTracks.filter((track) => !track.isLinked);
+
+    const canLink = unlinkedVideoTracks.some((videoTrack) => {
+      const matchingAudio = unlinkedAudioTracks.find(
+        (audioTrack) =>
+          audioTrack.source === videoTrack.source &&
+          (audioTrack.name === videoTrack.name ||
+            audioTrack.name === `${videoTrack.name} (Audio)`),
+      );
+      console.log(
+        `🔍 Video track "${videoTrack.name}" source: "${videoTrack.source}" - matching audio:`,
+        matchingAudio
+          ? `"${matchingAudio.name}" source: "${matchingAudio.source}"`
+          : 'NONE',
+      );
+      return !!matchingAudio;
+    });
+
+    console.log('🔍 Link State Debug:', {
+      selectedTrackIds,
+      selectedTracks: selectedTracks.map(
+        (t) => `${t.type}: ${t.name} (linked: ${t.isLinked})`,
+      ),
+      videoTracks: videoTracks.length,
+      audioTracks: audioTracks.length,
+      unlinkedVideoTracks: unlinkedVideoTracks.length,
+      unlinkedAudioTracks: unlinkedAudioTracks.length,
+      hasLinkedTracks,
+      canLink,
+    });
+
+    return {
+      canLink,
+      canUnlink: hasLinkedTracks,
+      hasLinked: hasLinkedTracks,
+    };
+  }, [selectedTrackIds, tracks]);
+
+  const handleLink = useCallback(() => {
+    const selectedTracks = tracks.filter((track) =>
+      selectedTrackIds.includes(track.id),
+    );
+    const videoTracks = selectedTracks.filter(
+      (track) => track.type === 'video' && !track.isLinked,
+    );
+    const audioTracks = selectedTracks.filter(
+      (track) => track.type === 'audio' && !track.isLinked,
+    );
+
+    videoTracks.forEach((videoTrack) => {
+      const matchingAudio = audioTracks.find(
+        (audioTrack) =>
+          audioTrack.source === videoTrack.source &&
+          (audioTrack.name === videoTrack.name ||
+            audioTrack.name === `${videoTrack.name} (Audio)`),
+      );
+
+      if (matchingAudio) {
+        linkTracks(videoTrack.id, matchingAudio.id);
+        console.log(`🔗 Linked ${videoTrack.name} with audio`);
+      }
+    });
+  }, [selectedTrackIds, tracks, linkTracks]);
+
+  const handleUnlink = useCallback(() => {
+    const selectedTracks = tracks.filter((track) =>
+      selectedTrackIds.includes(track.id),
+    );
+    const linkedTracks = selectedTracks.filter((track) => track.isLinked);
+
+    // Track which tracks to keep selected after unlinking
+    const tracksToKeepSelected: string[] = [];
+
+    linkedTracks.forEach((track) => {
+      if (track.type === 'video' || track.type === 'audio') {
+        unlinkTracks(track.id);
+        tracksToKeepSelected.push(track.id);
+        console.log(`🔓 Unlinked ${track.name}`);
+      }
+    });
+
+    // Update selection to only keep the originally selected tracks (remove auto-selected linked partners)
+    if (tracksToKeepSelected.length > 0) {
+      setSelectedTracks(tracksToKeepSelected);
+    }
+  }, [selectedTrackIds, tracks, unlinkTracks, setSelectedTracks]);
+
+  const handleToggleLinkState = useCallback(() => {
+    if (linkState.canUnlink) {
+      handleUnlink();
+    } else if (linkState.canLink) {
+      handleLink();
+    }
+  }, [linkState.canLink, linkState.canUnlink, handleLink, handleUnlink]);
+
+  const isDisabled = !linkState.canLink && !linkState.canUnlink;
+  const isUnlinkMode = linkState.canUnlink;
+
+  return (
+    <Button
+      variant="native"
+      onClick={handleToggleLinkState}
+      title={
+        isUnlinkMode
+          ? 'Unlink selected tracks'
+          : 'Link selected video and audio tracks'
+      }
+      disabled={isDisabled}
+    >
+      {isUnlinkMode ? (
+        <Unlink className="text-orange-500" />
+      ) : (
+        <Link
+          className={linkState.canLink ? 'text-blue-500' : 'text-gray-400'}
+        />
+      )}
+    </Button>
+  );
+});
+
 // Optimized zoom slider component to prevent timeline lag
 const ZoomSlider: React.FC = React.memo(() => {
   // Get current zoom level from store
@@ -319,6 +472,7 @@ export const TimelineControls: React.FC = React.memo(
           >
             <CopyPlus />
           </Button>
+          <LinkUnlinkButton />
           <DeleteButton />
         </div>
 
