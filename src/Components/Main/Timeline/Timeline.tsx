@@ -54,6 +54,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const setSelectedTracks = useVideoEditorStore(
       (state) => state.setSelectedTracks,
     );
+    const removeSelectedTracks = useVideoEditorStore(
+      (state) => state.removeSelectedTracks,
+    );
     const addTrackFromMediaLibrary = useVideoEditorStore(
       (state) => state.addTrackFromMediaLibrary,
     );
@@ -232,6 +235,35 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     );
     useHotkeys('i', () => setInPoint(timeline.currentFrame));
     useHotkeys('o', () => setOutPoint(timeline.currentFrame));
+    useHotkeys(
+      'del',
+      (e) => {
+        e.preventDefault();
+        removeSelectedTracks();
+      },
+      { enableOnFormTags: false },
+    );
+    useHotkeys(
+      'backspace',
+      (e) => {
+        e.preventDefault();
+        removeSelectedTracks();
+      },
+      { enableOnFormTags: false },
+    );
+
+    // Global keyboard event listener as fallback
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          removeSelectedTracks();
+        }
+      };
+
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [timeline.selectedTrackIds, removeSelectedTracks]);
 
     // Cleanup timeouts and intervals on unmount
     useEffect(() => {
@@ -593,6 +625,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           'timeline-container flex flex-col flex-1 overflow-hidden',
           className,
         )}
+        tabIndex={0}
       >
         {/* Timeline Header with Controls */}
         {/* TimelineHeader component removed as per edit hint */}

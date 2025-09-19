@@ -155,6 +155,31 @@ const PlaybackRateSelector: React.FC = React.memo(() => {
   );
 });
 
+// Separate component for delete button that reacts to track selection
+const DeleteButton: React.FC = React.memo(() => {
+  const selectedTrackIds = useVideoEditorStore(
+    (state) => state.timeline.selectedTrackIds,
+  );
+  const removeSelectedTracks = useVideoEditorStore(
+    (state) => state.removeSelectedTracks,
+  );
+
+  const handleDelete = useCallback(() => {
+    removeSelectedTracks();
+  }, [removeSelectedTracks]);
+
+  return (
+    <Button
+      variant="native"
+      onClick={handleDelete}
+      title={`Delete ${selectedTrackIds.length > 0 ? `${selectedTrackIds.length} selected track${selectedTrackIds.length > 1 ? 's' : ''}` : 'selected tracks'}`}
+      disabled={selectedTrackIds.length === 0}
+    >
+      <Trash />
+    </Button>
+  );
+});
+
 // Optimized zoom slider component to prevent timeline lag
 const ZoomSlider: React.FC = React.memo(() => {
   // Get current zoom level from store
@@ -294,13 +319,7 @@ export const TimelineControls: React.FC = React.memo(
           >
             <CopyPlus />
           </Button>
-          <Button
-            variant="native"
-            onClick={() => useVideoEditorStore.getState().stop()}
-            title="Duplicate"
-          >
-            <Trash />
-          </Button>
+          <DeleteButton />
         </div>
 
         <div className="flex items-center flex-1 justify-center relative">

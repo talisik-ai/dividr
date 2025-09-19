@@ -168,6 +168,7 @@ interface VideoEditorStore {
     startFrame?: number,
   ) => Promise<string>;
   removeTrack: (trackId: string) => void;
+  removeSelectedTracks: () => void;
   updateTrack: (trackId: string, updates: Partial<VideoTrack>) => void;
   moveTrack: (trackId: string, newStartFrame: number) => void;
   resizeTrack: (
@@ -1074,8 +1075,54 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       // Mark as having unsaved changes
       get().markUnsavedChanges();
 
-      // Update project thumbnail if a video track was removed
-      if (isVideoTrack) {
+      // Update project thumbnail if a video track was removed or if no tracks remain
+      const remainingTracks = get().tracks;
+      const hasVideoTracks = remainingTracks.some(
+        (track) => track.type === 'video',
+      );
+
+      if (isVideoTrack || !hasVideoTracks) {
+        get()
+          .updateProjectThumbnailFromTimeline()
+          .catch((error) => {
+            console.warn('Failed to update project thumbnail:', error);
+          });
+      }
+    },
+
+    removeSelectedTracks: () => {
+      const state = get();
+      const selectedTrackIds = state.timeline.selectedTrackIds;
+
+      if (selectedTrackIds.length === 0) {
+        return;
+      }
+
+      const tracksToRemove = state.tracks.filter((track) =>
+        selectedTrackIds.includes(track.id),
+      );
+      const hasVideoTracks = tracksToRemove.some(
+        (track) => track.type === 'video',
+      );
+
+      set((state) => ({
+        tracks: state.tracks.filter((t) => !selectedTrackIds.includes(t.id)),
+        timeline: {
+          ...state.timeline,
+          selectedTrackIds: [], // Clear selection after deletion
+        },
+      }));
+
+      // Mark as having unsaved changes
+      get().markUnsavedChanges();
+
+      // Update project thumbnail if any video tracks were removed or if no tracks remain
+      const remainingTracks = get().tracks;
+      const remainingVideoTracks = remainingTracks.some(
+        (track) => track.type === 'video',
+      );
+
+      if (hasVideoTracks || !remainingVideoTracks) {
         get()
           .updateProjectThumbnailFromTimeline()
           .catch((error) => {
@@ -2175,9 +2222,35 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         .sort((a, b) => a.startFrame - b.startFrame)[0];
 
       if (!firstVideoTrack) {
-        console.log(
-          'No video tracks on timeline, skipping project thumbnail update',
-        );
+        console.log('No video tracks on timeline, clearing project thumbnail');
+
+        // Clear project thumbnail if we have a current project but no video tracks
+        if (state.currentProjectId) {
+          try {
+            const currentProject = await projectService.getProject(
+              state.currentProjectId,
+            );
+            if (currentProject) {
+              const updatedProject = {
+                ...currentProject,
+                metadata: {
+                  ...currentProject.metadata,
+                  thumbnail: undefined as string | undefined, // Clear the thumbnail
+                  updatedAt: new Date().toISOString(),
+                },
+              };
+
+              await projectService.updateProject(updatedProject);
+              get().syncWithProjectStore();
+
+              console.log(
+                `📸 Cleared project thumbnail (no video tracks remaining)`,
+              );
+            }
+          } catch (error) {
+            console.error('Failed to clear project thumbnail:', error);
+          }
+        }
         return;
       }
 
@@ -2265,8 +2338,7 @@ export const useTimelineShortcuts = () => {
     onI: () => store.setInPoint(store.timeline.currentFrame),
     onO: () => store.setOutPoint(store.timeline.currentFrame),
     onDelete: () => {
-      store.timeline.selectedTrackIds.forEach((id) => store.removeTrack(id));
-      store.setSelectedTracks([]);
+      store.removeSelectedTracks();
     },
   };
 };
