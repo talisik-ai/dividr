@@ -873,13 +873,13 @@ function handleMultipleInputsNoConcatWorkflow(
 // -------------------------
 const steps: ((job: VideoEditJob, cmd: CommandParts) => void)[] = [
   handleInputs,
-  handleThreads,
   handleTrim,
   handleCrop,
   handleSubtitles,
   handleAspect,
   handleReplaceAudio,
   handlePreset,
+  handleThreads,
 ];
 
 function handleInputs(job: VideoEditJob, cmd: CommandParts) {
@@ -948,7 +948,12 @@ function handlePreset(job: VideoEditJob, cmd: CommandParts) {
   if (!job.operations.preset) return;
 
   // Add preset before codec specifications for optimal placement
+  cmd.args.push('-c:v', 'libx264');
   cmd.args.push('-preset', job.operations.preset);
+  cmd.args.push('-crf', '29');
+  cmd.args.push('-c:a', 'aac');
+  cmd.args.push('-b:a', '96k');
+
 
   console.log(`🚀 Applied encoding preset: ${job.operations.preset}`);
 }
@@ -957,6 +962,8 @@ function handleThreads(job: VideoEditJob, cmd: CommandParts) {
   //if(!job.operations.threads) return;
 
   cmd.args.push('-threads', String(job.operations.threads));
+  cmd.args.push('-movflags');
+  cmd.args.push('+faststart');
 
   console.log(`🚀 Applied thread limit: ${job.operations.threads}`);
 }
