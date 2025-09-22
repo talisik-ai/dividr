@@ -13,6 +13,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   className,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragActive, setDragActive] = useState(false);
@@ -46,20 +47,64 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
   }, [tracks, timeline.currentFrame]);
 
-  // Active video track for audio (doesn't need to be visible)
-  const activeAudioTrack = React.useMemo(() => {
+  // Independent audio track for audio-only playback (separate from video)
+  // Only consider audio tracks that are NOT linked to video tracks
+  const independentAudioTrack = React.useMemo(() => {
     try {
+      const audioTrack = tracks.find(
+        (track) =>
+          track.type === 'audio' &&
+          !track.isLinked && // Only unlinked audio tracks are independent
+          !track.muted &&
+          timeline.currentFrame >= track.startFrame &&
+          timeline.currentFrame < track.endFrame,
+      );
+
+      if (audioTrack) {
+        // Find a video track with the same source to get the previewUrl
+        const matchingVideoTrack = tracks.find(
+          (track) =>
+            track.type === 'video' &&
+            track.source === audioTrack.source &&
+            track.previewUrl,
+        );
+
+        // Return audio track with borrowed previewUrl if available
+        return {
+          ...audioTrack,
+          previewUrl: matchingVideoTrack?.previewUrl || audioTrack.previewUrl,
+        };
+      }
+
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  }, [tracks, timeline.currentFrame]);
+
+  // Video track that provides audio when no independent audio track exists
+  const videoTrackWithAudio = React.useMemo(() => {
+    try {
+      // Use video track for audio if:
+      // 1. There's no independent (unlinked) audio track, AND
+      // 2. The video track itself is not muted
+      if (independentAudioTrack) return undefined;
+
       return tracks.find(
         (track) =>
           track.type === 'video' &&
           track.previewUrl &&
+          !track.muted &&
           timeline.currentFrame >= track.startFrame &&
           timeline.currentFrame < track.endFrame,
       );
     } catch {
       return undefined;
     }
-  }, [tracks, timeline.currentFrame]);
+  }, [tracks, timeline.currentFrame, independentAudioTrack]);
+
+  // Combined audio track reference for compatibility with existing code
+  const activeAudioTrack = independentAudioTrack || videoTrackWithAudio;
 
   // Add debug logs to segment/track detection
   useEffect(() => {
@@ -82,20 +127,61 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         timeline.currentFrame,
       );
     }
-  }, [activeVideoTrack, timeline.currentFrame]);
 
-  // Add effect to pause playback at the end of the last segment
+    if (independentAudioTrack) {
+      console.log(
+        '[DirectPreview] Independent audio track:',
+        independentAudioTrack.id,
+        'Source:',
+        independentAudioTrack.source,
+        'PreviewUrl:',
+        independentAudioTrack.previewUrl,
+        'Frames:',
+        independentAudioTrack.startFrame,
+        '-',
+        independentAudioTrack.endFrame,
+        'isLinked:',
+        independentAudioTrack.isLinked,
+      );
+    }
+
+    if (videoTrackWithAudio) {
+      console.log(
+        '[DirectPreview] Video track providing audio:',
+        videoTrackWithAudio.id,
+        'Src:',
+        videoTrackWithAudio.previewUrl,
+        'Frames:',
+        videoTrackWithAudio.startFrame,
+        '-',
+        videoTrackWithAudio.endFrame,
+        'isLinked:',
+        videoTrackWithAudio.isLinked,
+        'muted:',
+        videoTrackWithAudio.muted,
+      );
+    }
+
+    console.log(
+      '[DirectPreview] Audio decision: independentAudioTrack =',
+      !!independentAudioTrack,
+      ', videoTrackWithAudio =',
+      !!videoTrackWithAudio,
+    );
+  }, [activeVideoTrack, independentAudioTrack, timeline.currentFrame]);
+
+  // Add effect to pause playback at the end of ALL tracks (not just video)
   useEffect(() => {
     if (!playback.isPlaying) return;
-    // Find the last visible video track
-    const visibleVideoTracks = tracks
-      .filter(
-        (track) => track.type === 'video' && track.visible && track.previewUrl,
-      )
+
+    // Find the last track of ANY type (video, audio, subtitle, image)
+    const allTracks = tracks
+      .filter((track) => track.visible) // Only consider visible tracks
       .sort((a, b) => a.endFrame - b.endFrame);
-    const lastTrack = visibleVideoTracks[visibleVideoTracks.length - 1];
+    const lastTrack = allTracks[allTracks.length - 1];
+
     if (lastTrack && timeline.currentFrame >= lastTrack.endFrame) {
-      // Pause playback if we've reached or passed the end of the last segment
+      // Pause playback if we've reached or passed the end of the last track
       playback.isPlaying = false;
       // If you have a setPlayback or similar action, use that instead:
       // setPlayback((prev) => ({ ...prev, isPlaying: false }));
@@ -103,8 +189,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       if (videoRef.current && !videoRef.current.paused) {
         videoRef.current.pause();
       }
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+      }
     }
-  }, [timeline.currentFrame, tracks, playback, videoRef]);
+  }, [timeline.currentFrame, tracks, playback, videoRef, audioRef]);
 
   // Resize observer
   useEffect(() => {
@@ -162,11 +251,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     );
   }, [tracks, timeline.currentFrame]);
 
-  // Add handler for loadedmetadata
+  // Add handler for video loadedmetadata
   const handleLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
     if (!video || !activeVideoTrack) return;
-    // Seek to correct position
+
+    // Seek to correct position based on the video track
     const relativeFrame = Math.max(
       0,
       timeline.currentFrame - activeVideoTrack.startFrame,
@@ -179,13 +269,45 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     );
     // Auto play if timeline is playing
     if (playback.isPlaying && video.paused) {
-      video.muted = playback.muted; // ensure muted if needed for autoplay
+      video.muted = playback.muted || !!independentAudioTrack; // mute video if independent audio
       video.play().catch(() => {
         /* hello */
       });
     }
   }, [
     activeVideoTrack,
+    timeline.currentFrame,
+    timeline.fps,
+    playback.isPlaying,
+    playback.muted,
+    independentAudioTrack,
+  ]);
+
+  // Add handler for audio loadedmetadata
+  const handleAudioLoadedMetadata = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || !independentAudioTrack) return;
+
+    // Seek to correct position based on the audio track
+    const relativeFrame = Math.max(
+      0,
+      timeline.currentFrame - independentAudioTrack.startFrame,
+    );
+    const trackTime = relativeFrame / timeline.fps;
+    const targetTime = (independentAudioTrack.sourceStartTime || 0) + trackTime;
+    audio.currentTime = Math.max(
+      independentAudioTrack.sourceStartTime || 0,
+      Math.min(targetTime, audio.duration || 0),
+    );
+    // Auto play if timeline is playing
+    if (playback.isPlaying && audio.paused) {
+      audio.muted = playback.muted || independentAudioTrack.muted;
+      audio.play().catch(() => {
+        /* hello */
+      });
+    }
+  }, [
+    independentAudioTrack,
     timeline.currentFrame,
     timeline.fps,
     playback.isPlaying,
@@ -210,7 +332,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     return () => video.removeEventListener('canplay', handleAutoPlay);
   }, [playback.isPlaying, playback.muted]);
 
-  // Sync play/pause & volume
+  // Sync play/pause & volume for video element
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -219,22 +341,38 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       if (playback.isPlaying) {
         if (video.paused && video.readyState >= 3) {
           console.log(
-            '[DirectPreview] Resuming playback (playback.isPlaying && video.paused)',
+            '[DirectPreview] Resuming video playback (playback.isPlaying && video.paused)',
           );
           video.play().catch(console.warn);
         }
       } else {
         if (!video.paused) {
           console.log(
-            '[DirectPreview] Pausing playback (playback.isPlaying is false)',
+            '[DirectPreview] Pausing video playback (playback.isPlaying is false)',
           );
           video.pause();
         }
       }
-      // Check if current audio track is muted OR global playback is muted
-      const isTrackMuted = activeAudioTrack?.muted === true;
-      const shouldMute = playback.muted || isTrackMuted;
-      video.volume = shouldMute ? 0 : Math.min(playback.volume, 1);
+
+      // Handle video volume
+      // Mute video if:
+      // 1. Global playback is muted, OR
+      // 2. There's an independent (unlinked) audio track playing, OR
+      // 3. The video track itself is muted
+      const shouldMuteVideo =
+        playback.muted ||
+        !!independentAudioTrack ||
+        (activeVideoTrack?.muted ?? false);
+
+      console.log('[DirectPreview] Video volume decision:', {
+        playbackMuted: playback.muted,
+        hasIndependentAudio: !!independentAudioTrack,
+        videoTrackMuted: activeVideoTrack?.muted ?? false,
+        shouldMuteVideo,
+        finalVolume: shouldMuteVideo ? 0 : Math.min(playback.volume, 1),
+      });
+
+      video.volume = shouldMuteVideo ? 0 : Math.min(playback.volume, 1);
       video.playbackRate = Math.max(0.25, Math.min(playback.playbackRate, 4));
     } catch (err) {
       console.warn('Video sync error:', err);
@@ -244,15 +382,55 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     playback.volume,
     playback.muted,
     playback.playbackRate,
-    activeVideoTrack?.id, // <-- add this
-    activeVideoTrack?.previewUrl, // (optional, for extra safety)
-    activeAudioTrack?.muted, // Track mute state (use audio track for muting)
+    activeVideoTrack?.id,
+    activeVideoTrack?.previewUrl,
+    activeVideoTrack?.muted,
+    independentAudioTrack,
   ]);
 
-  // Sync timeline to video frames
+  // Sync play/pause & volume for independent audio element
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !independentAudioTrack) return;
+
+    try {
+      if (playback.isPlaying) {
+        if (audio.paused && audio.readyState >= 3) {
+          console.log(
+            '[DirectPreview] Resuming audio playback (independent audio track)',
+          );
+          audio.play().catch(console.warn);
+        }
+      } else {
+        if (!audio.paused) {
+          console.log(
+            '[DirectPreview] Pausing audio playback (independent audio track)',
+          );
+          audio.pause();
+        }
+      }
+
+      // Handle audio volume
+      const shouldMute = playback.muted || independentAudioTrack.muted;
+      audio.volume = shouldMute ? 0 : Math.min(playback.volume, 1);
+      audio.playbackRate = Math.max(0.25, Math.min(playback.playbackRate, 4));
+    } catch (err) {
+      console.warn('Audio sync error:', err);
+    }
+  }, [
+    playback.isPlaying,
+    playback.volume,
+    playback.muted,
+    playback.playbackRate,
+    independentAudioTrack?.id,
+    independentAudioTrack?.muted,
+  ]);
+
+  // Sync timeline to video frames - DISABLED during timeline-controlled playback
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeAudioTrack) return;
+    const trackForSync = activeVideoTrack || activeAudioTrack;
+    if (!video || !trackForSync || playback.isPlaying) return; // Don't sync during playback
 
     let handle: number;
     const fps = timeline.fps;
@@ -261,10 +439,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       _now: DOMHighResTimeStamp,
       metadata: VideoFrameCallbackMetadata,
     ) => {
-      if (!video.paused && playback.isPlaying) {
+      // Only sync when video is playing but timeline playback is NOT active
+      if (!video.paused && !playback.isPlaying) {
         const elapsedFrames =
-          (metadata.mediaTime - (activeAudioTrack.sourceStartTime || 0)) * fps +
-          activeAudioTrack.startFrame;
+          (metadata.mediaTime - (trackForSync.sourceStartTime || 0)) * fps +
+          trackForSync.startFrame;
         setCurrentFrame(Math.floor(elapsedFrames));
       }
       handle = video.requestVideoFrameCallback(step);
@@ -272,22 +451,28 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
     handle = video.requestVideoFrameCallback(step);
     return () => video.cancelVideoFrameCallback(handle);
-  }, [activeAudioTrack?.id, playback.isPlaying, timeline.fps, setCurrentFrame]);
+  }, [
+    activeVideoTrack?.id,
+    activeAudioTrack?.id,
+    playback.isPlaying,
+    timeline.fps,
+    setCurrentFrame,
+  ]);
 
-  // Sync on scrubbing/seek (user interaction)
+  // Sync video element on scrubbing/seek (user interaction)
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeAudioTrack) return;
+    if (!video || !activeVideoTrack) return;
     if (playback.isPlaying) return; // don't fight playback
 
     const relativeFrame = Math.max(
       0,
-      timeline.currentFrame - activeAudioTrack.startFrame,
+      timeline.currentFrame - activeVideoTrack.startFrame,
     );
     const trackTime = relativeFrame / timeline.fps;
-    const targetTime = (activeAudioTrack.sourceStartTime || 0) + trackTime;
+    const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
     const clampedTargetTime = Math.max(
-      activeAudioTrack.sourceStartTime || 0,
+      activeVideoTrack.sourceStartTime || 0,
       Math.min(targetTime, video.duration || 0),
     );
 
@@ -299,7 +484,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         'for frame',
         timeline.currentFrame,
         'in track',
-        activeAudioTrack.id,
+        activeVideoTrack.id,
       );
       video.currentTime = clampedTargetTime;
     }
@@ -307,7 +492,43 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     timeline.currentFrame,
     timeline.fps,
     playback.isPlaying,
-    activeAudioTrack,
+    activeVideoTrack,
+  ]);
+
+  // Sync independent audio element on scrubbing/seek (user interaction)
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !independentAudioTrack) return;
+    if (playback.isPlaying) return; // don't fight playback
+
+    const relativeFrame = Math.max(
+      0,
+      timeline.currentFrame - independentAudioTrack.startFrame,
+    );
+    const trackTime = relativeFrame / timeline.fps;
+    const targetTime = (independentAudioTrack.sourceStartTime || 0) + trackTime;
+    const clampedTargetTime = Math.max(
+      independentAudioTrack.sourceStartTime || 0,
+      Math.min(targetTime, audio.duration || 0),
+    );
+
+    const diff = Math.abs(audio.currentTime - clampedTargetTime);
+    if (diff > 0.05) {
+      console.log(
+        '[DirectPreview] Seeking audio to',
+        clampedTargetTime,
+        'for frame',
+        timeline.currentFrame,
+        'in track',
+        independentAudioTrack.id,
+      );
+      audio.currentTime = clampedTargetTime;
+    }
+  }, [
+    timeline.currentFrame,
+    timeline.fps,
+    playback.isPlaying,
+    independentAudioTrack,
   ]);
 
   // Drag/drop
@@ -360,7 +581,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onDrop={handleDrop}
     >
       {/* Video */}
-      {activeAudioTrack && (
+      {(activeVideoTrack || activeAudioTrack) && (
         <div
           className="absolute inset-0 flex items-center justify-center"
           style={{
@@ -376,15 +597,27 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         >
           <video
             ref={videoRef}
-            key={activeAudioTrack.previewUrl}
+            key={`video-${activeVideoTrack?.previewUrl || 'no-video'}`}
             className="w-full h-full object-contain"
             playsInline
             controls={false}
             preload="metadata"
-            src={activeAudioTrack.previewUrl}
+            src={activeVideoTrack?.previewUrl}
             onLoadedMetadata={handleLoadedMetadata}
           />
         </div>
+      )}
+
+      {/* Independent Audio Element */}
+      {independentAudioTrack && independentAudioTrack.previewUrl && (
+        <audio
+          ref={audioRef}
+          key={`audio-${independentAudioTrack.previewUrl}-${independentAudioTrack.startFrame}`}
+          preload="metadata"
+          src={independentAudioTrack.previewUrl}
+          onLoadedMetadata={handleAudioLoadedMetadata}
+          style={{ display: 'none' }}
+        />
       )}
 
       {/* Subtitles */}

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Button } from '@/Components/sub/ui/Button';
 import ElasticSlider from '@/Components/sub/ui/Elastic-Slider';
 import {
@@ -9,6 +10,7 @@ import {
 } from '@/Components/sub/ui/Select';
 import {
   CopyPlus,
+  Link,
   Maximize,
   Pause,
   Play,
@@ -16,12 +18,55 @@ import {
   SkipForward,
   SplitSquareHorizontal,
   Trash,
+  Unlink,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 // eslint-disable-next-line import/no-unresolved
 import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
+
+// Throttle utility for zoom operations to prevent lag
+const useThrottledCallback = <T extends (...args: any[]) => void>(
+  callback: T,
+  delay: number,
+): T => {
+  const lastCall = useRef<number>(0);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  return useCallback(
+    ((...args: Parameters<T>) => {
+      const now = Date.now();
+
+      // Clear any pending timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      // If enough time has passed, call immediately
+      if (now - lastCall.current >= delay) {
+        lastCall.current = now;
+        callback(...args);
+      } else {
+        // Otherwise, schedule for later
+        timeoutRef.current = setTimeout(
+          () => {
+            lastCall.current = Date.now();
+            callback(...args);
+          },
+          delay - (now - lastCall.current),
+        );
+      }
+    }) as T,
+    [callback, delay],
+  );
+};
 
 // Separate component for time display that only re-renders when currentFrame changes
 const TimeDisplay: React.FC = React.memo(() => {
@@ -112,10 +157,235 @@ const PlaybackRateSelector: React.FC = React.memo(() => {
   );
 });
 
+// Separate component for delete button that reacts to track selection
+const DeleteButton: React.FC = React.memo(() => {
+  const selectedTrackIds = useVideoEditorStore(
+    (state) => state.timeline.selectedTrackIds,
+  );
+  const removeSelectedTracks = useVideoEditorStore(
+    (state) => state.removeSelectedTracks,
+  );
+
+  const handleDelete = useCallback(() => {
+    removeSelectedTracks();
+  }, [removeSelectedTracks]);
+
+  return (
+    <Button
+      variant="native"
+      onClick={handleDelete}
+      title={`Delete ${selectedTrackIds.length > 0 ? `${selectedTrackIds.length} selected track${selectedTrackIds.length > 1 ? 's' : ''}` : 'selected tracks'}`}
+      disabled={selectedTrackIds.length === 0}
+    >
+      <Trash />
+    </Button>
+  );
+});
+
+// Link/Unlink button component
+const LinkUnlinkButton: React.FC = React.memo(() => {
+  const selectedTrackIds = useVideoEditorStore(
+    (state) => state.timeline.selectedTrackIds,
+  );
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  const { linkTracks, unlinkTracks, setSelectedTracks } = useVideoEditorStore();
+
+  // Determine link state of selected tracks
+  const linkState = useMemo(() => {
+    const selectedTracks = tracks.filter((track) =>
+      selectedTrackIds.includes(track.id),
+    );
+
+    if (selectedTracks.length === 0) {
+      return { canLink: false, canUnlink: false, hasLinked: false };
+    }
+
+    const videoTracks = selectedTracks.filter(
+      (track) => track.type === 'video',
+    );
+    const audioTracks = selectedTracks.filter(
+      (track) => track.type === 'audio',
+    );
+
+    // Check if we have linked tracks in selection
+    const hasLinkedTracks = selectedTracks.some((track) => track.isLinked);
+
+    // Check if we can link (unlinked video + audio with same source)
+    // Look for unlinked video tracks that have matching unlinked audio tracks
+    const unlinkedVideoTracks = videoTracks.filter((track) => !track.isLinked);
+    const unlinkedAudioTracks = audioTracks.filter((track) => !track.isLinked);
+
+    const canLink = unlinkedVideoTracks.some((videoTrack) => {
+      const matchingAudio = unlinkedAudioTracks.find(
+        (audioTrack) =>
+          audioTrack.source === videoTrack.source &&
+          (audioTrack.name === videoTrack.name ||
+            audioTrack.name === `${videoTrack.name} (Audio)`),
+      );
+      // Debug: Log track matching for troubleshooting
+      if (!matchingAudio) {
+        console.log(
+          `🔍 No matching audio found for video track: "${videoTrack.name}"`,
+        );
+      }
+      return !!matchingAudio;
+    });
+
+    // Only log when there are issues for easier debugging
+    if (selectedTracks.length > 0 && !canLink && !hasLinkedTracks) {
+      console.log('🔍 Link State Debug:', {
+        canLink,
+        hasLinkedTracks,
+        unlinkedVideoTracks: unlinkedVideoTracks.length,
+        unlinkedAudioTracks: unlinkedAudioTracks.length,
+      });
+    }
+
+    return {
+      canLink,
+      canUnlink: hasLinkedTracks,
+      hasLinked: hasLinkedTracks,
+    };
+  }, [selectedTrackIds, tracks]);
+
+  const handleLink = useCallback(() => {
+    const selectedTracks = tracks.filter((track) =>
+      selectedTrackIds.includes(track.id),
+    );
+    const videoTracks = selectedTracks.filter(
+      (track) => track.type === 'video' && !track.isLinked,
+    );
+    const audioTracks = selectedTracks.filter(
+      (track) => track.type === 'audio' && !track.isLinked,
+    );
+
+    videoTracks.forEach((videoTrack) => {
+      const matchingAudio = audioTracks.find(
+        (audioTrack) =>
+          audioTrack.source === videoTrack.source &&
+          (audioTrack.name === videoTrack.name ||
+            audioTrack.name === `${videoTrack.name} (Audio)`),
+      );
+
+      if (matchingAudio) {
+        linkTracks(videoTrack.id, matchingAudio.id);
+        console.log(`🔗 Linked ${videoTrack.name} with audio`);
+      }
+    });
+  }, [selectedTrackIds, tracks, linkTracks]);
+
+  const handleUnlink = useCallback(() => {
+    const selectedTracks = tracks.filter((track) =>
+      selectedTrackIds.includes(track.id),
+    );
+    const linkedTracks = selectedTracks.filter((track) => track.isLinked);
+
+    // Track which tracks to keep selected after unlinking
+    const tracksToKeepSelected: string[] = [];
+
+    linkedTracks.forEach((track) => {
+      if (track.type === 'video' || track.type === 'audio') {
+        unlinkTracks(track.id);
+        tracksToKeepSelected.push(track.id);
+        console.log(`🔓 Unlinked ${track.name}`);
+      }
+    });
+
+    // Update selection to only keep the originally selected tracks (remove auto-selected linked partners)
+    if (tracksToKeepSelected.length > 0) {
+      setSelectedTracks(tracksToKeepSelected);
+    }
+  }, [selectedTrackIds, tracks, unlinkTracks, setSelectedTracks]);
+
+  const handleToggleLinkState = useCallback(() => {
+    if (linkState.canUnlink) {
+      handleUnlink();
+    } else if (linkState.canLink) {
+      handleLink();
+    }
+  }, [linkState.canLink, linkState.canUnlink, handleLink, handleUnlink]);
+
+  const isDisabled = !linkState.canLink && !linkState.canUnlink;
+  const isUnlinkMode = linkState.canUnlink;
+
+  return (
+    <Button
+      variant="native"
+      onClick={handleToggleLinkState}
+      title={
+        isUnlinkMode
+          ? 'Unlink selected tracks'
+          : 'Link selected video and audio tracks'
+      }
+      disabled={isDisabled}
+    >
+      {isUnlinkMode ? (
+        <Unlink className="text-orange-500" />
+      ) : (
+        <Link
+          className={linkState.canLink ? 'text-blue-500' : 'text-gray-400'}
+        />
+      )}
+    </Button>
+  );
+});
+
+// Optimized zoom slider component to prevent timeline lag
+const ZoomSlider: React.FC = React.memo(() => {
+  // Get current zoom level from store
+  const storeZoom = useVideoEditorStore((state) => state.timeline.zoom);
+  const setZoom = useVideoEditorStore((state) => state.setZoom);
+
+  // Local state for smooth slider interaction
+  const [localZoom, setLocalZoom] = useState(storeZoom);
+  const isUserInteracting = useRef(false);
+
+  // Sync local zoom with store zoom when not user-controlled
+  useEffect(() => {
+    if (!isUserInteracting.current) {
+      setLocalZoom(storeZoom);
+    }
+  }, [storeZoom]);
+
+  // Throttled zoom update to store (key optimization)
+  const throttledSetZoom = useThrottledCallback((value: number) => {
+    setZoom(value);
+  }, 16); // ~60fps throttle for smooth performance
+
+  // Handle zoom change with local state + throttled store update
+  const handleZoomChange = useCallback(
+    (value: number) => {
+      isUserInteracting.current = true;
+      setLocalZoom(value);
+      throttledSetZoom(value);
+
+      // Reset interaction flag after a delay
+      setTimeout(() => {
+        isUserInteracting.current = false;
+      }, 100);
+    },
+    [throttledSetZoom],
+  );
+
+  return (
+    <ElasticSlider
+      leftIcon={<ZoomOut className="translate scale-x-[-1]" size={16} />}
+      rightIcon={<ZoomIn className="translate scale-x-[-1]" size={16} />}
+      startingValue={0.2}
+      defaultValue={localZoom}
+      maxValue={5}
+      showLabel={false}
+      thickness={4}
+      isStepped={true}
+      stepSize={0.1}
+      onChange={handleZoomChange}
+    />
+  );
+});
+
 export const TimelineControls: React.FC = React.memo(
   () => {
-    // Get current zoom level reactively for the slider
-    const currentZoom = useVideoEditorStore((state) => state.timeline.zoom);
+    // Remove reactive zoom subscription to prevent unnecessary re-renders
     const setZoom = useVideoEditorStore((state) => state.setZoom);
 
     // Get current frame non-reactively
@@ -134,32 +404,22 @@ export const TimelineControls: React.FC = React.memo(
         : timeline.totalFrames;
     }, []);
 
-    // Helper: Snap to next segment if in blank
-    const snapToNextSegmentIfBlank = useCallback(() => {
+    // Helper: Snap to next track if in blank (any track type)
+    const snapToNextTrackIfBlank = useCallback(() => {
       const currentFrame = getCurrentFrame();
       const { tracks } = useVideoEditorStore.getState();
       const isInBlank = !tracks.some(
         (track) =>
-          track.type === 'video' &&
           track.visible &&
-          track.previewUrl &&
           currentFrame >= track.startFrame &&
           currentFrame < track.endFrame,
       );
       if (isInBlank) {
-        const nextSegment = tracks
-          .filter(
-            (track) =>
-              track.type === 'video' &&
-              track.visible &&
-              track.previewUrl &&
-              track.startFrame > currentFrame,
-          )
+        const nextTrack = tracks
+          .filter((track) => track.visible && track.startFrame > currentFrame)
           .sort((a, b) => a.startFrame - b.startFrame)[0];
-        if (nextSegment) {
-          useVideoEditorStore
-            .getState()
-            .setCurrentFrame(nextSegment.startFrame);
+        if (nextTrack) {
+          useVideoEditorStore.getState().setCurrentFrame(nextTrack.startFrame);
           return true;
         }
       }
@@ -170,7 +430,7 @@ export const TimelineControls: React.FC = React.memo(
     const handlePlayToggle = useCallback(() => {
       const { playback, togglePlayback } = useVideoEditorStore.getState();
       if (!playback.isPlaying) {
-        const snapped = snapToNextSegmentIfBlank();
+        const snapped = snapToNextTrackIfBlank();
         if (snapped) {
           setTimeout(() => {
             useVideoEditorStore.getState().togglePlayback();
@@ -179,7 +439,7 @@ export const TimelineControls: React.FC = React.memo(
         }
       }
       togglePlayback();
-    }, [snapToNextSegmentIfBlank]);
+    }, [snapToNextTrackIfBlank]);
 
     return (
       <div className="h-10 grid grid-cols-[364px_1fr] px-4 border-t border-accent">
@@ -199,13 +459,8 @@ export const TimelineControls: React.FC = React.memo(
           >
             <CopyPlus />
           </Button>
-          <Button
-            variant="native"
-            onClick={() => useVideoEditorStore.getState().stop()}
-            title="Duplicate"
-          >
-            <Trash />
-          </Button>
+          <LinkUnlinkButton />
+          <DeleteButton />
         </div>
 
         <div className="flex items-center flex-1 justify-center relative">
@@ -304,22 +559,7 @@ export const TimelineControls: React.FC = React.memo(
           </div>
 
           <div className="flex justify-end items-center gap-4 w-full">
-            <ElasticSlider
-              leftIcon={
-                <ZoomOut className="translate scale-x-[-1]" size={16} />
-              }
-              rightIcon={
-                <ZoomIn className="translate scale-x-[-1]" size={16} />
-              }
-              startingValue={0.2}
-              defaultValue={currentZoom}
-              maxValue={5}
-              showLabel={false}
-              thickness={4}
-              isStepped={true}
-              stepSize={0.1}
-              onChange={(value) => setZoom(value)}
-            />
+            <ZoomSlider />
             <Button
               variant="native"
               size="icon"
@@ -352,8 +592,10 @@ export const TimelineControls: React.FC = React.memo(
     );
   },
   () => {
-    // Custom comparison - TimelineControls should re-render only when zoom changes
-    // (currentZoom subscription is needed for the slider)
+    // TimelineControls should almost never re-render since we removed zoom subscription
+    // and moved zoom slider to its own optimized component
     return true;
   },
 );
+
+ZoomSlider.displayName = 'ZoomSlider';

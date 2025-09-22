@@ -4,6 +4,7 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../../../Store/VideoEditorStore';
+import { TrackContextMenu } from './TrackContextMenu';
 import { VideoSpriteSheetStrip } from './VideoSpriteSheetStrip';
 
 // Define track row types - easy to extend in the future
@@ -24,18 +25,18 @@ export const TRACK_ROWS: TrackRowDefinition[] = [
     icon: '💬',
   },
   {
+    id: 'logo',
+    name: 'Images/Overlays',
+    trackTypes: ['image'],
+    color: '#e67e22',
+    icon: '🖼️',
+  },
+  {
     id: 'video',
     name: 'Video',
     trackTypes: ['video'],
     color: '#8e44ad',
     icon: '🎬',
-  },
-  {
-    id: 'logo',
-    name: 'Logo/Overlay',
-    trackTypes: ['image'],
-    color: '#e67e22',
-    icon: '🖼️',
   },
   {
     id: 'audio',
@@ -62,7 +63,7 @@ interface TrackItemProps {
   scrollX: number;
   zoomLevel: number;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (multiSelect?: boolean) => void;
   onMove: (newStartFrame: number) => void;
   onResize: (newStartFrame?: number, newEndFrame?: number) => void;
 }
@@ -177,80 +178,103 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     return (
       <>
         {/* Main track - positioned absolutely within the shared container */}
-        <div
-          ref={nodeRef}
-          className={`
-          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] z-10 flex items-center overflow-hidden select-none
-          ${isSelected ? 'border-2 border-secondary rounded-none' : 'rounded'}
-          ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
-          ${track.visible ? 'opacity-100' : 'opacity-50'}
-        `}
-          style={{
-            left: `${left}px`,
-            width: `${clampedWidth}px`,
-            background:
-              track.type === 'video'
-                ? 'transparent'
-                : getTrackGradient(track.type),
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect();
-          }}
-          onMouseDown={(e) => {
-            if (track.locked) return;
-            e.stopPropagation();
-            setIsDragging(true);
-            setDragStart({
-              x: e.clientX,
-              startFrame: track.startFrame,
-              endFrame: track.endFrame,
-            });
-          }}
-        >
-          {/* Video sprite sheet strip for video tracks */}
-          {track.type === 'video' && (
-            <VideoSpriteSheetStrip
-              track={track}
-              frameWidth={frameWidth}
-              width={clampedWidth}
-              height={
-                window.innerWidth <= 640
-                  ? 24
-                  : window.innerWidth <= 768
-                    ? 26
-                    : 40
-              }
-              zoomLevel={zoomLevel}
-            />
-          )}
+        <TrackContextMenu track={track}>
+          <div
+            ref={nodeRef}
+            className={`
+            absolute sm:h-[24px] md:h-[26px] lg:h-[40px] z-10 flex items-center overflow-hidden select-none
+            ${isSelected ? 'border-2 border-secondary rounded-none' : 'rounded'}
+            ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
+            ${track.visible ? 'opacity-100' : 'opacity-50'}
+          `}
+            style={{
+              left: `${left}px`,
+              width: `${clampedWidth}px`,
+              background:
+                track.type === 'video'
+                  ? 'transparent'
+                  : getTrackGradient(track.type),
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(e.altKey); // Pass Alt key state for multi-select
+            }}
+            onMouseDown={(e) => {
+              if (track.locked) return;
+              e.stopPropagation();
+              setIsDragging(true);
+              setDragStart({
+                x: e.clientX,
+                startFrame: track.startFrame,
+                endFrame: track.endFrame,
+              });
+            }}
+          >
+            {/* Video sprite sheet strip for video tracks */}
+            {track.type === 'video' && (
+              <VideoSpriteSheetStrip
+                track={track}
+                frameWidth={frameWidth}
+                width={clampedWidth}
+                height={
+                  window.innerWidth <= 640
+                    ? 24
+                    : window.innerWidth <= 768
+                      ? 26
+                      : 40
+                }
+                zoomLevel={zoomLevel}
+              />
+            )}
 
-          {/* Text content for non-video tracks */}
-          {track.type !== 'video' && (
-            <div
-              className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
-              style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
-            >
-              {track.type === 'subtitle' && track.subtitleText
-                ? track.subtitleText
-                : track.name}
-            </div>
-          )}
+            {/* Text content for non-video tracks */}
+            {track.type !== 'video' && (
+              <div
+                className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
+                style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
+              >
+                {track.type === 'subtitle' && track.subtitleText
+                  ? track.subtitleText
+                  : track.name}
+              </div>
+            )}
 
-          {/* Volume indicator for audio tracks */}
-          {track.type === 'audio' && track.volume !== undefined && (
-            <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
-              {Math.round(track.volume * 100)}%
-            </div>
-          )}
+            {/* Volume indicator for audio tracks */}
+            {track.type === 'audio' && track.volume !== undefined && (
+              <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
+                {Math.round(track.volume * 100)}%
+              </div>
+            )}
 
-          {/* Lock indicator */}
-          {track.locked && (
-            <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
-              🔒
-            </div>
-          )}
-        </div>
+            {/* Lock indicator */}
+            {track.locked && (
+              <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
+                🔒
+              </div>
+            )}
+
+            {/* Link indicator for linked video/audio tracks */}
+            {track.isLinked && (
+              <div
+                className="absolute top-0.5 left-0.5 text-[10px] text-blue-400 z-20 animate-pulse"
+                title={`Linked to ${track.type === 'video' ? 'audio' : 'video'} track`}
+              >
+                🔗
+              </div>
+            )}
+
+            {/* Unlinked indicator for tracks that could be linked */}
+            {!track.isLinked &&
+              (track.type === 'video' || track.type === 'audio') && (
+                <div
+                  className="absolute top-0.5 left-0.5 text-[10px] text-gray-400 z-20 opacity-50"
+                  title="Unlinked track - can be linked"
+                >
+                  ⚪
+                </div>
+              )}
+          </div>
+        </TrackContextMenu>
 
         {/* Left resize handle */}
         {!track.locked && isSelected && (
@@ -290,9 +314,11 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.locked === nextProps.track.locked &&
       prevProps.track.subtitleText === nextProps.track.subtitleText &&
       prevProps.track.volume === nextProps.track.volume &&
+      prevProps.track.isLinked === nextProps.track.isLinked &&
+      prevProps.track.linkedTrackId === nextProps.track.linkedTrackId &&
       prevProps.frameWidth === nextProps.frameWidth &&
       Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Only re-render for significant scroll changes
-      Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) < 0.1 && // Only re-render for significant zoom changes
+      prevProps.zoomLevel === nextProps.zoomLevel && // Re-render on any zoom change for proper positioning
       prevProps.isSelected === nextProps.isSelected
     );
   },
@@ -306,7 +332,7 @@ interface TrackRowProps {
   scrollX: number;
   zoomLevel: number;
   selectedTrackIds: string[];
-  onTrackSelect: (trackId: string) => void;
+  onTrackSelect: (trackId: string, multiSelect?: boolean) => void;
   onTrackMove: (trackId: string, newStartFrame: number) => void;
   onTrackResize: (
     trackId: string,
@@ -412,7 +438,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
               scrollX={scrollX}
               zoomLevel={zoomLevel}
               isSelected={selectedTrackIds.includes(track.id)}
-              onSelect={() => onTrackSelect(track.id)}
+              onSelect={(multiSelect) => onTrackSelect(track.id, multiSelect)}
               onMove={(newStartFrame) => onTrackMove(track.id, newStartFrame)}
               onResize={(newStartFrame, newEndFrame) =>
                 onTrackResize(track.id, newStartFrame, newEndFrame)
@@ -455,7 +481,9 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           track.startFrame === nextTrack.startFrame &&
           track.endFrame === nextTrack.endFrame &&
           track.visible === nextTrack.visible &&
-          track.locked === nextTrack.locked
+          track.locked === nextTrack.locked &&
+          track.isLinked === nextTrack.isLinked &&
+          track.linkedTrackId === nextTrack.linkedTrackId
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -487,13 +515,42 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handleTrackSelect = useCallback(
       (trackId: string, multiSelect = false) => {
+        const { tracks: allTracks } = useVideoEditorStore.getState();
+        const selectedTrack = allTracks.find((t) => t.id === trackId);
+
+        // Get tracks to select (include linked track if applicable)
+        const tracksToSelect = [trackId];
+        if (selectedTrack?.isLinked && selectedTrack.linkedTrackId) {
+          tracksToSelect.push(selectedTrack.linkedTrackId);
+          console.log(
+            `🔗 Selecting linked track pair: ${trackId} and ${selectedTrack.linkedTrackId}`,
+          );
+        }
+
         if (multiSelect) {
-          const newSelection = selectedTrackIds.includes(trackId)
-            ? selectedTrackIds.filter((id) => id !== trackId)
-            : [...selectedTrackIds, trackId];
+          // Handle multi-select with linked tracks
+          let newSelection = [...selectedTrackIds];
+
+          const isCurrentlySelected = tracksToSelect.some((id) =>
+            selectedTrackIds.includes(id),
+          );
+          if (isCurrentlySelected) {
+            // Remove both tracks from selection
+            newSelection = newSelection.filter(
+              (id) => !tracksToSelect.includes(id),
+            );
+          } else {
+            // Add both tracks to selection
+            tracksToSelect.forEach((id) => {
+              if (!newSelection.includes(id)) {
+                newSelection.push(id);
+              }
+            });
+          }
           onTrackSelect(newSelection);
         } else {
-          onTrackSelect([trackId]);
+          // Single select - select both linked tracks
+          onTrackSelect(tracksToSelect);
         }
       },
       [selectedTrackIds, onTrackSelect],
@@ -579,7 +636,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
     // Memoize individual callback handlers to prevent re-creation
     const memoizedHandlers = useMemo(
       () => ({
-        onTrackSelect: (trackId: string) => handleTrackSelect(trackId),
+        onTrackSelect: (trackId: string, multiSelect?: boolean) =>
+          handleTrackSelect(trackId, multiSelect || false),
         onTrackMove: handleTrackMove,
         onTrackResize: handleTrackResize,
         onDrop: handleRowDrop,
@@ -638,7 +696,9 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           track.endFrame === nextTrack.endFrame &&
           track.source === nextTrack.source &&
           track.visible === nextTrack.visible &&
-          track.locked === nextTrack.locked
+          track.locked === nextTrack.locked &&
+          track.isLinked === nextTrack.isLinked &&
+          track.linkedTrackId === nextTrack.linkedTrackId
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&

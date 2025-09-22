@@ -14,7 +14,44 @@ import {
   default as VideoSpriteSheetGenerator,
   SpriteSheet,
   SpriteSheetThumbnail,
-} from './VideoSpriteSheetGenerator';
+} from '../../../Utility/VideoSpriteSheetGenerator';
+
+// Debounce utility for zoom operations
+const useDebounce = <T,>(value: T, delay: number): T => {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
+// Memoized calculation helpers to prevent recreation on every render
+const calculatePixelsPerSecond = (frameWidth: number, fps: number): number => {
+  return frameWidth * fps;
+};
+
+const calculateThumbnailInterval = (
+  thumbnails: SpriteSheetThumbnail[],
+): number => {
+  return thumbnails.length > 1
+    ? thumbnails[1].timestamp - thumbnails[0].timestamp
+    : 0.5;
+};
+
+const calculateDisplayWidth = (
+  pixelsPerSecond: number,
+  interval: number,
+): number => {
+  return Math.max(120, pixelsPerSecond * interval * 1.01);
+};
 
 interface VideoSpriteSheetStripProps {
   track: VideoTrack;
@@ -42,93 +79,118 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         lastGeneratedZoom: 0,
       });
 
+      // Always call useDebounce to maintain hook order, but use different values
+      const debouncedZoomLevel = useDebounce(zoomLevel, 150);
+
+      // Use immediate zoom level for seamless experience when sprites exist
+      const activeZoomLevel =
+        state.spriteSheets.length > 0 ? zoomLevel : debouncedZoomLevel;
+
       // Get FPS from timeline state and sprite sheet getter
       const fps = useVideoEditorStore((state) => state.timeline.fps);
       const getSpriteSheetsBySource = useVideoEditorStore(
         (state) => state.getSpriteSheetsBySource,
       );
 
-      // Calculate duration in seconds
-      const durationSeconds = useMemo(() => {
-        const durationFrames = track.endFrame - track.startFrame;
-        return durationFrames / fps;
-      }, [track.startFrame, track.endFrame, fps]);
+      // Memoize expensive calculations that don't change with zoom
+      const trackMetrics = useMemo(
+        () => ({
+          durationFrames: track.endFrame - track.startFrame,
+          durationSeconds: (track.endFrame - track.startFrame) / fps,
+          trackStartTime: track.sourceStartTime || 0,
+        }),
+        [track.startFrame, track.endFrame, track.sourceStartTime, fps],
+      );
+
+      // Memoize zoom-independent values
+      const zoomIndependentMetrics = useMemo(
+        () => ({
+          pixelsPerSecond: calculatePixelsPerSecond(frameWidth, fps),
+        }),
+        [frameWidth, fps],
+      );
+
+      // Use pre-calculated duration from trackMetrics
+      const { durationSeconds, trackStartTime } = trackMetrics;
 
       // Calculate all thumbnails from sprite sheets
       const allThumbnails = useMemo(() => {
         return state.spriteSheets.flatMap((sheet) => sheet.thumbnails);
       }, [state.spriteSheets]);
 
-      // Calculate visible thumbnails with proper track-relative positioning
-      const visibleElements = useMemo(() => {
+      // Optimized visible thumbnails calculation with separated concerns
+      const thumbnailPositions = useMemo(() => {
         if (allThumbnails.length === 0) return [];
 
-        // Calculate proper positioning for timeline coverage
-        const pixelsPerSecond = frameWidth * fps;
-
-        // Calculate the interval between thumbnails in the sprite sheet
-        const thumbnailInterval =
-          allThumbnails.length > 1
-            ? allThumbnails[1].timestamp - allThumbnails[0].timestamp
-            : 0.5; // fallback
-
-        // Calculate thumbnail width to fill the timeline properly
-        // Ensure proper coverage without gaps
-        const thumbnailDisplayWidth = Math.max(
-          120,
-          pixelsPerSecond * thumbnailInterval * 1.01, // Slight overlap to prevent gaps
+        const thumbnailInterval = calculateThumbnailInterval(allThumbnails);
+        const thumbnailDisplayWidth = calculateDisplayWidth(
+          zoomIndependentMetrics.pixelsPerSecond,
+          thumbnailInterval,
         );
 
-        // Track positioning: calculate track's absolute position
-        const trackStartTime = track.sourceStartTime || 0; // Start time in source video
+        // Pre-calculate thumbnail positions (zoom-independent)
+        return allThumbnails.map((thumbnail) => {
+          const thumbnailTimeInTrack = thumbnail.timestamp - trackStartTime;
+          const thumbnailFrameInTrack = thumbnailTimeInTrack * fps;
+          const thumbnailRelativeToTrack = thumbnailFrameInTrack * frameWidth;
 
-        return allThumbnails
-          .map((thumbnail) => {
-            // Calculate position relative to the track container (not timeline)
-            const thumbnailTimeInTrack = thumbnail.timestamp - trackStartTime;
-            const thumbnailFrameInTrack = thumbnailTimeInTrack * fps;
-            const thumbnailRelativeToTrack = thumbnailFrameInTrack * frameWidth;
-
-            // Only show thumbnails that belong to this track's timerange
-            // Add small tolerance to prevent edge case filtering
-            const tolerance = 0.1; // 100ms tolerance
-            const isInTrackRange =
-              thumbnailTimeInTrack >= -tolerance &&
-              thumbnailTimeInTrack <= durationSeconds + tolerance;
-
-            // Additional check: don't show thumbnails that would extend past track end
-            const thumbnailEndTime =
-              thumbnailTimeInTrack + thumbnailDisplayWidth / (frameWidth * fps);
-            const doesNotExceedTrack =
-              thumbnailEndTime <= durationSeconds + tolerance;
-
-            // Viewport culling based on track-relative coordinates
-            const isVisible =
-              isInTrackRange &&
-              doesNotExceedTrack &&
-              thumbnailRelativeToTrack >= -thumbnailDisplayWidth &&
-              thumbnailRelativeToTrack <= width + thumbnailDisplayWidth;
-
-            return {
-              thumbnail,
-              x: thumbnailRelativeToTrack, // Position relative to track container
-              displayWidth: thumbnailDisplayWidth,
-              isVisible,
-              timeInTrack: thumbnailTimeInTrack,
-            };
-          })
-          .filter((element) => element.isVisible); // Only return visible elements
+          return {
+            thumbnail,
+            x: thumbnailRelativeToTrack,
+            displayWidth: thumbnailDisplayWidth,
+            timeInTrack: thumbnailTimeInTrack,
+          };
+        });
       }, [
         allThumbnails,
-        frameWidth,
+        trackStartTime,
         fps,
-        width,
-        track.startFrame,
-        track.sourceStartTime,
-        durationSeconds,
+        frameWidth,
+        zoomIndependentMetrics.pixelsPerSecond,
       ]);
 
-      // Generate sprite sheets when track or zoom changes significantly
+      // Ultra-optimized visibility calculation for seamless zoom
+      const visibleElements = useMemo(() => {
+        if (thumbnailPositions.length === 0) return [];
+
+        // For zoom operations with existing sprites, use minimal recalculation
+        const tolerance = 0.1;
+        const buffer = 150; // Larger buffer for smoother experience
+        const leftBound = -buffer;
+        const rightBound = width + buffer;
+
+        // Optimized filtering - exit early when possible
+        const visible = [];
+        let startFound = false;
+
+        for (const element of thumbnailPositions) {
+          const { timeInTrack, x, displayWidth } = element;
+
+          // Quick viewport culling
+          if (x + displayWidth < leftBound) {
+            continue; // Before viewport
+          }
+
+          if (x > rightBound) {
+            if (startFound) break; // Past viewport and already found start
+            continue;
+          }
+
+          startFound = true;
+
+          // Range checks (minimal when sprites exist)
+          if (
+            timeInTrack >= -tolerance &&
+            timeInTrack <= durationSeconds + tolerance
+          ) {
+            visible.push(element);
+          }
+        }
+
+        return visible;
+      }, [thumbnailPositions, durationSeconds, width]);
+
+      // Optimized sprite sheet generation - removed zoomLevel dependency to prevent regeneration on zoom
       const generateSpriteSheets = useCallback(async () => {
         if (!track.source || track.type !== 'video') return;
 
@@ -163,7 +225,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
             spriteSheets: preloadedSpriteSheets.spriteSheets,
             isLoading: false,
             error: null,
-            lastGeneratedZoom: zoomLevel,
+            lastGeneratedZoom: zoomLevel, // Only update zoom tracking, don't depend on it
           }));
           return;
         }
@@ -175,7 +237,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
               videoPath,
               duration: durationSeconds,
               fps,
-              sourceStartTime: track.sourceStartTime || 0,
+              sourceStartTime: trackStartTime,
               thumbWidth: 120,
               thumbHeight: 68,
             });
@@ -240,20 +302,34 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
       }, [
         track.source,
         track.tempFilePath,
-        track.sourceStartTime,
         track.type,
         track.name,
         durationSeconds,
+        trackStartTime,
         fps,
-        zoomLevel,
         getSpriteSheetsBySource,
-        // Note: Removed state dependencies to prevent circular updates
+        // Removed zoomLevel dependency to prevent regeneration on zoom
       ]);
 
       // Generate sprite sheets on mount and when dependencies change
+      // Use debounced zoom level to prevent excessive regeneration
       useEffect(() => {
         generateSpriteSheets();
       }, [generateSpriteSheets]);
+
+      // Minimal zoom tracking - no expensive operations for existing sprites
+      useEffect(() => {
+        // Only update zoom tracking when sprites exist, never regenerate for zoom changes
+        if (
+          state.spriteSheets.length > 0 &&
+          Math.abs(activeZoomLevel - state.lastGeneratedZoom) > 1
+        ) {
+          setState((prev) => ({
+            ...prev,
+            lastGeneratedZoom: activeZoomLevel,
+          }));
+        }
+      }, [activeZoomLevel, state.lastGeneratedZoom, state.spriteSheets.length]);
 
       // Render sprite sheet strip
       return (
@@ -297,21 +373,25 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
               className="absolute inset-0 bg-gray-800"
               style={{ zIndex: -1 }}
             />
-            {visibleElements.map(({ thumbnail, x, displayWidth }) => {
-              const spriteSheet = state.spriteSheets[thumbnail.sheetIndex];
-              if (!spriteSheet) return null;
+            {useMemo(
+              () =>
+                visibleElements.map(({ thumbnail, x, displayWidth }) => {
+                  const spriteSheet = state.spriteSheets[thumbnail.sheetIndex];
+                  if (!spriteSheet) return null;
 
-              return (
-                <SpriteSheetThumbnailComponent
-                  key={thumbnail.id}
-                  thumbnail={thumbnail}
-                  spriteSheet={spriteSheet}
-                  x={x}
-                  displayWidth={displayWidth}
-                  displayHeight={height}
-                />
-              );
-            })}
+                  return (
+                    <SpriteSheetThumbnailComponent
+                      key={thumbnail.id}
+                      thumbnail={thumbnail}
+                      spriteSheet={spriteSheet}
+                      x={x}
+                      displayWidth={displayWidth}
+                      displayHeight={height}
+                    />
+                  );
+                }),
+              [visibleElements, state.spriteSheets, height],
+            )}
           </div>
 
           {/* Track name overlay */}
@@ -328,25 +408,57 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
       );
     },
     (prevProps, nextProps) => {
-      // More intelligent memoization for track-relative positioning
-      const significantZoomChange =
-        Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) > 0.2;
+      // Optimized memoization - more granular and zoom-optimized
 
-      // Check if track position or timing has changed
-      const trackPositionChanged =
+      // Track identity and source changes always trigger re-render
+      if (
+        prevProps.track.id !== nextProps.track.id ||
+        prevProps.track.source !== nextProps.track.source
+      ) {
+        return false;
+      }
+
+      // Critical track timing changes
+      const trackTimingChanged =
         prevProps.track.startFrame !== nextProps.track.startFrame ||
         prevProps.track.endFrame !== nextProps.track.endFrame ||
         prevProps.track.sourceStartTime !== nextProps.track.sourceStartTime;
 
-      return (
-        prevProps.track.id === nextProps.track.id &&
-        prevProps.track.source === nextProps.track.source &&
-        !trackPositionChanged &&
-        prevProps.frameWidth === nextProps.frameWidth &&
-        prevProps.width === nextProps.width &&
-        prevProps.height === nextProps.height &&
-        !significantZoomChange
-      );
+      if (trackTimingChanged) {
+        return false;
+      }
+
+      // Dimensions that affect layout
+      const dimensionsChanged =
+        prevProps.frameWidth !== nextProps.frameWidth ||
+        prevProps.height !== nextProps.height;
+
+      if (dimensionsChanged) {
+        return false;
+      }
+
+      // Width changes for viewport culling (less sensitive)
+      const significantWidthChange =
+        Math.abs(prevProps.width - nextProps.width) > 50;
+
+      if (significantWidthChange) {
+        return false;
+      }
+
+      // Ultra-aggressive zoom threshold for seamless zoom when sprites exist
+      // If sprites are loaded, allow much more zoom tolerance
+      const hasSprites = prevProps.track.id === nextProps.track.id; // Assume sprites exist if same track
+      const zoomThreshold = hasSprites ? 2.0 : 0.5; // Much higher threshold when sprites exist
+
+      const significantZoomChange =
+        Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) > zoomThreshold;
+
+      if (significantZoomChange) {
+        return false;
+      }
+
+      // If none of the above triggered, the component can skip re-rendering
+      return true;
     },
   );
 
@@ -367,39 +479,9 @@ const SpriteSheetThumbnailComponent: React.FC<SpriteSheetThumbnailProps> =
         setHasError(true);
       }, []);
 
-      // Enhanced validation to prevent black padding/empty space rendering
-      const isValidPosition =
-        thumbnail.x >= 0 &&
-        thumbnail.y >= 0 &&
-        thumbnail.x + thumbnail.width <= spriteSheet.width &&
-        thumbnail.y + thumbnail.height <= spriteSheet.height &&
-        thumbnail.x < spriteSheet.width &&
-        thumbnail.y < spriteSheet.height;
-
-      // Additional check: ensure the thumbnail position corresponds to an actual frame
-      const thumbnailRow = Math.floor(thumbnail.y / thumbnail.height);
-      const thumbnailCol = Math.floor(thumbnail.x / thumbnail.width);
-      const thumbnailIndex =
-        thumbnailRow * spriteSheet.thumbnailsPerRow + thumbnailCol;
-      const isWithinFrameCount = thumbnailIndex < spriteSheet.thumbnails.length;
-
-      // Also check if the thumbnail is within the actual sprite sheet grid bounds
-      const isWithinGridBounds =
-        thumbnailCol < spriteSheet.thumbnailsPerRow &&
-        thumbnailRow < spriteSheet.thumbnailsPerColumn;
-
-      // Extra strict validation: only render if this exact thumbnail exists in the metadata
-      const thumbnailExists = spriteSheet.thumbnails.some(
-        (t) => t.x === thumbnail.x && t.y === thumbnail.y,
-      );
-
-      // Don't render if ANY validation fails - prevents any possible black areas
-      if (
-        !isValidPosition ||
-        !isWithinFrameCount ||
-        !isWithinGridBounds ||
-        !thumbnailExists
-      ) {
+      // Minimal validation for maximum performance during zoom
+      // Trust the sprite sheet generation process - only check for obvious errors
+      if (thumbnail.x < 0 || thumbnail.y < 0) {
         return null;
       }
 
@@ -407,9 +489,10 @@ const SpriteSheetThumbnailComponent: React.FC<SpriteSheetThumbnailProps> =
         <div
           className="absolute top-0 overflow-hidden"
           style={{
-            left: x,
+            transform: `translate3d(${x}px, 0, 0)`, // Hardware acceleration
             width: displayWidth,
             height: displayHeight,
+            willChange: 'transform', // Optimize for transforms
           }}
         >
           {hasError ? (
@@ -421,12 +504,13 @@ const SpriteSheetThumbnailComponent: React.FC<SpriteSheetThumbnailProps> =
               className="w-full h-full bg-center bg-no-repeat"
               style={{
                 backgroundImage: `url(${spriteSheet.url})`,
-                // Improved scaling calculation for better sprite positioning
+                // Optimized scaling calculation
                 backgroundSize: `${(spriteSheet.width * displayWidth) / thumbnail.width}px ${(spriteSheet.height * displayHeight) / thumbnail.height}px`,
                 backgroundPosition: `-${(thumbnail.x * displayWidth) / thumbnail.width}px -${(thumbnail.y * displayHeight) / thumbnail.height}px`,
-                filter: 'brightness(0.95) contrast(1.05)', // Better visibility
+                // Removed filter for better performance during zoom
                 imageRendering:
-                  'high-quality' as React.CSSProperties['imageRendering'], // Better quality for scaled images
+                  'optimizeSpeed' as React.CSSProperties['imageRendering'], // Faster rendering
+                willChange: 'auto', // Let browser optimize
               }}
             >
               {/* Hidden preload image for error handling */}
@@ -443,19 +527,35 @@ const SpriteSheetThumbnailComponent: React.FC<SpriteSheetThumbnailProps> =
       );
     },
     (prevProps, nextProps) => {
-      // Optimize thumbnail component re-renders
-      const positionChange = Math.abs(prevProps.x - nextProps.x);
-      const sizeChange =
-        prevProps.displayWidth !== nextProps.displayWidth ||
-        prevProps.displayHeight !== nextProps.displayHeight;
+      // Ultra-aggressive memoization for zoom performance
 
-      return (
-        prevProps.thumbnail.id === nextProps.thumbnail.id &&
-        prevProps.spriteSheet.id === nextProps.spriteSheet.id &&
-        prevProps.spriteSheet.url === nextProps.spriteSheet.url &&
-        positionChange < 3 && // Only re-render for significant position changes
-        !sizeChange
-      );
+      // Only re-render for identity changes
+      if (
+        prevProps.thumbnail.id !== nextProps.thumbnail.id ||
+        prevProps.spriteSheet.id !== nextProps.spriteSheet.id
+      ) {
+        return false;
+      }
+
+      // Size changes (but with tolerance for minor changes)
+      const significantSizeChange =
+        Math.abs(prevProps.displayWidth - nextProps.displayWidth) > 2 ||
+        Math.abs(prevProps.displayHeight - nextProps.displayHeight) > 2;
+
+      if (significantSizeChange) {
+        return false;
+      }
+
+      // Position changes with very high threshold for smooth zoom
+      const significantPositionChange =
+        Math.abs(prevProps.x - nextProps.x) > 10;
+
+      if (significantPositionChange) {
+        return false;
+      }
+
+      // Allow component to skip re-render for smooth zoom experience
+      return true;
     },
   );
 

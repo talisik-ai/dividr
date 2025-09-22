@@ -1,35 +1,55 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 
 interface TimelinePlayheadProps {
   currentFrame: number;
   frameWidth: number;
   scrollX: number;
   visible: boolean;
+  timelineScrollElement?: HTMLElement | null;
 }
 
 export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
-  ({ currentFrame, frameWidth, scrollX, visible }) => {
+  ({ currentFrame, frameWidth, scrollX, visible, timelineScrollElement }) => {
     if (!visible) return null;
 
-    const left = currentFrame * frameWidth - scrollX;
+    const left = useMemo(
+      () =>
+        currentFrame * frameWidth -
+        (timelineScrollElement?.scrollLeft ?? scrollX),
+      [currentFrame, frameWidth, scrollX, timelineScrollElement],
+    );
+
+    const styles = useMemo(
+      () => ({
+        line: {
+          left,
+          transform: 'translate3d(0, 0, 0)',
+        },
+        handle: {
+          left: left - 11,
+          width: 24,
+          height: 24,
+          filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
+          transform: 'translate3d(0, 0, 0)',
+        },
+        indicator: {
+          left: left + 8,
+          transform: 'translate3d(0, 0, 0)',
+        },
+      }),
+      [left],
+    );
 
     return (
       <>
-        {/* Playhead line */}
         <div
-          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-30 pointer-events-none shadow-[0_2px_4px_rgba(0,0,0,0.3)]"
-          style={{ left: left }}
+          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-30 pointer-events-none will-change-transform"
+          style={styles.line}
         />
 
-        {/* Playhead handle */}
         <div
-          className="absolute -top-6 pointer-events-none z-30"
-          style={{
-            left: left - 11,
-            width: 24,
-            height: 24,
-            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
-          }}
+          className="absolute -top-6 pointer-events-none z-30 will-change-transform"
+          style={styles.handle}
         >
           <svg width="24" height="24" viewBox="0 0 24 24">
             <path
@@ -40,10 +60,9 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
           </svg>
         </div>
 
-        {/* Frame number indicator */}
         <div
-          className="absolute top-0.5 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-30 pointer-events-none"
-          style={{ left: left + 8 }}
+          className="absolute top-0.5 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-30 pointer-events-none will-change-transform"
+          style={styles.indicator}
         >
           {currentFrame}
         </div>
@@ -51,12 +70,12 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
     );
   },
   (prevProps, nextProps) => {
-    // Custom equality check to prevent unnecessary re-renders during track movement
     return (
       prevProps.currentFrame === nextProps.currentFrame &&
       prevProps.frameWidth === nextProps.frameWidth &&
       prevProps.scrollX === nextProps.scrollX &&
-      prevProps.visible === nextProps.visible
+      prevProps.visible === nextProps.visible &&
+      prevProps.timelineScrollElement === nextProps.timelineScrollElement
     );
   },
 );
