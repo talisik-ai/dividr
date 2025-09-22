@@ -13,59 +13,67 @@ import {
   MenubarSubTrigger,
   MenubarTrigger,
 } from '@/Components/sub/ui/Menubar';
+import { useState } from 'react';
+import { HotkeysDialog } from './HotkeysDialog';
 
 export const AppMenuBar = () => {
+  const [showHotkeys, setShowHotkeys] = useState(false);
+
+  const handleOpenHotkeys = () => {
+    setShowHotkeys(true);
+  };
+
   return (
     <div className="flex items-center my-1">
       <Menubar variant="minimal">
         <MenubarMenu>
           <MenubarTrigger>Home</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem>
+            <MenubarItem disabled>
               Dashboard <MenubarShortcut>⌘D</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>
+            <MenubarItem disabled>
               Recent Projects <MenubarShortcut>⌘R</MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem>Welcome Screen</MenubarItem>
-            <MenubarItem>Getting Started</MenubarItem>
+            <MenubarItem disabled>Welcome Screen</MenubarItem>
+            <MenubarItem disabled>Getting Started</MenubarItem>
           </MenubarContent>
         </MenubarMenu>
         <MenubarMenu>
           <MenubarTrigger>File</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem>
+            <MenubarItem disabled>
               New Project <MenubarShortcut>⌘N</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>
+            <MenubarItem disabled>
               Open Project <MenubarShortcut>⌘O</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>
+            <MenubarItem disabled>
               Save Project <MenubarShortcut>⌘S</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>
+            <MenubarItem disabled>
               Save As... <MenubarShortcut>⇧⌘S</MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
             <MenubarSub>
-              <MenubarSubTrigger>Import</MenubarSubTrigger>
+              <MenubarSubTrigger disabled>Import</MenubarSubTrigger>
               <MenubarSubContent>
-                <MenubarItem>Import Video</MenubarItem>
-                <MenubarItem>Import Audio</MenubarItem>
-                <MenubarItem>Import Images</MenubarItem>
+                <MenubarItem disabled>Import Video</MenubarItem>
+                <MenubarItem disabled>Import Audio</MenubarItem>
+                <MenubarItem disabled>Import Images</MenubarItem>
               </MenubarSubContent>
             </MenubarSub>
             <MenubarSub>
-              <MenubarSubTrigger>Export</MenubarSubTrigger>
+              <MenubarSubTrigger disabled>Export</MenubarSubTrigger>
               <MenubarSubContent>
-                <MenubarItem>Export Video</MenubarItem>
-                <MenubarItem>Export Audio</MenubarItem>
-                <MenubarItem>Export Project</MenubarItem>
+                <MenubarItem disabled>Export Video</MenubarItem>
+                <MenubarItem disabled>Export Audio</MenubarItem>
+                <MenubarItem disabled>Export Project</MenubarItem>
               </MenubarSubContent>
             </MenubarSub>
             <MenubarSeparator />
-            <MenubarItem>
+            <MenubarItem disabled>
               Close Project <MenubarShortcut>⌘W</MenubarShortcut>
             </MenubarItem>
           </MenubarContent>
@@ -73,38 +81,38 @@ export const AppMenuBar = () => {
         <MenubarMenu>
           <MenubarTrigger>Edit</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem>
+            <MenubarItem disabled>
               Undo <MenubarShortcut>⌘Z</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>
+            <MenubarItem disabled>
               Redo <MenubarShortcut>⇧⌘Z</MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem>
+            <MenubarItem disabled>
               Cut <MenubarShortcut>⌘X</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>
+            <MenubarItem disabled>
               Copy <MenubarShortcut>⌘C</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>
+            <MenubarItem disabled>
               Paste <MenubarShortcut>⌘V</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>
+            <MenubarItem disabled>
               Delete <MenubarShortcut>⌫</MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem>
+            <MenubarItem disabled>
               Select All <MenubarShortcut>⌘A</MenubarShortcut>
             </MenubarItem>
-            <MenubarItem>Deselect All</MenubarItem>
+            <MenubarItem disabled>Deselect All</MenubarItem>
             <MenubarSeparator />
             <MenubarSub>
-              <MenubarSubTrigger>Timeline</MenubarSubTrigger>
+              <MenubarSubTrigger disabled>Timeline</MenubarSubTrigger>
               <MenubarSubContent>
-                <MenubarItem>Split Clip</MenubarItem>
-                <MenubarItem>Merge Clips</MenubarItem>
-                <MenubarItem>Trim Start</MenubarItem>
-                <MenubarItem>Trim End</MenubarItem>
+                <MenubarItem disabled>Split Clip</MenubarItem>
+                <MenubarItem disabled>Merge Clips</MenubarItem>
+                <MenubarItem disabled>Trim Start</MenubarItem>
+                <MenubarItem disabled>Trim End</MenubarItem>
               </MenubarSubContent>
             </MenubarSub>
           </MenubarContent>
@@ -112,44 +120,57 @@ export const AppMenuBar = () => {
         <MenubarMenu>
           <MenubarTrigger>Settings</MenubarTrigger>
           <MenubarContent>
-            <MenubarCheckboxItem>Auto-save Projects</MenubarCheckboxItem>
-            <MenubarCheckboxItem checked>
+            <MenubarCheckboxItem disabled>
+              Auto-save Projects
+            </MenubarCheckboxItem>
+            <MenubarCheckboxItem checked disabled>
               Show Timeline Grid
             </MenubarCheckboxItem>
-            <MenubarCheckboxItem>Snap to Grid</MenubarCheckboxItem>
+            <MenubarCheckboxItem disabled>Snap to Grid</MenubarCheckboxItem>
             <MenubarSeparator />
             <MenubarSub>
-              <MenubarSubTrigger>Playback Quality</MenubarSubTrigger>
+              <MenubarSubTrigger disabled>Playback Quality</MenubarSubTrigger>
               <MenubarSubContent>
                 <MenubarRadioGroup value="high">
-                  <MenubarRadioItem value="low">Low</MenubarRadioItem>
-                  <MenubarRadioItem value="medium">Medium</MenubarRadioItem>
-                  <MenubarRadioItem value="high">High</MenubarRadioItem>
-                  <MenubarRadioItem value="ultra">Ultra</MenubarRadioItem>
+                  <MenubarRadioItem value="low" disabled>
+                    Low
+                  </MenubarRadioItem>
+                  <MenubarRadioItem value="medium" disabled>
+                    Medium
+                  </MenubarRadioItem>
+                  <MenubarRadioItem value="high" disabled>
+                    High
+                  </MenubarRadioItem>
+                  <MenubarRadioItem value="ultra" disabled>
+                    Ultra
+                  </MenubarRadioItem>
                 </MenubarRadioGroup>
               </MenubarSubContent>
             </MenubarSub>
             <MenubarSeparator />
-            <MenubarItem>Preferences...</MenubarItem>
-            <MenubarItem>Keyboard Shortcuts</MenubarItem>
-            <MenubarItem>Reset to Defaults</MenubarItem>
+            <MenubarItem disabled>Preferences...</MenubarItem>
+            <MenubarItem disabled>Reset to Defaults</MenubarItem>
           </MenubarContent>
         </MenubarMenu>
         <MenubarMenu>
           <MenubarTrigger>Help</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem>User Guide</MenubarItem>
-            <MenubarItem>Video Tutorials</MenubarItem>
-            <MenubarItem>Keyboard Shortcuts</MenubarItem>
+            <MenubarItem disabled>User Guide</MenubarItem>
+            <MenubarItem disabled>Video Tutorials</MenubarItem>
+            <MenubarItem onClick={handleOpenHotkeys}>
+              Keyboard Shortcuts
+            </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem>Report Bug</MenubarItem>
-            <MenubarItem>Feature Request</MenubarItem>
+            <MenubarItem disabled>Report Bug</MenubarItem>
+            <MenubarItem disabled>Feature Request</MenubarItem>
             <MenubarSeparator />
-            <MenubarItem>About Dividr</MenubarItem>
-            <MenubarItem>Check for Updates</MenubarItem>
+            <MenubarItem disabled>About Dividr</MenubarItem>
+            <MenubarItem disabled>Check for Updates</MenubarItem>
           </MenubarContent>
         </MenubarMenu>
       </Menubar>
+
+      <HotkeysDialog open={showHotkeys} onOpenChange={setShowHotkeys} />
     </div>
   );
 };
