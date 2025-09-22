@@ -3,6 +3,7 @@ export interface TrackInfo {
   startTime?: number; // in seconds
   duration?: number; // in seconds
   endTime?: number; // in seconds
+  startFrame?: number;
   muted?: boolean; // Whether this track's audio should be muted
   trackType?: 'video' | 'audio' | 'image' | 'subtitle'; // Type of the track
   visible?: boolean; // Whether this track's video should be visible (if false, show black)
@@ -15,6 +16,16 @@ export interface TextStyleConfig {
   textTransform?: string;
 }
 
+export interface Gap { // Gap Interface
+  startFrame: number;
+  length: number;
+}
+
+export interface TimelineGaps { // interface for the 3 timeline objects
+  video: Gap[];
+  audio: Gap[];
+  subtitles: Gap[];
+}
 export type EncodingPreset =
   | 'ultrafast'
   | 'superfast'
@@ -43,6 +54,7 @@ export interface VideoEditJob {
     preset?: EncodingPreset; // FFmpeg encoding preset for speed/quality tradeoff
     threads?: number; // Limit used threads
   };
+  gaps?: TimelineGaps;
   subtitleContent?: string; // SRT content to be written to a temporary file
   subtitleFormat?: 'srt' | 'vtt' | 'ass'; // Subtitle format for export
 }

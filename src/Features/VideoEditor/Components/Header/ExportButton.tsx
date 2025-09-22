@@ -7,7 +7,7 @@ import { ExportModal } from '@/Components/Main/Modal/ExportModal';
 import { Button } from '@/Components/sub/ui/Button';
 import { TrackInfo, VideoEditJob } from '@/Schema/ffmpegConfig';
 import { useProjectStore } from '@/Store/ProjectStore';
-import { useVideoEditorStore, VideoTrack } from '@/Store/VideoEditorStore';
+import { useVideoEditorStore, VideoTrack, useTimelineUtils } from '@/Store/VideoEditorStore';
 import { FfmpegCallbacks, runFfmpegWithProgress } from '@/Utility/ffmpegRunner';
 import {
   extractSubtitleSegments,
@@ -45,7 +45,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
     getTextStyleForSubtitle,
   } = useVideoEditorStore();
   const { currentProject } = useProjectStore();
-
+  const { getTimelineGaps } = useTimelineUtils();
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   // Function to generate .ass content from subtitle tracks using the subtitle exporter
@@ -254,8 +254,18 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         alert('No tracks to render');
         return;
       }
+      try {
+        // 1. Get the gaps data from the new hook
+        const gaps = getTimelineGaps();
+        console.log('Gaps detected:', gaps);
+  
+        // 2. Prepare the FFmpeg job data with the new gaps property
+        const job = createFFmpegJob(outputFilename, outputPath);
+  
+        // Add the gaps to the FFmpeg job
+        job.gaps = gaps;
 
-      const job = createFFmpegJob(outputFilename, outputPath);
+      //const job = createFFmpegJob(outputFilename, outputPath);
       console.log('🎬 FFmpeg Job:', job);
       console.log('🗂️ Output Path:', outputPath);
 
@@ -311,6 +321,11 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         //console.error('Render failed:', error);
         cancelRender();
         alert(`Render failed: ${error}`);
+      }    } catch (error) {
+        // The catch block starts here
+        //console.error('Render failed:', error);
+        cancelRender();
+        alert(`Render failed: ${error}`);
       }
     },
     [
@@ -321,6 +336,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
       updateRenderProgress,
       finishRender,
       cancelRender,
+      getTimelineGaps,
     ],
   );
 
