@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runCustomFFmpeg: (args: string[], outputDir: string) =>
     ipcRenderer.invoke('run-custom-ffmpeg', args, outputDir),
 
+  // Audio extraction method
+  extractAudioFromVideo: (videoPath: string, outputDir?: string) =>
+    ipcRenderer.invoke('extract-audio-from-video', videoPath, outputDir),
+
   // Background sprite sheet generation methods
   generateSpriteSheetBackground: (options: {
     jobId: string;

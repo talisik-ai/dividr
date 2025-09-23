@@ -93,6 +93,13 @@ export interface MediaLibraryItem {
     channels?: number;
     sampleRate?: number;
   };
+  // Audio extraction information (for video files)
+  extractedAudio?: {
+    audioPath: string;
+    previewUrl?: string;
+    size: number;
+    extractedAt: number; // timestamp when extracted
+  };
   spriteSheets?: {
     success: boolean;
     spriteSheets: Array<{
@@ -164,7 +171,7 @@ interface VideoEditorStore {
   setSelectedTracks: (trackIds: string[]) => void;
 
   // Track Actions
-  addTrack: (track: Omit<VideoTrack, 'id'>) => string;
+  addTrack: (track: Omit<VideoTrack, 'id'>) => Promise<string>;
   addTrackFromMediaLibrary: (
     mediaId: string,
     startFrame?: number,
@@ -192,6 +199,10 @@ interface VideoEditorStore {
   // Media Library Actions
   addToMediaLibrary: (item: Omit<MediaLibraryItem, 'id'>) => string;
   removeFromMediaLibrary: (mediaId: string) => void;
+  updateMediaLibraryItem: (
+    mediaId: string,
+    updates: Partial<MediaLibraryItem>,
+  ) => void;
   getMediaLibraryItem: (mediaId: string) => MediaLibraryItem | undefined;
   generateSpriteSheetForMedia: (mediaId: string) => Promise<boolean>;
   getSpriteSheetsBySource: (
@@ -514,10 +525,14 @@ const getTrackColor = (index: number) =>
 const processImportedFile = async (
   fileInfo: any,
   addToLibraryFn: (item: Omit<MediaLibraryItem, 'id'>) => string,
-  addToTimelineFn?: (track: Omit<VideoTrack, 'id'>) => string,
+  addToTimelineFn?: (track: Omit<VideoTrack, 'id'>) => Promise<string>,
   getFps?: () => number,
   generateSpriteFn?: (mediaId: string) => Promise<boolean>,
   generateThumbnailFn?: (mediaId: string) => Promise<boolean>,
+  updateMediaLibraryFn?: (
+    mediaId: string,
+    updates: Partial<MediaLibraryItem>,
+  ) => void,
 ) => {
   // Get accurate duration using FFprobe
   let actualDurationSeconds: number;
@@ -622,6 +637,87 @@ const processImportedFile = async (
         );
       });
     }
+
+    // Extract audio from video file for independent audio track usage
+    // Use a retry mechanism to handle FFmpeg concurrency issues
+    const extractAudioWithRetry = async (retries = 3, delay = 2000) => {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        console.log(
+          `🎵 Triggering audio extraction for: ${fileInfo.name} (attempt ${attempt}/${retries})`,
+        );
+        try {
+          const result = await window.electronAPI.extractAudioFromVideo(
+            fileInfo.path,
+          );
+
+          if (result.success && result.audioPath) {
+            console.log(
+              `✅ Audio extracted successfully for ${fileInfo.name}: ${result.audioPath}`,
+            );
+            // Store extracted audio info in media library item for future use
+            console.log('🔄 Extracted audio info ready for storage:', {
+              audioPath: result.audioPath,
+              previewUrl: result.previewUrl,
+              size: result.size,
+            });
+
+            // Update the media library item with extracted audio information
+            if (updateMediaLibraryFn && result.audioPath) {
+              updateMediaLibraryFn(mediaId, {
+                extractedAudio: {
+                  audioPath: result.audioPath,
+                  previewUrl: result.previewUrl,
+                  size: result.size || 0,
+                  extractedAt: Date.now(),
+                },
+              });
+              console.log(
+                `✅ Updated media library item ${mediaId} with extracted audio info`,
+              );
+            }
+            return; // Success, exit retry loop
+          } else if (
+            result.error?.includes('Another FFmpeg process is already running')
+          ) {
+            console.log(
+              `⏳ FFmpeg busy on attempt ${attempt}/${retries}, retrying in ${delay}ms...`,
+            );
+            if (attempt < retries) {
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue; // Retry
+            } else {
+              console.warn(
+                `⚠️ Audio extraction failed after ${retries} attempts for ${fileInfo.name}: ${result.error}`,
+              );
+            }
+          } else {
+            console.warn(
+              `⚠️ Audio extraction failed for ${fileInfo.name}:`,
+              result.error,
+            );
+            return; // Non-retry error, exit
+          }
+        } catch (error) {
+          console.warn(
+            `⚠️ Audio extraction error for ${fileInfo.name} (attempt ${attempt}):`,
+            error,
+          );
+          if (attempt === retries) {
+            console.warn(
+              `⚠️ Audio extraction failed after ${retries} attempts for ${fileInfo.name}`,
+            );
+          }
+        }
+      }
+    };
+
+    // Run audio extraction with retry logic (non-blocking)
+    extractAudioWithRetry().catch((error) => {
+      console.warn(
+        `⚠️ Audio extraction retry handler failed for ${fileInfo.name}:`,
+        error,
+      );
+    });
   }
 
   // Add to timeline if requested
@@ -647,20 +743,20 @@ const processImportedFile = async (
           console.log(
             `➕ Adding ${subtitleTracks.length} subtitle tracks to timeline`,
           );
-          subtitleTracks.forEach((track, index) => {
+          for (const [index, track] of subtitleTracks.entries()) {
             console.log(
               `📝 Adding subtitle track ${index + 1}: "${track.subtitleText?.substring(0, 50)}..."`,
             );
-            const trackId = addToTimelineFn(track);
+            const trackId = await addToTimelineFn(track);
             console.log(`✅ Added subtitle track with ID: ${trackId}`);
-          });
+          }
         }
       } catch (error) {
         console.error(`❌ Error processing subtitle file:`, error);
         // Add single fallback track
         const duration = Math.round(actualDurationSeconds * fps);
         console.log(`📝 Adding fallback subtitle track for: ${fileInfo.name}`);
-        const trackId = addToTimelineFn({
+        const trackId = await addToTimelineFn({
           type: 'subtitle',
           name: fileInfo.name,
           source: fileInfo.path,
@@ -681,7 +777,7 @@ const processImportedFile = async (
       console.log(
         `📹 Adding ${trackType} track: ${fileInfo.name} (duration: ${duration} frames)`,
       );
-      const trackId = addToTimelineFn({
+      const trackId = await addToTimelineFn({
         type: trackType,
         name: fileInfo.name,
         source: fileInfo.path,
@@ -924,7 +1020,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       })),
 
     // Track Actions
-    addTrack: (trackData) => {
+    addTrack: async (trackData) => {
       const id = uuidv4();
 
       // Check if this is a video file that should be split into video and audio tracks
@@ -966,12 +1062,41 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           isLinked: true,
         };
 
+        // Look for extracted audio in media library
+        console.log(
+          `🔍 Looking for extracted audio for source: ${trackData.source}`,
+        );
+        const mediaItem = get().mediaLibrary.find(
+          (item) => item.source === trackData.source && item.type === 'video',
+        );
+        console.log(`🔍 Found media item:`, mediaItem);
+        let extractedAudio = mediaItem?.extractedAudio;
+        console.log(`🔍 Extracted audio:`, extractedAudio);
+
+        // If no extracted audio found, try to wait for it (in case extraction is in progress)
+        if (!extractedAudio && mediaItem) {
+          console.log(
+            `⏳ No extracted audio found, checking if extraction is in progress...`,
+          );
+          // Give extraction a moment to complete (non-blocking check)
+          await new Promise((resolve) => setTimeout(resolve, 500));
+
+          // Re-check for extracted audio
+          const updatedMediaItem = get().mediaLibrary.find(
+            (item) => item.source === trackData.source && item.type === 'video',
+          );
+          extractedAudio = updatedMediaItem?.extractedAudio;
+          console.log(`🔍 Updated extracted audio after wait:`, extractedAudio);
+        }
+
         // Create corresponding audio track
         const audioTrack: VideoTrack = {
           ...trackData,
           id: audioId,
           type: 'audio',
-          name: `${trackData.name} (Audio)`,
+          name: extractedAudio
+            ? `${trackData.name.replace(/\.[^/.]+$/, '')} (Extracted Audio)`
+            : `${trackData.name} (Audio)`,
           startFrame: audioStartFrame,
           endFrame: audioStartFrame + duration,
           sourceStartTime: trackData.sourceStartTime || 0,
@@ -979,8 +1104,16 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           muted: false,
           linkedTrackId: id,
           isLinked: true,
-          previewUrl: undefined, // Audio tracks don't need preview URLs
+          // Use extracted audio file if available, otherwise fallback to video source
+          source: extractedAudio?.audioPath || trackData.source,
+          previewUrl: extractedAudio?.previewUrl || undefined,
         };
+
+        console.log(
+          extractedAudio
+            ? `🎵 Using extracted audio file for audio track: ${extractedAudio.audioPath}`
+            : `⚠️ No extracted audio found, using video source: ${trackData.source}`,
+        );
 
         set((state) => ({
           tracks: [...state.tracks, videoTrack, audioTrack],
@@ -1075,7 +1208,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             const addedIds: string[] = [];
             let currentStartFrame = startFrame;
 
-            subtitleTracks.forEach((track, index) => {
+            for (const [index, track] of subtitleTracks.entries()) {
               const adjustedTrack = {
                 ...track,
                 startFrame: currentStartFrame,
@@ -1084,11 +1217,11 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               console.log(
                 `📝 Adding subtitle segment ${index + 1}: "${track.subtitleText?.substring(0, 50)}..." at frame ${currentStartFrame}`,
               );
-              const trackId = get().addTrack(adjustedTrack);
+              const trackId = await get().addTrack(adjustedTrack);
               addedIds.push(trackId);
               console.log(`✅ Added subtitle track with ID: ${trackId}`);
               currentStartFrame = adjustedTrack.endFrame; // Stack subtitle segments
-            });
+            }
 
             console.log(
               `📋 Successfully added ${subtitleTracks.length} subtitle tracks to timeline for ${mediaItem.name}`,
@@ -1125,7 +1258,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         }),
       };
 
-      return get().addTrack(track);
+      return await get().addTrack(track);
     },
 
     removeTrack: (trackId) => {
@@ -1917,6 +2050,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
               get().generateThumbnailForMedia, // Generate thumbnails on import
+              get().updateMediaLibraryItem, // Update media library items with extracted audio
             );
             importedFiles.push(fileData);
           }),
@@ -2013,7 +2147,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
 
       // Flatten tracks array (subtitle files return arrays of tracks) and filter out null/undefined
       const validTracks = newTracks.flat().filter(Boolean);
-      validTracks.forEach((track) => get().addTrack(track));
+      await Promise.all(validTracks.map((track) => get().addTrack(track)));
     },
 
     importMediaFromDrop: async (files) => {
@@ -2071,6 +2205,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
               get().generateThumbnailForMedia, // Generate thumbnails on import
+              get().updateMediaLibraryItem, // Update media library items with extracted audio
             );
             importedFiles.push(fileData);
           }),
@@ -2137,6 +2272,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
               get().generateThumbnailForMedia, // Generate thumbnails on import
+              get().updateMediaLibraryItem, // Update media library items with extracted audio
             );
             importedFiles.push(fileData);
           }),
@@ -2332,6 +2468,17 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     removeFromMediaLibrary: (mediaId) => {
       set((state) => ({
         mediaLibrary: state.mediaLibrary.filter((item) => item.id !== mediaId),
+      }));
+
+      // Mark as having unsaved changes
+      get().markUnsavedChanges();
+    },
+
+    updateMediaLibraryItem: (mediaId, updates) => {
+      set((state) => ({
+        mediaLibrary: state.mediaLibrary.map((item) =>
+          item.id === mediaId ? { ...item, ...updates } : item,
+        ),
       }));
 
       // Mark as having unsaved changes

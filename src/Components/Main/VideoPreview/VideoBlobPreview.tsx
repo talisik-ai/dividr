@@ -48,20 +48,29 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   }, [tracks, timeline.currentFrame]);
 
   // Independent audio track for audio-only playback (separate from video)
-  // Only consider audio tracks that are NOT linked to video tracks
+  // Consider audio tracks that are either unlinked OR have their own extracted audio
   const independentAudioTrack = React.useMemo(() => {
     try {
       const audioTrack = tracks.find(
         (track) =>
           track.type === 'audio' &&
-          !track.isLinked && // Only unlinked audio tracks are independent
+          (!track.isLinked || track.previewUrl) && // Unlinked OR has extracted audio file
           !track.muted &&
           timeline.currentFrame >= track.startFrame &&
           timeline.currentFrame < track.endFrame,
       );
 
       if (audioTrack) {
-        // Find a video track with the same source to get the previewUrl
+        // If audio track has its own previewUrl (extracted audio), use it directly
+        if (audioTrack.previewUrl) {
+          console.log(
+            `🎵 [IndependentAudio] Using extracted audio for track: ${audioTrack.id}`,
+            `Src: ${audioTrack.previewUrl}`,
+          );
+          return audioTrack;
+        }
+
+        // Fallback: Find a video track with the same source to get the previewUrl
         const matchingVideoTrack = tracks.find(
           (track) =>
             track.type === 'video' &&
