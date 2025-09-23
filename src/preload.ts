@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   extractAudioFromVideo: (videoPath: string, outputDir?: string) =>
     ipcRenderer.invoke('extract-audio-from-video', videoPath, outputDir),
 
+  // Cleanup extracted audio files
+  cleanupExtractedAudio: (audioPaths: string[]) =>
+    ipcRenderer.invoke('cleanup-extracted-audio', audioPaths),
+
   // Background sprite sheet generation methods
   generateSpriteSheetBackground: (options: {
     jobId: string;

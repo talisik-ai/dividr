@@ -160,6 +160,14 @@ declare global {
         error?: string;
       }>;
 
+      // Cleanup extracted audio files
+      cleanupExtractedAudio: (audioPaths: string[]) => Promise<{
+        success: boolean;
+        deletedFiles: string[];
+        failedFiles: string[];
+        errors: string[];
+      }>;
+
       // Background sprite sheet generation methods
       generateSpriteSheetBackground: (options: {
         jobId: string;

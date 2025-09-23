@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { projectService } from '@/Services/ProjectService';
 import {
   createDefaultProject,
@@ -198,6 +199,52 @@ export const useProjectStore = create<ProjectStore>()(
       set({ isLoading: true });
 
       try {
+        // First, get the project data to extract audio files for cleanup
+        const projectToDelete = await projectService.getProject(id);
+
+        if (projectToDelete) {
+          // Extract all extracted audio file paths from the project's media library
+          const extractedAudioPaths: string[] = [];
+          const mediaLibrary =
+            (projectToDelete.videoEditor as any).mediaLibrary || [];
+
+          for (const mediaItem of mediaLibrary) {
+            if (mediaItem.extractedAudio?.audioPath) {
+              extractedAudioPaths.push(mediaItem.extractedAudio.audioPath);
+            }
+          }
+
+          // Clean up extracted audio files if any exist
+          if (extractedAudioPaths.length > 0) {
+            console.log(
+              `🧹 Cleaning up ${extractedAudioPaths.length} extracted audio files for project: ${projectToDelete.metadata.title}`,
+            );
+            try {
+              const cleanupResult =
+                await window.electronAPI.cleanupExtractedAudio(
+                  extractedAudioPaths,
+                );
+              if (cleanupResult.success) {
+                console.log(
+                  `✅ Successfully cleaned up extracted audio files: ${cleanupResult.deletedFiles.length} deleted`,
+                );
+              } else {
+                console.warn(
+                  `⚠️ Some audio files could not be deleted:`,
+                  cleanupResult.failedFiles,
+                );
+              }
+            } catch (cleanupError) {
+              console.error(
+                'Failed to cleanup extracted audio files:',
+                cleanupError,
+              );
+              // Don't fail the project deletion if cleanup fails
+            }
+          }
+        }
+
+        // Delete the project from the database
         await projectService.deleteProject(id);
 
         // If the deleted project is the current project, clear it
