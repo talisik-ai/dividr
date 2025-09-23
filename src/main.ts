@@ -20,7 +20,7 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 // Global variables
 let mainWindow: BrowserWindow | null = null;
 const forceQuit = false;
-// let isWindowFocused = true;
+let isWindowFocused = true;
 // Dynamic import of ffmpeg binaries to avoid module resolution issues
 let ffmpegPath: string | null = null;
 let ffprobePath: { path: string } | null = null;
@@ -40,7 +40,7 @@ interface SpriteSheetJob {
 }
 
 const activeSpriteSheetJobs = new Map<string, SpriteSheetJob>();
-// let spriteSheetJobCounter = 0;
+let spriteSheetJobCounter = 0;
 
 // Initialize ffmpeg paths dynamically with fallbacks
 function initializeFfmpegPaths() {
