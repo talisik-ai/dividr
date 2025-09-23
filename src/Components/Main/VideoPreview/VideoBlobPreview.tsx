@@ -48,20 +48,29 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   }, [tracks, timeline.currentFrame]);
 
   // Independent audio track for audio-only playback (separate from video)
-  // Only consider audio tracks that are NOT linked to video tracks
+  // Consider audio tracks that are either unlinked OR have their own extracted audio
   const independentAudioTrack = React.useMemo(() => {
     try {
       const audioTrack = tracks.find(
         (track) =>
           track.type === 'audio' &&
-          !track.isLinked && // Only unlinked audio tracks are independent
+          (!track.isLinked || track.previewUrl) && // Unlinked OR has extracted audio file
           !track.muted &&
           timeline.currentFrame >= track.startFrame &&
           timeline.currentFrame < track.endFrame,
       );
 
       if (audioTrack) {
-        // Find a video track with the same source to get the previewUrl
+        // If audio track has its own previewUrl (extracted audio), use it directly
+        if (audioTrack.previewUrl) {
+          console.log(
+            `🎵 [IndependentAudio] Using extracted audio for track: ${audioTrack.id}`,
+            `Src: ${audioTrack.previewUrl}`,
+          );
+          return audioTrack;
+        }
+
+        // Fallback: Find a video track with the same source to get the previewUrl
         const matchingVideoTrack = tracks.find(
           (track) =>
             track.type === 'video' &&
@@ -87,7 +96,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     try {
       // Use video track for audio if:
       // 1. There's no independent (unlinked) audio track, AND
-      // 2. The video track itself is not muted
+      // 2. The video track itself is not muted, AND
+      // 3. The video track is linked (has a linked audio track) OR there's no corresponding audio track
       if (independentAudioTrack) return undefined;
 
       return tracks.find(
@@ -95,6 +105,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           track.type === 'video' &&
           track.previewUrl &&
           !track.muted &&
+          track.isLinked && // Only linked video tracks should provide audio
           timeline.currentFrame >= track.startFrame &&
           timeline.currentFrame < track.endFrame,
       );
@@ -288,17 +299,32 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     const audio = audioRef.current;
     if (!audio || !independentAudioTrack) return;
 
-    // Seek to correct position based on the audio track
-    const relativeFrame = Math.max(
-      0,
-      timeline.currentFrame - independentAudioTrack.startFrame,
-    );
-    const trackTime = relativeFrame / timeline.fps;
-    const targetTime = (independentAudioTrack.sourceStartTime || 0) + trackTime;
-    audio.currentTime = Math.max(
-      independentAudioTrack.sourceStartTime || 0,
-      Math.min(targetTime, audio.duration || 0),
-    );
+    // Only seek audio if timeline position is within the audio track's range
+    const isWithinAudioRange =
+      timeline.currentFrame >= independentAudioTrack.startFrame &&
+      timeline.currentFrame < independentAudioTrack.endFrame;
+
+    if (isWithinAudioRange) {
+      // Seek to correct position based on the audio track
+      const relativeFrame =
+        timeline.currentFrame - independentAudioTrack.startFrame;
+      const trackTime = relativeFrame / timeline.fps;
+      const targetTime =
+        (independentAudioTrack.sourceStartTime || 0) + trackTime;
+      audio.currentTime = Math.max(
+        independentAudioTrack.sourceStartTime || 0,
+        Math.min(targetTime, audio.duration || 0),
+      );
+      console.log(
+        '[DirectPreview] Audio metadata loaded - seeking to position within range:',
+        audio.currentTime,
+      );
+    } else {
+      console.log(
+        '[DirectPreview] Audio metadata loaded - timeline outside audio range, not seeking',
+      );
+    }
+
     // Auto play if timeline is playing
     if (playback.isPlaying && audio.paused) {
       audio.muted = playback.muted || independentAudioTrack.muted;
@@ -358,16 +384,20 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       // Mute video if:
       // 1. Global playback is muted, OR
       // 2. There's an independent (unlinked) audio track playing, OR
-      // 3. The video track itself is muted
+      // 3. The video track itself is muted, OR
+      // 4. There's no audio track at all (neither independent nor video-based)
       const shouldMuteVideo =
         playback.muted ||
         !!independentAudioTrack ||
-        (activeVideoTrack?.muted ?? false);
+        (activeVideoTrack?.muted ?? false) ||
+        (!independentAudioTrack && !videoTrackWithAudio); // Mute when no audio source
 
       console.log('[DirectPreview] Video volume decision:', {
         playbackMuted: playback.muted,
         hasIndependentAudio: !!independentAudioTrack,
         videoTrackMuted: activeVideoTrack?.muted ?? false,
+        hasVideoTrackWithAudio: !!videoTrackWithAudio,
+        noAudioAtAll: !independentAudioTrack && !videoTrackWithAudio,
         shouldMuteVideo,
         finalVolume: shouldMuteVideo ? 0 : Math.min(playback.volume, 1),
       });
@@ -393,13 +423,25 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     const audio = audioRef.current;
     if (!audio || !independentAudioTrack) return;
 
+    // Check if timeline position is within the audio track's range
+    const isWithinAudioRange =
+      timeline.currentFrame >= independentAudioTrack.startFrame &&
+      timeline.currentFrame < independentAudioTrack.endFrame;
+
     try {
       if (playback.isPlaying) {
-        if (audio.paused && audio.readyState >= 3) {
+        // Only play audio if timeline position is within audio track's range
+        if (isWithinAudioRange && audio.paused && audio.readyState >= 3) {
           console.log(
-            '[DirectPreview] Resuming audio playback (independent audio track)',
+            '[DirectPreview] Resuming audio playback (independent audio track) - within range',
           );
           audio.play().catch(console.warn);
+        } else if (!isWithinAudioRange && !audio.paused) {
+          console.log(
+            '[DirectPreview] Pausing audio - timeline outside audio track range',
+            `Frame: ${timeline.currentFrame}, Audio range: ${independentAudioTrack.startFrame}-${independentAudioTrack.endFrame}`,
+          );
+          audio.pause();
         }
       } else {
         if (!audio.paused) {
@@ -424,6 +466,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     playback.playbackRate,
     independentAudioTrack?.id,
     independentAudioTrack?.muted,
+    timeline.currentFrame, // Added to check range on timeline changes
   ]);
 
   // Sync timeline to video frames - DISABLED during timeline-controlled playback
@@ -501,10 +544,21 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     if (!audio || !independentAudioTrack) return;
     if (playback.isPlaying) return; // don't fight playback
 
-    const relativeFrame = Math.max(
-      0,
-      timeline.currentFrame - independentAudioTrack.startFrame,
-    );
+    // Only seek audio if timeline position is within the audio track's range
+    const isWithinAudioRange =
+      timeline.currentFrame >= independentAudioTrack.startFrame &&
+      timeline.currentFrame < independentAudioTrack.endFrame;
+
+    if (!isWithinAudioRange) {
+      console.log(
+        '[DirectPreview] Timeline position outside audio track range - not seeking audio',
+        `Frame: ${timeline.currentFrame}, Audio range: ${independentAudioTrack.startFrame}-${independentAudioTrack.endFrame}`,
+      );
+      return; // Don't seek audio when timeline is outside its range
+    }
+
+    const relativeFrame =
+      timeline.currentFrame - independentAudioTrack.startFrame;
     const trackTime = relativeFrame / timeline.fps;
     const targetTime = (independentAudioTrack.sourceStartTime || 0) + trackTime;
     const clampedTargetTime = Math.max(

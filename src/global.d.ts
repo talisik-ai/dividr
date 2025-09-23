@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { FfmpegEventHandlers } from './preload';
-import { VideoEditJob } from './schema/ffmpegConfig';
+import { VideoEditJob } from './Schema/ffmpegConfig';
 
 // Type definitions for the exposed API
 declare global {
@@ -144,6 +145,27 @@ declare global {
         success: boolean;
         error?: string;
         output?: string[];
+      }>;
+
+      // Audio extraction method
+      extractAudioFromVideo: (
+        videoPath: string,
+        outputDir?: string,
+      ) => Promise<{
+        success: boolean;
+        audioPath?: string;
+        previewUrl?: string;
+        size?: number;
+        message?: string;
+        error?: string;
+      }>;
+
+      // Cleanup extracted audio files
+      cleanupExtractedAudio: (audioPaths: string[]) => Promise<{
+        success: boolean;
+        deletedFiles: string[];
+        failedFiles: string[];
+        errors: string[];
       }>;
 
       // Background sprite sheet generation methods

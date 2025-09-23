@@ -328,20 +328,6 @@ function initializeFfmpegPaths() {
     console.error('📋 Or install FFmpeg system-wide as a fallback');
   }
 }
-import fs from 'node:fs';
-import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
-import { VideoEditJob } from './Schema/ffmpegConfig';
-import { buildFfmpegCommand } from './Utility/commandBuilder';
-import {
-  cancelCurrentFfmpeg,
-  runFfmpeg,
-  runFfmpegWithProgress,
-} from './Utility/ffmpegRunner';
-
-
-
 
 if (started) {
   app.quit();
@@ -616,6 +602,155 @@ ipcMain.handle('run-ffmpeg-with-progress', async (event, job: VideoEditJob) => {
     return { success: false, error: error.message };
   }
 });
+
+// IPC Handler for audio extraction from video files
+ipcMain.handle(
+  'extract-audio-from-video',
+  async (event, videoPath: string, outputDir?: string) => {
+    console.log('🎵 MAIN PROCESS: extractAudioFromVideo handler called!');
+    console.log('🎵 MAIN PROCESS: Video path:', videoPath);
+
+    if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
+      return {
+        success: false,
+        error: 'Another FFmpeg process is already running',
+      };
+    }
+
+    if (!ffmpegPath) {
+      return {
+        success: false,
+        error:
+          'FFmpeg binary not available. Please ensure ffmpeg-static is properly installed.',
+      };
+    }
+
+    try {
+      // Create a unique output directory for extracted audio files
+      const audioOutputDir =
+        outputDir || path.join(os.tmpdir(), 'dividr-audio-extracts');
+      if (!fs.existsSync(audioOutputDir)) {
+        fs.mkdirSync(audioOutputDir, { recursive: true });
+        console.log('📁 Created audio extraction directory:', audioOutputDir);
+      }
+
+      // Generate unique filename for extracted audio
+      const videoBaseName = path.basename(videoPath, path.extname(videoPath));
+      const timestamp = Date.now();
+      const audioFileName = `${videoBaseName}_${timestamp}_extracted.wav`;
+      const audioOutputPath = path.join(audioOutputDir, audioFileName);
+
+      console.log('🎵 Extracting audio to:', audioOutputPath);
+
+      // FFmpeg command to extract audio with high quality
+      const args = [
+        '-i',
+        videoPath, // Input video file
+        '-vn', // No video (audio only)
+        '-acodec',
+        'pcm_s16le', // Uncompressed PCM audio codec for quality
+        '-ar',
+        '44100', // Sample rate: 44.1kHz (CD quality)
+        '-ac',
+        '2', // Stereo (2 channels)
+        '-y', // Overwrite output file if exists
+        audioOutputPath, // Output audio file
+      ];
+
+      console.log('🎬 AUDIO EXTRACTION FFMPEG COMMAND:');
+      console.log(['ffmpeg', ...args].join(' '));
+
+      return new Promise((resolve) => {
+        const ffmpeg = spawn(ffmpegPath, args);
+        currentFfmpegProcess = ffmpeg;
+
+        let stdout = '';
+        let stderr = '';
+
+        ffmpeg.stdout.on('data', (data) => {
+          const text = data.toString();
+          stdout += text;
+          console.log(`[Audio Extract stdout] ${text.trim()}`);
+        });
+
+        ffmpeg.stderr.on('data', (data) => {
+          const text = data.toString();
+          stderr += text;
+          console.log(`[Audio Extract stderr] ${text.trim()}`);
+        });
+
+        ffmpeg.on('close', async (code) => {
+          currentFfmpegProcess = null;
+          console.log(`🎵 Audio extraction process exited with code: ${code}`);
+
+          if (code === 0) {
+            try {
+              // Verify that the audio file was created and has content
+              const stats = fs.statSync(audioOutputPath);
+              if (stats.size > 0) {
+                // Create preview URL for the extracted audio
+                // Use the same logic as the create-preview-url handler
+                const previewUrl = `http://localhost:${MEDIA_SERVER_PORT}/${encodeURIComponent(audioOutputPath)}`;
+                const previewResult = { success: true, url: previewUrl };
+
+                console.log('✅ Audio extraction successful!');
+                console.log('📁 Audio file path:', audioOutputPath);
+                console.log('📏 Audio file size:', stats.size, 'bytes');
+
+                resolve({
+                  success: true,
+                  audioPath: audioOutputPath,
+                  previewUrl: previewResult.success
+                    ? previewResult.url
+                    : undefined,
+                  size: stats.size,
+                  message: 'Audio extracted successfully',
+                });
+              } else {
+                console.error('❌ Audio file was created but is empty');
+                resolve({
+                  success: false,
+                  error: 'Audio extraction failed: output file is empty',
+                });
+              }
+            } catch (statError) {
+              console.error(
+                '❌ Failed to verify extracted audio file:',
+                statError,
+              );
+              resolve({
+                success: false,
+                error: `Audio extraction failed: ${statError.message}`,
+              });
+            }
+          } else {
+            console.error('❌ Audio extraction failed with exit code:', code);
+            console.error('stderr:', stderr);
+            resolve({
+              success: false,
+              error: `Audio extraction failed with exit code ${code}: ${stderr}`,
+            });
+          }
+        });
+
+        ffmpeg.on('error', (error) => {
+          currentFfmpegProcess = null;
+          console.error('❌ Audio extraction spawn error:', error);
+          resolve({
+            success: false,
+            error: `Audio extraction failed: ${error.message}`,
+          });
+        });
+      });
+    } catch (error) {
+      console.error('❌ Audio extraction setup error:', error);
+      return {
+        success: false,
+        error: `Audio extraction setup failed: ${error.message}`,
+      };
+    }
+  },
+);
 
 // IPC Handler for custom FFmpeg commands (specifically for thumbnail extraction)
 ipcMain.handle(
