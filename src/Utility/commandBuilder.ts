@@ -21,6 +21,21 @@ const AUDIO_DEFAULTS = {
   SAMPLE_RATE: 48000,
 } as const;
 
+// Enhanced timeline processing with proper cumulative positioning
+
+interface TimelineSegment {
+  input: TrackInfo;
+  originalIndex: number;
+  startTime: number;  // Timeline position where this segment starts
+  duration: number;   // How long this segment lasts
+  endTime: number;    // Timeline position where this segment ends
+}
+
+interface ProcessedTimeline {
+  segments: TimelineSegment[];
+  totalDuration: number;
+}
+
 /**
  * Converts Windows path to FFmpeg-compatible format and escapes special characters
  * @param filePath - The file path to convert
@@ -102,6 +117,150 @@ function getGapDuration(trackInfo: TrackInfo): number {
 }
 
 /**
+ * Calculates the actual duration of a track, accounting for trimming
+ */
+function calculateTrackDuration(trackInfo: TrackInfo, defaultDuration: number = 1): number {
+  // If explicit duration is set, use it
+  if (trackInfo.duration !== undefined) {
+    return trackInfo.duration;
+  }
+  
+  // For gaps, use duration or default
+  if (isGapInput(trackInfo.path)) {
+    return trackInfo.duration || defaultDuration;
+  }
+  
+  // For regular files, we'd ideally get duration from file metadata
+  // For now, use a reasonable default or any provided duration
+  return defaultDuration;
+}
+
+/**
+ * Builds a timeline with proper cumulative positioning
+ */
+function buildCumulativeTimeline(
+  inputs: (string | TrackInfo)[],
+  targetFrameRate: number = VIDEO_DEFAULTS.FPS
+): ProcessedTimeline {
+  const segments: TimelineSegment[] = [];
+  let currentTime = 0;
+  
+  inputs.forEach((input, originalIndex) => {
+    const trackInfo = getTrackInfo(input);
+    const duration = calculateTrackDuration(trackInfo, 1);
+    
+    const segment: TimelineSegment = {
+      input: trackInfo,
+      originalIndex,
+      startTime: currentTime,
+      duration,
+      endTime: currentTime + duration
+    };
+    
+    segments.push(segment);
+    currentTime += duration;
+  });
+  
+  return {
+    segments,
+    totalDuration: currentTime
+  };
+}
+
+/**
+ * Converts frame position to time position
+ */
+function framesToTime(frames: number, frameRate: number): number {
+  return frames / frameRate;
+}
+
+/**
+ * Adjusts timeline positions after insertion
+ */
+function adjustTimelineAfterInsertion(
+  timeline: ProcessedTimeline,
+  insertIndex: number,
+  gapDuration: number
+): void {
+  // Adjust all segments after the insertion point
+  for (let i = insertIndex + 1; i < timeline.segments.length; i++) {
+    timeline.segments[i].startTime += gapDuration;
+    timeline.segments[i].endTime += gapDuration;
+  }
+  
+  timeline.totalDuration += gapDuration;
+}
+
+/**
+ * Splits a segment at the specified time
+ */
+function splitSegmentAtTime(
+  segment: TimelineSegment,
+  splitTime: number,
+  nextOriginalIndex: number
+): { beforeSplit: TimelineSegment; afterSplit: TimelineSegment } {
+  const splitOffset = splitTime - segment.startTime;
+  const remainingDuration = segment.duration - splitOffset;
+  
+  const beforeSplit: TimelineSegment = {
+    ...segment,
+    duration: splitOffset,
+    endTime: splitTime
+  };
+  
+  // Create new TrackInfo for the second part with adjusted startTime
+  const afterSplitTrackInfo: TrackInfo = {
+    ...segment.input,
+    startTime: (segment.input.startTime || 0) + splitOffset
+  };
+  
+  const afterSplit: TimelineSegment = {
+    input: afterSplitTrackInfo,
+    originalIndex: nextOriginalIndex,
+    startTime: splitTime,
+    duration: remainingDuration,
+    endTime: splitTime + remainingDuration
+  };
+  
+  return { beforeSplit, afterSplit };
+}
+
+/**
+ * Finds the correct insertion point for a gap based on cumulative timeline position
+ */
+function findGapInsertionPoint(
+  timeline: ProcessedTimeline,
+  gapStartFrame: number,
+  frameRate: number
+): { insertIndex: number; splitSegment?: { segment: TimelineSegment; splitTime: number } } {
+  const gapStartTime = framesToTime(gapStartFrame, frameRate);
+  
+  // Find if the gap falls within an existing segment or between segments
+  for (let i = 0; i < timeline.segments.length; i++) {
+    const segment = timeline.segments[i];
+    
+    // Gap starts before this segment - insert here
+    if (gapStartTime < segment.startTime) {
+      return { insertIndex: i };
+    }
+    
+    // Gap starts within this segment - need to split the segment
+    if (gapStartTime >= segment.startTime && gapStartTime < segment.endTime) {
+      return {
+        insertIndex: i + 1,
+        splitSegment: {
+          segment,
+          splitTime: gapStartTime
+        }
+      };
+    }
+  }
+  
+  // Gap starts after all segments - insert at end
+  return { insertIndex: timeline.segments.length };
+}
+
+/**
  * Categorizes inputs into video and audio arrays with proper indexing
  * @param inputs - Array of video edit job inputs
  * @returns Categorized inputs with proper file indexing
@@ -147,6 +306,7 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
 
   return { videoInputs, audioInputs, fileInputIndex };
 }
+
 
 // -------------------------
 // Video Processing Functions
@@ -445,72 +605,108 @@ function processAudioForConcatenationWithGaps(
  * @param targetFrameRate - Target frame rate for frame-to-time conversion
  * @returns Processed inputs with gap markers inserted
  */
+/**
+ * Enhanced gap processing with proper timeline management
+ */
 function processGapsInTimeline(
   inputs: (string | TrackInfo)[],
-  gaps?: { video?: Array<{ startFrame: number; length: number }>; audio?: Array<{ startFrame: number; length: number }> },
+  gaps?: { 
+    video?: Array<{ startFrame: number; length: number }>; 
+    audio?: Array<{ startFrame: number; length: number }> 
+  },
   targetFrameRate: number = VIDEO_DEFAULTS.FPS
-): (TrackInfo)[] {
+): TrackInfo[] {
   if (!gaps || (!gaps.video?.length && !gaps.audio?.length)) {
-    // No gaps to process, just convert inputs to TrackInfo
     return inputs.map((input) =>
       typeof input === 'string' ? { path: input } : input
     );
   }
 
-  // Convert all inputs to TrackInfo for easier handling
-  let processedInputs: TrackInfo[] = inputs.map((input) =>
-    typeof input === 'string' ? { path: input } : input
-  );
+  // Build initial timeline
+  let timeline = buildCumulativeTimeline(inputs, targetFrameRate);
+  let nextOriginalIndex = inputs.length;
+  
+  console.log('Initial timeline:', timeline.segments.map(s => 
+    `[${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s] ${s.input.path}`
+  ));
 
-  // Process video gaps
-  if (gaps.video?.length) {
-    const videoGaps = gaps.video.sort((a, b) => a.startFrame - b.startFrame);
-    
-    // Insert video gaps in reverse order to avoid index shifting
-    for (let i = videoGaps.length - 1; i >= 0; i--) {
-      const gap = videoGaps[i];
-      const gapDuration = gap.length / targetFrameRate; // convert frames to seconds
-      
-      // Find insertion point based on timeline position
-      const insertIdx = findInsertionIndex(processedInputs, gap.startFrame, targetFrameRate);
-      
-      const videoGapTrack: TrackInfo = {
-        path: GAP_MARKER,
-        duration: gapDuration,
-        startFrame: gap.startFrame,
-        trackType: 'video',
-        gapType: 'video' // Mark this as a video gap
-      };
-      
-      processedInputs.splice(insertIdx, 0, videoGapTrack);
-    }
+  // Collect all gaps and sort by start frame (process in chronological order)
+  const allGaps: Array<{ 
+    startFrame: number; 
+    length: number; 
+    type: 'video' | 'audio' 
+  }> = [];
+  
+  if (gaps.video) {
+    gaps.video.forEach(gap => allGaps.push({ ...gap, type: 'video' }));
   }
-
-  // Process audio gaps
-  if (gaps.audio?.length) {
-    const audioGaps = gaps.audio.sort((a, b) => a.startFrame - b.startFrame);
-    
-    // Insert audio gaps in reverse order to avoid index shifting
-    for (let i = audioGaps.length - 1; i >= 0; i--) {
-      const gap = audioGaps[i];
-      const gapDuration = gap.length / targetFrameRate; // convert frames to seconds
-      
-      // Find insertion point based on timeline position
-      const insertIdx = findInsertionIndex(processedInputs, gap.startFrame, targetFrameRate);
-      
-      const audioGapTrack: TrackInfo = {
-        path: GAP_MARKER,
-        duration: gapDuration,
-        startFrame: gap.startFrame,
-        trackType: 'audio',
-        gapType: 'audio' // Mark this as an audio gap
-      };
-      
-      processedInputs.splice(insertIdx, 0, audioGapTrack);
-    }
+  if (gaps.audio) {
+    gaps.audio.forEach(gap => allGaps.push({ ...gap, type: 'audio' }));
   }
-
-  return processedInputs;
+  
+  // Sort gaps by start frame to process in chronological order
+  allGaps.sort((a, b) => a.startFrame - b.startFrame);
+  
+  // Process each gap
+  allGaps.forEach((gap, gapIndex) => {
+    const gapDuration = gap.length / targetFrameRate;
+    const insertionResult = findGapInsertionPoint(timeline, gap.startFrame, targetFrameRate);
+    
+    console.log(`Processing ${gap.type} gap at frame ${gap.startFrame} (${framesToTime(gap.startFrame, targetFrameRate).toFixed(2)}s), duration: ${gapDuration.toFixed(2)}s`);
+    
+    let insertIndex = insertionResult.insertIndex;
+    let newSegments: TimelineSegment[] = [];
+    
+    // Handle segment splitting if necessary
+    if (insertionResult.splitSegment) {
+      const { segment, splitTime } = insertionResult.splitSegment;
+      const { beforeSplit, afterSplit } = splitSegmentAtTime(segment, splitTime, nextOriginalIndex++);
+      
+      // Replace the original segment with the split parts
+      timeline.segments[insertIndex - 1] = beforeSplit;
+      newSegments.push(afterSplit);
+      
+      console.log(`Split segment at ${splitTime.toFixed(2)}s: before=[${beforeSplit.startTime.toFixed(2)}-${beforeSplit.endTime.toFixed(2)}], after=[${afterSplit.startTime.toFixed(2)}-${afterSplit.endTime.toFixed(2)}]`);
+    }
+    
+    // Create gap segment
+    const gapStartTime = insertionResult.splitSegment ? 
+      insertionResult.splitSegment.splitTime : 
+      (insertIndex < timeline.segments.length ? timeline.segments[insertIndex].startTime : timeline.totalDuration);
+    
+    const gapTrackInfo: TrackInfo = {
+      path: GAP_MARKER,
+      duration: gapDuration,
+      startFrame: gap.startFrame,
+      trackType: gap.type,
+      gapType: gap.type
+    };
+    
+    const gapSegment: TimelineSegment = {
+      input: gapTrackInfo,
+      originalIndex: nextOriginalIndex++,
+      startTime: gapStartTime,
+      duration: gapDuration,
+      endTime: gapStartTime + gapDuration
+    };
+    
+    // Insert gap and any split segments
+    const segmentsToInsert = [gapSegment, ...newSegments];
+    timeline.segments.splice(insertIndex, 0, ...segmentsToInsert);
+    
+    // Adjust timeline positions after insertion
+    adjustTimelineAfterInsertion(timeline, insertIndex, gapDuration);
+    
+    console.log(`Inserted ${gap.type} gap: [${gapSegment.startTime.toFixed(2)}s-${gapSegment.endTime.toFixed(2)}s]`);
+  });
+  
+  console.log('Final timeline:', timeline.segments.map(s => 
+    `[${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s] ${s.input.path}${s.input.gapType ? ` (${s.input.gapType} gap)` : ''}`
+  ));
+  console.log(`Total timeline duration: ${timeline.totalDuration.toFixed(2)}s`);
+  
+  // Return the processed inputs
+  return timeline.segments.map(segment => segment.input);
 }
 
 /**
@@ -1123,6 +1319,7 @@ export function buildFfmpegCommand(
 ): string[] {
   // Enhanced gap preprocessing
   let processedInputs = job.inputs;
+  console.log("Taken inputs from VideoEditJob: " + processedInputs);
   if (job.gaps && (job.gaps.video?.length || job.gaps.audio?.length)) {
     processedInputs = processGapsInTimeline(
       job.inputs, 
