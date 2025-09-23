@@ -7,6 +7,7 @@ export interface TrackInfo {
   muted?: boolean; // Whether this track's audio should be muted
   trackType?: 'video' | 'audio' | 'image' | 'subtitle'; // Type of the track
   visible?: boolean; // Whether this track's video should be visible (if false, show black)
+  gapType?: 'video' | 'audio';
 }
 
 export interface TextStyleConfig {
