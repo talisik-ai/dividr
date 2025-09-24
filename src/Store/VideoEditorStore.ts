@@ -739,30 +739,63 @@ const processImportedFile = async (
       );
     });
 
-    // Generate waveform for video files (after audio extraction)
+    // Generate waveform for video files (coordinated with audio extraction)
     if (generateWaveformFn) {
       console.log(
         `🎵 Triggering waveform generation for video: ${fileInfo.name}`,
       );
-      // Run waveform generation in background without blocking import
-      // Wait a bit to allow audio extraction to complete first
-      setTimeout(() => {
-        generateWaveformFn(mediaId).catch((error) => {
-          console.warn(
-            `⚠️ Waveform generation failed for ${fileInfo.name}:`,
-            error,
-          );
-        });
-      }, 3000); // 3 second delay to allow audio extraction
+      // Run waveform generation with smart retry logic to coordinate with audio extraction
+      const generateWaveformWithRetry = async () => {
+        let retries = 6; // Allow up to 6 retries (30 seconds max)
+        const retryDelay = 5000; // 5 second intervals
+
+        while (retries > 0) {
+          try {
+            const result = await generateWaveformFn(mediaId);
+            if (result) {
+              console.log(
+                `✅ Waveform generation completed for: ${fileInfo.name}`,
+              );
+              return;
+            }
+          } catch (error) {
+            console.warn(
+              `⚠️ Waveform generation attempt failed for ${fileInfo.name}:`,
+              error,
+            );
+          }
+
+          retries--;
+          if (retries > 0) {
+            console.log(
+              `🔄 Retrying waveform generation for ${fileInfo.name} in ${retryDelay}ms (${retries} retries left)`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          }
+        }
+
+        console.warn(
+          `⚠️ Waveform generation failed after all retries for ${fileInfo.name}`,
+        );
+      };
+
+      // Start generation with retry logic (non-blocking)
+      generateWaveformWithRetry().catch((error) => {
+        console.warn(
+          `⚠️ Waveform generation retry handler failed for ${fileInfo.name}:`,
+          error,
+        );
+      });
     }
   }
 
-  // Generate waveform for direct audio files
+  // Generate waveform for direct audio files (immediate start)
   if (trackType === 'audio' && generateWaveformFn) {
     console.log(
-      `🎵 Triggering waveform generation for audio: ${fileInfo.name}`,
+      `🎵 Triggering immediate waveform generation for audio: ${fileInfo.name}`,
     );
     // Run waveform generation in background without blocking import
+    // For direct audio files, we can start immediately as no extraction is needed
     generateWaveformFn(mediaId).catch((error) => {
       console.warn(
         `⚠️ Waveform generation failed for ${fileInfo.name}:`,
@@ -2733,6 +2766,12 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         audioPath = mediaItem.previewUrl;
       } else if (isAudioFile) {
         audioPath = mediaItem.source;
+      } else if (mediaItem.type === 'video' && !mediaItem.extractedAudio) {
+        // Video without extracted audio yet - this is expected during import
+        console.log(
+          `Audio extraction not complete yet for video: ${mediaItem.name}`,
+        );
+        return false; // Return false to allow retry logic
       } else {
         console.warn(`No suitable audio source found for: ${mediaItem.name}`);
         return false;

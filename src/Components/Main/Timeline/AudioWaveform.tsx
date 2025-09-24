@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   useVideoEditorStore,
   VideoTrack,
@@ -28,6 +28,10 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     const isGeneratingWaveform = useVideoEditorStore(
       (state) => state.isGeneratingWaveform,
     );
+    const generateWaveformForMedia = useVideoEditorStore(
+      (state) => state.generateWaveformForMedia,
+    );
+    const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
 
     // Get waveform data from the store
     const waveformData = useMemo(() => {
@@ -35,7 +39,6 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
       // First, try to get waveform from the track's media library item
       // For audio tracks created from videos, check if there's extracted audio
-      const mediaLibrary = useVideoEditorStore.getState().mediaLibrary;
 
       // Find the media item that corresponds to this track
       let sourceToCheck = track.source;
@@ -50,29 +53,130 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         );
         if (originalVideo) {
           sourceToCheck = originalVideo.source;
+          console.log(
+            `🔍 [AudioWaveform] Found original video for extracted audio: ${originalVideo.name}`,
+          );
         }
       }
 
       const waveform = getWaveformBySource(sourceToCheck);
+      console.log(`🔍 [AudioWaveform] Checking waveform for ${track.name}:`, {
+        trackSource: track.source,
+        trackPreviewUrl: track.previewUrl,
+        sourceToCheck,
+        hasWaveform: !!waveform,
+        waveformSuccess: waveform?.success,
+        peaksLength: waveform?.peaks?.length,
+        mediaLibraryCount: mediaLibrary.length,
+        mediaLibrarySources: mediaLibrary.map((item) => ({
+          name: item.name,
+          source: item.source,
+          hasWaveform: !!item.waveform,
+        })),
+      });
 
       if (waveform?.success && waveform.peaks.length > 0) {
+        console.log(`✅ [AudioWaveform] Using waveform data for ${track.name}`);
         return waveform;
       }
 
       return null;
-    }, [track.type, track.source, track.previewUrl, getWaveformBySource]);
+    }, [
+      track.type,
+      track.source,
+      track.previewUrl,
+      getWaveformBySource,
+      mediaLibrary,
+    ]);
 
     // Check if waveform is currently being generated
     const isLoading = useMemo(() => {
       if (track.type !== 'audio') return false;
 
-      const mediaLibrary = useVideoEditorStore.getState().mediaLibrary;
+      // For extracted audio tracks, check the original video's generation state
+      let sourceToCheck = track.source;
+      if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
+        const originalVideo = mediaLibrary.find(
+          (item) =>
+            item.type === 'video' &&
+            item.extractedAudio?.previewUrl === track.previewUrl,
+        );
+        if (originalVideo) {
+          sourceToCheck = originalVideo.source;
+        }
+      }
+
       const mediaItem = mediaLibrary.find(
-        (item) => item.source === track.source,
+        (item) => item.source === sourceToCheck,
       );
 
-      return mediaItem ? isGeneratingWaveform(mediaItem.id) : false;
-    }, [track.type, track.source, isGeneratingWaveform]);
+      const isGenerating = mediaItem
+        ? isGeneratingWaveform(mediaItem.id)
+        : false;
+      console.log(`🔍 [AudioWaveform] Loading state for ${track.name}:`, {
+        sourceToCheck,
+        mediaItemId: mediaItem?.id,
+        isGenerating,
+      });
+
+      return isGenerating;
+    }, [
+      track.type,
+      track.source,
+      track.previewUrl,
+      isGeneratingWaveform,
+      mediaLibrary,
+    ]);
+
+    // Trigger waveform generation if not available and not currently generating
+    useEffect(() => {
+      if (track.type !== 'audio' || waveformData || isLoading) return;
+
+      // Find the media item that corresponds to this track
+      let sourceToCheck = track.source;
+
+      // If this is an audio track that uses extracted audio, find the original video source
+      if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
+        const originalVideo = mediaLibrary.find(
+          (item) =>
+            item.type === 'video' &&
+            item.extractedAudio?.previewUrl === track.previewUrl,
+        );
+        if (originalVideo) {
+          sourceToCheck = originalVideo.source;
+        }
+      }
+
+      const mediaItem = mediaLibrary.find(
+        (item) => item.source === sourceToCheck,
+      );
+
+      if (
+        mediaItem &&
+        !mediaItem.waveform?.success &&
+        !isGeneratingWaveform(mediaItem.id)
+      ) {
+        console.log(
+          `🎵 Triggering fallback waveform generation for: ${track.name}`,
+        );
+        generateWaveformForMedia(mediaItem.id).catch((error) => {
+          console.warn(
+            `⚠️ Fallback waveform generation failed for ${track.name}:`,
+            error,
+          );
+        });
+      }
+    }, [
+      track.type,
+      track.source,
+      track.previewUrl,
+      track.name,
+      waveformData,
+      isLoading,
+      generateWaveformForMedia,
+      isGeneratingWaveform,
+      mediaLibrary,
+    ]);
 
     // Draw waveform on canvas
     const drawWaveform = useCallback(() => {
