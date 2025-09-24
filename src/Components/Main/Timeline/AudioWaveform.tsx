@@ -4,6 +4,7 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../../../Store/VideoEditorStore';
+import AudioWaveformGenerator from '../../../Utility/AudioWaveformGenerator';
 
 interface AudioWaveformProps {
   track: VideoTrack;
@@ -32,6 +33,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       (state) => state.generateWaveformForMedia,
     );
     const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
+    const fps = useVideoEditorStore((state) => state.timeline.fps);
 
     // Get waveform data from the store
     const waveformData = useMemo(() => {
@@ -80,11 +82,100 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         return waveform;
       }
 
+      // Fallback: Check AudioWaveformGenerator cache directly
+      // This is useful when media library items are deleted but cache still exists
+
+      // For extracted audio tracks, we need to find the original video file's duration
+      // because waveforms are cached with the actual media duration, not track duration
+      const audioPath = track.previewUrl || track.source;
+      const durationInSeconds = track.duration / fps; // Convert from frames to seconds
+
+      // Try multiple audio path variations for better cache hit rate
+      const pathsToTry = [audioPath];
+
+      // If this looks like an extracted audio file, also try to find other similar extracts
+      if (audioPath.includes('extracted.wav')) {
+        // Remove timestamp from filename to find any cached version
+        const basePattern = audioPath.replace(
+          /_\d+_extracted\.wav/,
+          '_extracted.wav',
+        );
+        pathsToTry.push(basePattern);
+
+        // Also try the original video source if we can derive it
+        const videoName = track.name.replace(' (Extracted Audio)', '');
+        pathsToTry.push(videoName);
+      }
+
+      console.log(`🔍 [AudioWaveform] Cache fallback for ${track.name}:`, {
+        audioPath,
+        durationInSeconds,
+        trackDuration: track.duration,
+        fps,
+        pathsToTry,
+      });
+
+      let cachedWaveform = null;
+
+      // Try each path until we find a cached waveform
+      for (const pathToTry of pathsToTry) {
+        cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
+          pathToTry,
+          durationInSeconds,
+          8000, // Same parameters used during generation
+          30,
+        );
+
+        if (cachedWaveform?.success) {
+          console.log(
+            `🎯 [AudioWaveform] Found cached waveform using path: ${pathToTry}`,
+          );
+          break;
+        }
+      }
+
+      // If no exact path match, try finding by duration (for when file paths change)
+      if (!cachedWaveform?.success) {
+        console.log(
+          `🔍 [AudioWaveform] Exact path lookup failed, trying duration-based search...`,
+        );
+        cachedWaveform = AudioWaveformGenerator.findCachedWaveformByDuration(
+          durationInSeconds,
+          8000,
+          30,
+          2.0, // Allow 2 second tolerance for duration matching
+        );
+      }
+
+      console.log(`🔍 [AudioWaveform] Cache result:`, {
+        hasCachedWaveform: !!cachedWaveform,
+        cachedSuccess: cachedWaveform?.success,
+        cachedPeaksLength: cachedWaveform?.peaks?.length,
+      });
+
+      if (cachedWaveform?.success && cachedWaveform.peaks.length > 0) {
+        console.log(
+          `✅ [AudioWaveform] Using cached waveform for ${track.name}`,
+        );
+        return {
+          success: cachedWaveform.success,
+          peaks: cachedWaveform.peaks,
+          duration: cachedWaveform.duration,
+          sampleRate: cachedWaveform.sampleRate,
+          cacheKey: cachedWaveform.cacheKey,
+        };
+      }
+
+      console.log(
+        `🔍 [AudioWaveform] Final waveformData result for ${track.name}: null`,
+      );
       return null;
     }, [
       track.type,
       track.source,
       track.previewUrl,
+      track.duration,
+      fps,
       getWaveformBySource,
       mediaLibrary,
     ]);
@@ -132,6 +223,23 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     useEffect(() => {
       if (track.type !== 'audio' || waveformData || isLoading) return;
 
+      // First, check if we can get waveform from cache (before trying to generate)
+      const audioPath = track.previewUrl || track.source;
+      const durationInSeconds = track.duration / fps;
+      const cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
+        audioPath,
+        durationInSeconds,
+        8000,
+        30,
+      );
+
+      if (cachedWaveform?.success) {
+        console.log(
+          `🎵 Found cached waveform for ${track.name}, no generation needed`,
+        );
+        return; // Cache exists, waveformData will update on next render
+      }
+
       // Find the media item that corresponds to this track
       let sourceToCheck = track.source;
 
@@ -165,12 +273,18 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
             error,
           );
         });
+      } else if (!mediaItem) {
+        console.log(
+          `⚠️ No media item found for ${track.name}, cannot generate waveform`,
+        );
       }
     }, [
       track.type,
       track.source,
       track.previewUrl,
       track.name,
+      track.duration,
+      fps,
       waveformData,
       isLoading,
       generateWaveformForMedia,
@@ -501,10 +615,11 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     if (!waveformData) {
       return (
         <div
-          className="flex items-center justify-center bg-yellow-500/10 border border-yellow-500/20 rounded text-yellow-200 text-xs"
+          className="flex text-xs gap-2 px-2 items-center"
           style={{ width, height }}
         >
-          <span className="truncate">⏳ Generating waveform...</span>
+          <Loader2 className="size-3 animate-spin" />
+          <span className="truncate"> Generating waveform...</span>
         </div>
       );
     }

@@ -341,6 +341,60 @@ class AudioWaveformGenerator {
   }
 
   /**
+   * Get cached waveform by audio path and duration (public method)
+   */
+  getCachedWaveform(
+    audioPath: string,
+    duration: number,
+    sampleRate: number = this.DEFAULT_SAMPLE_RATE,
+    peaksPerSecond: number = this.DEFAULT_PEAKS_PER_SECOND,
+  ): WaveformGenerationResult | null {
+    const cacheKey = this.generateCacheKey(
+      audioPath,
+      duration,
+      sampleRate,
+      peaksPerSecond,
+    );
+    return this.getCachedResult(cacheKey);
+  }
+
+  /**
+   * Find cached waveform by similar duration (for when paths change but content is the same)
+   */
+  findCachedWaveformByDuration(
+    duration: number,
+    sampleRate: number = this.DEFAULT_SAMPLE_RATE,
+    peaksPerSecond: number = this.DEFAULT_PEAKS_PER_SECOND,
+    toleranceSeconds: number = 1.0,
+  ): WaveformGenerationResult | null {
+    console.log(
+      `🔍 Searching cache for waveform with duration ~${duration}s (±${toleranceSeconds}s)`,
+    );
+
+    for (const [cacheKey, entry] of this.cache) {
+      const result = entry.result;
+      if (
+        result.success &&
+        result.sampleRate === sampleRate &&
+        Math.abs(result.duration - duration) <= toleranceSeconds
+      ) {
+        console.log(
+          `🎯 Found cached waveform with matching duration: ${result.duration}s (key: ${cacheKey})`,
+        );
+
+        // Update access statistics
+        entry.accessCount++;
+        entry.lastAccessed = Date.now();
+
+        return result;
+      }
+    }
+
+    console.log(`❌ No cached waveform found for duration ~${duration}s`);
+    return null;
+  }
+
+  /**
    * Clear all cached waveforms
    */
   clearCache(): void {
