@@ -221,28 +221,79 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
     const unlinkedAudioTracks = audioTracks.filter((track) => !track.isLinked);
 
     const canLink = unlinkedVideoTracks.some((videoTrack) => {
-      const matchingAudio = unlinkedAudioTracks.find(
-        (audioTrack) =>
-          audioTrack.source === videoTrack.source &&
-          (audioTrack.name === videoTrack.name ||
-            audioTrack.name === `${videoTrack.name} (Audio)`),
-      );
-      // Debug: Log track matching for troubleshooting
-      if (!matchingAudio) {
-        console.log(
-          `🔍 No matching audio found for video track: "${videoTrack.name}"`,
+      const matchingAudio = unlinkedAudioTracks.find((audioTrack) => {
+        // For extracted audio, we need to match by name pattern rather than source
+        // since extracted audio has a different temp file path
+
+        // Get base video name (remove .mp4 extension if present)
+        const videoBaseName = videoTrack.name.replace(
+          /\.(mp4|mov|avi|mkv|webm)$/i,
+          '',
         );
-      }
+
+        // Check various name patterns for extracted audio
+        const nameMatches =
+          audioTrack.name === videoTrack.name ||
+          audioTrack.name === `${videoTrack.name} (Audio)` ||
+          audioTrack.name === `${videoBaseName} (Audio)` ||
+          audioTrack.name === `${videoBaseName} (Extracted Audio)` ||
+          (audioTrack.name.startsWith(videoBaseName) &&
+            audioTrack.name.includes('Audio'));
+
+        // For extracted audio, source paths won't match, so we primarily rely on name matching
+        // But for regular audio files, we can still check source matching
+        const sourceMatches = audioTrack.source === videoTrack.source;
+
+        return nameMatches || sourceMatches;
+      });
+
+      // Enhanced debug logging
+      console.log(
+        `🔍 [Link Debug] Checking video track: "${videoTrack.name}"`,
+        {
+          videoSource: videoTrack.source,
+          videoIsLinked: videoTrack.isLinked,
+          availableAudioTracks: unlinkedAudioTracks.map((a) => {
+            const videoBaseName = videoTrack.name.replace(
+              /\.(mp4|mov|avi|mkv|webm)$/i,
+              '',
+            );
+            const nameMatches =
+              a.name === videoTrack.name ||
+              a.name === `${videoTrack.name} (Audio)` ||
+              a.name === `${videoBaseName} (Audio)` ||
+              a.name === `${videoBaseName} (Extracted Audio)` ||
+              (a.name.startsWith(videoBaseName) && a.name.includes('Audio'));
+
+            return {
+              name: a.name,
+              source: a.source,
+              isLinked: a.isLinked,
+              sourceMatches: a.source === videoTrack.source,
+              nameMatches,
+              videoBaseName,
+            };
+          }),
+          foundMatch: !!matchingAudio,
+        },
+      );
+
       return !!matchingAudio;
     });
 
-    // Only log when there are issues for easier debugging
-    if (selectedTracks.length > 0 && !canLink && !hasLinkedTracks) {
-      console.log('🔍 Link State Debug:', {
+    // Enhanced debug logging for link state
+    if (selectedTracks.length > 0) {
+      console.log('🔍 [Link State] Overall Debug:', {
+        selectedTracksCount: selectedTracks.length,
         canLink,
         hasLinkedTracks,
         unlinkedVideoTracks: unlinkedVideoTracks.length,
         unlinkedAudioTracks: unlinkedAudioTracks.length,
+        selectedTrackTypes: selectedTracks.map((t) => ({
+          name: t.name,
+          type: t.type,
+          isLinked: t.isLinked,
+        })),
       });
     }
 
@@ -265,16 +316,31 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
     );
 
     videoTracks.forEach((videoTrack) => {
-      const matchingAudio = audioTracks.find(
-        (audioTrack) =>
-          audioTrack.source === videoTrack.source &&
-          (audioTrack.name === videoTrack.name ||
-            audioTrack.name === `${videoTrack.name} (Audio)`),
-      );
+      const matchingAudio = audioTracks.find((audioTrack) => {
+        // Use the same improved matching logic as in canLink check
+        const videoBaseName = videoTrack.name.replace(
+          /\.(mp4|mov|avi|mkv|webm)$/i,
+          '',
+        );
+
+        const nameMatches =
+          audioTrack.name === videoTrack.name ||
+          audioTrack.name === `${videoTrack.name} (Audio)` ||
+          audioTrack.name === `${videoBaseName} (Audio)` ||
+          audioTrack.name === `${videoBaseName} (Extracted Audio)` ||
+          (audioTrack.name.startsWith(videoBaseName) &&
+            audioTrack.name.includes('Audio'));
+
+        const sourceMatches = audioTrack.source === videoTrack.source;
+
+        return nameMatches || sourceMatches;
+      });
 
       if (matchingAudio) {
         linkTracks(videoTrack.id, matchingAudio.id);
-        console.log(`🔗 Linked ${videoTrack.name} with audio`);
+        console.log(`🔗 Linked ${videoTrack.name} with ${matchingAudio.name}`);
+      } else {
+        console.log(`⚠️ No matching audio found for ${videoTrack.name}`);
       }
     });
   }, [selectedTrackIds, tracks, linkTracks]);
