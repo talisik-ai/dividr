@@ -65,178 +65,215 @@ const ExportButton: React.FC<ExportButtonProps> = ({
     [timeline, textStyle, getTextStyleForSubtitle],
   );
 
-  // Convert tracks to FFmpeg job with timeline-aware processing
-  const createFFmpegJob = useCallback(
-    (
-      outputFilename = 'Untitled_Project.mp4',
-      outputPath?: string,
-    ): VideoEditJob => {
-      if (tracks.length === 0) {
-        return {
-          inputs: [],
-          output: outputFilename,
-          outputPath,
-          operations: {},
-        };
+// Convert tracks to FFmpeg job with timeline-aware processing
+const createFFmpegJob = useCallback(
+  (
+    outputFilename = 'Untitled_Project.mp4',
+    outputPath?: string,
+  ): VideoEditJob => {
+    if (tracks.length === 0) {
+      return {
+        inputs: [],
+        output: outputFilename,
+        outputPath,
+        operations: {},
+        videoDimensions: { width: 1920, height: 1080 }, // Default dimensions
+      };
+    }
+
+    // Separate subtitle tracks for separate processing
+    const subtitleTracks = tracks.filter(
+      (track) => track.type === 'subtitle',
+    );
+
+    // Process linked video/audio tracks into combined tracks for export
+    const videoTracks = tracks.filter((track) => track.type === 'video');
+    const audioTracks = tracks.filter((track) => track.type === 'audio');
+    const imageTracks = tracks.filter((track) => track.type === 'image');
+
+    const processedTracks: VideoTrack[] = [];
+    const processedTrackIds = new Set<string>();
+
+    // Variables to store video dimensions
+    let videoWidth = 1920; // Default width
+    let videoHeight = 1080; // Default height
+
+    // Combine linked video/audio tracks for export
+    for (const videoTrack of videoTracks) {
+      if (processedTrackIds.has(videoTrack.id)) continue;
+
+      // Extract video dimensions from the first visible video track
+      if (videoTrack.visible && videoWidth === 1920 && videoHeight === 1080) {
+        if (videoTrack) {
+          videoWidth = videoTrack.width;
+          videoHeight = videoTrack.height;
+          console.log(`📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`);
+        } else if (videoTrack.width && videoTrack.height) {
+          videoWidth = videoTrack.width;
+          videoHeight = videoTrack.height;
+          console.log(`📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`);
+        }
       }
 
-      // Separate subtitle tracks for separate processing
-      const subtitleTracks = tracks.filter(
-        (track) => track.type === 'subtitle',
-      );
-
-      // Process linked video/audio tracks into combined tracks for export
-      const videoTracks = tracks.filter((track) => track.type === 'video');
-      const audioTracks = tracks.filter((track) => track.type === 'audio');
-      const imageTracks = tracks.filter((track) => track.type === 'image');
-
-      const processedTracks: VideoTrack[] = [];
-      const processedTrackIds = new Set<string>();
-
-      // Combine linked video/audio tracks for export
-      for (const videoTrack of videoTracks) {
-        if (processedTrackIds.has(videoTrack.id)) continue;
-
-        if (videoTrack.isLinked && videoTrack.linkedTrackId) {
-          const linkedAudioTrack = audioTracks.find(
-            (t) => t.id === videoTrack.linkedTrackId,
+      if (videoTrack.isLinked && videoTrack.linkedTrackId) {
+        const linkedAudioTrack = audioTracks.find(
+          (t) => t.id === videoTrack.linkedTrackId,
+        );
+        if (linkedAudioTrack) {
+          // Create a combined track that represents the original video file
+          const combinedTrack: VideoTrack = {
+            ...videoTrack,
+            // Use video track's visibility
+            visible: videoTrack.visible,
+            // Use synchronized mute state (both tracks should have same mute state)
+            muted: videoTrack.muted,
+          };
+          processedTracks.push(combinedTrack);
+          processedTrackIds.add(videoTrack.id);
+          processedTrackIds.add(linkedAudioTrack.id);
+          console.log(
+            `🔗 Combined linked tracks for export: ${videoTrack.name} (visible: ${videoTrack.visible}, muted: ${videoTrack.muted})`,
           );
-          if (linkedAudioTrack) {
-            // Create a combined track that represents the original video file
-            const combinedTrack: VideoTrack = {
-              ...videoTrack,
-              // Use video track's visibility
-              visible: videoTrack.visible,
-              // Use synchronized mute state (both tracks should have same mute state)
-              muted: videoTrack.muted,
-            };
-            processedTracks.push(combinedTrack);
-            processedTrackIds.add(videoTrack.id);
-            processedTrackIds.add(linkedAudioTrack.id);
-            console.log(
-              `🔗 Combined linked tracks for export: ${videoTrack.name} (visible: ${videoTrack.visible}, muted: ${videoTrack.muted})`,
-            );
-          } else {
-            // Video track without linked audio (shouldn't happen but handle it)
-            processedTracks.push(videoTrack);
-            processedTrackIds.add(videoTrack.id);
-          }
         } else {
-          // Standalone video track (old format)
+          // Video track without linked audio (shouldn't happen but handle it)
           processedTracks.push(videoTrack);
           processedTrackIds.add(videoTrack.id);
         }
+      } else {
+        // Standalone video track (old format)
+        processedTracks.push(videoTrack);
+        processedTrackIds.add(videoTrack.id);
       }
+    }
 
-      // Add standalone audio tracks that aren't linked
-      for (const audioTrack of audioTracks) {
-        if (!processedTrackIds.has(audioTrack.id)) {
-          processedTracks.push(audioTrack);
+    // If no video dimensions found from video tracks, check image tracks
+    if ((videoWidth === 1920 && videoHeight === 1080) && imageTracks.length > 0) {
+      const firstVisibleImage = imageTracks.find(track => track.visible);
+      if (firstVisibleImage) {
+        if (firstVisibleImage) {
+          videoWidth = firstVisibleImage.width;
+          videoHeight = firstVisibleImage.height;
+          console.log(`📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`);
+        } else if (firstVisibleImage.width && firstVisibleImage.height) {
+          videoWidth = firstVisibleImage.width;
+          videoHeight = firstVisibleImage.height;
+          console.log(`📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`);
         }
       }
+    }
 
-      // Add image tracks
-      processedTracks.push(...imageTracks);
-
-      // Sort by timeline position
-      const sortedTracks = processedTracks.sort(
-        (a, b) => a.startFrame - b.startFrame,
-      );
-
-      if (sortedTracks.length === 0) {
-        return {
-          inputs: [],
-          output: outputFilename,
-          outputPath,
-          operations: {},
-        };
+    // Add standalone audio tracks that aren't linked
+    for (const audioTrack of audioTracks) {
+      if (!processedTrackIds.has(audioTrack.id)) {
+        processedTracks.push(audioTrack);
       }
+    }
 
-      const trackInfos: TrackInfo[] = [];
+    // Add image tracks
+    processedTracks.push(...imageTracks);
 
-      // Process tracks in timeline order, adding black video for gaps
-      let currentTimelineFrame = 0;
+    // Sort by timeline position
+    const sortedTracks = processedTracks.sort(
+      (a, b) => a.startFrame - b.startFrame,
+    );
 
-      for (const track of sortedTracks) {
-        // If there's a gap before this track, add a black video segment
-        if (track.startFrame > currentTimelineFrame) {
-          const gapDurationFrames = track.startFrame - currentTimelineFrame;
-          const gapDurationSeconds = gapDurationFrames / timeline.fps;
-
-          if (gapDurationSeconds > 0.033) {
-            // Only add significant gaps (> 1 frame)
-            console.log(
-              `🗬 Adding ${gapDurationSeconds}s gap before "${track.name}"`,
-            );
-
-            // Create a black video segment for the gap
-            // We'll mark this as a gap and handle it specially in the command builder
-            trackInfos.push({
-              path: '__GAP__',
-              duration: gapDurationSeconds,
-              startTime: 0,
-            });
-          }
-        }
-
-        // Add the actual track with proper source timing
-        const trackDurationSeconds = track.duration / timeline.fps;
-        const sourceStartTime = track.sourceStartTime || 0;
-
-        console.log(
-          `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
-        );
-
-        trackInfos.push({
-          path: track.source,
-          startTime: sourceStartTime,
-          duration: Math.max(0.033, trackDurationSeconds),
-          muted: track.muted || false,
-          trackType: track.type,
-          visible: track.visible,
-        });
-
-        // Update current position to the end of this track
-        currentTimelineFrame = track.endFrame;
-      }
-
-      // Generate subtitle content if there are subtitle tracks
-      let subtitleContent = '';
-      let currentTextStyle = undefined;
-      if (subtitleTracks.length > 0) {
-        subtitleContent = generateAssContent(subtitleTracks);
-        currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
-        console.log(
-          '📝 Generated subtitle content for export with text style:',
-          textStyle.activeStyle,
-        );
-      }
-
+    if (sortedTracks.length === 0) {
       return {
-        inputs: trackInfos,
+        inputs: [],
         output: outputFilename,
         outputPath,
-        operations: {
-          concat: trackInfos.length > 1,
-          preset: 'superfast', // ⚡ This adds -preset superfast to the FFmpeg command
-          threads: 8, // uses 8 threads
-          targetFrameRate: timeline.fps,
-          normalizeFrameRate: trackInfos.length > 1,
-          subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
-          textStyle: currentTextStyle,
-        },
-        subtitleContent, // Pass the subtitle content separately so main process can create the file
-        subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+        operations: {},
+        videoDimensions: { width: videoWidth, height: videoHeight },
       };
-    },
-    [
-      tracks,
-      timeline.fps,
-      generateAssContent,
-      textStyle,
-      getTextStyleForSubtitle,
-    ],
-  );
+    }
+
+    const trackInfos: TrackInfo[] = [];
+
+    // Process tracks in timeline order, adding black video for gaps
+    let currentTimelineFrame = 0;
+
+    for (const track of sortedTracks) {
+      // If there's a gap before this track, add a black video segment
+      if (track.startFrame > currentTimelineFrame) {
+        const gapDurationFrames = track.startFrame - currentTimelineFrame;
+        const gapDurationSeconds = gapDurationFrames / timeline.fps;
+
+        if (gapDurationSeconds > 0.033) {
+          // Only add significant gaps (> 1 frame)
+          console.log(
+            `🗬 Adding ${gapDurationSeconds}s gap before "${track.name}"`,
+          );
+
+          // Create a black video segment for the gap
+          // We'll mark this as a gap and handle it specially in the command builder
+          trackInfos.push({
+            path: '__GAP__',
+            duration: gapDurationSeconds,
+            startTime: 0,
+          });
+        }
+      }
+
+      // Add the actual track with proper source timing
+      const trackDurationSeconds = track.duration / timeline.fps;
+      const sourceStartTime = track.sourceStartTime || 0;
+
+      console.log(
+        `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
+      );
+
+      trackInfos.push({
+        path: track.source,
+        startTime: sourceStartTime,
+        duration: Math.max(0.033, trackDurationSeconds),
+        muted: track.muted || false,
+        trackType: track.type,
+        visible: track.visible,
+      });
+
+      // Update current position to the end of this track
+      currentTimelineFrame = track.endFrame;
+    }
+
+    // Generate subtitle content if there are subtitle tracks
+    let subtitleContent = '';
+    let currentTextStyle = undefined;
+    if (subtitleTracks.length > 0) {
+      subtitleContent = generateAssContent(subtitleTracks);
+      currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
+      console.log(
+        '📝 Generated subtitle content for export with text style:',
+        textStyle.activeStyle,
+      );
+    }
+
+    return {
+      inputs: trackInfos,
+      output: outputFilename,
+      outputPath,
+      operations: {
+        concat: trackInfos.length > 1,
+        preset: 'superfast', // ⚡ This adds -preset superfast to the FFmpeg command
+        threads: 8, // uses 8 threads
+        targetFrameRate: timeline.fps,
+        normalizeFrameRate: trackInfos.length > 1,
+        subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
+        textStyle: currentTextStyle,
+      },
+      subtitleContent, // Pass the subtitle content separately so main process can create the file
+      subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+      videoDimensions: { width: videoWidth, height: videoHeight }, // Store video dimensions
+    };
+  },
+  [
+    tracks,
+    timeline.fps,
+    generateAssContent,
+    textStyle,
+    getTextStyleForSubtitle,
+  ],
+);
+  
 
   // Handle export button click - shows modal
   const handleRender = useCallback(() => {

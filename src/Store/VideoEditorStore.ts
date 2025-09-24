@@ -545,6 +545,17 @@ const processImportedFile = async (
     );
     actualDurationSeconds = fileInfo.type === 'image' ? 5 : 30;
   }
+  // Get video dimensions
+  let videoDimensions: { width: number; height: number };
+  try {
+    videoDimensions = await window.electronAPI.getVideoDimensions(fileInfo.path);
+  } catch (error) {
+    console.warn(
+      `⚠️ Failed to get dimensions for ${fileInfo.name}, using fallback:`,
+      error,
+    );
+    videoDimensions = { width: 1920, height: 1080 }; // sensible default
+  }
 
   // Create preview URL for video and image files
   let previewUrl: string | undefined;
@@ -607,7 +618,7 @@ const processImportedFile = async (
     duration: actualDurationSeconds,
     size: fileInfo.size,
     mimeType,
-    metadata: {},
+    metadata: {width: videoDimensions.width, height: videoDimensions.height},
   };
 
   const mediaId = addToLibraryFn(mediaLibraryItem);
@@ -1294,6 +1305,8 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         previewUrl: mediaItem.previewUrl,
         originalFile: mediaItem.originalFile,
         tempFilePath: mediaItem.tempFilePath,
+        height: mediaItem.metadata.height,
+        width: mediaItem.metadata.width,
         duration,
         startFrame,
         endFrame: startFrame + duration,
@@ -1305,7 +1318,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           subtitleText: `Subtitle: ${mediaItem.name}`,
         }),
       };
-
+      console.log(`I GOT THE WIDTH ${mediaItem.metadata.width} AND HEIGHT ${mediaItem.metadata.height} IN useVideoEditorStore`);
       return await get().addTrack(track);
     },
 

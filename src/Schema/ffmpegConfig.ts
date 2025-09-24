@@ -8,6 +8,8 @@ export interface TrackInfo {
   trackType?: 'video' | 'audio' | 'image' | 'subtitle'; // Type of the track
   visible?: boolean; // Whether this track's video should be visible (if false, show black)
   gapType?: 'video' | 'audio';
+  width?: number;
+  height?: number;
 }
 
 export interface TextStyleConfig {
@@ -58,6 +60,7 @@ export interface VideoEditJob {
   gaps?: TimelineGaps;
   subtitleContent?: string; // SRT content to be written to a temporary file
   subtitleFormat?: 'srt' | 'vtt' | 'ass'; // Subtitle format for export
+  videoDimensions?: { width: number; height: number };
 }
 
 export interface CommandParts {

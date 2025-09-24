@@ -11,7 +11,7 @@ import {
 } from '../Schema/ffmpegConfig';
 
 const VIDEO_DEFAULTS = {
-  SIZE: '1920x1080',
+  SIZE: {width: 1920, height: 1080},
   FPS: 30,
   DUMMY_DURATION: 0.1,
 } as const;
@@ -370,12 +370,13 @@ function createGapVideoFilters(
   originalIndex: number,
   duration: number,
   targetFps: number,
+  videoDimensions: { width: number; height: number }
 ): AudioTrimResult {
   const gapRef = `[gap_v${originalIndex}]`;
   return {
     filterRef: gapRef,
     filters: [
-      `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[temp_gap_${originalIndex}]`,
+      `color=black:size=${videoDimensions.width}x${videoDimensions.height}:duration=${duration}:rate=${targetFps}[temp_gap_${originalIndex}]`,
       `[temp_gap_${originalIndex}]setpts=PTS-STARTPTS${gapRef}`,
     ],
   };
@@ -750,9 +751,9 @@ function createGapFilters(
   originalIndex: number,
   trackInfo: TrackInfo,
   targetFps: number,
+  videoDimensions: { width: number; height: number },
 ): { videoFilter?: AudioTrimResult; audioFilter?: AudioTrimResult } {
   const duration = trackInfo.duration || 1;
-  
   if (isVideoGap(trackInfo)) {
     // Video gap: black video + silent audio
     const videoGapRef = `[gap_v${originalIndex}]`;
@@ -762,7 +763,7 @@ function createGapFilters(
       videoFilter: {
         filterRef: videoGapRef,
         filters: [
-          `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[temp_gap_v${originalIndex}]`,
+          `color=black:size=${videoDimensions.width}x${videoDimensions.height};:duration=${duration}:rate=${targetFps}[temp_gap_v${originalIndex}]`,
           `[temp_gap_v${originalIndex}]setpts=PTS-STARTPTS${videoGapRef}`,
         ],
       },
@@ -799,6 +800,7 @@ function createGapFilters(
  */
 function createSingleTrackTrimFilters(
   trackInfo: TrackInfo,
+  videoDimensions: {width: number; height: number;}
 ): { videoFilter: string; audioFilter: string } | null {
   if (trackInfo.startTime === undefined && trackInfo.duration === undefined) {
     return null;
@@ -828,7 +830,7 @@ function createSingleTrackTrimFilters(
   ) {
     // Generate black video for hidden tracks
     const duration = trackInfo.duration || 1;
-    videoFilter = `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${VIDEO_DEFAULTS.FPS}[outv]`;
+    videoFilter = `color=black:size=${videoDimensions.width}x${videoDimensions.height}:duration=${duration}:rate=${VIDEO_DEFAULTS.FPS}[outv]`;
     console.log(`🖤 Single hidden track - using black video`);
   } else {
     videoFilter = `[0:v]trim=${paramString}[outv]`;
@@ -908,13 +910,14 @@ function buildConcatFilter(
 function buildSingleGapFilterComplex(
   duration: number,
   targetFps: number,
+  videoDimensions: {width:number, height:number},
   subtitlePath?: string,
 ): string {
   if (subtitlePath) {
     const ffmpegPath = convertToFfmpegPath(subtitlePath);
-    return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[temp_outv];[temp_outv]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+    return `color=black:size=${videoDimensions.width}x${videoDimensions.height}:duration=${duration}:rate=${targetFps}[temp_outv];[temp_outv]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
   }
-  return `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${targetFps}[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+  return `color=black:size=${videoDimensions.width}x${videoDimensions.height}duration=${duration}:rate=${targetFps}[outv];anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
 }
 
 /**
@@ -978,11 +981,12 @@ function handleConcatenationWorkflow(
 
     if (isGap) {
       const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+      const videoDim = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
       
       if (isVideoGap(trackInfo)) {
         // Handle video gap - creates black video
         const duration = getGapDuration(trackInfo);
-        const gapResult = createGapVideoFilters(originalIndex, duration, targetFps);
+        const gapResult = createGapVideoFilters(originalIndex, duration, targetFps, videoDim);
         trimFilters.push(...gapResult.filters);
         videoStreamRef = gapResult.filterRef;
         console.log(`Inserted video gap at index ${originalIndex} with duration ${duration}s`);
@@ -990,7 +994,7 @@ function handleConcatenationWorkflow(
         // For audio-only gaps in video timeline, we might need to extend previous video or create placeholder
         // This depends on your specific requirements - for now, create a black frame
         const duration = getGapDuration(trackInfo);
-        const gapResult = createGapVideoFilters(originalIndex, duration, targetFps);
+        const gapResult = createGapVideoFilters(originalIndex, duration, targetFps, videoDim);
         trimFilters.push(...gapResult.filters);
         videoStreamRef = gapResult.filterRef;
         console.log(`Inserted placeholder video for audio gap at index ${originalIndex}`);
@@ -999,10 +1003,11 @@ function handleConcatenationWorkflow(
       trackInfo.visible === false &&
       (trackInfo.trackType === 'video' || trackInfo.trackType === 'image')
     ) {
-      // Handle hidden video/image tracks - generate black video
+      // Handle hidden video/image tracks - generate black 
+      const videoDim = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
       const duration = trackInfo.duration || 1;
       const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
-      const blackVideoResult = createGapVideoFilters(originalIndex, duration, targetFps);
+      const blackVideoResult = createGapVideoFilters(originalIndex, duration, targetFps, videoDim);
       trimFilters.push(...blackVideoResult.filters);
       videoStreamRef = blackVideoResult.filterRef;
       console.log(`Hidden track - using black video for track at index ${originalIndex}`);
@@ -1091,10 +1096,11 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
   if (isGapInput(path)) {
     const duration = getGapDuration(trackInfo);
     const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+    const videoDimensions = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
   
     // Generate black video + silent audio of exact gap length
     const filterComplex = `
-      color=size=${VIDEO_DEFAULTS.SIZE}:rate=${targetFps}:duration=${duration}:color=black[gapv];
+      color=size=${videoDimensions.width}x${videoDimensions.height}:rate=${targetFps}:duration=${duration}:color=black[gapv];
       anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[gapa];
       [gapv]setpts=PTS-STARTPTS[outv];
       [gapa]asetpts=PTS-STARTPTS[outa]
@@ -1106,8 +1112,8 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
    else {
     // Handle regular file input
     cmd.args.push('-i', escapePath(path));
-
-    const trimFilters = createSingleTrackTrimFilters(trackInfo);
+    const videoDimensions = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
+    const trimFilters = createSingleTrackTrimFilters(trackInfo, videoDimensions);
     if (trimFilters) {
       let filterComplex = `${trimFilters.videoFilter};${trimFilters.audioFilter}`;
 
@@ -1144,9 +1150,9 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
       if (
         trackInfo.visible === false &&
         (trackInfo.trackType === 'video' || trackInfo.trackType === 'image')
-      ) {
+      ) { 
         const duration = trackInfo.duration || 1;
-        filterComplex = `color=black:size=${VIDEO_DEFAULTS.SIZE}:duration=${duration}:rate=${VIDEO_DEFAULTS.FPS}[hidden_black]`;
+        filterComplex = `color=black:size=${videoDimensions.width}x${videoDimensions.height}:duration=${duration}:rate=${VIDEO_DEFAULTS.FPS}[hidden_black]`;
         videoInput = '[hidden_black]';
         console.log(`🖤 Single hidden track without trim - using black video`);
       }

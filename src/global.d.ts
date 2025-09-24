@@ -126,6 +126,13 @@ declare global {
         error?: string;
       }>;
       getDuration: (filePath: string) => Promise<number>;
+      
+      // Video dimensions method
+      getVideoDimensions: (filePath: string) => Promise<{
+        width: number;
+        height: number;
+      }>;
+      
       runFfmpegWithProgress: (
         job: VideoEditJob,
         handlers?: FfmpegEventHandlers,
