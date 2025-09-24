@@ -229,7 +229,8 @@ class AudioWaveformGenerator {
   private cacheResult(
     cacheKey: string,
     result: WaveformGenerationResult,
-    _audioPath: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    audioPath: string,
   ): void {
     const now = Date.now();
     const entry: WaveformCacheEntry = {

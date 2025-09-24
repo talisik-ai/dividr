@@ -117,13 +117,13 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
       // Bar spectrum colors - Gray base with purple stacking
       const baseBarColor = track.muted
-        ? 'rgba(107, 114, 128, 0.4)' // Gray-500 with opacity for muted
-        : 'rgba(107, 114, 128, 0.8)'; // Gray-500 for normal bars
+        ? 'rgba(174, 169, 177, 0.4)' // Gray-500 with opacity for muted
+        : 'rgba(174, 169, 177, 0.8)'; // Gray-500 for normal bars
       const stackedBarColor = track.muted
-        ? 'rgba(147, 51, 234, 0.4)' // Purple-600 with opacity for muted
-        : 'rgba(147, 51, 234, 0.8)'; // Purple-600 for stacked portion
-      const progressBaseColor = 'rgba(75, 85, 99, 1)'; // Gray-600 for progress bars
-      const progressStackedColor = 'rgba(126, 34, 206, 1)'; // Purple-700 for progress stacked portion
+        ? 'rgba(161, 94, 253, 0.4)' // Purple-600 with opacity for muted
+        : 'rgba(161, 94, 253, 0.8)'; // Purple-600 for stacked portion
+      const progressBaseColor = 'rgba(174, 169, 177, 1)'; // Gray-600 for progress bars
+      const progressStackedColor = 'rgba(161, 94, 253, 1)'; // Purple-700 for progress stacked portion
       const backgroundColor = 'rgba(156, 163, 175, 0.1)'; // Gray-400 very light background
 
       // Clear canvas with light background
@@ -142,17 +142,17 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       }
 
       // Calculate purple stacking percentage for each peak
-      // This could represent voice detection, frequency analysis, or dynamic range
+      // Purple represents decibel spikes - the loudest parts of the audio
       const calculateStackedPercentage = (
         peak: number,
         index: number,
       ): number => {
-        // Simple algorithm that could represent "voice/speech detection"
-        // Higher peaks with some variation get more purple
-        const baseThreshold = 0.3; // Minimum level for purple to appear
-        const variation = Math.sin(index * 0.1) * 0.1; // Some variation based on position
+        // Algorithm to show purple on decibel spikes/peak intensity
+        // Higher decibel levels get more purple, quieter parts stay gray
+        const baseThreshold = 0.3; // Minimum decibel level for purple to appear
+        const variation = Math.sin(index * 0.1) * 0.1; // Subtle variation for natural look
         const normalizedPeak = Math.max(0, peak - baseThreshold);
-        const percentage = Math.min(0.6, normalizedPeak + variation); // Max 60% purple
+        const percentage = Math.min(0.6, normalizedPeak + variation); // Max 60% purple on loudest spikes
         return Math.max(0, percentage);
       };
 

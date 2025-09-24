@@ -168,7 +168,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         case 'video':
           return 'linear-gradient(135deg, #8e44ad, #9b59b6)';
         case 'audio':
-          return 'linear-gradient(135deg, #27ae60, #2ecc71)';
+          return 'hsl(var(--secondary) / 0.3)';
         case 'image':
           return 'linear-gradient(135deg, #e67e22, #f39c12)';
         default:
