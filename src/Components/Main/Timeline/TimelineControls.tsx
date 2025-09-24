@@ -247,55 +247,8 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
         return nameMatches || sourceMatches;
       });
 
-      // Enhanced debug logging
-      console.log(
-        `🔍 [Link Debug] Checking video track: "${videoTrack.name}"`,
-        {
-          videoSource: videoTrack.source,
-          videoIsLinked: videoTrack.isLinked,
-          availableAudioTracks: unlinkedAudioTracks.map((a) => {
-            const videoBaseName = videoTrack.name.replace(
-              /\.(mp4|mov|avi|mkv|webm)$/i,
-              '',
-            );
-            const nameMatches =
-              a.name === videoTrack.name ||
-              a.name === `${videoTrack.name} (Audio)` ||
-              a.name === `${videoBaseName} (Audio)` ||
-              a.name === `${videoBaseName} (Extracted Audio)` ||
-              (a.name.startsWith(videoBaseName) && a.name.includes('Audio'));
-
-            return {
-              name: a.name,
-              source: a.source,
-              isLinked: a.isLinked,
-              sourceMatches: a.source === videoTrack.source,
-              nameMatches,
-              videoBaseName,
-            };
-          }),
-          foundMatch: !!matchingAudio,
-        },
-      );
-
       return !!matchingAudio;
     });
-
-    // Enhanced debug logging for link state
-    if (selectedTracks.length > 0) {
-      console.log('🔍 [Link State] Overall Debug:', {
-        selectedTracksCount: selectedTracks.length,
-        canLink,
-        hasLinkedTracks,
-        unlinkedVideoTracks: unlinkedVideoTracks.length,
-        unlinkedAudioTracks: unlinkedAudioTracks.length,
-        selectedTrackTypes: selectedTracks.map((t) => ({
-          name: t.name,
-          type: t.type,
-          isLinked: t.isLinked,
-        })),
-      });
-    }
 
     return {
       canLink,
@@ -338,9 +291,6 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
 
       if (matchingAudio) {
         linkTracks(videoTrack.id, matchingAudio.id);
-        console.log(`🔗 Linked ${videoTrack.name} with ${matchingAudio.name}`);
-      } else {
-        console.log(`⚠️ No matching audio found for ${videoTrack.name}`);
       }
     });
   }, [selectedTrackIds, tracks, linkTracks]);
@@ -358,7 +308,6 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
       if (track.type === 'video' || track.type === 'audio') {
         unlinkTracks(track.id);
         tracksToKeepSelected.push(track.id);
-        console.log(`🔓 Unlinked ${track.name}`);
       }
     });
 
