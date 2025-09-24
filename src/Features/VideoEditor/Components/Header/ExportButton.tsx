@@ -33,17 +33,21 @@ const ExportButton: React.FC<ExportButtonProps> = ({
   variant = 'secondary',
   disabled = false,
 }) => {
-  const {
-    tracks,
-    timeline,
-    render,
-    startRender,
-    updateRenderProgress,
-    finishRender,
-    cancelRender,
-    textStyle,
-    getTextStyleForSubtitle,
-  } = useVideoEditorStore();
+  // Subscribe to only the state and actions we need, not the entire store
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  // Only subscribe to fps from timeline, not the entire timeline object (which includes currentFrame)
+  const timelineFps = useVideoEditorStore((state) => state.timeline.fps);
+  const render = useVideoEditorStore((state) => state.render);
+  const startRender = useVideoEditorStore((state) => state.startRender);
+  const updateRenderProgress = useVideoEditorStore(
+    (state) => state.updateRenderProgress,
+  );
+  const finishRender = useVideoEditorStore((state) => state.finishRender);
+  const cancelRender = useVideoEditorStore((state) => state.cancelRender);
+  const textStyle = useVideoEditorStore((state) => state.textStyle);
+  const getTextStyleForSubtitle = useVideoEditorStore(
+    (state) => state.getTextStyleForSubtitle,
+  );
   const { currentProject } = useProjectStore();
 
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
@@ -54,6 +58,8 @@ const ExportButton: React.FC<ExportButtonProps> = ({
       if (subtitleTracks.length === 0) return '';
 
       // Extract subtitle segments from tracks
+      // Get timeline data non-reactively for subtitle extraction
+      const { timeline } = useVideoEditorStore.getState();
       const segments = extractSubtitleSegments(subtitleTracks, timeline);
 
       // Get current text style
@@ -62,7 +68,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
       // Generate ASS content with styling
       return generateASSContent(segments, currentTextStyle);
     },
-    [timeline, textStyle, getTextStyleForSubtitle],
+    [textStyle, getTextStyleForSubtitle],
   );
 
   // Convert tracks to FFmpeg job with timeline-aware processing
@@ -161,7 +167,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         // If there's a gap before this track, add a black video segment
         if (track.startFrame > currentTimelineFrame) {
           const gapDurationFrames = track.startFrame - currentTimelineFrame;
-          const gapDurationSeconds = gapDurationFrames / timeline.fps;
+          const gapDurationSeconds = gapDurationFrames / timelineFps;
 
           if (gapDurationSeconds > 0.033) {
             // Only add significant gaps (> 1 frame)
@@ -180,7 +186,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         }
 
         // Add the actual track with proper source timing
-        const trackDurationSeconds = track.duration / timeline.fps;
+        const trackDurationSeconds = track.duration / timelineFps;
         const sourceStartTime = track.sourceStartTime || 0;
 
         console.log(
@@ -220,7 +226,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
           concat: trackInfos.length > 1,
           preset: 'superfast', // ⚡ This adds -preset superfast to the FFmpeg command
           threads: 8, // uses 8 threads
-          targetFrameRate: timeline.fps,
+          targetFrameRate: timelineFps,
           normalizeFrameRate: trackInfos.length > 1,
           subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
           textStyle: currentTextStyle,
@@ -231,7 +237,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
     },
     [
       tracks,
-      timeline.fps,
+      timelineFps,
       generateAssContent,
       textStyle,
       getTextStyleForSubtitle,

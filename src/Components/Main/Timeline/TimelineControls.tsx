@@ -188,7 +188,12 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
     (state) => state.timeline.selectedTrackIds,
   );
   const tracks = useVideoEditorStore((state) => state.tracks);
-  const { linkTracks, unlinkTracks, setSelectedTracks } = useVideoEditorStore();
+  // Subscribe to only the actions we need, not the entire store
+  const linkTracks = useVideoEditorStore((state) => state.linkTracks);
+  const unlinkTracks = useVideoEditorStore((state) => state.unlinkTracks);
+  const setSelectedTracks = useVideoEditorStore(
+    (state) => state.setSelectedTracks,
+  );
 
   // Determine link state of selected tracks
   const linkState = useMemo(() => {
