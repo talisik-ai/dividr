@@ -83,33 +83,47 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       if (!ctx) return;
 
       const { peaks } = waveformData;
+
+      // Early exit for invalid or empty data
+      if (!peaks || peaks.length === 0) return;
+
       const dpr = window.devicePixelRatio || 1;
 
-      // Set canvas size accounting for device pixel ratio
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
+      // Prevent excessive canvas sizes at extreme zoom levels
+      const maxCanvasSize = 32768; // Browser limit for canvas dimensions
+      const safeWidth = Math.min(width * dpr, maxCanvasSize);
+      const safeHeight = Math.min(height * dpr, maxCanvasSize);
+
+      // Set canvas size accounting for device pixel ratio and limits
+      canvas.width = safeWidth;
+      canvas.height = safeHeight;
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
 
       // Scale context for device pixel ratio
-      ctx.scale(dpr, dpr);
+      const scaleX = safeWidth / width;
+      const scaleY = safeHeight / height;
+      ctx.scale(scaleX, scaleY);
 
       // Clear canvas
       ctx.clearRect(0, 0, width, height);
-
-      if (peaks.length === 0) return;
 
       // Calculate display parameters
       const trackDurationInFrames = track.endFrame - track.startFrame;
       const displayWidth = Math.min(width, trackDurationInFrames * frameWidth);
 
-      // Note: We simplified to use frame-based positioning for TimelinePlayhead sync
+      // Safety check for valid display width
+      if (displayWidth <= 0 || !isFinite(displayWidth)) return;
 
-      // Waveform colors - Gray theme
-      const waveColor = track.muted
-        ? 'rgba(107, 114, 128, 0.4)' // Gray-500 with opacity
-        : 'rgba(107, 114, 128, 0.8)'; // Gray-500
-      const progressColor = 'rgba(75, 85, 99, 1)'; // Gray-600 for progress
+      // Bar spectrum colors - Gray base with purple stacking
+      const baseBarColor = track.muted
+        ? 'rgba(107, 114, 128, 0.4)' // Gray-500 with opacity for muted
+        : 'rgba(107, 114, 128, 0.8)'; // Gray-500 for normal bars
+      const stackedBarColor = track.muted
+        ? 'rgba(147, 51, 234, 0.4)' // Purple-600 with opacity for muted
+        : 'rgba(147, 51, 234, 0.8)'; // Purple-600 for stacked portion
+      const progressBaseColor = 'rgba(75, 85, 99, 1)'; // Gray-600 for progress bars
+      const progressStackedColor = 'rgba(126, 34, 206, 1)'; // Purple-700 for progress stacked portion
       const backgroundColor = 'rgba(156, 163, 175, 0.1)'; // Gray-400 very light background
 
       // Clear canvas with light background
@@ -122,71 +136,207 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
       if (currentFrame >= track.startFrame && currentFrame < track.endFrame) {
         // Use the EXACT same positioning logic as TimelinePlayhead for perfect sync
-        // TimelinePlayhead position: currentFrame * frameWidth - scrollX
-        // But for the waveform, we need the relative position within the track's visual bounds
         const trackFrame = currentFrame - track.startFrame;
-        // Use frame-based positioning that matches exactly with TimelinePlayhead
         progressPosition = trackFrame * frameWidth;
-
-        // Clamp to displayWidth to prevent overflow
         progressPosition = Math.min(progressPosition, displayWidth);
       }
 
-      // Draw waveform as bars with proper spacing
-      const barWidth = Math.max(1, Math.floor(displayWidth / peaks.length));
-      const barSpacing = barWidth > 1 ? 1 : 0;
-      const effectiveBarWidth = barWidth - barSpacing;
+      // Calculate purple stacking percentage for each peak
+      // This could represent voice detection, frequency analysis, or dynamic range
+      const calculateStackedPercentage = (
+        peak: number,
+        index: number,
+      ): number => {
+        // Simple algorithm that could represent "voice/speech detection"
+        // Higher peaks with some variation get more purple
+        const baseThreshold = 0.3; // Minimum level for purple to appear
+        const variation = Math.sin(index * 0.1) * 0.1; // Some variation based on position
+        const normalizedPeak = Math.max(0, peak - baseThreshold);
+        const percentage = Math.min(0.6, normalizedPeak + variation); // Max 60% purple
+        return Math.max(0, percentage);
+      };
 
-      ctx.fillStyle = waveColor;
-      const centerY = height / 2;
-      const maxBarHeight = (height - 6) / 2; // Leave padding top and bottom
+      // Calculate bar parameters with safety checks
+      const peaksLength = peaks.length;
+      const barWidth = Math.max(0.1, displayWidth / peaksLength); // Prevent division by zero
 
-      // Draw bars representing audio peaks
-      for (let i = 0; i < peaks.length; i++) {
-        const peak = peaks[i] || 0;
-        const barHeight = peak * maxBarHeight;
+      // At extreme zoom levels, optimize rendering
+      const isExtremeZoom = barWidth < 0.5;
 
-        // Calculate x position for this bar
-        const barX = (i / peaks.length) * displayWidth;
+      if (isExtremeZoom) {
+        // For extreme zoom, use simplified stacked bar spectrum rendering
+        const maxBarHeight = height - 4; // Full height minus small padding
 
-        // Only draw bars that are visible
-        if (barX >= 0 && barX < displayWidth) {
-          // Draw bar from center outward (both up and down)
-          ctx.fillRect(
-            Math.floor(barX),
-            centerY - barHeight,
-            effectiveBarWidth,
-            barHeight * 2,
-          );
-        }
-      }
-
-      // Draw progress overlay with same bar pattern
-      if (progressPosition > 0) {
-        ctx.fillStyle = progressColor;
-
-        for (let i = 0; i < peaks.length; i++) {
-          const peak = peaks[i] || 0;
+        // Draw simplified vertical stacked bars for extreme zoom
+        for (let i = 0; i < peaksLength; i++) {
+          const peak = Math.max(0, Math.min(1, peaks[i] || 0)); // Clamp to valid range
           const barHeight = peak * maxBarHeight;
-          const barX = (i / peaks.length) * displayWidth;
+          const x = (i / peaksLength) * displayWidth;
+          const barWidthUsed = Math.max(0.5, barWidth);
 
-          // Only draw progress bars up to the progress position
-          if (barX >= 0 && barX <= progressPosition) {
-            ctx.fillRect(
-              Math.floor(barX),
-              centerY - barHeight,
-              effectiveBarWidth,
-              barHeight * 2,
-            );
+          if (barHeight > 0) {
+            const stackedPercentage = calculateStackedPercentage(peak, i);
+            const stackedHeight = barHeight * stackedPercentage;
+            const baseHeight = barHeight - stackedHeight;
+
+            // Draw base gray bar from bottom up
+            if (baseHeight > 0) {
+              ctx.fillStyle = baseBarColor;
+              ctx.fillRect(
+                Math.floor(x),
+                height - baseHeight,
+                barWidthUsed,
+                baseHeight,
+              );
+            }
+
+            // Draw purple stacked portion on top of gray
+            if (stackedHeight > 0) {
+              ctx.fillStyle = stackedBarColor;
+              ctx.fillRect(
+                Math.floor(x),
+                height - baseHeight - stackedHeight,
+                barWidthUsed,
+                stackedHeight,
+              );
+            }
           }
         }
 
-        // Draw progress line to match TimelinePlayhead position exactly
-        // Use the same primary color as TimelinePlayhead (typically blue in most themes)
-        // ctx.fillStyle = 'rgb(59, 130, 246)'; // Primary blue matching TimelinePlayhead
-        // const lineWidth = 2;
-        // const lineX = Math.floor(progressPosition) - Math.floor(lineWidth / 2); // Center the line
-        // ctx.fillRect(lineX, 0, lineWidth, height);
+        // Draw progress overlay for stacked bar spectrum
+        if (progressPosition > 0) {
+          for (let i = 0; i < peaksLength; i++) {
+            const peak = Math.max(0, Math.min(1, peaks[i] || 0));
+            const barHeight = peak * maxBarHeight;
+            const x = (i / peaksLength) * displayWidth;
+            const barWidthUsed = Math.max(0.5, barWidth);
+
+            // Only draw progress bars up to the progress position
+            if (x <= progressPosition && barHeight > 0) {
+              const stackedPercentage = calculateStackedPercentage(peak, i);
+              const stackedHeight = barHeight * stackedPercentage;
+              const baseHeight = barHeight - stackedHeight;
+
+              // Draw progress base gray bar
+              if (baseHeight > 0) {
+                ctx.fillStyle = progressBaseColor;
+                ctx.fillRect(
+                  Math.floor(x),
+                  height - baseHeight,
+                  barWidthUsed,
+                  baseHeight,
+                );
+              }
+
+              // Draw progress purple stacked portion
+              if (stackedHeight > 0) {
+                ctx.fillStyle = progressStackedColor;
+                ctx.fillRect(
+                  Math.floor(x),
+                  height - baseHeight - stackedHeight,
+                  barWidthUsed,
+                  stackedHeight,
+                );
+              }
+            }
+          }
+        }
+      } else {
+        // Normal stacked bar spectrum rendering for reasonable zoom levels
+        const barSpacing = barWidth > 1 ? 1 : 0;
+        const effectiveBarWidth = Math.max(0.1, barWidth - barSpacing);
+        const maxBarHeight = height - 4; // Full height minus small padding
+
+        // Calculate visible range to optimize rendering
+        const startIndex = Math.max(0, Math.floor(-10 / barWidth)); // Start slightly before visible area
+        const endIndex = Math.min(
+          peaksLength,
+          Math.ceil((displayWidth + 10) / barWidth),
+        ); // End slightly after visible area
+
+        // Draw vertical stacked bars representing audio spectrum
+        for (let i = startIndex; i < endIndex; i++) {
+          const peak = Math.max(0, Math.min(1, peaks[i] || 0)); // Clamp to valid range
+          const barHeight = peak * maxBarHeight;
+
+          // Calculate x position for this bar
+          const barX = (i / peaksLength) * displayWidth;
+
+          // Only draw bars that are actually visible and have valid dimensions
+          if (
+            barX >= -effectiveBarWidth &&
+            barX < displayWidth + effectiveBarWidth &&
+            barHeight > 0
+          ) {
+            const stackedPercentage = calculateStackedPercentage(peak, i);
+            const stackedHeight = barHeight * stackedPercentage;
+            const baseHeight = barHeight - stackedHeight;
+
+            // Draw base gray bar from bottom up
+            if (baseHeight > 0) {
+              ctx.fillStyle = baseBarColor;
+              ctx.fillRect(
+                Math.floor(barX),
+                height - baseHeight,
+                Math.ceil(effectiveBarWidth),
+                baseHeight,
+              );
+            }
+
+            // Draw purple stacked portion on top of gray
+            if (stackedHeight > 0) {
+              ctx.fillStyle = stackedBarColor;
+              ctx.fillRect(
+                Math.floor(barX),
+                height - baseHeight - stackedHeight,
+                Math.ceil(effectiveBarWidth),
+                stackedHeight,
+              );
+            }
+          }
+        }
+
+        // Draw progress overlay with same stacked bar spectrum pattern
+        if (progressPosition > 0) {
+          for (let i = startIndex; i < endIndex; i++) {
+            const peak = Math.max(0, Math.min(1, peaks[i] || 0));
+            const barHeight = peak * maxBarHeight;
+            const barX = (i / peaksLength) * displayWidth;
+
+            // Only draw progress bars up to the progress position
+            if (
+              barX >= -effectiveBarWidth &&
+              barX <= progressPosition + effectiveBarWidth &&
+              barHeight > 0
+            ) {
+              const stackedPercentage = calculateStackedPercentage(peak, i);
+              const stackedHeight = barHeight * stackedPercentage;
+              const baseHeight = barHeight - stackedHeight;
+
+              // Draw progress base gray bar
+              if (baseHeight > 0) {
+                ctx.fillStyle = progressBaseColor;
+                ctx.fillRect(
+                  Math.floor(barX),
+                  height - baseHeight,
+                  Math.ceil(effectiveBarWidth),
+                  baseHeight,
+                );
+              }
+
+              // Draw progress purple stacked portion
+              if (stackedHeight > 0) {
+                ctx.fillStyle = progressStackedColor;
+                ctx.fillRect(
+                  Math.floor(barX),
+                  height - baseHeight - stackedHeight,
+                  Math.ceil(effectiveBarWidth),
+                  stackedHeight,
+                );
+              }
+            }
+          }
+        }
       }
     }, [waveformData, width, height, frameWidth, track, timeline.currentFrame]);
 
