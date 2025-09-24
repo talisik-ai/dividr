@@ -373,7 +373,7 @@ const ZoomSlider: React.FC = React.memo(() => {
       rightIcon={<ZoomIn className="translate scale-x-[-1]" size={16} />}
       startingValue={0.2}
       defaultValue={localZoom}
-      maxValue={5}
+      maxValue={10}
       showLabel={false}
       thickness={4}
       isStepped={true}
@@ -579,7 +579,7 @@ export const TimelineControls: React.FC = React.memo(
                 const idealFrameWidth =
                   (viewportWidth * 0.8) / effectiveEndFrame;
                 const idealZoom = idealFrameWidth / 2; // frameWidth = 2 * zoom
-                const clampedZoom = Math.max(0.2, Math.min(idealZoom, 5));
+                const clampedZoom = Math.max(0.2, Math.min(idealZoom, 10));
                 setZoom(clampedZoom);
               }}
               title="Zoom to fit"

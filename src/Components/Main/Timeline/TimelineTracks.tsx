@@ -4,6 +4,7 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../../../Store/VideoEditorStore';
+import { AudioWaveform } from './AudioWaveform';
 import { TrackContextMenu } from './TrackContextMenu';
 import { VideoSpriteSheetStrip } from './VideoSpriteSheetStrip';
 
@@ -227,8 +228,25 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               />
             )}
 
-            {/* Text content for non-video tracks */}
-            {track.type !== 'video' && (
+            {/* Audio waveform for audio tracks */}
+            {track.type === 'audio' && (
+              <AudioWaveform
+                track={track}
+                frameWidth={frameWidth}
+                width={clampedWidth}
+                height={
+                  window.innerWidth <= 640
+                    ? 24
+                    : window.innerWidth <= 768
+                      ? 26
+                      : 40
+                }
+                zoomLevel={zoomLevel}
+              />
+            )}
+
+            {/* Text content for non-video, non-audio tracks */}
+            {track.type !== 'video' && track.type !== 'audio' && (
               <div
                 className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
                 style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}

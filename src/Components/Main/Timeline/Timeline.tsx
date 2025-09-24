@@ -25,7 +25,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const tracksRef = useRef<HTMLDivElement>(null);
     const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const autoFollowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const playbackIntervalRef = useRef<number | null>(null);
     const lastFrameUpdateRef = useRef<number>(0);
     const isManualScrollingRef = useRef<boolean>(false);
     const isDraggingRef = useRef<boolean>(false);
@@ -135,31 +135,35 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     useEffect(() => {
       if (!playback.isPlaying) {
         if (playbackIntervalRef.current) {
-          clearInterval(playbackIntervalRef.current);
+          cancelAnimationFrame(playbackIntervalRef.current);
           playbackIntervalRef.current = null;
         }
         return;
       }
 
-      const targetFPS = Math.min(20, timeline.fps);
-      const intervalMs = 1000 / targetFPS;
+      const startTime = performance.now();
+      const startFrame = lastFrameUpdateRef.current;
 
-      playbackIntervalRef.current = setInterval(() => {
-        // Use ref to prevent race conditions
-        const currentFrame = lastFrameUpdateRef.current;
+      // Use RAF for smooth playback that matches video timing
+      const animate = () => {
+        if (!playback.isPlaying) return;
+
+        const elapsed = (performance.now() - startTime) / 1000; // elapsed seconds
+        const frameAdvance = elapsed * timeline.fps * playback.playbackRate;
+        const targetFrame = Math.floor(startFrame + frameAdvance);
 
         // Smart playhead jumping - skip gaps and only play where tracks exist
         const hasActiveTracksAtCurrentFrame = tracks.some(
           (track) =>
             track.visible &&
-            currentFrame >= track.startFrame &&
-            currentFrame < track.endFrame,
+            targetFrame >= track.startFrame &&
+            targetFrame < track.endFrame,
         );
 
-        if (!hasActiveTracksAtCurrentFrame) {
+        if (!hasActiveTracksAtCurrentFrame && targetFrame < effectiveEndFrame) {
           // No tracks at current position, jump to next track
           const nextTrack = tracks
-            .filter((track) => track.visible && track.startFrame > currentFrame)
+            .filter((track) => track.visible && track.startFrame > targetFrame)
             .sort((a, b) => a.startFrame - b.startFrame)[0];
 
           if (nextTrack) {
@@ -168,41 +172,71 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               Math.min(nextTrack.startFrame, effectiveEndFrame - 1),
             );
             console.log(
-              `[Timeline] Jumping from frame ${currentFrame} to ${clampedFrame} (next track: ${nextTrack.name})`,
+              `[Timeline] Jumping from frame ${targetFrame} to ${clampedFrame} (next track: ${nextTrack.name})`,
             );
             lastFrameUpdateRef.current = clampedFrame;
             setCurrentFrame(clampedFrame);
+            playbackIntervalRef.current = requestAnimationFrame(animate);
             return;
           }
         }
 
-        const nextFrame = currentFrame + 1;
-
-        if (nextFrame >= effectiveEndFrame) {
+        if (targetFrame >= effectiveEndFrame) {
           const finalFrame = playback.isLooping
             ? 0
             : Math.max(0, effectiveEndFrame - 1);
           lastFrameUpdateRef.current = finalFrame;
           setCurrentFrame(finalFrame);
+
+          if (playback.isLooping) {
+            // Restart the animation from frame 0
+            playbackIntervalRef.current = requestAnimationFrame(() => {
+              const newStartTime = performance.now();
+              const newAnimate = () => {
+                if (!playback.isPlaying) return;
+
+                const newElapsed = (performance.now() - newStartTime) / 1000;
+                const newFrameAdvance =
+                  newElapsed * timeline.fps * playback.playbackRate;
+                const newTargetFrame = Math.floor(newFrameAdvance);
+
+                if (newTargetFrame < effectiveEndFrame) {
+                  const clampedFrame = Math.max(
+                    0,
+                    Math.min(newTargetFrame, effectiveEndFrame - 1),
+                  );
+                  lastFrameUpdateRef.current = clampedFrame;
+                  setCurrentFrame(clampedFrame);
+                  playbackIntervalRef.current =
+                    requestAnimationFrame(newAnimate);
+                }
+              };
+              newAnimate();
+            });
+          }
         } else {
           const clampedFrame = Math.max(
             0,
-            Math.min(nextFrame, effectiveEndFrame - 1),
+            Math.min(targetFrame, effectiveEndFrame - 1),
           );
           lastFrameUpdateRef.current = clampedFrame;
           setCurrentFrame(clampedFrame);
+          playbackIntervalRef.current = requestAnimationFrame(animate);
         }
-      }, intervalMs);
+      };
+
+      playbackIntervalRef.current = requestAnimationFrame(animate);
 
       return () => {
         if (playbackIntervalRef.current) {
-          clearInterval(playbackIntervalRef.current);
+          cancelAnimationFrame(playbackIntervalRef.current);
           playbackIntervalRef.current = null;
         }
       };
     }, [
       playback.isPlaying,
       playback.isLooping,
+      playback.playbackRate,
       timeline.fps,
       effectiveEndFrame,
       setCurrentFrame,
@@ -292,7 +326,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           clearTimeout(autoFollowTimeoutRef.current);
         }
         if (playbackIntervalRef.current) {
-          clearInterval(playbackIntervalRef.current);
+          cancelAnimationFrame(playbackIntervalRef.current);
         }
         if (seekTimeoutRef.current) {
           clearTimeout(seekTimeoutRef.current);

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { projectService } from '@/Services/ProjectService';
+import AudioWaveformGenerator from '@/Utility/AudioWaveformGenerator';
 import { default as VideoSpriteSheetGenerator } from '@/Utility/VideoSpriteSheetGenerator';
 import { VideoThumbnailGenerator } from '@/Utility/VideoThumbnailGenerator';
 import { v4 as uuidv4 } from 'uuid';
@@ -100,6 +101,15 @@ export interface MediaLibraryItem {
     size: number;
     extractedAt: number; // timestamp when extracted
   };
+  // Audio waveform data (for audio files and extracted audio)
+  waveform?: {
+    success: boolean;
+    peaks: number[]; // Normalized waveform peak data
+    duration: number; // Duration in seconds
+    sampleRate: number; // Sample rate used for peak generation
+    cacheKey: string;
+    generatedAt?: number; // timestamp when generated
+  };
   spriteSheets?: {
     success: boolean;
     spriteSheets: Array<{
@@ -160,6 +170,9 @@ interface VideoEditorStore {
   // Sprite sheet generation tracking
   generatingSpriteSheets: Set<string>; // Set of media IDs currently generating sprite sheets
 
+  // Waveform generation tracking
+  generatingWaveforms: Set<string>; // Set of media IDs currently generating waveforms
+
   // Timeline Actions
   setCurrentFrame: (frame: number) => void;
   setTotalFrames: (frames: number) => void;
@@ -210,6 +223,12 @@ interface VideoEditorStore {
   ) => MediaLibraryItem['spriteSheets'] | undefined;
   isGeneratingSpriteSheet: (mediaId: string) => boolean;
   setGeneratingSpriteSheet: (mediaId: string, isGenerating: boolean) => void;
+  generateWaveformForMedia: (mediaId: string) => Promise<boolean>;
+  getWaveformBySource: (
+    source: string,
+  ) => MediaLibraryItem['waveform'] | undefined;
+  isGeneratingWaveform: (mediaId: string) => boolean;
+  setGeneratingWaveform: (mediaId: string, isGenerating: boolean) => void;
   generateThumbnailForMedia: (mediaId: string) => Promise<boolean>;
   updateProjectThumbnailFromTimeline: () => Promise<void>;
   clearMediaLibrary: () => void;
@@ -529,6 +548,7 @@ const processImportedFile = async (
   getFps?: () => number,
   generateSpriteFn?: (mediaId: string) => Promise<boolean>,
   generateThumbnailFn?: (mediaId: string) => Promise<boolean>,
+  generateWaveformFn?: (mediaId: string) => Promise<boolean>,
   updateMediaLibraryFn?: (
     mediaId: string,
     updates: Partial<MediaLibraryItem>,
@@ -718,6 +738,37 @@ const processImportedFile = async (
         error,
       );
     });
+
+    // Generate waveform for video files (after audio extraction)
+    if (generateWaveformFn) {
+      console.log(
+        `🎵 Triggering waveform generation for video: ${fileInfo.name}`,
+      );
+      // Run waveform generation in background without blocking import
+      // Wait a bit to allow audio extraction to complete first
+      setTimeout(() => {
+        generateWaveformFn(mediaId).catch((error) => {
+          console.warn(
+            `⚠️ Waveform generation failed for ${fileInfo.name}:`,
+            error,
+          );
+        });
+      }, 3000); // 3 second delay to allow audio extraction
+    }
+  }
+
+  // Generate waveform for direct audio files
+  if (trackType === 'audio' && generateWaveformFn) {
+    console.log(
+      `🎵 Triggering waveform generation for audio: ${fileInfo.name}`,
+    );
+    // Run waveform generation in background without blocking import
+    generateWaveformFn(mediaId).catch((error) => {
+      console.warn(
+        `⚠️ Waveform generation failed for ${fileInfo.name}:`,
+        error,
+      );
+    });
   }
 
   // Add to timeline if requested
@@ -753,8 +804,8 @@ const processImportedFile = async (
         }
       } catch (error) {
         console.error(`❌ Error processing subtitle file:`, error);
-        // Add single fallback track
-        const duration = Math.round(actualDurationSeconds * fps);
+        // Add single fallback track - Use precise duration calculation
+        const duration = Math.floor(actualDurationSeconds * fps);
         console.log(`📝 Adding fallback subtitle track for: ${fileInfo.name}`);
         const trackId = await addToTimelineFn({
           type: 'subtitle',
@@ -772,10 +823,10 @@ const processImportedFile = async (
         console.log(`✅ Added fallback subtitle track with ID: ${trackId}`);
       }
     } else {
-      // Add regular media to timeline
-      const duration = Math.round(actualDurationSeconds * fps);
+      // Add regular media to timeline - Use precise duration calculation
+      const duration = Math.floor(actualDurationSeconds * fps);
       console.log(
-        `📹 Adding ${trackType} track: ${fileInfo.name} (duration: ${duration} frames)`,
+        `📹 Adding ${trackType} track: ${fileInfo.name} (duration: ${duration} frames, precise seconds: ${actualDurationSeconds})`,
       );
       const trackId = await addToTimelineFn({
         type: trackType,
@@ -956,6 +1007,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
 
     // Sprite sheet generation tracking
     generatingSpriteSheets: new Set<string>(),
+
+    // Waveform generation tracking
+    generatingWaveforms: new Set<string>(),
 
     // Timeline Actions
     setCurrentFrame: (frame) =>
@@ -1237,8 +1291,8 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         }
       }
 
-      // Convert media library item to single track (for non-subtitles or fallback)
-      const duration = Math.round(mediaItem.duration * get().timeline.fps);
+      // Convert media library item to single track (for non-subtitles or fallback) - Use precise duration calculation
+      const duration = Math.floor(mediaItem.duration * get().timeline.fps);
       const track: Omit<VideoTrack, 'id'> = {
         type: mediaItem.type,
         name: mediaItem.name,
@@ -2050,6 +2104,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
               get().generateThumbnailForMedia, // Generate thumbnails on import
+              get().generateWaveformForMedia, // Generate waveforms on import
               get().updateMediaLibraryItem, // Update media library items with extracted audio
             );
             importedFiles.push(fileData);
@@ -2205,6 +2260,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
               get().generateThumbnailForMedia, // Generate thumbnails on import
+              get().generateWaveformForMedia, // Generate waveforms on import
               get().updateMediaLibraryItem, // Update media library items with extracted audio
             );
             importedFiles.push(fileData);
@@ -2272,6 +2328,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               () => get().timeline.fps,
               get().generateSpriteSheetForMedia, // Generate sprite sheets on import
               get().generateThumbnailForMedia, // Generate thumbnails on import
+              get().generateWaveformForMedia, // Generate waveforms on import
               get().updateMediaLibraryItem, // Update media library items with extracted audio
             );
             importedFiles.push(fileData);
@@ -2608,6 +2665,145 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       } finally {
         // Clear generating state
         get().setGeneratingSpriteSheet(mediaId, false);
+      }
+    },
+
+    // Waveform generation functions
+    getWaveformBySource: (source) => {
+      const mediaItem = get().mediaLibrary.find(
+        (item) => item.source === source,
+      );
+      return mediaItem?.waveform;
+    },
+
+    isGeneratingWaveform: (mediaId) => {
+      return get().generatingWaveforms.has(mediaId);
+    },
+
+    setGeneratingWaveform: (mediaId, isGenerating) => {
+      set((state) => {
+        const newGeneratingSet = new Set(state.generatingWaveforms);
+        if (isGenerating) {
+          newGeneratingSet.add(mediaId);
+        } else {
+          newGeneratingSet.delete(mediaId);
+        }
+        return {
+          generatingWaveforms: newGeneratingSet,
+        };
+      });
+    },
+
+    generateWaveformForMedia: async (mediaId) => {
+      const mediaItem = get().mediaLibrary.find((item) => item.id === mediaId);
+      if (!mediaItem) {
+        console.error('Media item not found:', mediaId);
+        return false;
+      }
+
+      // Only generate waveforms for audio files or video files with extracted audio
+      const isAudioFile = mediaItem.type === 'audio';
+      const isVideoWithExtractedAudio =
+        mediaItem.type === 'video' && mediaItem.extractedAudio;
+
+      if (!isAudioFile && !isVideoWithExtractedAudio) {
+        console.log(
+          `Skipping waveform generation for: ${mediaItem.name} (not audio or video with extracted audio)`,
+        );
+        return true; // Not an error, just not applicable
+      }
+
+      // Skip if waveform already exists
+      if (mediaItem.waveform?.success) {
+        console.log(`Waveform already exists for: ${mediaItem.name}`);
+        return true;
+      }
+
+      // Skip if already generating
+      if (get().isGeneratingWaveform(mediaId)) {
+        console.log(`Waveform already generating for: ${mediaItem.name}`);
+        return true;
+      }
+
+      // Determine audio source - prefer extracted audio for video files
+      let audioPath: string;
+      if (isVideoWithExtractedAudio && mediaItem.extractedAudio?.previewUrl) {
+        audioPath = mediaItem.extractedAudio.previewUrl;
+      } else if (isAudioFile && mediaItem.previewUrl) {
+        audioPath = mediaItem.previewUrl;
+      } else if (isAudioFile) {
+        audioPath = mediaItem.source;
+      } else {
+        console.warn(`No suitable audio source found for: ${mediaItem.name}`);
+        return false;
+      }
+
+      // Skip blob URLs if they are local file paths (Web Audio API requires proper URLs)
+      if (audioPath.startsWith('blob:') && !audioPath.includes('localhost')) {
+        console.warn(
+          `Skipping waveform generation for blob URL: ${mediaItem.name}`,
+        );
+        return true; // Skip but don't error
+      }
+
+      console.log(
+        `🎵 Generating waveform for media library item: ${mediaItem.name}`,
+      );
+
+      try {
+        // Mark as generating
+        get().setGeneratingWaveform(mediaId, true);
+
+        const result = await AudioWaveformGenerator.generateWaveform({
+          audioPath,
+          duration: mediaItem.duration,
+          sampleRate: 8000, // Good balance between quality and performance
+          peaksPerSecond: 30, // 30 peaks per second for better timeline accuracy
+        });
+
+        if (result.success) {
+          // Update media library item with waveform data
+          set((state) => ({
+            mediaLibrary: state.mediaLibrary.map((item) =>
+              item.id === mediaId
+                ? {
+                    ...item,
+                    waveform: {
+                      success: result.success,
+                      peaks: result.peaks,
+                      duration: result.duration,
+                      sampleRate: result.sampleRate,
+                      cacheKey: result.cacheKey,
+                      generatedAt: Date.now(),
+                    },
+                  }
+                : item,
+            ),
+          }));
+
+          // Mark as having unsaved changes
+          get().markUnsavedChanges();
+
+          console.log(
+            `✅ Waveform generated and cached for: ${mediaItem.name}`,
+          );
+          return true;
+        } else {
+          console.error(
+            `❌ Failed to generate waveform for ${mediaItem.name}:`,
+            result.error,
+          );
+          return false;
+        }
+      } catch (error) {
+        console.error(
+          `❌ Error generating waveform for ${mediaItem.name}:`,
+          error,
+        );
+        return false;
+      } finally {
+        // Clear generating state
+        get().setGeneratingWaveform(mediaId, false);
       }
     },
 

@@ -274,10 +274,24 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     );
     const trackTime = relativeFrame / timeline.fps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
-    video.currentTime = Math.max(
+    const clampedTargetTime = Math.max(
       activeVideoTrack.sourceStartTime || 0,
       Math.min(targetTime, video.duration || 0),
     );
+
+    console.log('[DirectPreview] Video loadedmetadata - seeking to:', {
+      currentFrame: timeline.currentFrame,
+      trackStartFrame: activeVideoTrack.startFrame,
+      relativeFrame,
+      trackTime,
+      sourceStartTime: activeVideoTrack.sourceStartTime || 0,
+      targetTime,
+      clampedTargetTime,
+      videoDuration: video.duration,
+    });
+
+    video.currentTime = clampedTargetTime;
+
     // Auto play if timeline is playing
     if (playback.isPlaying && video.paused) {
       video.muted = playback.muted || !!independentAudioTrack; // mute video if independent audio
@@ -404,6 +418,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
       video.volume = shouldMuteVideo ? 0 : Math.min(playback.volume, 1);
       video.playbackRate = Math.max(0.25, Math.min(playback.playbackRate, 4));
+
+      // Ensure video plays at the correct rate to match timeline
+      console.log(
+        '[DirectPreview] Video playback rate set to:',
+        video.playbackRate,
+      );
     } catch (err) {
       console.warn('Video sync error:', err);
     }
@@ -520,15 +540,22 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     );
 
     const diff = Math.abs(video.currentTime - clampedTargetTime);
-    if (diff > 0.05) {
-      console.log(
-        '[DirectPreview] Seeking video to',
+    const tolerance = 1 / timeline.fps; // One frame tolerance
+
+    if (diff > tolerance) {
+      console.log('[DirectPreview] Seeking video - frame timing sync:', {
+        currentFrame: timeline.currentFrame,
+        trackStartFrame: activeVideoTrack.startFrame,
+        relativeFrame,
+        trackTime,
+        sourceStartTime: activeVideoTrack.sourceStartTime || 0,
+        targetTime,
         clampedTargetTime,
-        'for frame',
-        timeline.currentFrame,
-        'in track',
-        activeVideoTrack.id,
-      );
+        currentVideoTime: video.currentTime,
+        diff,
+        tolerance,
+        fps: timeline.fps,
+      });
       video.currentTime = clampedTargetTime;
     }
   }, [
@@ -567,15 +594,22 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     );
 
     const diff = Math.abs(audio.currentTime - clampedTargetTime);
-    if (diff > 0.05) {
-      console.log(
-        '[DirectPreview] Seeking audio to',
+    const tolerance = 1 / timeline.fps; // One frame tolerance
+
+    if (diff > tolerance) {
+      console.log('[DirectPreview] Seeking audio - frame timing sync:', {
+        currentFrame: timeline.currentFrame,
+        trackStartFrame: independentAudioTrack.startFrame,
+        relativeFrame,
+        trackTime,
+        sourceStartTime: independentAudioTrack.sourceStartTime || 0,
+        targetTime,
         clampedTargetTime,
-        'for frame',
-        timeline.currentFrame,
-        'in track',
-        independentAudioTrack.id,
-      );
+        currentAudioTime: audio.currentTime,
+        diff,
+        tolerance,
+        fps: timeline.fps,
+      });
       audio.currentTime = clampedTargetTime;
     }
   }, [
