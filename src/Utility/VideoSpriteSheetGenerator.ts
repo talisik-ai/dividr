@@ -483,11 +483,9 @@ export class VideoSpriteSheetGenerator {
         const spriteSheetCommand = [
           '-i',
           videoPath,
-          '-skip_frame',
-          'nokey',
           '-vf',
           [
-            //`fps='1/${intervalSeconds}'`, // Extract exact frames by frame number
+            `fps='1/${intervalSeconds}'`, // Extract exact frames by frame number
             `scale=${thumbWidth}:${thumbHeight}:force_original_aspect_ratio=increase`, // Scale to fill, may crop
             `crop=${thumbWidth}:${thumbHeight}`, // Crop to exact dimensions (no padding/black strips)
             `tile=${optimalCols}x${optimalRows}`, // Use calculated grid dimensions
