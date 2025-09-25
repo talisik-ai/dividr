@@ -188,7 +188,12 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
     (state) => state.timeline.selectedTrackIds,
   );
   const tracks = useVideoEditorStore((state) => state.tracks);
-  const { linkTracks, unlinkTracks, setSelectedTracks } = useVideoEditorStore();
+  // Subscribe to only the actions we need, not the entire store
+  const linkTracks = useVideoEditorStore((state) => state.linkTracks);
+  const unlinkTracks = useVideoEditorStore((state) => state.unlinkTracks);
+  const setSelectedTracks = useVideoEditorStore(
+    (state) => state.setSelectedTracks,
+  );
 
   // Determine link state of selected tracks
   const linkState = useMemo(() => {
@@ -216,30 +221,34 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
     const unlinkedAudioTracks = audioTracks.filter((track) => !track.isLinked);
 
     const canLink = unlinkedVideoTracks.some((videoTrack) => {
-      const matchingAudio = unlinkedAudioTracks.find(
-        (audioTrack) =>
-          audioTrack.source === videoTrack.source &&
-          (audioTrack.name === videoTrack.name ||
-            audioTrack.name === `${videoTrack.name} (Audio)`),
-      );
-      // Debug: Log track matching for troubleshooting
-      if (!matchingAudio) {
-        console.log(
-          `🔍 No matching audio found for video track: "${videoTrack.name}"`,
+      const matchingAudio = unlinkedAudioTracks.find((audioTrack) => {
+        // For extracted audio, we need to match by name pattern rather than source
+        // since extracted audio has a different temp file path
+
+        // Get base video name (remove .mp4 extension if present)
+        const videoBaseName = videoTrack.name.replace(
+          /\.(mp4|mov|avi|mkv|webm)$/i,
+          '',
         );
-      }
+
+        // Check various name patterns for extracted audio
+        const nameMatches =
+          audioTrack.name === videoTrack.name ||
+          audioTrack.name === `${videoTrack.name} (Audio)` ||
+          audioTrack.name === `${videoBaseName} (Audio)` ||
+          audioTrack.name === `${videoBaseName} (Extracted Audio)` ||
+          (audioTrack.name.startsWith(videoBaseName) &&
+            audioTrack.name.includes('Audio'));
+
+        // For extracted audio, source paths won't match, so we primarily rely on name matching
+        // But for regular audio files, we can still check source matching
+        const sourceMatches = audioTrack.source === videoTrack.source;
+
+        return nameMatches || sourceMatches;
+      });
+
       return !!matchingAudio;
     });
-
-    // Only log when there are issues for easier debugging
-    if (selectedTracks.length > 0 && !canLink && !hasLinkedTracks) {
-      console.log('🔍 Link State Debug:', {
-        canLink,
-        hasLinkedTracks,
-        unlinkedVideoTracks: unlinkedVideoTracks.length,
-        unlinkedAudioTracks: unlinkedAudioTracks.length,
-      });
-    }
 
     return {
       canLink,
@@ -260,16 +269,28 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
     );
 
     videoTracks.forEach((videoTrack) => {
-      const matchingAudio = audioTracks.find(
-        (audioTrack) =>
-          audioTrack.source === videoTrack.source &&
-          (audioTrack.name === videoTrack.name ||
-            audioTrack.name === `${videoTrack.name} (Audio)`),
-      );
+      const matchingAudio = audioTracks.find((audioTrack) => {
+        // Use the same improved matching logic as in canLink check
+        const videoBaseName = videoTrack.name.replace(
+          /\.(mp4|mov|avi|mkv|webm)$/i,
+          '',
+        );
+
+        const nameMatches =
+          audioTrack.name === videoTrack.name ||
+          audioTrack.name === `${videoTrack.name} (Audio)` ||
+          audioTrack.name === `${videoBaseName} (Audio)` ||
+          audioTrack.name === `${videoBaseName} (Extracted Audio)` ||
+          (audioTrack.name.startsWith(videoBaseName) &&
+            audioTrack.name.includes('Audio'));
+
+        const sourceMatches = audioTrack.source === videoTrack.source;
+
+        return nameMatches || sourceMatches;
+      });
 
       if (matchingAudio) {
         linkTracks(videoTrack.id, matchingAudio.id);
-        console.log(`🔗 Linked ${videoTrack.name} with audio`);
       }
     });
   }, [selectedTrackIds, tracks, linkTracks]);
@@ -287,7 +308,6 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
       if (track.type === 'video' || track.type === 'audio') {
         unlinkTracks(track.id);
         tracksToKeepSelected.push(track.id);
-        console.log(`🔓 Unlinked ${track.name}`);
       }
     });
 
@@ -373,7 +393,7 @@ const ZoomSlider: React.FC = React.memo(() => {
       rightIcon={<ZoomIn className="translate scale-x-[-1]" size={16} />}
       startingValue={0.2}
       defaultValue={localZoom}
-      maxValue={5}
+      maxValue={10}
       showLabel={false}
       thickness={4}
       isStepped={true}
@@ -579,7 +599,7 @@ export const TimelineControls: React.FC = React.memo(
                 const idealFrameWidth =
                   (viewportWidth * 0.8) / effectiveEndFrame;
                 const idealZoom = idealFrameWidth / 2; // frameWidth = 2 * zoom
-                const clampedZoom = Math.max(0.2, Math.min(idealZoom, 5));
+                const clampedZoom = Math.max(0.2, Math.min(idealZoom, 10));
                 setZoom(clampedZoom);
               }}
               title="Zoom to fit"

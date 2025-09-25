@@ -7,7 +7,11 @@ import { ExportModal } from '@/Components/Main/Modal/ExportModal';
 import { Button } from '@/Components/sub/ui/Button';
 import { TrackInfo, VideoEditJob } from '@/Schema/ffmpegConfig';
 import { useProjectStore } from '@/Store/ProjectStore';
-import { useVideoEditorStore, VideoTrack, useTimelineUtils } from '@/Store/VideoEditorStore';
+import {
+  useTimelineUtils,
+  useVideoEditorStore,
+  VideoTrack,
+} from '@/Store/VideoEditorStore';
 import { FfmpegCallbacks, runFfmpegWithProgress } from '@/Utility/ffmpegRunner';
 import {
   extractSubtitleSegments,
@@ -33,17 +37,21 @@ const ExportButton: React.FC<ExportButtonProps> = ({
   variant = 'secondary',
   disabled = false,
 }) => {
-  const {
-    tracks,
-    timeline,
-    render,
-    startRender,
-    updateRenderProgress,
-    finishRender,
-    cancelRender,
-    textStyle,
-    getTextStyleForSubtitle,
-  } = useVideoEditorStore();
+  // Subscribe to only the state and actions we need, not the entire store
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  // Only subscribe to fps from timeline, not the entire timeline object (which includes currentFrame)
+  const timelineFps = useVideoEditorStore((state) => state.timeline.fps);
+  const render = useVideoEditorStore((state) => state.render);
+  const startRender = useVideoEditorStore((state) => state.startRender);
+  const updateRenderProgress = useVideoEditorStore(
+    (state) => state.updateRenderProgress,
+  );
+  const finishRender = useVideoEditorStore((state) => state.finishRender);
+  const cancelRender = useVideoEditorStore((state) => state.cancelRender);
+  const textStyle = useVideoEditorStore((state) => state.textStyle);
+  const getTextStyleForSubtitle = useVideoEditorStore(
+    (state) => state.getTextStyleForSubtitle,
+  );
   const { currentProject } = useProjectStore();
   const { getTimelineGaps } = useTimelineUtils();
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
@@ -54,6 +62,8 @@ const ExportButton: React.FC<ExportButtonProps> = ({
       if (subtitleTracks.length === 0) return '';
 
       // Extract subtitle segments from tracks
+      // Get timeline data non-reactively for subtitle extraction
+      const { timeline } = useVideoEditorStore.getState();
       const segments = extractSubtitleSegments(subtitleTracks, timeline);
 
       // Get current text style
@@ -62,218 +72,229 @@ const ExportButton: React.FC<ExportButtonProps> = ({
       // Generate ASS content with styling
       return generateASSContent(segments, currentTextStyle);
     },
-    [timeline, textStyle, getTextStyleForSubtitle],
+    [textStyle, getTextStyleForSubtitle],
   );
 
-// Convert tracks to FFmpeg job with timeline-aware processing
-const createFFmpegJob = useCallback(
-  (
-    outputFilename = 'Untitled_Project.mp4',
-    outputPath?: string,
-  ): VideoEditJob => {
-    if (tracks.length === 0) {
-      return {
-        inputs: [],
-        output: outputFilename,
-        outputPath,
-        operations: {},
-        videoDimensions: { width: 1920, height: 1080 }, // Default dimensions
-      };
-    }
-
-    // Separate subtitle tracks for separate processing
-    const subtitleTracks = tracks.filter(
-      (track) => track.type === 'subtitle',
-    );
-
-    // Process linked video/audio tracks into combined tracks for export
-    const videoTracks = tracks.filter((track) => track.type === 'video');
-    const audioTracks = tracks.filter((track) => track.type === 'audio');
-    const imageTracks = tracks.filter((track) => track.type === 'image');
-
-    const processedTracks: VideoTrack[] = [];
-    const processedTrackIds = new Set<string>();
-
-    // Variables to store video dimensions
-    let videoWidth = 1920; // Default width
-    let videoHeight = 1080; // Default height
-
-    // Combine linked video/audio tracks for export
-    for (const videoTrack of videoTracks) {
-      if (processedTrackIds.has(videoTrack.id)) continue;
-
-      // Extract video dimensions from the first visible video track
-      if (videoTrack.visible && videoWidth === 1920 && videoHeight === 1080) {
-        if (videoTrack) {
-          videoWidth = videoTrack.width;
-          videoHeight = videoTrack.height;
-          console.log(`📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`);
-        } else if (videoTrack.width && videoTrack.height) {
-          videoWidth = videoTrack.width;
-          videoHeight = videoTrack.height;
-          console.log(`📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`);
-        }
+  // Convert tracks to FFmpeg job with timeline-aware processing
+  const createFFmpegJob = useCallback(
+    (
+      outputFilename = 'Untitled_Project.mp4',
+      outputPath?: string,
+    ): VideoEditJob => {
+      if (tracks.length === 0) {
+        return {
+          inputs: [],
+          output: outputFilename,
+          outputPath,
+          operations: {},
+          videoDimensions: { width: 1920, height: 1080 }, // Default dimensions
+        };
       }
 
-      if (videoTrack.isLinked && videoTrack.linkedTrackId) {
-        const linkedAudioTrack = audioTracks.find(
-          (t) => t.id === videoTrack.linkedTrackId,
-        );
-        if (linkedAudioTrack) {
-          // Create a combined track that represents the original video file
-          const combinedTrack: VideoTrack = {
-            ...videoTrack,
-            // Use video track's visibility
-            visible: videoTrack.visible,
-            // Use synchronized mute state (both tracks should have same mute state)
-            muted: videoTrack.muted,
-          };
-          processedTracks.push(combinedTrack);
-          processedTrackIds.add(videoTrack.id);
-          processedTrackIds.add(linkedAudioTrack.id);
-          console.log(
-            `🔗 Combined linked tracks for export: ${videoTrack.name} (visible: ${videoTrack.visible}, muted: ${videoTrack.muted})`,
+      // Separate subtitle tracks for separate processing
+      const subtitleTracks = tracks.filter(
+        (track) => track.type === 'subtitle',
+      );
+
+      // Process linked video/audio tracks into combined tracks for export
+      const videoTracks = tracks.filter((track) => track.type === 'video');
+      const audioTracks = tracks.filter((track) => track.type === 'audio');
+      const imageTracks = tracks.filter((track) => track.type === 'image');
+
+      const processedTracks: VideoTrack[] = [];
+      const processedTrackIds = new Set<string>();
+
+      // Variables to store video dimensions
+      let videoWidth = 1920; // Default width
+      let videoHeight = 1080; // Default height
+
+      // Combine linked video/audio tracks for export
+      for (const videoTrack of videoTracks) {
+        if (processedTrackIds.has(videoTrack.id)) continue;
+
+        // Extract video dimensions from the first visible video track
+        if (videoTrack.visible && videoWidth === 1920 && videoHeight === 1080) {
+          if (videoTrack) {
+            videoWidth = videoTrack.width;
+            videoHeight = videoTrack.height;
+            console.log(
+              `📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`,
+            );
+          } else if (videoTrack.width && videoTrack.height) {
+            videoWidth = videoTrack.width;
+            videoHeight = videoTrack.height;
+            console.log(
+              `📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`,
+            );
+          }
+        }
+
+        if (videoTrack.isLinked && videoTrack.linkedTrackId) {
+          const linkedAudioTrack = audioTracks.find(
+            (t) => t.id === videoTrack.linkedTrackId,
           );
+          if (linkedAudioTrack) {
+            // Create a combined track that represents the original video file
+            const combinedTrack: VideoTrack = {
+              ...videoTrack,
+              // Use video track's visibility
+              visible: videoTrack.visible,
+              // Use synchronized mute state (both tracks should have same mute state)
+              muted: videoTrack.muted,
+            };
+            processedTracks.push(combinedTrack);
+            processedTrackIds.add(videoTrack.id);
+            processedTrackIds.add(linkedAudioTrack.id);
+            console.log(
+              `🔗 Combined linked tracks for export: ${videoTrack.name} (visible: ${videoTrack.visible}, muted: ${videoTrack.muted})`,
+            );
+          } else {
+            // Video track without linked audio (shouldn't happen but handle it)
+            processedTracks.push(videoTrack);
+            processedTrackIds.add(videoTrack.id);
+          }
         } else {
-          // Video track without linked audio (shouldn't happen but handle it)
+          // Standalone video track (old format)
           processedTracks.push(videoTrack);
           processedTrackIds.add(videoTrack.id);
         }
-      } else {
-        // Standalone video track (old format)
-        processedTracks.push(videoTrack);
-        processedTrackIds.add(videoTrack.id);
       }
-    }
 
-    // If no video dimensions found from video tracks, check image tracks
-    if ((videoWidth === 1920 && videoHeight === 1080) && imageTracks.length > 0) {
-      const firstVisibleImage = imageTracks.find(track => track.visible);
-      if (firstVisibleImage) {
+      // If no video dimensions found from video tracks, check image tracks
+      if (
+        videoWidth === 1920 &&
+        videoHeight === 1080 &&
+        imageTracks.length > 0
+      ) {
+        const firstVisibleImage = imageTracks.find((track) => track.visible);
         if (firstVisibleImage) {
-          videoWidth = firstVisibleImage.width;
-          videoHeight = firstVisibleImage.height;
-          console.log(`📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`);
-        } else if (firstVisibleImage.width && firstVisibleImage.height) {
-          videoWidth = firstVisibleImage.width;
-          videoHeight = firstVisibleImage.height;
-          console.log(`📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`);
+          if (firstVisibleImage) {
+            videoWidth = firstVisibleImage.width;
+            videoHeight = firstVisibleImage.height;
+            console.log(
+              `📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`,
+            );
+          } else if (firstVisibleImage.width && firstVisibleImage.height) {
+            videoWidth = firstVisibleImage.width;
+            videoHeight = firstVisibleImage.height;
+            console.log(
+              `📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`,
+            );
+          }
         }
       }
-    }
 
-    // Add standalone audio tracks that aren't linked
-    for (const audioTrack of audioTracks) {
-      if (!processedTrackIds.has(audioTrack.id)) {
-        processedTracks.push(audioTrack);
+      // Add standalone audio tracks that aren't linked
+      for (const audioTrack of audioTracks) {
+        if (!processedTrackIds.has(audioTrack.id)) {
+          processedTracks.push(audioTrack);
+        }
       }
-    }
 
-    // Add image tracks
-    processedTracks.push(...imageTracks);
+      // Add image tracks
+      processedTracks.push(...imageTracks);
 
-    // Sort by timeline position
-    const sortedTracks = processedTracks.sort(
-      (a, b) => a.startFrame - b.startFrame,
-    );
+      // Sort by timeline position
+      const sortedTracks = processedTracks.sort(
+        (a, b) => a.startFrame - b.startFrame,
+      );
 
-    if (sortedTracks.length === 0) {
+      if (sortedTracks.length === 0) {
+        return {
+          inputs: [],
+          output: outputFilename,
+          outputPath,
+          operations: {},
+          videoDimensions: { width: videoWidth, height: videoHeight },
+        };
+      }
+
+      const trackInfos: TrackInfo[] = [];
+
+      // Process tracks in timeline order, adding black video for gaps
+      let currentTimelineFrame = 0;
+
+      for (const track of sortedTracks) {
+        // If there's a gap before this track, add a black video segment
+        if (track.startFrame > currentTimelineFrame) {
+          const gapDurationFrames = track.startFrame - currentTimelineFrame;
+          const gapDurationSeconds = gapDurationFrames / timelineFps;
+
+          if (gapDurationSeconds > 0.033) {
+            // Only add significant gaps (> 1 frame)
+            console.log(
+              `🗬 Adding ${gapDurationSeconds}s gap before "${track.name}"`,
+            );
+
+            // Create a black video segment for the gap
+            // We'll mark this as a gap and handle it specially in the command builder
+            trackInfos.push({
+              path: '__GAP__',
+              duration: gapDurationSeconds,
+              startTime: 0,
+            });
+          }
+        }
+
+        // Add the actual track with proper source timing
+        const trackDurationSeconds = track.duration / timelineFps;
+        const sourceStartTime = track.sourceStartTime || 0;
+
+        console.log(
+          `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
+        );
+
+        trackInfos.push({
+          path: track.source,
+          startTime: sourceStartTime,
+          duration: Math.max(0.033, trackDurationSeconds),
+          muted: track.muted || false,
+          trackType: track.type,
+          visible: track.visible,
+        });
+
+        // Update current position to the end of this track
+        currentTimelineFrame = track.endFrame;
+      }
+
+      // Generate subtitle content if there are subtitle tracks
+      let subtitleContent = '';
+      let currentTextStyle = undefined;
+      if (subtitleTracks.length > 0) {
+        subtitleContent = generateAssContent(subtitleTracks);
+        currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
+        console.log(
+          '📝 Generated subtitle content for export with text style:',
+          textStyle.activeStyle,
+        );
+      }
+
       return {
-        inputs: [],
+        inputs: trackInfos,
         output: outputFilename,
         outputPath,
-        operations: {},
-        videoDimensions: { width: videoWidth, height: videoHeight },
+        operations: {
+          concat: trackInfos.length > 1,
+          preset: 'superfast', // ⚡ This adds -preset superfast to the FFmpeg command
+          threads: 8, // uses 8 threads
+          targetFrameRate: timelineFps,
+          normalizeFrameRate: trackInfos.length > 1,
+          subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
+          textStyle: currentTextStyle,
+        },
+        subtitleContent, // Pass the subtitle content separately so main process can create the file
+        subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+        videoDimensions: { width: videoWidth, height: videoHeight }, // Store video dimensions
       };
-    }
-
-    const trackInfos: TrackInfo[] = [];
-
-    // Process tracks in timeline order, adding black video for gaps
-    let currentTimelineFrame = 0;
-
-    for (const track of sortedTracks) {
-      // If there's a gap before this track, add a black video segment
-      if (track.startFrame > currentTimelineFrame) {
-        const gapDurationFrames = track.startFrame - currentTimelineFrame;
-        const gapDurationSeconds = gapDurationFrames / timeline.fps;
-
-        if (gapDurationSeconds > 0.033) {
-          // Only add significant gaps (> 1 frame)
-          console.log(
-            `🗬 Adding ${gapDurationSeconds}s gap before "${track.name}"`,
-          );
-
-          // Create a black video segment for the gap
-          // We'll mark this as a gap and handle it specially in the command builder
-          trackInfos.push({
-            path: '__GAP__',
-            duration: gapDurationSeconds,
-            startTime: 0,
-          });
-        }
-      }
-
-      // Add the actual track with proper source timing
-      const trackDurationSeconds = track.duration / timeline.fps;
-      const sourceStartTime = track.sourceStartTime || 0;
-
-      console.log(
-        `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
-      );
-
-      trackInfos.push({
-        path: track.source,
-        startTime: sourceStartTime,
-        duration: Math.max(0.033, trackDurationSeconds),
-        muted: track.muted || false,
-        trackType: track.type,
-        visible: track.visible,
-      });
-
-      // Update current position to the end of this track
-      currentTimelineFrame = track.endFrame;
-    }
-
-    // Generate subtitle content if there are subtitle tracks
-    let subtitleContent = '';
-    let currentTextStyle = undefined;
-    if (subtitleTracks.length > 0) {
-      subtitleContent = generateAssContent(subtitleTracks);
-      currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
-      console.log(
-        '📝 Generated subtitle content for export with text style:',
-        textStyle.activeStyle,
-      );
-    }
-
-    return {
-      inputs: trackInfos,
-      output: outputFilename,
-      outputPath,
-      operations: {
-        concat: trackInfos.length > 1,
-        preset: 'superfast', // ⚡ This adds -preset superfast to the FFmpeg command
-        threads: 8, // uses 8 threads
-        targetFrameRate: timeline.fps,
-        normalizeFrameRate: trackInfos.length > 1,
-        subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
-        textStyle: currentTextStyle,
-      },
-      subtitleContent, // Pass the subtitle content separately so main process can create the file
-      subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
-      videoDimensions: { width: videoWidth, height: videoHeight }, // Store video dimensions
-    };
-  },
-  [
-    tracks,
-    timeline.fps,
-    generateAssContent,
-    textStyle,
-    getTextStyleForSubtitle,
-  ],
-);
-  
+    },
+    [
+      tracks,
+      timelineFps,
+      generateAssContent,
+      textStyle,
+      getTextStyleForSubtitle,
+    ],
+  );
 
   // Handle export button click - shows modal
   const handleRender = useCallback(() => {
@@ -295,52 +316,51 @@ const createFFmpegJob = useCallback(
         // 1. Get the gaps data from the new hook
         const gaps = getTimelineGaps();
         console.log('Gaps detected:', gaps);
-  
+
         // 2. Prepare the FFmpeg job data with the new gaps property
         const job = createFFmpegJob(outputFilename, outputPath);
-  
+
         // Add the gaps to the FFmpeg job
         job.gaps = gaps;
 
-      //const job = createFFmpegJob(outputFilename, outputPath);
-      console.log('🎬 FFmpeg Job:', job);
-      console.log('🗂️ Output Path:', outputPath);
+        //const job = createFFmpegJob(outputFilename, outputPath);
+        console.log('🎬 FFmpeg Job:', job);
+        console.log('🗂️ Output Path:', outputPath);
 
-      // Store the latest currentTime to avoid race conditions
-      let latestCurrentTime = render.currentTime;
+        // Store the latest currentTime to avoid race conditions
+        let latestCurrentTime = render.currentTime;
 
-      const callbacks: FfmpegCallbacks = {
-        onProgress: (progress) => {
-          // Always update if we have outTime, even without percentage
-          if (progress.outTime) {
-            // Update our local tracking variable
-            latestCurrentTime = progress.outTime;
+        const callbacks: FfmpegCallbacks = {
+          onProgress: (progress) => {
+            // Always update if we have outTime, even without percentage
+            if (progress.outTime) {
+              // Update our local tracking variable
+              latestCurrentTime = progress.outTime;
 
-            updateRenderProgress(
-              progress.percentage || render.progress,
-              progress.percentage
-                ? `Rendering... ${progress.percentage.toFixed(1)}%`
-                : render.status,
-              progress.outTime, // Pass the current time from FFmpeg
-            );
-          } else if (progress.percentage) {
-            updateRenderProgress(
-              progress.percentage,
-              `Rendering... ${progress.percentage.toFixed(1)}%`,
-              latestCurrentTime, // Use latest currentTime
-            );
-          }
-        },
-        onStatus: (status) => {
-          updateRenderProgress(render.progress, status, latestCurrentTime);
-          console.log(render.progress);
-        },
-        onLog: () => {
-          // Disabled logging for now
-        },
-      };
+              updateRenderProgress(
+                progress.percentage || render.progress,
+                progress.percentage
+                  ? `Rendering... ${progress.percentage.toFixed(1)}%`
+                  : render.status,
+                progress.outTime, // Pass the current time from FFmpeg
+              );
+            } else if (progress.percentage) {
+              updateRenderProgress(
+                progress.percentage,
+                `Rendering... ${progress.percentage.toFixed(1)}%`,
+                latestCurrentTime, // Use latest currentTime
+              );
+            }
+          },
+          onStatus: (status) => {
+            updateRenderProgress(render.progress, status, latestCurrentTime);
+            console.log(render.progress);
+          },
+          onLog: () => {
+            // Disabled logging for now
+          },
+        };
 
-      try {
         console.log('🚀 Starting render process...');
         startRender({
           outputPath: job.output,
@@ -355,11 +375,6 @@ const createFFmpegJob = useCallback(
         finishRender();
         alert('Render completed successfully!');
       } catch (error) {
-        //console.error('Render failed:', error);
-        cancelRender();
-        alert(`Render failed: ${error}`);
-      }    } catch (error) {
-        // The catch block starts here
         //console.error('Render failed:', error);
         cancelRender();
         alert(`Render failed: ${error}`);

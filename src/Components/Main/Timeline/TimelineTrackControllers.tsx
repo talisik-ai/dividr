@@ -15,8 +15,16 @@ interface TrackControllerRowProps {
 
 const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
   ({ rowDef, tracks }) => {
-    const { toggleTrackVisibility, toggleTrackMute, toggleLinkedAudioMute } =
-      useVideoEditorStore();
+    // Subscribe to only the actions we need, not the entire store
+    const toggleTrackVisibility = useVideoEditorStore(
+      (state) => state.toggleTrackVisibility,
+    );
+    const toggleTrackMute = useVideoEditorStore(
+      (state) => state.toggleTrackMute,
+    );
+    const toggleLinkedAudioMute = useVideoEditorStore(
+      (state) => state.toggleLinkedAudioMute,
+    );
 
     // Check if any tracks in this row are visible/audible
     const hasVisibleTracks = tracks.some((track) => track.visible);
