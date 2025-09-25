@@ -270,6 +270,16 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       const { splitAtPlayhead } = useVideoEditorStore.getState();
       splitAtPlayhead();
     });
+    useHotkeys('ctrl+k', (e) => {
+      e.preventDefault();
+      const { splitAtPlayhead } = useVideoEditorStore.getState();
+      splitAtPlayhead();
+    });
+    useHotkeys('cmd+k', (e) => {
+      e.preventDefault();
+      const { splitAtPlayhead } = useVideoEditorStore.getState();
+      splitAtPlayhead();
+    });
     useHotkeys('ctrl+d', (e) => {
       e.preventDefault();
       const { duplicateTrack } = useVideoEditorStore.getState();
