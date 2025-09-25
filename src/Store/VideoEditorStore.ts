@@ -568,7 +568,9 @@ const processImportedFile = async (
   // Get video dimensions
   let videoDimensions: { width: number; height: number };
   try {
-    videoDimensions = await window.electronAPI.getVideoDimensions(fileInfo.path);
+    videoDimensions = await window.electronAPI.getVideoDimensions(
+      fileInfo.path,
+    );
   } catch (error) {
     console.warn(
       `⚠️ Failed to get dimensions for ${fileInfo.name}, using fallback:`,
@@ -638,7 +640,7 @@ const processImportedFile = async (
     duration: actualDurationSeconds,
     size: fileInfo.size,
     mimeType,
-    metadata: {width: videoDimensions.width, height: videoDimensions.height},
+    metadata: { width: videoDimensions.width, height: videoDimensions.height },
   };
 
   const mediaId = addToLibraryFn(mediaLibraryItem);
@@ -989,7 +991,9 @@ export const useTimelineUtils = () => {
 
     // Helper function to detect gaps for a specific track type
     const detectGapsForTracks = (tracks: VideoTrack[]) => {
-      const sortedTracks = [...tracks].sort((a, b) => a.startFrame - b.startFrame);
+      const sortedTracks = [...tracks].sort(
+        (a, b) => a.startFrame - b.startFrame,
+      );
       const gaps = [];
       let lastEndFrame = 0;
 
@@ -1405,7 +1409,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           subtitleText: `Subtitle: ${mediaItem.name}`,
         }),
       };
-      console.log(`I GOT THE WIDTH ${mediaItem.metadata.width} AND HEIGHT ${mediaItem.metadata.height} IN useVideoEditorStore`);
+      console.log(
+        `I GOT THE WIDTH ${mediaItem.metadata.width} AND HEIGHT ${mediaItem.metadata.height} IN useVideoEditorStore`,
+      );
       return await get().addTrack(track);
     },
 
@@ -1506,6 +1512,13 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       set((state) => {
         const trackToMove = state.tracks.find((t) => t.id === trackId);
 
+        if (!trackToMove) {
+          console.warn(
+            `⚠️ Cannot move track: track with id ${trackId} not found`,
+          );
+          return state;
+        }
+
         return {
           tracks: state.tracks.map((track) => {
             if (track.id === trackId) {
@@ -1552,8 +1565,14 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               track.id === trackToMove.linkedTrackId
             ) {
               const linkedDuration = track.endFrame - track.startFrame;
+
+              // Calculate the relative offset between the linked tracks
+              // This preserves the gap/offset that was created when tracks were unlinked
+              const currentOffset = track.startFrame - trackToMove.startFrame;
+              const newLinkedStartFrame = newStartFrame + currentOffset;
+
               const finalStartFrame = findNonOverlappingPosition(
-                newStartFrame,
+                newLinkedStartFrame,
                 linkedDuration,
                 state.tracks.filter((t) => {
                   if (t.id === track.id || t.id === trackToMove.id)
@@ -1562,7 +1581,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
                 }),
               );
               console.log(
-                `🔗 Moving linked ${track.type} track "${track.name}" to frame ${finalStartFrame}`,
+                `🔗 Moving linked ${track.type} track "${track.name}" from ${track.startFrame} to frame ${finalStartFrame} (maintaining offset of ${currentOffset} frames)`,
               );
               return {
                 ...track,
@@ -1868,17 +1887,42 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
 
     // Linked track management
     linkTracks: (videoTrackId, audioTrackId) => {
-      set((state) => ({
-        tracks: state.tracks.map((track) => {
-          if (track.id === videoTrackId) {
-            return { ...track, linkedTrackId: audioTrackId, isLinked: true };
-          }
-          if (track.id === audioTrackId) {
-            return { ...track, linkedTrackId: videoTrackId, isLinked: true };
-          }
-          return track;
-        }),
-      }));
+      set((state) => {
+        const videoTrack = state.tracks.find((t) => t.id === videoTrackId);
+        const audioTrack = state.tracks.find((t) => t.id === audioTrackId);
+
+        if (!videoTrack || !audioTrack) {
+          console.warn(`⚠️ Cannot link tracks: one or both tracks not found`);
+          return state;
+        }
+
+        // When linking tracks, preserve their current positions
+        // This allows users to create gaps by moving tracks independently before linking
+        console.log(
+          `🔗 Linking tracks: "${videoTrack.name}" (${videoTrack.startFrame}) ↔ "${audioTrack.name}" (${audioTrack.startFrame})`,
+        );
+        console.log(
+          `📍 Preserving current positions - video at ${videoTrack.startFrame}, audio at ${audioTrack.startFrame}`,
+        );
+
+        return {
+          tracks: state.tracks.map((track) => {
+            if (track.id === videoTrackId) {
+              return { ...track, linkedTrackId: audioTrackId, isLinked: true };
+            }
+            if (track.id === audioTrackId) {
+              // Keep audio track at its current position
+              return {
+                ...track,
+                linkedTrackId: videoTrackId,
+                isLinked: true,
+                // Keep existing startFrame and endFrame unchanged
+              };
+            }
+            return track;
+          }),
+        };
+      });
 
       console.log(`🔗 Linked tracks: ${videoTrackId} ↔ ${audioTrackId}`);
       get().markUnsavedChanges();

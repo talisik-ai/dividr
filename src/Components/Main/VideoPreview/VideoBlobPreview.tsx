@@ -3,7 +3,10 @@ import New from '@/Assets/Logo/New-Light.svg';
 import { cn } from '@/Lib/utils';
 import { useTheme } from '@/Utility/ThemeProvider';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useVideoEditorStore } from '../../../Store/VideoEditorStore';
+import {
+  useVideoEditorStore,
+  VideoTrack,
+} from '../../../Store/VideoEditorStore';
 
 interface VideoBlobPreviewProps {
   className?: string;
@@ -47,14 +50,49 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
   }, [tracks, timeline.currentFrame]);
 
+  // Helper function to check if a linked audio track has a position gap from its video counterpart
+  const hasPositionGap = useCallback(
+    (audioTrack: VideoTrack) => {
+      if (!audioTrack.isLinked || !audioTrack.linkedTrackId) return false;
+
+      const linkedVideoTrack = tracks.find(
+        (t) => t.id === audioTrack.linkedTrackId,
+      );
+      if (!linkedVideoTrack) return false;
+
+      // Check if there's a significant gap between the linked tracks
+      const gap = Math.abs(audioTrack.startFrame - linkedVideoTrack.startFrame);
+      return gap > 0; // Any gap means they should be treated independently for preview
+    },
+    [tracks],
+  );
+
+  // Helper function to check if a linked video track has a position gap from its audio counterpart
+  const hasPositionGapForVideo = useCallback(
+    (videoTrack: VideoTrack) => {
+      if (!videoTrack.isLinked || !videoTrack.linkedTrackId) return false;
+
+      const linkedAudioTrack = tracks.find(
+        (t) => t.id === videoTrack.linkedTrackId,
+      );
+      if (!linkedAudioTrack) return false;
+
+      // Check if there's a significant gap between the linked tracks
+      const gap = Math.abs(videoTrack.startFrame - linkedAudioTrack.startFrame);
+      return gap > 0; // Any gap means they should be treated independently for preview
+    },
+    [tracks],
+  );
+
   // Independent audio track for audio-only playback (separate from video)
   // Consider audio tracks that are either unlinked OR have their own extracted audio
+  // OR are linked but have different positions (gaps) from their video counterpart
   const independentAudioTrack = React.useMemo(() => {
     try {
       const audioTrack = tracks.find(
         (track) =>
           track.type === 'audio' &&
-          (!track.isLinked || track.previewUrl) && // Unlinked OR has extracted audio file
+          (!track.isLinked || track.previewUrl || hasPositionGap(track)) && // Unlinked OR has extracted audio OR has position gap
           !track.muted &&
           timeline.currentFrame >= track.startFrame &&
           timeline.currentFrame < track.endFrame,
@@ -98,6 +136,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       // 1. There's no independent (unlinked) audio track, AND
       // 2. The video track itself is not muted, AND
       // 3. The video track is linked (has a linked audio track) OR there's no corresponding audio track
+      // 4. The linked audio track doesn't have a position gap (should be synchronized)
       if (independentAudioTrack) return undefined;
 
       return tracks.find(
@@ -106,6 +145,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           track.previewUrl &&
           !track.muted &&
           track.isLinked && // Only linked video tracks should provide audio
+          !hasPositionGapForVideo(track) && // Don't use video audio if linked audio has a gap
           timeline.currentFrame >= track.startFrame &&
           timeline.currentFrame < track.endFrame,
       );
