@@ -1,3 +1,4 @@
+import { interval } from 'date-fns';
 import { VideoTrack } from '../Store/VideoEditorStore';
 
 export interface SpriteSheetOptions {
@@ -475,16 +476,18 @@ export class VideoSpriteSheetGenerator {
         }
 
         // Use select filter to extract exact frames (prevents excess frames)
-        const selectFilter = frameNumbers
-          .map((frame) => `eq(n\\,${frame})`)
-          .join('+');
+        //const selectFilter = frameNumbers
+        //  .map((frame) => `eq(n\\,${frame})`)
+        //  .join('+');
 
         const spriteSheetCommand = [
           '-i',
           videoPath,
+          '-skip_frame',
+          'nokey',
           '-vf',
           [
-            `select='${selectFilter}'`, // Extract exact frames by frame number
+            //`fps='1/${intervalSeconds}'`, // Extract exact frames by frame number
             `scale=${thumbWidth}:${thumbHeight}:force_original_aspect_ratio=increase`, // Scale to fill, may crop
             `crop=${thumbWidth}:${thumbHeight}`, // Crop to exact dimensions (no padding/black strips)
             `tile=${optimalCols}x${optimalRows}`, // Use calculated grid dimensions
@@ -870,11 +873,13 @@ export class VideoSpriteSheetGenerator {
       return 0.1; // Very dense for short videos
     } else if (duration <= 30) {
       return 0.25; // Dense coverage for short videos
-    } else if (duration <= 120) {
+    } else if (duration <= 120) { // 02:00
       return 0.5; // Good coverage for medium videos
-    } else if (duration <= 600) { // 10 minutes
+    } else if(duration >= 121 && duration <= 300) { // 02:01 - 05:00
+      return 1.0;
+    } else if (duration <= 600 || duration >= 301) { // 10 minutes
       return 1.0; // Reasonable coverage for long videos
-    } else if (duration <= 3599 && duration >= 601) { // 10 mins 1 second - 59 mins 59 seconds
+    } else if (duration <= 3599 && duration >= 601) { // 10:01 - 59:59
       return duration/300;
     }else if (duration >= 3600) { // over an hour
       return duration/1200; // Sparse coverage for very long videos to prevent memory issues
