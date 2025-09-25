@@ -872,11 +872,11 @@ export class VideoSpriteSheetGenerator {
       return 0.25; // Dense coverage for short videos
     } else if (duration <= 120) {
       return 0.5; // Good coverage for medium videos
-    } else if (duration <= 600) {
+    } else if (duration <= 600) { // 10 minutes
       return 1.0; // Reasonable coverage for long videos
-    } else if (duration <= 3599 && duration >= 601) {
+    } else if (duration <= 3599 && duration >= 601) { // 10 mins 1 second - 59 mins 59 seconds
       return duration/300;
-    }else if (duration >= 3600) {
+    }else if (duration >= 3600) { // over an hour
       return duration/1200; // Sparse coverage for very long videos to prevent memory issues
     } else {
       return 2.0;
