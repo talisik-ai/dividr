@@ -565,6 +565,17 @@ const processImportedFile = async (
     );
     actualDurationSeconds = fileInfo.type === 'image' ? 5 : 30;
   }
+  // Get video dimensions
+  let videoDimensions: { width: number; height: number };
+  try {
+    videoDimensions = await window.electronAPI.getVideoDimensions(fileInfo.path);
+  } catch (error) {
+    console.warn(
+      `⚠️ Failed to get dimensions for ${fileInfo.name}, using fallback:`,
+      error,
+    );
+    videoDimensions = { width: 1920, height: 1080 }; // sensible default
+  }
 
   // Create preview URL for video and image files
   let previewUrl: string | undefined;
@@ -627,7 +638,7 @@ const processImportedFile = async (
     duration: actualDurationSeconds,
     size: fileInfo.size,
     mimeType,
-    metadata: {},
+    metadata: {width: videoDimensions.width, height: videoDimensions.height},
   };
 
   const mediaId = addToLibraryFn(mediaLibraryItem);
@@ -969,7 +980,55 @@ function findNonOverlappingPosition(
   );
   return latestEndFrame;
 }
+export const useTimelineUtils = () => {
+  const store = useVideoEditorStore();
 
+  const getTimelineGaps = () => {
+    console.log('--- Starting independent gap detection process ---');
+    console.log('Initial tracks state:', store.tracks);
+
+    // Helper function to detect gaps for a specific track type
+    const detectGapsForTracks = (tracks: VideoTrack[]) => {
+      const sortedTracks = [...tracks].sort((a, b) => a.startFrame - b.startFrame);
+      const gaps = [];
+      let lastEndFrame = 0;
+
+      for (const track of sortedTracks) {
+        if (track.startFrame > lastEndFrame) {
+          const gapLength = track.startFrame - lastEndFrame;
+          gaps.push({
+            startFrame: lastEndFrame,
+            length: gapLength,
+          });
+        }
+        lastEndFrame = track.endFrame;
+      }
+      return gaps;
+    };
+
+    // Filter tracks by type
+    const videoTracks = store.tracks.filter((t) => t.type === 'video');
+    const audioTracks = store.tracks.filter((t) => t.type === 'audio');
+    const subtitleTracks = store.tracks.filter((t) => t.type === 'subtitle');
+
+    // Detect gaps for each track type independently
+    const videoGaps = detectGapsForTracks(videoTracks);
+    const audioGaps = detectGapsForTracks(audioTracks);
+    const subtitleGaps = detectGapsForTracks(subtitleTracks);
+
+    const result = {
+      video: videoGaps,
+      audio: audioGaps,
+      subtitles: subtitleGaps,
+    };
+
+    console.log('\n--- Independent gap detection process complete ---');
+    console.log('Final gaps:', result);
+    return result;
+  };
+
+  return { getTimelineGaps };
+};
 export const useVideoEditorStore = create<VideoEditorStore>()(
   subscribeWithSelector((set, get) => ({
     // Initial State
@@ -1333,6 +1392,8 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         previewUrl: mediaItem.previewUrl,
         originalFile: mediaItem.originalFile,
         tempFilePath: mediaItem.tempFilePath,
+        height: mediaItem.metadata.height,
+        width: mediaItem.metadata.width,
         duration,
         startFrame,
         endFrame: startFrame + duration,
@@ -1344,7 +1405,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           subtitleText: `Subtitle: ${mediaItem.name}`,
         }),
       };
-
+      console.log(`I GOT THE WIDTH ${mediaItem.metadata.width} AND HEIGHT ${mediaItem.metadata.height} IN useVideoEditorStore`);
       return await get().addTrack(track);
     },
 

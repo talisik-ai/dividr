@@ -1549,6 +1549,51 @@ ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
   });
 });
 
+ipcMain.handle("getVideoDimensions", async (_event, filePath: string) => {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const ffprobe = spawn("ffprobe", [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "json",
+      filePath,
+    ]);
+
+    let stdout = "";
+    let stderr = "";
+
+    ffprobe.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    ffprobe.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    ffprobe.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffprobe exited with code ${code}: ${stderr}`));
+        return;
+      }
+
+      try {
+        const json = JSON.parse(stdout);
+        const stream = json.streams?.[0];
+        if (!stream?.width || !stream?.height) {
+          reject(new Error("Could not read video dimensions"));
+          return;
+        }
+        resolve({ width: stream.width, height: stream.height });
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    ffprobe.on("error", (err) => {
+      reject(err);
+    });
+  });
+});
 // Global FFmpeg process tracking
 let currentFfmpegProcess: ReturnType<typeof spawn> | null = null;
 

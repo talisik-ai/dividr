@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runCustomFFmpeg: (args: string[], outputDir: string) =>
     ipcRenderer.invoke('run-custom-ffmpeg', args, outputDir),
 
+  // Get Dimensions
+  getVideoDimensions: (filePath: string) => ipcRenderer.invoke('getVideoDimensions', filePath),
   // Audio extraction method
   extractAudioFromVideo: (videoPath: string, outputDir?: string) =>
     ipcRenderer.invoke('extract-audio-from-video', videoPath, outputDir),

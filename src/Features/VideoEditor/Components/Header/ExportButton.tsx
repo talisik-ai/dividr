@@ -7,7 +7,11 @@ import { ExportModal } from '@/Components/Main/Modal/ExportModal';
 import { Button } from '@/Components/sub/ui/Button';
 import { TrackInfo, VideoEditJob } from '@/Schema/ffmpegConfig';
 import { useProjectStore } from '@/Store/ProjectStore';
-import { useVideoEditorStore, VideoTrack } from '@/Store/VideoEditorStore';
+import {
+  useTimelineUtils,
+  useVideoEditorStore,
+  VideoTrack,
+} from '@/Store/VideoEditorStore';
 import { FfmpegCallbacks, runFfmpegWithProgress } from '@/Utility/ffmpegRunner';
 import {
   extractSubtitleSegments,
@@ -49,7 +53,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
     (state) => state.getTextStyleForSubtitle,
   );
   const { currentProject } = useProjectStore();
-
+  const { getTimelineGaps } = useTimelineUtils();
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
 
   // Function to generate .ass content from subtitle tracks using the subtitle exporter
@@ -83,6 +87,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
           output: outputFilename,
           outputPath,
           operations: {},
+          videoDimensions: { width: 1920, height: 1080 }, // Default dimensions
         };
       }
 
@@ -99,9 +104,30 @@ const ExportButton: React.FC<ExportButtonProps> = ({
       const processedTracks: VideoTrack[] = [];
       const processedTrackIds = new Set<string>();
 
+      // Variables to store video dimensions
+      let videoWidth = 1920; // Default width
+      let videoHeight = 1080; // Default height
+
       // Combine linked video/audio tracks for export
       for (const videoTrack of videoTracks) {
         if (processedTrackIds.has(videoTrack.id)) continue;
+
+        // Extract video dimensions from the first visible video track
+        if (videoTrack.visible && videoWidth === 1920 && videoHeight === 1080) {
+          if (videoTrack) {
+            videoWidth = videoTrack.width;
+            videoHeight = videoTrack.height;
+            console.log(
+              `📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`,
+            );
+          } else if (videoTrack.width && videoTrack.height) {
+            videoWidth = videoTrack.width;
+            videoHeight = videoTrack.height;
+            console.log(
+              `📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`,
+            );
+          }
+        }
 
         if (videoTrack.isLinked && videoTrack.linkedTrackId) {
           const linkedAudioTrack = audioTracks.find(
@@ -134,6 +160,30 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         }
       }
 
+      // If no video dimensions found from video tracks, check image tracks
+      if (
+        videoWidth === 1920 &&
+        videoHeight === 1080 &&
+        imageTracks.length > 0
+      ) {
+        const firstVisibleImage = imageTracks.find((track) => track.visible);
+        if (firstVisibleImage) {
+          if (firstVisibleImage) {
+            videoWidth = firstVisibleImage.width;
+            videoHeight = firstVisibleImage.height;
+            console.log(
+              `📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`,
+            );
+          } else if (firstVisibleImage.width && firstVisibleImage.height) {
+            videoWidth = firstVisibleImage.width;
+            videoHeight = firstVisibleImage.height;
+            console.log(
+              `📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`,
+            );
+          }
+        }
+      }
+
       // Add standalone audio tracks that aren't linked
       for (const audioTrack of audioTracks) {
         if (!processedTrackIds.has(audioTrack.id)) {
@@ -155,6 +205,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
           output: outputFilename,
           outputPath,
           operations: {},
+          videoDimensions: { width: videoWidth, height: videoHeight },
         };
       }
 
@@ -233,6 +284,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         },
         subtitleContent, // Pass the subtitle content separately so main process can create the file
         subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+        videoDimensions: { width: videoWidth, height: videoHeight }, // Store video dimensions
       };
     },
     [
@@ -260,46 +312,55 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         alert('No tracks to render');
         return;
       }
-
-      const job = createFFmpegJob(outputFilename, outputPath);
-      console.log('🎬 FFmpeg Job:', job);
-      console.log('🗂️ Output Path:', outputPath);
-
-      // Store the latest currentTime to avoid race conditions
-      let latestCurrentTime = render.currentTime;
-
-      const callbacks: FfmpegCallbacks = {
-        onProgress: (progress) => {
-          // Always update if we have outTime, even without percentage
-          if (progress.outTime) {
-            // Update our local tracking variable
-            latestCurrentTime = progress.outTime;
-
-            updateRenderProgress(
-              progress.percentage || render.progress,
-              progress.percentage
-                ? `Rendering... ${progress.percentage.toFixed(1)}%`
-                : render.status,
-              progress.outTime, // Pass the current time from FFmpeg
-            );
-          } else if (progress.percentage) {
-            updateRenderProgress(
-              progress.percentage,
-              `Rendering... ${progress.percentage.toFixed(1)}%`,
-              latestCurrentTime, // Use latest currentTime
-            );
-          }
-        },
-        onStatus: (status) => {
-          updateRenderProgress(render.progress, status, latestCurrentTime);
-          console.log(render.progress);
-        },
-        onLog: () => {
-          // Disabled logging for now
-        },
-      };
-
       try {
+        // 1. Get the gaps data from the new hook
+        const gaps = getTimelineGaps();
+        console.log('Gaps detected:', gaps);
+
+        // 2. Prepare the FFmpeg job data with the new gaps property
+        const job = createFFmpegJob(outputFilename, outputPath);
+
+        // Add the gaps to the FFmpeg job
+        job.gaps = gaps;
+
+        //const job = createFFmpegJob(outputFilename, outputPath);
+        console.log('🎬 FFmpeg Job:', job);
+        console.log('🗂️ Output Path:', outputPath);
+
+        // Store the latest currentTime to avoid race conditions
+        let latestCurrentTime = render.currentTime;
+
+        const callbacks: FfmpegCallbacks = {
+          onProgress: (progress) => {
+            // Always update if we have outTime, even without percentage
+            if (progress.outTime) {
+              // Update our local tracking variable
+              latestCurrentTime = progress.outTime;
+
+              updateRenderProgress(
+                progress.percentage || render.progress,
+                progress.percentage
+                  ? `Rendering... ${progress.percentage.toFixed(1)}%`
+                  : render.status,
+                progress.outTime, // Pass the current time from FFmpeg
+              );
+            } else if (progress.percentage) {
+              updateRenderProgress(
+                progress.percentage,
+                `Rendering... ${progress.percentage.toFixed(1)}%`,
+                latestCurrentTime, // Use latest currentTime
+              );
+            }
+          },
+          onStatus: (status) => {
+            updateRenderProgress(render.progress, status, latestCurrentTime);
+            console.log(render.progress);
+          },
+          onLog: () => {
+            // Disabled logging for now
+          },
+        };
+
         console.log('🚀 Starting render process...');
         startRender({
           outputPath: job.output,
@@ -327,6 +388,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
       updateRenderProgress,
       finishRender,
       cancelRender,
+      getTimelineGaps,
     ],
   );
 
