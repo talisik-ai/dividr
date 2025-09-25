@@ -230,19 +230,25 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
             {/* Audio waveform for audio tracks */}
             {track.type === 'audio' && (
-              <AudioWaveform
-                track={track}
-                frameWidth={frameWidth}
-                width={clampedWidth}
-                height={
-                  window.innerWidth <= 640
-                    ? 24
-                    : window.innerWidth <= 768
-                      ? 26
-                      : 40
-                }
-                zoomLevel={zoomLevel}
-              />
+              <div
+                className={`w-full h-full ${
+                  track.muted ? 'opacity-50 grayscale' : ''
+                }`}
+              >
+                <AudioWaveform
+                  track={track}
+                  frameWidth={frameWidth}
+                  width={clampedWidth}
+                  height={
+                    window.innerWidth <= 640
+                      ? 24
+                      : window.innerWidth <= 768
+                        ? 26
+                        : 40
+                  }
+                  zoomLevel={zoomLevel}
+                />
+              </div>
             )}
 
             {/* Text content for non-video, non-audio tracks */}
@@ -322,7 +328,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
   },
   (prevProps, nextProps) => {
     // Custom equality check to prevent unnecessary re-renders
-    return (
+    const shouldRerender = !(
       prevProps.track.id === nextProps.track.id &&
       prevProps.track.startFrame === nextProps.track.startFrame &&
       prevProps.track.endFrame === nextProps.track.endFrame &&
@@ -330,15 +336,19 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.source === nextProps.track.source &&
       prevProps.track.visible === nextProps.track.visible &&
       prevProps.track.locked === nextProps.track.locked &&
+      prevProps.track.muted === nextProps.track.muted &&
       prevProps.track.subtitleText === nextProps.track.subtitleText &&
       prevProps.track.volume === nextProps.track.volume &&
       prevProps.track.isLinked === nextProps.track.isLinked &&
       prevProps.track.linkedTrackId === nextProps.track.linkedTrackId &&
+      prevProps.track.previewUrl === nextProps.track.previewUrl &&
       prevProps.frameWidth === nextProps.frameWidth &&
       Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Only re-render for significant scroll changes
       prevProps.zoomLevel === nextProps.zoomLevel && // Re-render on any zoom change for proper positioning
       prevProps.isSelected === nextProps.isSelected
     );
+
+    return !shouldRerender;
   },
 );
 
@@ -450,7 +460,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         <div className="py-1.5 h-full">
           {visibleTracks.map((track) => (
             <TrackItem
-              key={track.id}
+              key={`${track.id}-${track.source}-${track.name}`}
               track={track}
               frameWidth={frameWidth}
               scrollX={scrollX}
@@ -498,10 +508,14 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           track.id === nextTrack.id &&
           track.startFrame === nextTrack.startFrame &&
           track.endFrame === nextTrack.endFrame &&
+          track.source === nextTrack.source &&
+          track.name === nextTrack.name &&
           track.visible === nextTrack.visible &&
           track.locked === nextTrack.locked &&
+          track.muted === nextTrack.muted &&
           track.isLinked === nextTrack.isLinked &&
-          track.linkedTrackId === nextTrack.linkedTrackId
+          track.linkedTrackId === nextTrack.linkedTrackId &&
+          track.previewUrl === nextTrack.previewUrl
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -713,10 +727,13 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           track.startFrame === nextTrack.startFrame &&
           track.endFrame === nextTrack.endFrame &&
           track.source === nextTrack.source &&
+          track.name === nextTrack.name &&
           track.visible === nextTrack.visible &&
           track.locked === nextTrack.locked &&
+          track.muted === nextTrack.muted &&
           track.isLinked === nextTrack.isLinked &&
-          track.linkedTrackId === nextTrack.linkedTrackId
+          track.linkedTrackId === nextTrack.linkedTrackId &&
+          track.previewUrl === nextTrack.previewUrl
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&

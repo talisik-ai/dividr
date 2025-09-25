@@ -139,16 +139,25 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       // 4. The linked audio track doesn't have a position gap (should be synchronized)
       if (independentAudioTrack) return undefined;
 
-      return tracks.find(
-        (track) =>
-          track.type === 'video' &&
-          track.previewUrl &&
-          !track.muted &&
-          track.isLinked && // Only linked video tracks should provide audio
+      return tracks.find((track) => {
+        if (track.type !== 'video' || !track.previewUrl || !track.isLinked)
+          return false;
+
+        // Check if the linked audio track is muted
+        const linkedAudioTrack = tracks.find(
+          (t) => t.id === track.linkedTrackId,
+        );
+        const isLinkedAudioMuted = linkedAudioTrack
+          ? linkedAudioTrack.muted
+          : false;
+
+        return (
+          !isLinkedAudioMuted && // Don't use video audio if linked audio is muted
           !hasPositionGapForVideo(track) && // Don't use video audio if linked audio has a gap
           timeline.currentFrame >= track.startFrame &&
-          timeline.currentFrame < track.endFrame,
-      );
+          timeline.currentFrame < track.endFrame
+        );
+      });
     } catch {
       return undefined;
     }
@@ -701,7 +710,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       className={cn(
         'relative overflow-hidden  rounded-lg',
         className,
-        activeAudioTrack ? 'bg-transparent' : 'bg-zinc-100 dark:bg-zinc-900',
+        'bg-zinc-100 dark:bg-zinc-900',
       )}
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}

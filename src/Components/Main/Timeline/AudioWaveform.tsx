@@ -1,10 +1,33 @@
 import { Loader2 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   useVideoEditorStore,
   VideoTrack,
 } from '../../../Store/VideoEditorStore';
 import AudioWaveformGenerator from '../../../Utility/AudioWaveformGenerator';
+
+// Debounce utility for performance optimization
+const useDebounce = <T,>(value: T, delay: number): T => {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
 
 interface AudioWaveformProps {
   track: VideoTrack;
@@ -18,8 +41,15 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ({ track, frameWidth, width, height, zoomLevel: _zoomLevel }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [lastRenderedFrame, setLastRenderedFrame] = useState<number>(-1);
+    const [lastRenderedZoom, setLastRenderedZoom] = useState<number>(0);
 
-    const timeline = useVideoEditorStore((state) => state.timeline);
+    // Get current frame with debouncing for performance
+    const currentFrame = useVideoEditorStore(
+      (state) => state.timeline.currentFrame,
+    );
+    const debouncedCurrentFrame = useDebounce(currentFrame, 16); // ~60fps max updates
+
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
     );
@@ -35,19 +65,25 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
     const fps = useVideoEditorStore((state) => state.timeline.fps);
 
-    // Get waveform data from the store
+    // Memoize track metrics for stability
+    const trackMetrics = useMemo(
+      () => ({
+        durationFrames: track.endFrame - track.startFrame,
+        durationSeconds: (track.endFrame - track.startFrame) / fps,
+        trackStartTime: track.sourceStartTime || 0,
+      }),
+      [track.startFrame, track.endFrame, track.sourceStartTime, fps],
+    );
+
+    // Get waveform data from the store - optimized for stability
     const waveformData = useMemo(() => {
       if (track.type !== 'audio') return null;
-
-      // First, try to get waveform from the track's media library item
-      // For audio tracks created from videos, check if there's extracted audio
 
       // Find the media item that corresponds to this track
       let sourceToCheck = track.source;
 
       // If this is an audio track that uses extracted audio, find the original video source
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
-        // This is an extracted audio track, find the original video
         const originalVideo = mediaLibrary.find(
           (item) =>
             item.type === 'video' &&
@@ -55,65 +91,31 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         );
         if (originalVideo) {
           sourceToCheck = originalVideo.source;
-          console.log(
-            `🔍 [AudioWaveform] Found original video for extracted audio: ${originalVideo.name}`,
-          );
         }
       }
 
       const waveform = getWaveformBySource(sourceToCheck);
-      console.log(`🔍 [AudioWaveform] Checking waveform for ${track.name}:`, {
-        trackSource: track.source,
-        trackPreviewUrl: track.previewUrl,
-        sourceToCheck,
-        hasWaveform: !!waveform,
-        waveformSuccess: waveform?.success,
-        peaksLength: waveform?.peaks?.length,
-        mediaLibraryCount: mediaLibrary.length,
-        mediaLibrarySources: mediaLibrary.map((item) => ({
-          name: item.name,
-          source: item.source,
-          hasWaveform: !!item.waveform,
-        })),
-      });
 
       if (waveform?.success && waveform.peaks.length > 0) {
-        console.log(`✅ [AudioWaveform] Using waveform data for ${track.name}`);
         return waveform;
       }
 
       // Fallback: Check AudioWaveformGenerator cache directly
-      // This is useful when media library items are deleted but cache still exists
-
-      // For extracted audio tracks, we need to find the original video file's duration
-      // because waveforms are cached with the actual media duration, not track duration
       const audioPath = track.previewUrl || track.source;
-      const durationInSeconds = track.duration / fps; // Convert from frames to seconds
+      const durationInSeconds = trackMetrics.durationSeconds;
 
       // Try multiple audio path variations for better cache hit rate
       const pathsToTry = [audioPath];
 
-      // If this looks like an extracted audio file, also try to find other similar extracts
       if (audioPath.includes('extracted.wav')) {
-        // Remove timestamp from filename to find any cached version
         const basePattern = audioPath.replace(
           /_\d+_extracted\.wav/,
           '_extracted.wav',
         );
         pathsToTry.push(basePattern);
-
-        // Also try the original video source if we can derive it
         const videoName = track.name.replace(' (Extracted Audio)', '');
         pathsToTry.push(videoName);
       }
-
-      console.log(`🔍 [AudioWaveform] Cache fallback for ${track.name}:`, {
-        audioPath,
-        durationInSeconds,
-        trackDuration: track.duration,
-        fps,
-        pathsToTry,
-      });
 
       let cachedWaveform = null;
 
@@ -122,41 +124,26 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
           pathToTry,
           durationInSeconds,
-          8000, // Same parameters used during generation
+          8000,
           30,
         );
 
         if (cachedWaveform?.success) {
-          console.log(
-            `🎯 [AudioWaveform] Found cached waveform using path: ${pathToTry}`,
-          );
           break;
         }
       }
 
-      // If no exact path match, try finding by duration (for when file paths change)
+      // If no exact path match, try finding by duration
       if (!cachedWaveform?.success) {
-        console.log(
-          `🔍 [AudioWaveform] Exact path lookup failed, trying duration-based search...`,
-        );
         cachedWaveform = AudioWaveformGenerator.findCachedWaveformByDuration(
           durationInSeconds,
           8000,
           30,
-          2.0, // Allow 2 second tolerance for duration matching
+          2.0,
         );
       }
 
-      console.log(`🔍 [AudioWaveform] Cache result:`, {
-        hasCachedWaveform: !!cachedWaveform,
-        cachedSuccess: cachedWaveform?.success,
-        cachedPeaksLength: cachedWaveform?.peaks?.length,
-      });
-
       if (cachedWaveform?.success && cachedWaveform.peaks.length > 0) {
-        console.log(
-          `✅ [AudioWaveform] Using cached waveform for ${track.name}`,
-        );
         return {
           success: cachedWaveform.success,
           peaks: cachedWaveform.peaks,
@@ -166,25 +153,21 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         };
       }
 
-      console.log(
-        `🔍 [AudioWaveform] Final waveformData result for ${track.name}: null`,
-      );
       return null;
     }, [
       track.type,
       track.source,
       track.previewUrl,
-      track.duration,
-      fps,
+      track.name,
+      trackMetrics.durationSeconds,
       getWaveformBySource,
       mediaLibrary,
     ]);
 
-    // Check if waveform is currently being generated
+    // Check if waveform is currently being generated - optimized
     const isLoading = useMemo(() => {
       if (track.type !== 'audio') return false;
 
-      // For extracted audio tracks, check the original video's generation state
       let sourceToCheck = track.source;
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
         const originalVideo = mediaLibrary.find(
@@ -201,16 +184,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         (item) => item.source === sourceToCheck,
       );
 
-      const isGenerating = mediaItem
-        ? isGeneratingWaveform(mediaItem.id)
-        : false;
-      console.log(`🔍 [AudioWaveform] Loading state for ${track.name}:`, {
-        sourceToCheck,
-        mediaItemId: mediaItem?.id,
-        isGenerating,
-      });
-
-      return isGenerating;
+      return mediaItem ? isGeneratingWaveform(mediaItem.id) : false;
     }, [
       track.type,
       track.source,
@@ -223,27 +197,22 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     useEffect(() => {
       if (track.type !== 'audio' || waveformData || isLoading) return;
 
-      // First, check if we can get waveform from cache (before trying to generate)
+      // Check cache first
       const audioPath = track.previewUrl || track.source;
-      const durationInSeconds = track.duration / fps;
       const cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
         audioPath,
-        durationInSeconds,
+        trackMetrics.durationSeconds,
         8000,
         30,
       );
 
       if (cachedWaveform?.success) {
-        console.log(
-          `🎵 Found cached waveform for ${track.name}, no generation needed`,
-        );
         return; // Cache exists, waveformData will update on next render
       }
 
       // Find the media item that corresponds to this track
       let sourceToCheck = track.source;
 
-      // If this is an audio track that uses extracted audio, find the original video source
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
         const originalVideo = mediaLibrary.find(
           (item) =>
@@ -264,27 +233,18 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         !mediaItem.waveform?.success &&
         !isGeneratingWaveform(mediaItem.id)
       ) {
-        console.log(
-          `🎵 Triggering fallback waveform generation for: ${track.name}`,
-        );
         generateWaveformForMedia(mediaItem.id).catch((error) => {
           console.warn(
             `⚠️ Fallback waveform generation failed for ${track.name}:`,
             error,
           );
         });
-      } else if (!mediaItem) {
-        console.log(
-          `⚠️ No media item found for ${track.name}, cannot generate waveform`,
-        );
       }
     }, [
       track.type,
       track.source,
       track.previewUrl,
-      track.name,
-      track.duration,
-      fps,
+      trackMetrics.durationSeconds,
       waveformData,
       isLoading,
       generateWaveformForMedia,
@@ -292,7 +252,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       mediaLibrary,
     ]);
 
-    // Draw waveform on canvas
+    // Draw waveform on canvas - optimized to prevent unnecessary redraws
     const drawWaveform = useCallback(() => {
       const canvas = canvasRef.current;
       if (!canvas || !waveformData) return;
@@ -304,6 +264,19 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
       // Early exit for invalid or empty data
       if (!peaks || peaks.length === 0) return;
+
+      // Check if we need to redraw based on frame changes or zoom changes
+      const currentFrame = debouncedCurrentFrame;
+      const zoomChanged = Math.abs(_zoomLevel - lastRenderedZoom) > 0.1;
+      const shouldRedraw =
+        lastRenderedFrame !== currentFrame ||
+        zoomChanged ||
+        canvas.width === 0 ||
+        canvas.height === 0;
+
+      if (!shouldRedraw) {
+        return; // Skip redraw if nothing significant changed
+      }
 
       const dpr = window.devicePixelRatio || 1;
 
@@ -327,19 +300,15 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       ctx.clearRect(0, 0, width, height);
 
       // Calculate display parameters
-      const trackDurationInFrames = track.endFrame - track.startFrame;
+      const trackDurationInFrames = trackMetrics.durationFrames;
       const displayWidth = Math.min(width, trackDurationInFrames * frameWidth);
 
       // Safety check for valid display width
       if (displayWidth <= 0 || !isFinite(displayWidth)) return;
 
       // Bar spectrum colors - Gray base with purple stacking
-      const baseBarColor = track.muted
-        ? 'rgba(174, 169, 177, 0.4)' // Gray-500 with opacity for muted
-        : 'rgba(174, 169, 177, 0.8)'; // Gray-500 for normal bars
-      const stackedBarColor = track.muted
-        ? 'rgba(161, 94, 253, 0.4)' // Purple-600 with opacity for muted
-        : 'rgba(161, 94, 253, 0.8)'; // Purple-600 for stacked portion
+      const baseBarColor = 'rgba(174, 169, 177, 0.8)'; // Gray-500 for normal bars
+      const stackedBarColor = 'rgba(161, 94, 253, 0.8)'; // Purple-600 for stacked portion
       const progressBaseColor = 'rgba(174, 169, 177, 1)'; // Gray-600 for progress bars
       const progressStackedColor = 'rgba(161, 94, 253, 1)'; // Purple-700 for progress stacked portion
       const backgroundColor = 'rgba(156, 163, 175, 0.1)'; // Gray-400 very light background
@@ -349,7 +318,6 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       ctx.fillRect(0, 0, width, height);
 
       // Calculate current progress position to match TimelinePlayhead positioning
-      const currentFrame = timeline.currentFrame;
       let progressPosition = 0;
 
       if (currentFrame >= track.startFrame && currentFrame < track.endFrame) {
@@ -556,14 +524,29 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
           }
         }
       }
-    }, [waveformData, width, height, frameWidth, track, timeline.currentFrame]);
+
+      // Update the last rendered frame and zoom to prevent unnecessary redraws
+      setLastRenderedFrame(currentFrame);
+      setLastRenderedZoom(_zoomLevel);
+    }, [
+      waveformData,
+      width,
+      height,
+      frameWidth,
+      track,
+      trackMetrics.durationFrames,
+      debouncedCurrentFrame,
+      lastRenderedFrame,
+      _zoomLevel,
+      lastRenderedZoom,
+    ]);
 
     // Redraw when dependencies change
     React.useEffect(() => {
       drawWaveform();
     }, [drawWaveform]);
 
-    // Handle canvas click for seeking
+    // Handle canvas click for seeking - optimized
     const handleCanvasClick = useCallback(
       (event: React.MouseEvent<HTMLCanvasElement>) => {
         if (!waveformData) return;
@@ -575,7 +558,6 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         const clickX = event.clientX - rect.left;
 
         // Use frame-based calculation that matches TimelinePlayhead positioning exactly
-        // Convert click position to frame offset within the track
         const frameOffset = Math.floor(clickX / frameWidth);
         const targetFrame = track.startFrame + frameOffset;
 
@@ -585,12 +567,15 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
           Math.min(targetFrame, track.endFrame - 1),
         );
 
-        console.log(
-          `[AudioWaveform] Seeking to frame ${clampedFrame} from waveform click`,
-        );
         setCurrentFrame(clampedFrame);
       },
-      [waveformData, width, frameWidth, track, setCurrentFrame],
+      [
+        waveformData,
+        frameWidth,
+        track.startFrame,
+        track.endFrame,
+        setCurrentFrame,
+      ],
     );
 
     // Handle errors and loading states
@@ -633,17 +618,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
           ref={canvasRef}
           className="w-full h-full cursor-pointer"
           onClick={handleCanvasClick}
-          style={{
-            filter: track.muted ? 'opacity(0.5) grayscale(1)' : 'none',
-          }}
         />
-
-        {/* Muted overlay */}
-        {track.muted && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/30 text-white text-xs font-bold pointer-events-none">
-            🔇 MUTED
-          </div>
-        )}
 
         {/* Track name overlay for very small waveforms */}
         {height <= 26 && (
@@ -657,18 +632,53 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       </div>
     );
   },
-  // Memoization comparison function
+  // Optimized memoization comparison function - similar to VideoSpriteSheetStrip
   (prevProps, nextProps) => {
-    return (
-      prevProps.track.id === nextProps.track.id &&
-      prevProps.track.muted === nextProps.track.muted &&
-      prevProps.track.startFrame === nextProps.track.startFrame &&
-      prevProps.track.endFrame === nextProps.track.endFrame &&
-      prevProps.frameWidth === nextProps.frameWidth &&
-      prevProps.width === nextProps.width &&
-      prevProps.height === nextProps.height &&
-      prevProps.zoomLevel === nextProps.zoomLevel
-    );
+    // Track identity and source changes always trigger re-render
+    if (
+      prevProps.track.id !== nextProps.track.id ||
+      prevProps.track.source !== nextProps.track.source
+    ) {
+      return false;
+    }
+
+    // Critical track timing changes
+    const trackTimingChanged =
+      prevProps.track.startFrame !== nextProps.track.startFrame ||
+      prevProps.track.endFrame !== nextProps.track.endFrame ||
+      prevProps.track.sourceStartTime !== nextProps.track.sourceStartTime;
+
+    if (trackTimingChanged) {
+      return false;
+    }
+
+    // Dimensions that affect layout
+    const dimensionsChanged =
+      prevProps.frameWidth !== nextProps.frameWidth ||
+      prevProps.height !== nextProps.height;
+
+    if (dimensionsChanged) {
+      return false;
+    }
+
+    // Width changes for viewport culling (less sensitive)
+    const significantWidthChange =
+      Math.abs(prevProps.width - nextProps.width) > 50;
+
+    if (significantWidthChange) {
+      return false;
+    }
+
+    // Zoom changes with tolerance for smooth experience
+    const significantZoomChange =
+      Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) > 0.1;
+
+    if (significantZoomChange) {
+      return false;
+    }
+
+    // If none of the above triggered, the component can skip re-rendering
+    return true;
   },
 );
 
