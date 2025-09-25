@@ -139,14 +139,14 @@ const ExportButton: React.FC<ExportButtonProps> = ({
               ...videoTrack,
               // Use video track's visibility
               visible: videoTrack.visible,
-              // Use synchronized mute state (both tracks should have same mute state)
-              muted: videoTrack.muted,
+              // Use audio track's mute state (the actual audio that gets muted)
+              muted: linkedAudioTrack.muted,
             };
             processedTracks.push(combinedTrack);
             processedTrackIds.add(videoTrack.id);
             processedTrackIds.add(linkedAudioTrack.id);
             console.log(
-              `🔗 Combined linked tracks for export: ${videoTrack.name} (visible: ${videoTrack.visible}, muted: ${videoTrack.muted})`,
+              `🔗 Combined linked tracks for export: ${videoTrack.name} (visible: ${videoTrack.visible}, muted: ${linkedAudioTrack.muted})`,
             );
           } else {
             // Video track without linked audio (shouldn't happen but handle it)
