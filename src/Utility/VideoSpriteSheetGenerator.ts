@@ -479,32 +479,30 @@ export class VideoSpriteSheetGenerator {
         //const selectFilter = frameNumbers
         //  .map((frame) => `eq(n\\,${frame})`)
         //  .join('+');
-
+        const framesPerSheet = optimalCols * optimalRows;
+        //const sheetDuration = framesPerSheet * intervalSeconds;
+        //const startTime = sheetIndex * sheetDuration;
+        
         const spriteSheetCommand = [
-          '-i',
-          videoPath,
+          '-ss', String(startTime), // seek to where this sheet should start
+          '-i', videoPath,
           '-vf',
           [
-            `fps='1/${intervalSeconds}'`, // Extract exact frames by frame number
-            `scale=${thumbWidth}:${thumbHeight}:force_original_aspect_ratio=increase`, // Scale to fill, may crop
-            `crop=${thumbWidth}:${thumbHeight}`, // Crop to exact dimensions (no padding/black strips)
-            `tile=${optimalCols}x${optimalRows}`, // Use calculated grid dimensions
+            `fps=1/${intervalSeconds}`, // sample frames evenly by time
+            `scale=${thumbWidth}:${thumbHeight}:force_original_aspect_ratio=increase`,
+            `crop=${thumbWidth}:${thumbHeight}`,
+            `tile=${optimalCols}x${optimalRows}`,
           ].join(','),
-          '-q:v',
-          '5',
-          '-f', 
-          'image2',
-          '-avoid_negative_ts',
-          'make_zero', // Handle negative timestamps
-          '-vsync',
-          '0', // Prevent frame dropping
-          '-threads',
-          '4',
-          '-frames:v',
-          '1', // Generate exactly one output image (the tiled sprite sheet)
-          '-y', // Overwrite output files
+          '-q:v', '5',
+          '-f', 'image2',
+          '-avoid_negative_ts', 'make_zero',
+          '-vsync', '0',
+          '-threads', '4',
+          '-frames:v', '1', // still one sheet per run
+          '-y',
           `${outputDir}/sprite_${sheetIndex.toString().padStart(3, '0')}.jpg`,
         ];
+        
 
         // Update metadata with actual dimensions
         const actualSheetWidth = optimalCols * thumbWidth;
