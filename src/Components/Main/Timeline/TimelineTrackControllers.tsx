@@ -22,55 +22,47 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const toggleTrackMute = useVideoEditorStore(
       (state) => state.toggleTrackMute,
     );
-    const toggleLinkedAudioMute = useVideoEditorStore(
-      (state) => state.toggleLinkedAudioMute,
+
+    // Check if any non-audio tracks in this row are visible
+    const hasVisibleTracks = tracks.some(
+      (track) => track.type !== 'audio' && track.visible,
     );
 
-    // Check if any tracks in this row are visible/audible
-    const hasVisibleTracks = tracks.some((track) => track.visible);
-
-    // For audible tracks, check the track's own muted state (both video and audio tracks now have muted states)
+    // Check if any audio tracks in this row are audible (not muted)
     const hasAudibleTracks = useMemo(() => {
-      return tracks.some((track) => {
-        if (track.type === 'audio' || track.type === 'video') {
-          // Both audio and video tracks now have muted state that represents the audio output
+      const audible = tracks.some((track) => {
+        if (track.type === 'audio') {
           return !track.muted;
         }
         return false;
       });
+      console.log(
+        `🎵 Has audible tracks: ${audible}`,
+        tracks.map((t) => ({ name: t.name, muted: t.muted })),
+      );
+      return audible;
     }, [tracks]);
 
     const handleToggleVisibility = useCallback(() => {
-      // For video tracks, also toggle visibility of linked audio track
-      // For other tracks, toggle normally
+      // Only handle visibility for non-audio tracks (video, image, subtitle)
       tracks.forEach((track) => {
-        toggleTrackVisibility(track.id);
-
-        // If this is a linked video track, also toggle its linked audio track visibility
-        if (track.type === 'video' && track.isLinked && track.linkedTrackId) {
-          // Note: Video track visibility doesn't affect audio track visibility
-          // Audio tracks remain visible but the video track controls the visual output
-          console.log(`📹 Toggling video track visibility: ${track.id}`);
+        if (track.type !== 'audio') {
+          toggleTrackVisibility(track.id);
+          console.log(
+            `📹 Toggling ${track.type} track visibility: ${track.id}`,
+          );
         }
       });
     }, [tracks, toggleTrackVisibility]);
 
     const handleToggleMute = useCallback(() => {
+      // Handle mute for audio tracks only
       tracks.forEach((track) => {
         if (track.type === 'audio') {
-          // For audio tracks, toggle their own mute state
           toggleTrackMute(track.id);
-          console.log(`🎵 Toggling audio track mute: ${track.id}`);
-        } else if (
-          track.type === 'video' &&
-          track.isLinked &&
-          track.linkedTrackId
-        ) {
-          // For video tracks, toggle their linked audio track's mute state
-          toggleLinkedAudioMute(track.id);
         }
       });
-    }, [tracks, toggleTrackMute, toggleLinkedAudioMute]);
+    }, [tracks, toggleTrackMute]);
 
     return (
       <div className="flex items-center justify-between px-2 mb-2 sm:h-6 md:h-8 lg:h-12 border-b border-border/20">
@@ -91,7 +83,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
 
         {/* Track controls */}
         <div className="flex items-center justify-center gap-1">
-          {/* Show visibility toggle for video, image, and subtitle tracks */}
+          {/* Show visibility toggle for video, image, and subtitle tracks only */}
           {(rowDef.trackTypes.includes('video') ||
             rowDef.trackTypes.includes('image') ||
             rowDef.trackTypes.includes('subtitle')) && (
@@ -111,9 +103,8 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
             </Button>
           )}
 
-          {/* Show audio control for both audio tracks AND video tracks (for their linked audio) */}
-          {(rowDef.trackTypes.includes('audio') ||
-            rowDef.trackTypes.includes('video')) && (
+          {/* Show audio control for audio tracks only */}
+          {rowDef.trackTypes.includes('audio') && (
             <Button
               variant="ghost"
               size="sm"

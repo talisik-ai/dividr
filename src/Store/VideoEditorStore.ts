@@ -568,7 +568,9 @@ const processImportedFile = async (
   // Get video dimensions
   let videoDimensions: { width: number; height: number };
   try {
-    videoDimensions = await window.electronAPI.getVideoDimensions(fileInfo.path);
+    videoDimensions = await window.electronAPI.getVideoDimensions(
+      fileInfo.path,
+    );
   } catch (error) {
     console.warn(
       `⚠️ Failed to get dimensions for ${fileInfo.name}, using fallback:`,
@@ -638,7 +640,7 @@ const processImportedFile = async (
     duration: actualDurationSeconds,
     size: fileInfo.size,
     mimeType,
-    metadata: {width: videoDimensions.width, height: videoDimensions.height},
+    metadata: { width: videoDimensions.width, height: videoDimensions.height },
   };
 
   const mediaId = addToLibraryFn(mediaLibraryItem);
@@ -989,7 +991,9 @@ export const useTimelineUtils = () => {
 
     // Helper function to detect gaps for a specific track type
     const detectGapsForTracks = (tracks: VideoTrack[]) => {
-      const sortedTracks = [...tracks].sort((a, b) => a.startFrame - b.startFrame);
+      const sortedTracks = [...tracks].sort(
+        (a, b) => a.startFrame - b.startFrame,
+      );
       const gaps = [];
       let lastEndFrame = 0;
 
@@ -1225,7 +1229,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             `⏳ No extracted audio found, checking if extraction is in progress...`,
           );
           // Give extraction a moment to complete (non-blocking check)
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
 
           // Re-check for extracted audio
           const updatedMediaItem = get().mediaLibrary.find(
@@ -1261,6 +1265,11 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             : `⚠️ No extracted audio found, using video source: ${trackData.source}`,
         );
 
+        console.log(`🔍 Audio track final source: ${audioTrack.source}`);
+        console.log(
+          `🔍 Audio track final previewUrl: ${audioTrack.previewUrl}`,
+        );
+
         set((state) => ({
           tracks: [...state.tracks, videoTrack, audioTrack],
         }));
@@ -1278,6 +1287,45 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         console.log(
           `✅ Created linked video track (${id}) and audio track (${audioId})`,
         );
+
+        // If no extracted audio was found initially, set up a listener to update the audio track when extraction completes
+        if (!extractedAudio && mediaItem) {
+          console.log(
+            `⏳ Setting up audio track update listener for: ${trackData.name}`,
+          );
+
+          // Check periodically for extracted audio and update the track when available
+          const checkForExtractedAudio = () => {
+            const updatedMediaItem = get().mediaLibrary.find(
+              (item) =>
+                item.source === trackData.source && item.type === 'video',
+            );
+
+            if (updatedMediaItem?.extractedAudio && !extractedAudio) {
+              console.log(
+                `🎵 Extracted audio now available, updating audio track: ${updatedMediaItem.extractedAudio.audioPath}`,
+              );
+
+              // Update the audio track with the extracted audio source
+              get().updateTrack(audioId, {
+                source: updatedMediaItem.extractedAudio.audioPath,
+                previewUrl: updatedMediaItem.extractedAudio.previewUrl,
+                name: `${trackData.name.replace(/\.[^/.]+$/, '')} (Extracted Audio)`,
+              });
+
+              console.log(
+                `✅ Updated audio track ${audioId} with extracted audio source`,
+              );
+            } else if (!updatedMediaItem?.extractedAudio) {
+              // Continue checking if extraction is still in progress
+              setTimeout(checkForExtractedAudio, 1000);
+            }
+          };
+
+          // Start checking after a short delay
+          setTimeout(checkForExtractedAudio, 2000);
+        }
+
         return id; // Return video track ID as primary
       } else {
         // Handle non-video tracks normally
@@ -1405,7 +1453,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           subtitleText: `Subtitle: ${mediaItem.name}`,
         }),
       };
-      console.log(`I GOT THE WIDTH ${mediaItem.metadata.width} AND HEIGHT ${mediaItem.metadata.height} IN useVideoEditorStore`);
+      console.log(
+        `I GOT THE WIDTH ${mediaItem.metadata.width} AND HEIGHT ${mediaItem.metadata.height} IN useVideoEditorStore`,
+      );
       return await get().addTrack(track);
     },
 
@@ -1506,6 +1556,13 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       set((state) => {
         const trackToMove = state.tracks.find((t) => t.id === trackId);
 
+        if (!trackToMove) {
+          console.warn(
+            `⚠️ Cannot move track: track with id ${trackId} not found`,
+          );
+          return state;
+        }
+
         return {
           tracks: state.tracks.map((track) => {
             if (track.id === trackId) {
@@ -1552,8 +1609,14 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               track.id === trackToMove.linkedTrackId
             ) {
               const linkedDuration = track.endFrame - track.startFrame;
+
+              // Calculate the relative offset between the linked tracks
+              // This preserves the gap/offset that was created when tracks were unlinked
+              const currentOffset = track.startFrame - trackToMove.startFrame;
+              const newLinkedStartFrame = newStartFrame + currentOffset;
+
               const finalStartFrame = findNonOverlappingPosition(
-                newStartFrame,
+                newLinkedStartFrame,
                 linkedDuration,
                 state.tracks.filter((t) => {
                   if (t.id === track.id || t.id === trackToMove.id)
@@ -1562,7 +1625,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
                 }),
               );
               console.log(
-                `🔗 Moving linked ${track.type} track "${track.name}" to frame ${finalStartFrame}`,
+                `🔗 Moving linked ${track.type} track "${track.name}" from ${track.startFrame} to frame ${finalStartFrame} (maintaining offset of ${currentOffset} frames)`,
               );
               return {
                 ...track,
@@ -1813,6 +1876,14 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       const targetTrack = get().tracks.find((t) => t.id === trackId);
       if (!targetTrack) return;
 
+      // Only allow visibility toggle for non-audio tracks
+      if (targetTrack.type === 'audio') {
+        console.warn(
+          `⚠️ Cannot toggle visibility for audio track: ${targetTrack.name}. Audio tracks only support mute state.`,
+        );
+        return;
+      }
+
       const newVisibleState = !targetTrack.visible;
 
       set((state) => ({
@@ -1820,25 +1891,27 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           if (track.id === trackId) {
             return { ...track, visible: newVisibleState };
           }
-          // For video tracks, don't sync visibility to audio tracks
-          // Audio tracks don't affect visual output, only video tracks do
-          // But log if this is a linked track
-          if (targetTrack.isLinked && targetTrack.type === 'video') {
-            console.log(
-              `📹 Toggling video track visibility: ${trackId} (${newVisibleState ? 'showing' : 'hiding'})`,
-            );
-          }
           return track;
         }),
       }));
 
-      // Mark as having unsaved changes
+      console.log(
+        `📹 Toggled ${targetTrack.type} track visibility: ${targetTrack.name} (${newVisibleState ? 'visible' : 'hidden'})`,
+      );
       get().markUnsavedChanges();
     },
 
     toggleTrackMute: (trackId) => {
       const targetTrack = get().tracks.find((t) => t.id === trackId);
       if (!targetTrack) return;
+
+      // Only allow mute toggle for audio tracks
+      if (targetTrack.type !== 'audio') {
+        console.warn(
+          `⚠️ Cannot toggle mute for ${targetTrack.type} track: ${targetTrack.name}. Only audio tracks support mute state.`,
+        );
+        return;
+      }
 
       const newMutedState = !targetTrack.muted;
 
@@ -1847,38 +1920,54 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           if (track.id === trackId) {
             return { ...track, muted: newMutedState };
           }
-          // If this is a linked audio track, also update the linked video track
-          if (
-            targetTrack.isLinked &&
-            targetTrack.type === 'audio' &&
-            track.id === targetTrack.linkedTrackId
-          ) {
-            console.log(
-              `🔗 Syncing video track mute state: ${track.id} (${newMutedState ? 'muting' : 'unmuting'})`,
-            );
-            return { ...track, muted: newMutedState };
-          }
           return track;
         }),
       }));
 
-      // Mark as having unsaved changes
+      console.log(
+        `🎵 Toggled audio track mute: ${targetTrack.name} (${newMutedState ? 'muted' : 'unmuted'})`,
+      );
       get().markUnsavedChanges();
     },
 
     // Linked track management
     linkTracks: (videoTrackId, audioTrackId) => {
-      set((state) => ({
-        tracks: state.tracks.map((track) => {
-          if (track.id === videoTrackId) {
-            return { ...track, linkedTrackId: audioTrackId, isLinked: true };
-          }
-          if (track.id === audioTrackId) {
-            return { ...track, linkedTrackId: videoTrackId, isLinked: true };
-          }
-          return track;
-        }),
-      }));
+      set((state) => {
+        const videoTrack = state.tracks.find((t) => t.id === videoTrackId);
+        const audioTrack = state.tracks.find((t) => t.id === audioTrackId);
+
+        if (!videoTrack || !audioTrack) {
+          console.warn(`⚠️ Cannot link tracks: one or both tracks not found`);
+          return state;
+        }
+
+        // When linking tracks, preserve their current positions
+        // This allows users to create gaps by moving tracks independently before linking
+        console.log(
+          `🔗 Linking tracks: "${videoTrack.name}" (${videoTrack.startFrame}) ↔ "${audioTrack.name}" (${audioTrack.startFrame})`,
+        );
+        console.log(
+          `📍 Preserving current positions - video at ${videoTrack.startFrame}, audio at ${audioTrack.startFrame}`,
+        );
+
+        return {
+          tracks: state.tracks.map((track) => {
+            if (track.id === videoTrackId) {
+              return { ...track, linkedTrackId: audioTrackId, isLinked: true };
+            }
+            if (track.id === audioTrackId) {
+              // Keep audio track at its current position
+              return {
+                ...track,
+                linkedTrackId: videoTrackId,
+                isLinked: true,
+                // Keep existing startFrame and endFrame unchanged
+              };
+            }
+            return track;
+          }),
+        };
+      });
 
       console.log(`🔗 Linked tracks: ${videoTrackId} ↔ ${audioTrackId}`);
       get().markUnsavedChanges();
@@ -2631,6 +2720,38 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           item.id === mediaId ? { ...item, ...updates } : item,
         ),
       }));
+
+      // If this update includes extracted audio, update any linked audio tracks
+      if (updates.extractedAudio) {
+        const mediaItem = get().mediaLibrary.find(
+          (item) => item.id === mediaId,
+        );
+        if (mediaItem?.type === 'video') {
+          console.log(
+            `🔄 Extracted audio updated for video: ${mediaItem.name}, checking for linked audio tracks`,
+          );
+
+          // Find all audio tracks that are linked to video tracks from this source
+          const linkedAudioTracks = get().tracks.filter(
+            (track) =>
+              track.type === 'audio' &&
+              track.isLinked &&
+              track.source === mediaItem.source, // Currently using video source
+          );
+
+          // Update each linked audio track with the extracted audio source
+          linkedAudioTracks.forEach((audioTrack) => {
+            console.log(
+              `🎵 Updating linked audio track ${audioTrack.id} with extracted audio source`,
+            );
+            get().updateTrack(audioTrack.id, {
+              source: updates.extractedAudio.audioPath,
+              previewUrl: updates.extractedAudio.previewUrl,
+              name: `${mediaItem.name.replace(/\.[^/.]+$/, '')} (Extracted Audio)`,
+            });
+          });
+        }
+      }
 
       // Mark as having unsaved changes
       get().markUnsavedChanges();
