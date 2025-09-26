@@ -424,42 +424,11 @@ export const TimelineControls: React.FC = React.memo(
         : timeline.totalFrames;
     }, []);
 
-    // Helper: Snap to next track if in blank (any track type)
-    const snapToNextTrackIfBlank = useCallback(() => {
-      const currentFrame = getCurrentFrame();
-      const { tracks } = useVideoEditorStore.getState();
-      const isInBlank = !tracks.some(
-        (track) =>
-          track.visible &&
-          currentFrame >= track.startFrame &&
-          currentFrame < track.endFrame,
-      );
-      if (isInBlank) {
-        const nextTrack = tracks
-          .filter((track) => track.visible && track.startFrame > currentFrame)
-          .sort((a, b) => a.startFrame - b.startFrame)[0];
-        if (nextTrack) {
-          useVideoEditorStore.getState().setCurrentFrame(nextTrack.startFrame);
-          return true;
-        }
-      }
-      return false;
-    }, [getCurrentFrame]);
-
-    // Wrap the play toggle - all non-reactive
+    // Direct play toggle - no gap skipping, respect timeline gaps like Premiere Pro
     const handlePlayToggle = useCallback(() => {
-      const { playback, togglePlayback } = useVideoEditorStore.getState();
-      if (!playback.isPlaying) {
-        const snapped = snapToNextTrackIfBlank();
-        if (snapped) {
-          setTimeout(() => {
-            useVideoEditorStore.getState().togglePlayback();
-          }, 0);
-          return;
-        }
-      }
+      const { togglePlayback } = useVideoEditorStore.getState();
       togglePlayback();
-    }, [snapToNextTrackIfBlank]);
+    }, []);
 
     return (
       <div className="h-10 grid grid-cols-[364px_1fr] px-4 border-t border-accent">

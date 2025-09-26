@@ -75,12 +75,13 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       [track.startFrame, track.endFrame, track.sourceStartTime, fps],
     );
 
-    // Get waveform data from the store - optimized for stability
+    // Get waveform data from the store - optimized for stability with segmenting support
     const waveformData = useMemo(() => {
       if (track.type !== 'audio') return null;
 
       // Find the media item that corresponds to this track
       let sourceToCheck = track.source;
+      let fullDuration = trackMetrics.durationSeconds;
 
       // If this is an audio track that uses extracted audio, find the original video source
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
@@ -91,9 +92,73 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         );
         if (originalVideo) {
           sourceToCheck = originalVideo.source;
+          fullDuration = originalVideo.duration; // Use full video duration for segmenting
         }
       }
 
+      // Calculate segment parameters based on track timing
+      const segmentStartTime = track.sourceStartTime || 0;
+      const segmentEndTime = segmentStartTime + trackMetrics.durationSeconds;
+
+      // Check if this is a segment (not the full audio)
+      const isSegment = segmentStartTime > 0 || segmentEndTime < fullDuration;
+
+      if (isSegment) {
+        console.log(
+          `🎵 Loading waveform segment for track "${track.name}": ${segmentStartTime}s - ${segmentEndTime}s`,
+        );
+
+        // Try to get cached segment first
+        const audioPath = track.previewUrl || track.source;
+        const cachedSegment = AudioWaveformGenerator.getCachedWaveformSegment(
+          audioPath,
+          fullDuration,
+          segmentStartTime,
+          segmentEndTime,
+          8000,
+          30,
+        );
+
+        if (cachedSegment?.success && cachedSegment.peaks.length > 0) {
+          console.log(
+            `✅ Using cached waveform segment for track "${track.name}"`,
+          );
+          return cachedSegment;
+        }
+
+        // If no cached segment, try to get the full waveform and slice it
+        const fullWaveform = getWaveformBySource(sourceToCheck);
+        if (fullWaveform?.success && fullWaveform.peaks.length > 0) {
+          console.log(`✂️ Slicing full waveform for track "${track.name}"`);
+
+          // Calculate peak indices for the segment
+          const totalPeaks = fullWaveform.peaks.length;
+          const startPeakIndex = Math.floor(
+            (segmentStartTime / fullDuration) * totalPeaks,
+          );
+          const endPeakIndex = Math.floor(
+            (segmentEndTime / fullDuration) * totalPeaks,
+          );
+
+          const segmentPeaks = fullWaveform.peaks.slice(
+            startPeakIndex,
+            endPeakIndex,
+          );
+
+          return {
+            success: true,
+            peaks: segmentPeaks,
+            duration: segmentEndTime - segmentStartTime,
+            sampleRate: fullWaveform.sampleRate,
+            cacheKey: `segment_${fullWaveform.cacheKey}_${segmentStartTime}_${segmentEndTime}`,
+            startTime: segmentStartTime,
+            endTime: segmentEndTime,
+            isSegment: true,
+          };
+        }
+      }
+
+      // Fallback to full waveform (for non-segmented tracks)
       const waveform = getWaveformBySource(sourceToCheck);
 
       if (waveform?.success && waveform.peaks.length > 0) {
@@ -102,7 +167,6 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
       // Fallback: Check AudioWaveformGenerator cache directly
       const audioPath = track.previewUrl || track.source;
-      const durationInSeconds = trackMetrics.durationSeconds;
 
       // Try multiple audio path variations for better cache hit rate
       const pathsToTry = [audioPath];
@@ -123,7 +187,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       for (const pathToTry of pathsToTry) {
         cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
           pathToTry,
-          durationInSeconds,
+          fullDuration,
           8000,
           30,
         );
@@ -136,14 +200,40 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       // If no exact path match, try finding by duration
       if (!cachedWaveform?.success) {
         cachedWaveform = AudioWaveformGenerator.findCachedWaveformByDuration(
-          durationInSeconds,
+          fullDuration,
           8000,
-          30,
           2.0,
         );
       }
 
       if (cachedWaveform?.success && cachedWaveform.peaks.length > 0) {
+        // If this is a segment, slice the full waveform
+        if (isSegment) {
+          const totalPeaks = cachedWaveform.peaks.length;
+          const startPeakIndex = Math.floor(
+            (segmentStartTime / fullDuration) * totalPeaks,
+          );
+          const endPeakIndex = Math.floor(
+            (segmentEndTime / fullDuration) * totalPeaks,
+          );
+
+          const segmentPeaks = cachedWaveform.peaks.slice(
+            startPeakIndex,
+            endPeakIndex,
+          );
+
+          return {
+            success: true,
+            peaks: segmentPeaks,
+            duration: segmentEndTime - segmentStartTime,
+            sampleRate: cachedWaveform.sampleRate,
+            cacheKey: `segment_${cachedWaveform.cacheKey}_${segmentStartTime}_${segmentEndTime}`,
+            startTime: segmentStartTime,
+            endTime: segmentEndTime,
+            isSegment: true,
+          };
+        }
+
         return {
           success: cachedWaveform.success,
           peaks: cachedWaveform.peaks,
@@ -159,6 +249,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       track.source,
       track.previewUrl,
       track.name,
+      track.sourceStartTime,
       trackMetrics.durationSeconds,
       getWaveformBySource,
       mediaLibrary,
@@ -197,21 +288,9 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     useEffect(() => {
       if (track.type !== 'audio' || waveformData || isLoading) return;
 
-      // Check cache first
-      const audioPath = track.previewUrl || track.source;
-      const cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
-        audioPath,
-        trackMetrics.durationSeconds,
-        8000,
-        30,
-      );
-
-      if (cachedWaveform?.success) {
-        return; // Cache exists, waveformData will update on next render
-      }
-
       // Find the media item that corresponds to this track
       let sourceToCheck = track.source;
+      let fullDuration = trackMetrics.durationSeconds;
 
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
         const originalVideo = mediaLibrary.find(
@@ -221,7 +300,41 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         );
         if (originalVideo) {
           sourceToCheck = originalVideo.source;
+          fullDuration = originalVideo.duration;
         }
+      }
+
+      // Calculate segment parameters
+      const segmentStartTime = track.sourceStartTime || 0;
+      const segmentEndTime = segmentStartTime + trackMetrics.durationSeconds;
+      const isSegment = segmentStartTime > 0 || segmentEndTime < fullDuration;
+
+      // Check cache first
+      const audioPath = track.previewUrl || track.source;
+      let cachedWaveform = null;
+
+      if (isSegment) {
+        // Check for cached segment
+        cachedWaveform = AudioWaveformGenerator.getCachedWaveformSegment(
+          audioPath,
+          fullDuration,
+          segmentStartTime,
+          segmentEndTime,
+          8000,
+          30,
+        );
+      } else {
+        // Check for full waveform
+        cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
+          audioPath,
+          fullDuration,
+          8000,
+          30,
+        );
+      }
+
+      if (cachedWaveform?.success) {
+        return; // Cache exists, waveformData will update on next render
       }
 
       const mediaItem = mediaLibrary.find(
@@ -233,6 +346,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         !mediaItem.waveform?.success &&
         !isGeneratingWaveform(mediaItem.id)
       ) {
+        // Generate full waveform first, then segment will be created from it
         generateWaveformForMedia(mediaItem.id).catch((error) => {
           console.warn(
             `⚠️ Fallback waveform generation failed for ${track.name}:`,
@@ -244,6 +358,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       track.type,
       track.source,
       track.previewUrl,
+      track.sourceStartTime,
       trackMetrics.durationSeconds,
       waveformData,
       isLoading,

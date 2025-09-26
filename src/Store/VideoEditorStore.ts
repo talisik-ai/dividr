@@ -1752,90 +1752,109 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       if (!track || frame <= track.startFrame || frame >= track.endFrame)
         return;
 
-      const tracksToSplit = [track];
+      console.log(`✂️ Splitting track "${track.name}" at frame ${frame}`);
 
-      // If this is a linked track, also split the linked track
+      // Calculate timing for split parts
+      const splitTimeInSeconds =
+        (frame - track.startFrame) / state.timeline.fps;
+      const originalSourceStartTime = track.sourceStartTime || 0;
+
+      // Create the first part (left side) - keep original track properties
+      const firstPart: VideoTrack = {
+        ...track,
+        endFrame: frame,
+        duration: frame - track.startFrame,
+        sourceStartTime: originalSourceStartTime,
+      };
+
+      // Create the second part (right side) - new ID, new name
+      const secondPartId = uuidv4();
+      const secondPart: VideoTrack = {
+        ...track,
+        id: secondPartId,
+        name: track.name, // Keep original name for both parts
+        startFrame: frame,
+        endFrame: track.endFrame,
+        duration: track.endFrame - frame,
+        sourceStartTime: originalSourceStartTime + splitTimeInSeconds,
+      };
+
+      // Handle linked tracks - if the original track is linked, split the linked track too
+      let linkedTrackSecondPartId: string | undefined;
       if (track.isLinked && track.linkedTrackId) {
         const linkedTrack = state.tracks.find(
           (t) => t.id === track.linkedTrackId,
         );
+
         if (linkedTrack) {
-          tracksToSplit.push(linkedTrack);
           console.log(
-            `✂️ Splitting linked track pair: ${track.name} and ${linkedTrack.name}`,
+            `✂️ Also splitting linked track "${linkedTrack.name}" at frame ${frame}`,
           );
+
+          // Calculate timing for linked track split
+          const linkedSplitTimeInSeconds =
+            (frame - linkedTrack.startFrame) / state.timeline.fps;
+          const linkedOriginalSourceStartTime =
+            linkedTrack.sourceStartTime || 0;
+
+          // Create first part of linked track
+          const linkedFirstPart: VideoTrack = {
+            ...linkedTrack,
+            endFrame: frame,
+            duration: frame - linkedTrack.startFrame,
+            sourceStartTime: linkedOriginalSourceStartTime,
+          };
+
+          // Create second part of linked track
+          linkedTrackSecondPartId = uuidv4();
+          const linkedSecondPart: VideoTrack = {
+            ...linkedTrack,
+            id: linkedTrackSecondPartId,
+            name: linkedTrack.name, // Keep original name
+            startFrame: frame,
+            endFrame: linkedTrack.endFrame,
+            duration: linkedTrack.endFrame - frame,
+            sourceStartTime:
+              linkedOriginalSourceStartTime + linkedSplitTimeInSeconds,
+          };
+
+          // Update linkage between the split parts
+          firstPart.linkedTrackId = linkedFirstPart.id;
+          linkedFirstPart.linkedTrackId = firstPart.id;
+          secondPart.linkedTrackId = linkedSecondPart.id;
+          linkedSecondPart.linkedTrackId = secondPartId;
+
+          // Update tracks array with all split parts
+          set((state) => ({
+            tracks: state.tracks
+              .filter((t) => t.id !== track.id && t.id !== linkedTrack.id) // Remove original tracks
+              .concat([
+                firstPart,
+                secondPart,
+                linkedFirstPart,
+                linkedSecondPart,
+              ]), // Add all split parts
+          }));
+        } else {
+          // Linked track not found, just split the main track
+          set((state) => ({
+            tracks: state.tracks
+              .filter((t) => t.id !== track.id) // Remove original track
+              .concat([firstPart, secondPart]), // Add split parts
+          }));
         }
-      }
-
-      const splitParts: VideoTrack[] = [];
-      let videoTrackNewId: string | undefined;
-      let audioTrackNewId: string | undefined;
-
-      tracksToSplit.forEach((trackToSplit) => {
-        const newId = uuidv4();
-
-        // Store new IDs for linking
-        if (trackToSplit.type === 'video') {
-          videoTrackNewId = newId;
-        } else if (trackToSplit.type === 'audio') {
-          audioTrackNewId = newId;
-        }
-
-        // Calculate timing for split parts
-        const splitTimeInSeconds =
-          (frame - trackToSplit.startFrame) / state.timeline.fps;
-        const originalSourceStartTime = trackToSplit.sourceStartTime || 0;
-
-        const firstPart = {
-          ...trackToSplit,
-          endFrame: frame,
-          duration: frame - trackToSplit.startFrame,
-          sourceStartTime: originalSourceStartTime,
-        };
-
-        const secondPart: VideoTrack = {
-          ...trackToSplit,
-          id: newId,
-          name: `${trackToSplit.name} (2)`,
-          startFrame: frame,
-          duration: trackToSplit.endFrame - frame,
-          sourceStartTime: originalSourceStartTime + splitTimeInSeconds,
-        };
-
-        splitParts.push(firstPart, secondPart);
-      });
-
-      // Update linkage for split parts
-      if (tracksToSplit.length === 2 && videoTrackNewId && audioTrackNewId) {
-        // Find and update the split parts with proper linkage
-        splitParts.forEach((part) => {
-          if (part.isLinked) {
-            if (part.type === 'video') {
-              if (part.id === videoTrackNewId) {
-                // Second video part links to second audio part
-                part.linkedTrackId = audioTrackNewId;
-              }
-              // First video part keeps original linkage (will be updated below)
-            } else if (part.type === 'audio') {
-              if (part.id === audioTrackNewId) {
-                // Second audio part links to second video part
-                part.linkedTrackId = videoTrackNewId;
-              }
-              // First audio part keeps original linkage (will be updated below)
-            }
-          }
-        });
+      } else {
+        // Not linked, just split the single track
+        set((state) => ({
+          tracks: state.tracks
+            .filter((t) => t.id !== track.id) // Remove original track
+            .concat([firstPart, secondPart]), // Add split parts
+        }));
       }
 
       console.log(
-        `✂️ Split operation: Created ${splitParts.length} track parts from ${tracksToSplit.length} original tracks`,
+        `✅ Successfully split track "${track.name}" into two parts at frame ${frame}`,
       );
-
-      set((state) => ({
-        tracks: state.tracks
-          .filter((t) => !tracksToSplit.some((ts) => ts.id === t.id)) // Remove original tracks
-          .concat(splitParts), // Add split parts
-      }));
 
       // Mark as having unsaved changes
       get().markUnsavedChanges();
@@ -1844,26 +1863,125 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
     splitAtPlayhead: () => {
       const state = get();
       const currentFrame = state.timeline.currentFrame;
+      const selectedTrackIds = state.timeline.selectedTrackIds;
 
-      // Find all tracks that intersect with the current playhead position
-      const intersectingTracks = state.tracks.filter(
-        (track) =>
-          currentFrame > track.startFrame && currentFrame < track.endFrame,
+      console.log(
+        `✂️ Split at playhead (frame ${currentFrame}) - Selected tracks: ${selectedTrackIds.length}`,
       );
 
-      if (intersectingTracks.length === 0) {
-        console.log('🚫 No tracks found at current playhead position');
+      // Determine which tracks to split based on selection and linked states
+      const tracksToSplit: VideoTrack[] = [];
+
+      if (selectedTrackIds.length > 0) {
+        // If tracks are selected, only split selected tracks that intersect with playhead
+        const selectedTracks = state.tracks.filter(
+          (track) =>
+            selectedTrackIds.includes(track.id) &&
+            currentFrame > track.startFrame &&
+            currentFrame < track.endFrame,
+        );
+
+        // For each selected track, check if it's linked and handle accordingly
+        const processedTrackIds = new Set<string>();
+
+        selectedTracks.forEach((track) => {
+          if (processedTrackIds.has(track.id)) return; // Skip if already processed
+
+          if (track.isLinked && track.linkedTrackId) {
+            // Track is linked - check if linked track is also selected
+            const linkedTrack = state.tracks.find(
+              (t) => t.id === track.linkedTrackId,
+            );
+
+            if (linkedTrack && selectedTrackIds.includes(linkedTrack.id)) {
+              // Both tracks are selected - split both
+              console.log(
+                `✂️ Splitting linked pair: "${track.name}" and "${linkedTrack.name}"`,
+              );
+              tracksToSplit.push(track, linkedTrack);
+              processedTrackIds.add(track.id);
+              processedTrackIds.add(linkedTrack.id);
+            } else {
+              // Only one track is selected - split only the selected one
+              console.log(
+                `✂️ Splitting selected track "${track.name}" (linked track not selected)`,
+              );
+              tracksToSplit.push(track);
+              processedTrackIds.add(track.id);
+            }
+          } else {
+            // Track is not linked - split only this track
+            console.log(`✂️ Splitting unlinked track "${track.name}"`);
+            tracksToSplit.push(track);
+            processedTrackIds.add(track.id);
+          }
+        });
+      } else {
+        // No tracks selected - find all tracks that intersect with playhead
+        const intersectingTracks = state.tracks.filter(
+          (track) =>
+            currentFrame > track.startFrame && currentFrame < track.endFrame,
+        );
+
+        // For unselected tracks, only split if they're not linked to avoid unwanted splits
+        const processedTrackIds = new Set<string>();
+
+        intersectingTracks.forEach((track) => {
+          if (processedTrackIds.has(track.id)) return; // Skip if already processed
+
+          if (track.isLinked && track.linkedTrackId) {
+            // Track is linked - check if linked track also intersects
+            const linkedTrack = state.tracks.find(
+              (t) => t.id === track.linkedTrackId,
+            );
+
+            if (
+              linkedTrack &&
+              currentFrame > linkedTrack.startFrame &&
+              currentFrame < linkedTrack.endFrame
+            ) {
+              // Both tracks intersect - split both
+              console.log(
+                `✂️ Splitting unselected linked pair: "${track.name}" and "${linkedTrack.name}"`,
+              );
+              tracksToSplit.push(track, linkedTrack);
+              processedTrackIds.add(track.id);
+              processedTrackIds.add(linkedTrack.id);
+            } else {
+              // Only one track intersects - don't split to avoid breaking linkage
+              console.log(
+                `⚠️ Skipping linked track "${track.name}" - linked track doesn't intersect`,
+              );
+            }
+          } else {
+            // Track is not linked - split this track
+            console.log(
+              `✂️ Splitting unselected unlinked track "${track.name}"`,
+            );
+            tracksToSplit.push(track);
+            processedTrackIds.add(track.id);
+          }
+        });
+      }
+
+      if (tracksToSplit.length === 0) {
+        console.log('🚫 No tracks to split at current playhead position');
         return false;
       }
 
-      // Split all intersecting tracks at the current playhead position
+      // Split all determined tracks
       let splitCount = 0;
-      intersectingTracks.forEach((track) => {
+      const processedIds = new Set<string>();
+
+      tracksToSplit.forEach((track) => {
+        if (processedIds.has(track.id)) return; // Skip if already processed
+
         console.log(
           `✂️ Splitting track "${track.name}" at frame ${currentFrame}`,
         );
         get().splitTrack(track.id, currentFrame);
         splitCount++;
+        processedIds.add(track.id);
       });
 
       console.log(

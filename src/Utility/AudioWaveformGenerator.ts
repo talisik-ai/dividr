@@ -3,6 +3,8 @@ export interface WaveformOptions {
   duration: number; // in seconds
   sampleRate?: number; // Target sample rate for peak generation (default: 8000)
   peaksPerSecond?: number; // Number of peaks per second (default: 20)
+  startTime?: number; // Start time in seconds for segmenting (default: 0)
+  endTime?: number; // End time in seconds for segmenting (default: duration)
 }
 
 export interface WaveformGenerationResult {
@@ -12,6 +14,9 @@ export interface WaveformGenerationResult {
   sampleRate: number; // Sample rate used
   error?: string;
   cacheKey: string;
+  startTime?: number; // Start time of this segment
+  endTime?: number; // End time of this segment
+  isSegment?: boolean; // Whether this is a segment of a larger waveform
 }
 
 // Persistent cache interface for waveforms
@@ -48,6 +53,8 @@ class AudioWaveformGenerator {
       duration,
       sampleRate = this.DEFAULT_SAMPLE_RATE,
       peaksPerSecond = this.DEFAULT_PEAKS_PER_SECOND,
+      startTime = 0,
+      endTime = duration,
     } = options;
 
     const cacheKey = this.generateCacheKey(
@@ -55,6 +62,8 @@ class AudioWaveformGenerator {
       duration,
       sampleRate,
       peaksPerSecond,
+      startTime,
+      endTime,
     );
 
     // Check cache first
@@ -69,6 +78,14 @@ class AudioWaveformGenerator {
       `📊 Parameters: ${peaksPerSecond} peaks/sec, ${sampleRate}Hz sample rate`,
     );
 
+    // Check if this is a segment request
+    const isSegment = startTime > 0 || endTime < duration;
+    if (isSegment) {
+      console.log(
+        `✂️ Generating waveform segment: ${startTime}s - ${endTime}s`,
+      );
+    }
+
     try {
       // Use Web Audio API to analyze the audio file
       const peaks = await this.extractPeaksFromAudio(
@@ -76,21 +93,28 @@ class AudioWaveformGenerator {
         duration,
         sampleRate,
         peaksPerSecond,
+        startTime,
+        endTime,
       );
 
       const result: WaveformGenerationResult = {
         success: true,
         peaks,
-        duration,
+        duration: endTime - startTime, // Segment duration
         sampleRate,
         cacheKey,
+        startTime,
+        endTime,
+        isSegment,
       };
 
       // Cache the result
       this.cacheResult(cacheKey, result, audioPath);
 
       console.log(`✅ Waveform generated successfully for: ${audioPath}`);
-      console.log(`📈 Generated ${peaks.length} peaks for ${duration}s audio`);
+      console.log(
+        `📈 Generated ${peaks.length} peaks for ${result.duration}s audio`,
+      );
 
       return result;
     } catch (error) {
@@ -98,10 +122,13 @@ class AudioWaveformGenerator {
       return {
         success: false,
         peaks: [],
-        duration,
+        duration: endTime - startTime,
         sampleRate,
         error: error instanceof Error ? error.message : 'Unknown error',
         cacheKey,
+        startTime,
+        endTime,
+        isSegment,
       };
     }
   }
@@ -114,6 +141,8 @@ class AudioWaveformGenerator {
     duration: number,
     sampleRate: number,
     peaksPerSecond: number,
+    startTime = 0,
+    endTime = duration,
   ): Promise<number[]> {
     // Check if we're dealing with a URL (preview URL) or file path
     const audioUrl = audioPath.startsWith('http')
@@ -137,24 +166,32 @@ class AudioWaveformGenerator {
       // Decode audio data
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-      // Calculate number of peaks needed
-      const totalPeaks = Math.floor(duration * peaksPerSecond);
-      const samplesPerPeak = Math.floor(audioBuffer.length / totalPeaks);
+      // Calculate segment parameters
+      const segmentDuration = endTime - startTime;
+      const totalPeaks = Math.floor(segmentDuration * peaksPerSecond);
+
+      // Calculate start and end sample indices for the segment
+      const startSample = Math.floor(startTime * audioBuffer.sampleRate);
+      const endSample = Math.floor(endTime * audioBuffer.sampleRate);
+      const segmentLength = endSample - startSample;
+      const samplesPerPeak = Math.floor(segmentLength / totalPeaks);
 
       // Extract peaks from the first channel (mono or left channel)
       const channelData = audioBuffer.getChannelData(0);
       const peaks: number[] = [];
 
       for (let i = 0; i < totalPeaks; i++) {
-        const start = i * samplesPerPeak;
-        const end = Math.min(start + samplesPerPeak, channelData.length);
+        const segmentStart = startSample + i * samplesPerPeak;
+        const segmentEnd = Math.min(segmentStart + samplesPerPeak, endSample);
 
         // Find the maximum absolute value in this segment
         let peak = 0;
-        for (let j = start; j < end; j++) {
-          const sample = Math.abs(channelData[j]);
-          if (sample > peak) {
-            peak = sample;
+        for (let j = segmentStart; j < segmentEnd; j++) {
+          if (j >= 0 && j < channelData.length) {
+            const sample = Math.abs(channelData[j]);
+            if (sample > peak) {
+              peak = sample;
+            }
           }
         }
 
@@ -184,9 +221,13 @@ class AudioWaveformGenerator {
     duration: number,
     sampleRate: number,
     peaksPerSecond: number,
+    startTime = 0,
+    endTime = duration,
   ): string {
     const pathHash = this.simpleHash(audioPath);
-    return `${this.CACHE_KEY_PREFIX}${pathHash}_${duration}_${sampleRate}_${peaksPerSecond}`;
+    const segmentKey =
+      startTime > 0 || endTime < duration ? `_seg_${startTime}_${endTime}` : '';
+    return `${this.CACHE_KEY_PREFIX}${pathHash}_${duration}_${sampleRate}_${peaksPerSecond}${segmentKey}`;
   }
 
   /**
@@ -341,6 +382,27 @@ class AudioWaveformGenerator {
   }
 
   /**
+   * Generate waveform segment for a specific time range
+   */
+  async generateWaveformSegment(
+    audioPath: string,
+    fullDuration: number,
+    startTime: number,
+    endTime: number,
+    sampleRate: number = this.DEFAULT_SAMPLE_RATE,
+    peaksPerSecond: number = this.DEFAULT_PEAKS_PER_SECOND,
+  ): Promise<WaveformGenerationResult> {
+    return this.generateWaveform({
+      audioPath,
+      duration: fullDuration,
+      sampleRate,
+      peaksPerSecond,
+      startTime,
+      endTime,
+    });
+  }
+
+  /**
    * Get cached waveform by audio path and duration (public method)
    */
   getCachedWaveform(
@@ -359,13 +421,34 @@ class AudioWaveformGenerator {
   }
 
   /**
+   * Get cached waveform segment by audio path and time range
+   */
+  getCachedWaveformSegment(
+    audioPath: string,
+    fullDuration: number,
+    startTime: number,
+    endTime: number,
+    sampleRate: number = this.DEFAULT_SAMPLE_RATE,
+    peaksPerSecond: number = this.DEFAULT_PEAKS_PER_SECOND,
+  ): WaveformGenerationResult | null {
+    const cacheKey = this.generateCacheKey(
+      audioPath,
+      fullDuration,
+      sampleRate,
+      peaksPerSecond,
+      startTime,
+      endTime,
+    );
+    return this.getCachedResult(cacheKey);
+  }
+
+  /**
    * Find cached waveform by similar duration (for when paths change but content is the same)
    */
   findCachedWaveformByDuration(
     duration: number,
-    sampleRate: number = this.DEFAULT_SAMPLE_RATE,
-    peaksPerSecond: number = this.DEFAULT_PEAKS_PER_SECOND,
-    toleranceSeconds: number = 1.0,
+    sampleRate = this.DEFAULT_SAMPLE_RATE,
+    toleranceSeconds = 1.0,
   ): WaveformGenerationResult | null {
     console.log(
       `🔍 Searching cache for waveform with duration ~${duration}s (±${toleranceSeconds}s)`,

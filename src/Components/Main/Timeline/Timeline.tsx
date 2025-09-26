@@ -152,34 +152,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         const frameAdvance = elapsed * timeline.fps * playback.playbackRate;
         const targetFrame = Math.floor(startFrame + frameAdvance);
 
-        // Smart playhead jumping - skip gaps and only play where tracks exist
-        const hasActiveTracksAtCurrentFrame = tracks.some(
-          (track) =>
-            track.visible &&
-            targetFrame >= track.startFrame &&
-            targetFrame < track.endFrame,
-        );
-
-        if (!hasActiveTracksAtCurrentFrame && targetFrame < effectiveEndFrame) {
-          // No tracks at current position, jump to next track
-          const nextTrack = tracks
-            .filter((track) => track.visible && track.startFrame > targetFrame)
-            .sort((a, b) => a.startFrame - b.startFrame)[0];
-
-          if (nextTrack) {
-            const clampedFrame = Math.max(
-              0,
-              Math.min(nextTrack.startFrame, effectiveEndFrame - 1),
-            );
-            console.log(
-              `[Timeline] Jumping from frame ${targetFrame} to ${clampedFrame} (next track: ${nextTrack.name})`,
-            );
-            lastFrameUpdateRef.current = clampedFrame;
-            setCurrentFrame(clampedFrame);
-            playbackIntervalRef.current = requestAnimationFrame(animate);
-            return;
-          }
-        }
+        // Linear playback - respect gaps like Premiere Pro
+        // No gap skipping - playhead moves continuously through the entire timeline
 
         if (targetFrame >= effectiveEndFrame) {
           const finalFrame = playback.isLooping
@@ -267,6 +241,16 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     useHotkeys('i', () => setInPoint(timeline.currentFrame));
     useHotkeys('o', () => setOutPoint(timeline.currentFrame));
     useHotkeys('s', () => {
+      const { splitAtPlayhead } = useVideoEditorStore.getState();
+      splitAtPlayhead();
+    });
+    useHotkeys('ctrl+k', (e) => {
+      e.preventDefault();
+      const { splitAtPlayhead } = useVideoEditorStore.getState();
+      splitAtPlayhead();
+    });
+    useHotkeys('cmd+k', (e) => {
+      e.preventDefault();
       const { splitAtPlayhead } = useVideoEditorStore.getState();
       splitAtPlayhead();
     });
