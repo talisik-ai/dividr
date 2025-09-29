@@ -11,6 +11,7 @@ import {
 import {
   CopyPlus,
   Link,
+  Magnet,
   Maximize,
   Pause,
   Play,
@@ -407,6 +408,10 @@ export const TimelineControls: React.FC = React.memo(
   () => {
     // Remove reactive zoom subscription to prevent unnecessary re-renders
     const setZoom = useVideoEditorStore((state) => state.setZoom);
+    const snapEnabled = useVideoEditorStore(
+      (state) => state.timeline.snapEnabled,
+    );
+    const toggleSnap = useVideoEditorStore((state) => state.toggleSnap);
 
     // Get current frame non-reactively
     const getCurrentFrame = useCallback(() => {
@@ -447,6 +452,14 @@ export const TimelineControls: React.FC = React.memo(
             title="Duplicate"
           >
             <CopyPlus />
+          </Button>
+          <Button
+            variant="native"
+            onClick={toggleSnap}
+            title={`Snap ${snapEnabled ? 'On' : 'Off'} (S)`}
+            className={snapEnabled ? 'text-green-500' : ''}
+          >
+            <Magnet className="w-4 h-4" />
           </Button>
           <LinkUnlinkButton />
           <DeleteButton />

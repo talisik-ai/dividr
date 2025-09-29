@@ -57,6 +57,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const removeSelectedTracks = useVideoEditorStore(
       (state) => state.removeSelectedTracks,
     );
+    const toggleSnap = useVideoEditorStore((state) => state.toggleSnap);
     const addTrackFromMediaLibrary = useVideoEditorStore(
       (state) => state.addTrackFromMediaLibrary,
     );
@@ -269,6 +270,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       const { toggleTrackMute } = useVideoEditorStore.getState();
       const selectedTracks = timeline.selectedTrackIds;
       selectedTracks.forEach((trackId) => toggleTrackMute(trackId));
+    });
+    useHotkeys('s', () => {
+      toggleSnap();
     });
     useHotkeys(
       'del',

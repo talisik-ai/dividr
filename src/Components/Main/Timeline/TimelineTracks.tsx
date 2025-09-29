@@ -1,6 +1,9 @@
 import { Film } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  findNearestSnapPointForDrag,
+  findSnapPoints,
+  SNAP_THRESHOLD,
   useVideoEditorStore,
   VideoTrack,
 } from '../../../Store/VideoEditorStore';
@@ -89,6 +92,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       x: 0,
       startFrame: 0,
       endFrame: 0,
+      originalStartFrame: 0, // Track original position for directional snapping
     });
 
     // Calculate positions relative to the scrolled timeline
@@ -109,6 +113,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           x: e.clientX,
           startFrame: track.startFrame,
           endFrame: track.endFrame,
+          originalStartFrame: track.startFrame,
         });
       },
       [track.startFrame, track.endFrame],
@@ -121,23 +126,93 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         const deltaX = e.clientX - dragStart.x;
         const deltaFrames = Math.round(deltaX / frameWidth);
 
+        // Get snap settings from store
+        const { timeline, tracks } = useVideoEditorStore.getState();
+        const snapEnabled = timeline.snapEnabled;
+
         if (isResizing === 'left') {
-          const newStartFrame = Math.max(
+          let newStartFrame = Math.max(
             0,
             Math.min(
               dragStart.endFrame - 1,
               dragStart.startFrame + deltaFrames,
             ),
           );
+
+          // Apply snapping for left resize
+          if (snapEnabled) {
+            const snapPoints = findSnapPoints(
+              timeline.currentFrame,
+              tracks,
+              timeline.inPoint,
+              timeline.outPoint,
+              track.id, // Exclude current track from snap points
+            );
+            const snappedFrame = findNearestSnapPointForDrag(
+              newStartFrame,
+              snapPoints,
+              SNAP_THRESHOLD,
+              track.id,
+              track.startFrame, // Current position to avoid snapping to same position
+            );
+            if (snappedFrame !== null) {
+              newStartFrame = snappedFrame;
+            }
+          }
+
           onResize(newStartFrame, undefined);
         } else if (isResizing === 'right') {
-          const newEndFrame = Math.max(
+          let newEndFrame = Math.max(
             dragStart.startFrame + 1,
             dragStart.endFrame + deltaFrames,
           );
+
+          // Apply snapping for right resize
+          if (snapEnabled) {
+            const snapPoints = findSnapPoints(
+              timeline.currentFrame,
+              tracks,
+              timeline.inPoint,
+              timeline.outPoint,
+              track.id, // Exclude current track from snap points
+            );
+            const snappedFrame = findNearestSnapPointForDrag(
+              newEndFrame,
+              snapPoints,
+              SNAP_THRESHOLD,
+              track.id,
+              track.endFrame, // Current position to avoid snapping to same position
+            );
+            if (snappedFrame !== null) {
+              newEndFrame = snappedFrame;
+            }
+          }
+
           onResize(undefined, newEndFrame);
         } else if (isDragging) {
-          const newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
+          let newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
+
+          // Apply snapping for drag - use nearest snap point for continuous dragging
+          if (snapEnabled) {
+            const snapPoints = findSnapPoints(
+              timeline.currentFrame,
+              tracks,
+              timeline.inPoint,
+              timeline.outPoint,
+              track.id, // Exclude current track from snap points
+            );
+            const snappedFrame = findNearestSnapPointForDrag(
+              newStartFrame,
+              snapPoints,
+              SNAP_THRESHOLD,
+              track.id,
+              track.startFrame, // Current position to avoid snapping to same position
+            );
+            if (snappedFrame !== null) {
+              newStartFrame = snappedFrame;
+            }
+          }
+
           onMove(newStartFrame);
         }
       },
@@ -208,6 +283,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
                 x: e.clientX,
                 startFrame: track.startFrame,
                 endFrame: track.endFrame,
+                originalStartFrame: track.startFrame,
               });
             }}
           >

@@ -44,6 +44,7 @@ export interface TimelineState {
   outPoint?: number;
   selectedTrackIds: string[];
   playheadVisible: boolean;
+  snapEnabled: boolean;
 }
 
 export interface PlaybackState {
@@ -182,6 +183,7 @@ interface VideoEditorStore {
   setInPoint: (frame?: number) => void;
   setOutPoint: (frame?: number) => void;
   setSelectedTracks: (trackIds: string[]) => void;
+  toggleSnap: () => void;
 
   // Track Actions
   addTrack: (track: Omit<VideoTrack, 'id'>) => Promise<string>;
@@ -922,11 +924,172 @@ async function convertImageToBase64(imageUrl: string): Promise<string> {
   }
 }
 
-// Helper function to find a non-overlapping position for a track
-function findNonOverlappingPosition(
+// Snap detection utility
+export interface SnapPoint {
+  frame: number;
+  type: 'playhead' | 'track-start' | 'track-end' | 'in-point' | 'out-point';
+  trackId?: string;
+}
+
+export const SNAP_THRESHOLD = 5; // frames
+
+export function findSnapPoints(
+  currentFrame: number,
+  tracks: VideoTrack[],
+  inPoint?: number,
+  outPoint?: number,
+  excludeTrackId?: string,
+): SnapPoint[] {
+  const snapPoints: SnapPoint[] = [];
+
+  // Add playhead as snap point
+  snapPoints.push({
+    frame: currentFrame,
+    type: 'playhead',
+  });
+
+  // Add in/out points as snap points
+  if (inPoint !== undefined) {
+    snapPoints.push({
+      frame: inPoint,
+      type: 'in-point',
+    });
+  }
+  if (outPoint !== undefined) {
+    snapPoints.push({
+      frame: outPoint,
+      type: 'out-point',
+    });
+  }
+
+  // Add track start and end points (excluding the current track being dragged)
+  tracks.forEach((track) => {
+    if (track.visible && track.id !== excludeTrackId) {
+      snapPoints.push({
+        frame: track.startFrame,
+        type: 'track-start',
+        trackId: track.id,
+      });
+      snapPoints.push({
+        frame: track.endFrame,
+        type: 'track-end',
+        trackId: track.id,
+      });
+    }
+  });
+
+  return snapPoints;
+}
+
+export function findNearestSnapPoint(
+  targetFrame: number,
+  snapPoints: SnapPoint[],
+  threshold: number = SNAP_THRESHOLD,
+  excludeTrackId?: string, // Exclude the current track being dragged
+): number | null {
+  let nearestSnapPoint: SnapPoint | null = null;
+  let minDistance = threshold + 1;
+
+  for (const snapPoint of snapPoints) {
+    // Skip snap points from the same track being dragged
+    if (excludeTrackId && snapPoint.trackId === excludeTrackId) {
+      continue;
+    }
+
+    const distance = Math.abs(snapPoint.frame - targetFrame);
+    if (distance <= threshold && distance < minDistance) {
+      nearestSnapPoint = snapPoint;
+      minDistance = distance;
+    }
+  }
+
+  return nearestSnapPoint ? nearestSnapPoint.frame : null;
+}
+
+// Enhanced snap detection that considers drag direction and track boundaries
+export function findDirectionalSnapPoint(
+  targetFrame: number,
+  originalFrame: number,
+  snapPoints: SnapPoint[],
+  threshold: number = SNAP_THRESHOLD,
+  excludeTrackId?: string,
+): number | null {
+  const dragDirection = targetFrame > originalFrame ? 1 : -1;
+  const dragDistance = Math.abs(targetFrame - originalFrame);
+
+  // Don't snap if the drag distance is too small (prevents accidental snapping)
+  if (dragDistance < 2) {
+    return null;
+  }
+
+  let nearestSnapPoint: SnapPoint | null = null;
+  let minDistance = threshold + 1;
+
+  for (const snapPoint of snapPoints) {
+    // Skip snap points from the same track being dragged
+    if (excludeTrackId && snapPoint.trackId === excludeTrackId) {
+      continue;
+    }
+
+    const distance = Math.abs(snapPoint.frame - targetFrame);
+    const snapDirection = snapPoint.frame > originalFrame ? 1 : -1;
+
+    // Only consider snap points in the same direction as the drag
+    // and ensure we're not snapping to the original position
+    if (
+      distance <= threshold &&
+      distance < minDistance &&
+      snapDirection === dragDirection &&
+      snapPoint.frame !== originalFrame
+    ) {
+      nearestSnapPoint = snapPoint;
+      minDistance = distance;
+    }
+  }
+
+  return nearestSnapPoint ? nearestSnapPoint.frame : null;
+}
+
+// Improved snap detection for continuous dragging - finds nearest snap point regardless of direction
+export function findNearestSnapPointForDrag(
+  targetFrame: number,
+  snapPoints: SnapPoint[],
+  threshold: number = SNAP_THRESHOLD,
+  excludeTrackId?: string,
+  currentFrame?: number, // Current position to avoid snapping to same position
+): number | null {
+  let nearestSnapPoint: SnapPoint | null = null;
+  let minDistance = threshold + 1;
+
+  for (const snapPoint of snapPoints) {
+    // Skip snap points from the same track being dragged
+    if (excludeTrackId && snapPoint.trackId === excludeTrackId) {
+      continue;
+    }
+
+    // Skip if snapping to the same position as current
+    if (currentFrame !== undefined && snapPoint.frame === currentFrame) {
+      continue;
+    }
+
+    const distance = Math.abs(snapPoint.frame - targetFrame);
+
+    // Find the nearest snap point within threshold
+    if (distance <= threshold && distance < minDistance) {
+      nearestSnapPoint = snapPoint;
+      minDistance = distance;
+    }
+  }
+
+  return nearestSnapPoint ? nearestSnapPoint.frame : null;
+}
+
+// Helper function to find the nearest available gap for a track
+function findNearestAvailablePosition(
   desiredStartFrame: number,
   duration: number,
   existingTracks: VideoTrack[],
+  playheadFrame?: number,
 ): number {
   const desiredEndFrame = desiredStartFrame + duration;
 
@@ -942,45 +1105,90 @@ function findNonOverlappingPosition(
   );
 
   if (!hasConflict) {
-    console.log(
-      `✅ No conflict for position ${desiredStartFrame}-${desiredEndFrame}`,
-    );
     return Math.max(0, desiredStartFrame); // No conflict, use desired position
   }
 
-  console.log(
-    `⚠️ Conflict detected for position ${desiredStartFrame}-${desiredEndFrame}, finding alternative...`,
-  );
+  // Find all available gaps and choose the nearest one
+  const availablePositions: number[] = [];
 
-  // Find the best position to place the track
-  // Try to place it as close as possible to the desired position
+  // Check gaps between tracks
+  for (let i = 0; i < sortedTracks.length - 1; i++) {
+    const currentTrack = sortedTracks[i];
+    const nextTrack = sortedTracks[i + 1];
+    const gapStart = currentTrack.endFrame;
+    const gapEnd = nextTrack.startFrame;
+    const gapSize = gapEnd - gapStart;
 
-  // Option 1: Try to place it before the conflicting track
-  for (const track of sortedTracks) {
-    if (track.startFrame >= desiredStartFrame) {
-      const spaceBeforeTrack = track.startFrame;
-      if (spaceBeforeTrack >= duration) {
-        const newPos = Math.max(0, track.startFrame - duration);
-        console.log(
-          `📍 Placing before track at ${newPos}-${newPos + duration}`,
-        );
-        return newPos;
+    if (gapSize >= duration) {
+      // Gap is large enough, try to place as close to desired position as possible
+      let gapPosition = Math.max(gapStart, desiredStartFrame);
+
+      // If the desired position is before the gap, try to place at the start of the gap
+      if (desiredStartFrame < gapStart) {
+        gapPosition = gapStart;
       }
-      break;
+
+      // If the desired position is after the gap, try to place at the end of the gap
+      if (desiredStartFrame > gapEnd - duration) {
+        gapPosition = gapEnd - duration;
+      }
+
+      // Ensure the position fits within the gap
+      if (gapPosition >= gapStart && gapPosition + duration <= gapEnd) {
+        availablePositions.push(gapPosition);
+      }
     }
   }
 
-  // Option 2: Try to place it after the conflicting tracks
-  let latestEndFrame = 0;
-  for (const track of sortedTracks) {
-    if (track.endFrame > desiredStartFrame) {
-      latestEndFrame = Math.max(latestEndFrame, track.endFrame);
+  // Check gap before first track
+  if (sortedTracks.length > 0) {
+    const firstTrack = sortedTracks[0];
+    if (firstTrack.startFrame >= duration) {
+      const gapPosition = Math.max(0, firstTrack.startFrame - duration);
+      if (gapPosition + duration <= firstTrack.startFrame) {
+        availablePositions.push(gapPosition);
+      }
     }
   }
-  console.log(
-    `📍 Placing after conflicts at ${latestEndFrame}-${latestEndFrame + duration}`,
-  );
-  return latestEndFrame;
+
+  // Check gap after last track
+  if (sortedTracks.length > 0) {
+    const lastTrack = sortedTracks[sortedTracks.length - 1];
+    const gapPosition = lastTrack.endFrame;
+    availablePositions.push(gapPosition);
+  }
+
+  // If no gaps found, create a gap at the end
+  if (availablePositions.length === 0) {
+    const lastTrack = sortedTracks[sortedTracks.length - 1];
+    const fallbackPosition = lastTrack.endFrame;
+    return fallbackPosition;
+  }
+
+  // Find the position closest to the desired position, with preference for playhead proximity
+  let nearestPosition = availablePositions[0];
+  let minDistance = Math.abs(availablePositions[0] - desiredStartFrame);
+
+  for (const position of availablePositions) {
+    const distance = Math.abs(position - desiredStartFrame);
+
+    // If playhead is provided, give slight preference to positions near the playhead
+    let adjustedDistance = distance;
+    if (playheadFrame !== undefined) {
+      const playheadDistance = Math.abs(position - playheadFrame);
+      // If position is very close to playhead, reduce the distance slightly
+      if (playheadDistance < 10) {
+        adjustedDistance = distance * 0.8; // 20% preference for playhead proximity
+      }
+    }
+
+    if (adjustedDistance < minDistance) {
+      nearestPosition = position;
+      minDistance = adjustedDistance;
+    }
+  }
+
+  return nearestPosition;
 }
 export const useTimelineUtils = () => {
   const store = useVideoEditorStore();
@@ -1046,6 +1254,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       scrollX: 0,
       selectedTrackIds: [] as string[],
       playheadVisible: true,
+      snapEnabled: true, // Snap enabled by default
     },
     playback: {
       isPlaying: false,
@@ -1169,6 +1378,14 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         timeline: { ...state.timeline, selectedTrackIds: trackIds },
       })),
 
+    toggleSnap: () =>
+      set((state) => ({
+        timeline: {
+          ...state.timeline,
+          snapEnabled: !state.timeline.snapEnabled,
+        },
+      })),
+
     // Track Actions
     addTrack: async (trackData) => {
       const id = uuidv4();
@@ -1187,12 +1404,12 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         );
 
         // Find non-overlapping positions for both tracks
-        const videoStartFrame = findNonOverlappingPosition(
+        const videoStartFrame = findNearestAvailablePosition(
           trackData.startFrame,
           duration,
           existingVideoTracks,
         );
-        const audioStartFrame = findNonOverlappingPosition(
+        const audioStartFrame = findNearestAvailablePosition(
           trackData.startFrame,
           duration,
           existingAudioTracks,
@@ -1335,7 +1552,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         const duration = trackData.endFrame - trackData.startFrame;
 
         // Find a non-overlapping position for the new track
-        const startFrame = findNonOverlappingPosition(
+        const startFrame = findNearestAvailablePosition(
           trackData.startFrame,
           duration,
           existingTracks,
@@ -1587,14 +1804,11 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               });
 
               // Check for collisions and find the best position
-              const finalStartFrame = findNonOverlappingPosition(
+              const finalStartFrame = findNearestAvailablePosition(
                 newStartFrame,
                 duration,
                 conflictingTracks,
-              );
-
-              console.log(
-                `🎬 Moving ${track.type} track "${track.name}" from ${track.startFrame} to ${finalStartFrame}`,
+                state.timeline.currentFrame, // Pass playhead position for better positioning
               );
 
               return {
@@ -1615,7 +1829,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
               const currentOffset = track.startFrame - trackToMove.startFrame;
               const newLinkedStartFrame = newStartFrame + currentOffset;
 
-              const finalStartFrame = findNonOverlappingPosition(
+              const finalStartFrame = findNearestAvailablePosition(
                 newLinkedStartFrame,
                 linkedDuration,
                 state.tracks.filter((t) => {
@@ -2323,6 +2537,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           scrollX: 0,
           selectedTrackIds: [],
           playheadVisible: true,
+          snapEnabled: true,
         },
         playback: {
           isPlaying: false,
