@@ -10,7 +10,7 @@ interface TimelineRulerProps {
   tracks: VideoTrack[];
   inPoint?: number;
   outPoint?: number;
-  onClick: (e: React.MouseEvent) => void;
+  onClick?: (e: React.MouseEvent) => void;
   className?: string;
   timelineScrollElement?: HTMLElement | null;
 }
