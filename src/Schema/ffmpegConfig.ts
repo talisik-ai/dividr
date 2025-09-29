@@ -1,13 +1,14 @@
 export interface TrackInfo {
   path: string;
+  audioPath?: string;
   startTime?: number; // in seconds
   duration?: number; // in seconds
   endTime?: number; // in seconds
   startFrame?: number;
   muted?: boolean; // Whether this track's audio should be muted
-  trackType?: 'video' | 'audio' | 'image' | 'subtitle'; // Type of the track
+  trackType?: 'video' | 'audio' | 'image' | 'subtitle' | 'both'; // Type of the track
   visible?: boolean; // Whether this track's video should be visible (if false, show black)
-  gapType?: 'video' | 'audio';
+  gapType?: 'video' | 'audio' | 'both';
   width?: number;
   height?: number;
 }
@@ -27,7 +28,7 @@ export interface Gap { // Gap Interface
 export interface TimelineGaps { // interface for the 3 timeline objects
   video: Gap[];
   audio: Gap[];
-  subtitles: Gap[];
+  subtitles?: Gap[];
 }
 export type EncodingPreset =
   | 'ultrafast'
@@ -98,4 +99,19 @@ export interface CategorizedInputs {
   videoInputs: InputCategory[];
   audioInputs: Omit<InputCategory, 'isGap'>[];
   fileInputIndex: number;
+}
+
+export interface ProcessedTimelineSegment {
+  input: TrackInfo;
+  originalIndex: number;
+  startTime: number;
+  duration: number;
+  endTime: number;
+  timelineType: 'video' | 'audio';
+}
+
+export interface ProcessedTimeline {
+  segments: ProcessedTimelineSegment[];
+  totalDuration: number;
+  timelineType: 'video' | 'audio';
 }
