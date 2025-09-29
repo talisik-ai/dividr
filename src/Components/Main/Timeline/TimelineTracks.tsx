@@ -1,7 +1,7 @@
 import { Film } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  findNearestSnapPointForDrag,
+  findBufferedSnapPoint,
   findSnapPoints,
   SNAP_THRESHOLD,
   useVideoEditorStore,
@@ -94,6 +94,10 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       endFrame: 0,
       originalStartFrame: 0, // Track original position for directional snapping
     });
+    const [lastSnappedFrame, setLastSnappedFrame] = useState<number | null>(
+      null,
+    );
+    const [isApproachingSnap, setIsApproachingSnap] = useState(false);
 
     // Calculate positions relative to the scrolled timeline
     const startX = track.startFrame * frameWidth;
@@ -115,6 +119,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           endFrame: track.endFrame,
           originalStartFrame: track.startFrame,
         });
+        setLastSnappedFrame(null); // Reset snap state when starting drag
+        setIsApproachingSnap(false); // Reset approaching state
       },
       [track.startFrame, track.endFrame],
     );
@@ -148,15 +154,35 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               timeline.outPoint,
               track.id, // Exclude current track from snap points
             );
-            const snappedFrame = findNearestSnapPointForDrag(
+
+            // Check if we're approaching a snap point
+            const approachingThreshold = SNAP_THRESHOLD * 1.5;
+            let isApproaching = false;
+
+            for (const snapPoint of snapPoints) {
+              if (snapPoint.trackId !== track.id) {
+                const distance = Math.abs(snapPoint.frame - newStartFrame);
+                if (distance <= approachingThreshold) {
+                  isApproaching = true;
+                  break;
+                }
+              }
+            }
+
+            const snappedFrame = findBufferedSnapPoint(
               newStartFrame,
               snapPoints,
               SNAP_THRESHOLD,
               track.id,
               track.startFrame, // Current position to avoid snapping to same position
+              lastSnappedFrame, // Previous snap frame for hysteresis
+              isApproaching, // Whether we're approaching a snap point
             );
             if (snappedFrame !== null) {
               newStartFrame = snappedFrame;
+              setLastSnappedFrame(snappedFrame);
+            } else {
+              setLastSnappedFrame(null);
             }
           }
 
@@ -176,15 +202,35 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               timeline.outPoint,
               track.id, // Exclude current track from snap points
             );
-            const snappedFrame = findNearestSnapPointForDrag(
+
+            // Check if we're approaching a snap point
+            const approachingThreshold = SNAP_THRESHOLD * 1.5;
+            let isApproaching = false;
+
+            for (const snapPoint of snapPoints) {
+              if (snapPoint.trackId !== track.id) {
+                const distance = Math.abs(snapPoint.frame - newEndFrame);
+                if (distance <= approachingThreshold) {
+                  isApproaching = true;
+                  break;
+                }
+              }
+            }
+
+            const snappedFrame = findBufferedSnapPoint(
               newEndFrame,
               snapPoints,
               SNAP_THRESHOLD,
               track.id,
               track.endFrame, // Current position to avoid snapping to same position
+              lastSnappedFrame, // Previous snap frame for hysteresis
+              isApproaching, // Whether we're approaching a snap point
             );
             if (snappedFrame !== null) {
               newEndFrame = snappedFrame;
+              setLastSnappedFrame(snappedFrame);
+            } else {
+              setLastSnappedFrame(null);
             }
           }
 
@@ -192,7 +238,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         } else if (isDragging) {
           let newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
 
-          // Apply snapping for drag - use nearest snap point for continuous dragging
+          // Apply snapping for drag - use smooth snap point for continuous dragging
           if (snapEnabled) {
             const snapPoints = findSnapPoints(
               timeline.currentFrame,
@@ -201,15 +247,37 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               timeline.outPoint,
               track.id, // Exclude current track from snap points
             );
-            const snappedFrame = findNearestSnapPointForDrag(
+
+            // Check if we're approaching a snap point (within 1.5x threshold)
+            const approachingThreshold = SNAP_THRESHOLD * 1.5;
+            let isApproaching = false;
+
+            for (const snapPoint of snapPoints) {
+              if (snapPoint.trackId !== track.id) {
+                const distance = Math.abs(snapPoint.frame - newStartFrame);
+                if (distance <= approachingThreshold) {
+                  isApproaching = true;
+                  break;
+                }
+              }
+            }
+
+            setIsApproachingSnap(isApproaching);
+
+            const snappedFrame = findBufferedSnapPoint(
               newStartFrame,
               snapPoints,
               SNAP_THRESHOLD,
               track.id,
               track.startFrame, // Current position to avoid snapping to same position
+              lastSnappedFrame, // Previous snap frame for hysteresis
+              isApproaching, // Whether we're approaching a snap point
             );
             if (snappedFrame !== null) {
               newStartFrame = snappedFrame;
+              setLastSnappedFrame(snappedFrame);
+            } else {
+              setLastSnappedFrame(null);
             }
           }
 
@@ -222,6 +290,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const handleMouseUp = useCallback(() => {
       setIsResizing(false);
       setIsDragging(false);
+      setLastSnappedFrame(null); // Reset snap state when ending drag
+      setIsApproachingSnap(false); // Reset approaching state
     }, []);
 
     // Add global mouse listeners when resizing or dragging
@@ -285,6 +355,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
                 endFrame: track.endFrame,
                 originalStartFrame: track.startFrame,
               });
+              setLastSnappedFrame(null); // Reset snap state when starting drag
+              setIsApproachingSnap(false); // Reset approaching state
             }}
           >
             {/* Video sprite sheet strip for video tracks */}

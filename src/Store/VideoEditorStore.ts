@@ -1060,7 +1060,10 @@ export function findNearestSnapPointForDrag(
 ): number | null {
   let nearestSnapPoint: SnapPoint | null = null;
   let minDistance = threshold + 1;
+  let playheadSnapPoint: SnapPoint | null = null;
+  let playheadDistance = threshold + 1;
 
+  // First pass: find the nearest snap point and check for playhead
   for (const snapPoint of snapPoints) {
     // Skip snap points from the same track being dragged
     if (excludeTrackId && snapPoint.trackId === excludeTrackId) {
@@ -1074,6 +1077,12 @@ export function findNearestSnapPointForDrag(
 
     const distance = Math.abs(snapPoint.frame - targetFrame);
 
+    // Track playhead separately for priority
+    if (snapPoint.type === 'playhead' && distance <= threshold) {
+      playheadSnapPoint = snapPoint;
+      playheadDistance = distance;
+    }
+
     // Find the nearest snap point within threshold
     if (distance <= threshold && distance < minDistance) {
       nearestSnapPoint = snapPoint;
@@ -1081,7 +1090,224 @@ export function findNearestSnapPointForDrag(
     }
   }
 
+  // If we have a playhead snap point and it's within a reasonable distance of the nearest point,
+  // prioritize the playhead to avoid jitter
+  if (playheadSnapPoint && playheadDistance <= threshold) {
+    // If playhead is very close (within 2 frames) or if it's the closest, use it
+    if (playheadDistance <= 2 || playheadDistance <= minDistance) {
+      return playheadSnapPoint.frame;
+    }
+  }
+
   return nearestSnapPoint ? nearestSnapPoint.frame : null;
+}
+
+// Enhanced snap detection with hysteresis to prevent jitter
+export function findStableSnapPoint(
+  targetFrame: number,
+  snapPoints: SnapPoint[],
+  threshold: number = SNAP_THRESHOLD,
+  excludeTrackId?: string,
+  currentFrame?: number,
+  lastSnappedFrame?: number, // Previous snap frame for hysteresis
+): number | null {
+  let nearestSnapPoint: SnapPoint | null = null;
+  let minDistance = threshold + 1;
+  let playheadSnapPoint: SnapPoint | null = null;
+  let playheadDistance = threshold + 1;
+
+  // First pass: find the nearest snap point and check for playhead
+  for (const snapPoint of snapPoints) {
+    // Skip snap points from the same track being dragged
+    if (excludeTrackId && snapPoint.trackId === excludeTrackId) {
+      continue;
+    }
+
+    // Skip if snapping to the same position as current
+    if (currentFrame !== undefined && snapPoint.frame === currentFrame) {
+      continue;
+    }
+
+    const distance = Math.abs(snapPoint.frame - targetFrame);
+
+    // Track playhead separately for priority
+    if (snapPoint.type === 'playhead' && distance <= threshold) {
+      playheadSnapPoint = snapPoint;
+      playheadDistance = distance;
+    }
+
+    // Find the nearest snap point within threshold
+    if (distance <= threshold && distance < minDistance) {
+      nearestSnapPoint = snapPoint;
+      minDistance = distance;
+    }
+  }
+
+  // Hysteresis: if we're already snapped to a point, give it preference to prevent jitter
+  if (lastSnappedFrame !== undefined) {
+    const lastSnapDistance = Math.abs(lastSnappedFrame - targetFrame);
+    // If we're still close to the last snapped frame, stick with it
+    if (lastSnapDistance <= threshold * 0.8) {
+      // 80% of threshold for hysteresis
+      return lastSnappedFrame;
+    }
+  }
+
+  // If we have a playhead snap point and it's within a reasonable distance of the nearest point,
+  // prioritize the playhead to avoid jitter
+  if (playheadSnapPoint && playheadDistance <= threshold) {
+    // If playhead is very close (within 2 frames) or if it's the closest, use it
+    if (playheadDistance <= 2 || playheadDistance <= minDistance) {
+      return playheadSnapPoint.frame;
+    }
+  }
+
+  return nearestSnapPoint ? nearestSnapPoint.frame : null;
+}
+
+// Smooth approach snap detection - only snaps when crossing threshold, not while hovering
+export function findSmoothSnapPoint(
+  targetFrame: number,
+  snapPoints: SnapPoint[],
+  threshold: number = SNAP_THRESHOLD,
+  excludeTrackId?: string,
+  currentFrame?: number,
+  lastSnappedFrame?: number,
+  isApproaching?: boolean, // Whether we're approaching a snap point
+): number | null {
+  let nearestSnapPoint: SnapPoint | null = null;
+  let minDistance = threshold + 1;
+  let playheadSnapPoint: SnapPoint | null = null;
+  let playheadDistance = threshold + 1;
+
+  // First pass: find the nearest snap point and check for playhead
+  for (const snapPoint of snapPoints) {
+    // Skip snap points from the same track being dragged
+    if (excludeTrackId && snapPoint.trackId === excludeTrackId) {
+      continue;
+    }
+
+    // Skip if snapping to the same position as current
+    if (currentFrame !== undefined && snapPoint.frame === currentFrame) {
+      continue;
+    }
+
+    const distance = Math.abs(snapPoint.frame - targetFrame);
+
+    // Track playhead separately for priority
+    if (snapPoint.type === 'playhead' && distance <= threshold) {
+      playheadSnapPoint = snapPoint;
+      playheadDistance = distance;
+    }
+
+    // Find the nearest snap point within threshold
+    if (distance <= threshold && distance < minDistance) {
+      nearestSnapPoint = snapPoint;
+      minDistance = distance;
+    }
+  }
+
+  // Enhanced hysteresis for smooth approach
+  if (lastSnappedFrame !== undefined) {
+    const lastSnapDistance = Math.abs(lastSnappedFrame - targetFrame);
+
+    // If we're already snapped and still within a comfortable range, stick with it
+    if (lastSnapDistance <= threshold * 0.6) {
+      // 60% of threshold for stronger hysteresis
+      return lastSnappedFrame;
+    }
+
+    // If we're approaching a snap point but not quite there, don't snap yet
+    if (
+      isApproaching &&
+      lastSnapDistance > threshold * 0.6 &&
+      lastSnapDistance < threshold
+    ) {
+      return null; // Don't snap while approaching, wait for threshold crossing
+    }
+  }
+
+  // Only snap if we're clearly within the threshold and not just approaching
+  if (nearestSnapPoint && minDistance <= threshold * 0.8) {
+    // 80% of threshold for more stable snapping
+    // If we have a playhead snap point and it's very close, prioritize it
+    if (playheadSnapPoint && playheadDistance <= threshold * 0.8) {
+      return playheadSnapPoint.frame;
+    }
+
+    return nearestSnapPoint.frame;
+  }
+
+  return null;
+}
+
+// Enhanced snap detection with proper hysteresis buffer for slow drags
+export function findBufferedSnapPoint(
+  targetFrame: number,
+  snapPoints: SnapPoint[],
+  threshold: number = SNAP_THRESHOLD,
+  excludeTrackId?: string,
+  currentFrame?: number,
+  lastSnappedFrame?: number,
+  isApproaching?: boolean,
+): number | null {
+  let nearestSnapPoint: SnapPoint | null = null;
+  let minDistance = threshold + 1;
+  let playheadSnapPoint: SnapPoint | null = null;
+  let playheadDistance = threshold + 1;
+
+  // Define hysteresis buffer - release zone is larger than snap threshold
+  const HYSTERESIS_BUFFER = Math.max(2, Math.round(threshold * 0.6)); // 60% of threshold as buffer
+  const releaseThreshold = threshold + HYSTERESIS_BUFFER;
+
+  // First pass: find the nearest snap point and check for playhead
+  for (const snapPoint of snapPoints) {
+    // Skip snap points from the same track being dragged
+    if (excludeTrackId && snapPoint.trackId === excludeTrackId) {
+      continue;
+    }
+
+    // Skip if snapping to the same position as current
+    if (currentFrame !== undefined && snapPoint.frame === currentFrame) {
+      continue;
+    }
+
+    const distance = Math.abs(snapPoint.frame - targetFrame);
+
+    // Track playhead separately for priority
+    if (snapPoint.type === 'playhead' && distance <= threshold) {
+      playheadSnapPoint = snapPoint;
+      playheadDistance = distance;
+    }
+
+    // Find the nearest snap point within threshold
+    if (distance <= threshold && distance < minDistance) {
+      nearestSnapPoint = snapPoint;
+      minDistance = distance;
+    }
+  }
+
+  // Enhanced hysteresis for slow drags
+  if (lastSnappedFrame !== undefined) {
+    const lastSnapDistance = Math.abs(lastSnappedFrame - targetFrame);
+
+    // If we're already snapped, use the release threshold (larger zone) to prevent jitter
+    if (lastSnapDistance <= releaseThreshold) {
+      return lastSnappedFrame; // Stay snapped until clearly outside release zone
+    }
+  }
+
+  // Snap immediately when within threshold (no hysteresis for activation)
+  if (nearestSnapPoint && minDistance <= threshold) {
+    // If we have a playhead snap point and it's very close, prioritize it
+    if (playheadSnapPoint && playheadDistance <= threshold) {
+      return playheadSnapPoint.frame;
+    }
+
+    return nearestSnapPoint.frame;
+  }
+
+  return null;
 }
 
 // Helper function to find the nearest available gap for a track
