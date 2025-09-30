@@ -491,7 +491,7 @@ export class VideoSpriteSheetGenerator {
           ].join(','),
           '-q:v',
           '5',
-          '-f', 
+          '-f',
           'image2',
           '-avoid_negative_ts',
           'make_zero', // Handle negative timestamps
@@ -875,9 +875,9 @@ export class VideoSpriteSheetGenerator {
     } else if (duration <= 600) {
       return 1.0; // Reasonable coverage for long videos
     } else if (duration <= 3599 && duration >= 601) {
-      return duration/300;
-    }else if (duration >= 3600) {
-      return duration/1200; // Sparse coverage for very long videos to prevent memory issues
+      return duration / 300;
+    } else if (duration >= 3600) {
+      return duration / 1200; // Sparse coverage for very long videos to prevent memory issues
     } else {
       return 2.0;
     }
@@ -1041,7 +1041,7 @@ export class VideoSpriteSheetGenerator {
 
     const videoPath = track.tempFilePath || track.source;
     const durationSeconds = (track.endFrame - track.startFrame) / fps;
-    console.log("calculated seconds: " + durationSeconds);
+    console.log('calculated seconds: ' + durationSeconds);
     // Handle blob URLs (won't work with FFmpeg)
     if (videoPath.startsWith('blob:')) {
       throw new Error('Cannot generate sprite sheets from blob URL');
@@ -1055,7 +1055,7 @@ export class VideoSpriteSheetGenerator {
       thumbWidth: 120, // Optimized size for timeline display
       thumbHeight: 68, // 16:9 aspect ratio
       maxThumbnailsPerSheet: 100, // Balance between file size and HTTP requests
-      intervalSeconds: 6 // larger interval
+      intervalSeconds: 6, // larger interval
     });
   }
 }
