@@ -731,7 +731,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       >
         <canvas
           ref={canvasRef}
-          className="w-full h-full cursor-pointer"
+          className="w-full h-full"
           onClick={handleCanvasClick}
         />
 

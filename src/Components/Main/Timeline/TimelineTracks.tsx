@@ -59,6 +59,7 @@ interface TimelineTracksProps {
   zoomLevel: number;
   selectedTrackIds: string[];
   onTrackSelect: (trackIds: string[]) => void;
+  isSplitModeActive: boolean;
 }
 
 interface TrackItemProps {
@@ -70,6 +71,7 @@ interface TrackItemProps {
   onSelect: (multiSelect?: boolean) => void;
   onMove: (newStartFrame: number) => void;
   onResize: (newStartFrame?: number, newEndFrame?: number) => void;
+  isSplitModeActive: boolean;
 }
 
 export const TrackItem: React.FC<TrackItemProps> = React.memo(
@@ -82,6 +84,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     onSelect,
     onMove,
     onResize,
+    isSplitModeActive,
   }) => {
     const nodeRef = useRef<HTMLDivElement>(null);
     const [isResizing, setIsResizing] = useState<'left' | 'right' | false>(
@@ -97,7 +100,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const [lastSnappedFrame, setLastSnappedFrame] = useState<number | null>(
       null,
     );
-    const [isApproachingSnap, setIsApproachingSnap] = useState(false);
+    const [, setIsApproachingSnap] = useState(false);
 
     // Calculate positions relative to the scrolled timeline
     const startX = track.startFrame * frameWidth;
@@ -110,6 +113,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     // Mouse handlers for resize
     const handleMouseDown = useCallback(
       (side: 'left' | 'right', e: React.MouseEvent) => {
+        if (isSplitModeActive) return; // Prevent resize in split mode
+
         e.stopPropagation();
         e.preventDefault();
         setIsResizing(side);
@@ -122,7 +127,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         setLastSnappedFrame(null); // Reset snap state when starting drag
         setIsApproachingSnap(false); // Reset approaching state
       },
-      [track.startFrame, track.endFrame],
+      [track.startFrame, track.endFrame, isSplitModeActive],
     );
 
     const handleMouseMove = useCallback(
@@ -330,7 +335,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             className={`
             absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded z-10 flex items-center overflow-hidden select-none
             ${isSelected ? 'border-2 border-secondary' : ''}
-            ${track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
+            ${isSplitModeActive ? 'cursor-split' : track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
             ${track.visible ? 'opacity-100' : 'opacity-50'}
           `}
             style={{
@@ -342,11 +347,12 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
                   : getTrackGradient(track.type),
             }}
             onClick={(e) => {
+              if (isSplitModeActive) return; // Prevent selection in split mode
               e.stopPropagation();
               onSelect(e.altKey); // Pass Alt key state for multi-select
             }}
             onMouseDown={(e) => {
-              if (track.locked) return;
+              if (track.locked || isSplitModeActive) return; // Prevent drag in split mode
               e.stopPropagation();
               setIsDragging(true);
               setDragStart({
@@ -449,7 +455,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         </TrackContextMenu>
 
         {/* Left resize handle */}
-        {!track.locked && isSelected && (
+        {!track.locked && isSelected && !isSplitModeActive && (
           <div
             className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-ew-resize z-20 lg:rounded-r flex items-center justify-center
             ${isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary'}`}
@@ -461,7 +467,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         )}
 
         {/* Right resize handle */}
-        {!track.locked && isSelected && (
+        {!track.locked && isSelected && !isSplitModeActive && (
           <div
             className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-ew-resize z-20 lg:rounded-l flex items-center justify-center
             ${isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary'}`}
@@ -493,7 +499,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.frameWidth === nextProps.frameWidth &&
       Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Only re-render for significant scroll changes
       prevProps.zoomLevel === nextProps.zoomLevel && // Re-render on any zoom change for proper positioning
-      prevProps.isSelected === nextProps.isSelected
+      prevProps.isSelected === nextProps.isSelected &&
+      prevProps.isSplitModeActive === nextProps.isSplitModeActive
     );
 
     return !shouldRerender;
@@ -518,6 +525,7 @@ interface TrackRowProps {
   onDrop: (rowId: string, files: FileList) => void;
   allTracksCount: number;
   onPlaceholderClick?: () => void;
+  isSplitModeActive: boolean;
 }
 
 const TrackRow: React.FC<TrackRowProps> = React.memo(
@@ -535,6 +543,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     onDrop,
     allTracksCount,
     onPlaceholderClick,
+    isSplitModeActive,
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
@@ -619,6 +628,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
               onResize={(newStartFrame, newEndFrame) =>
                 onTrackResize(track.id, newStartFrame, newEndFrame)
               }
+              isSplitModeActive={isSplitModeActive}
             />
           ))}
         </div>
@@ -685,6 +695,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
     zoomLevel,
     selectedTrackIds,
     onTrackSelect,
+    isSplitModeActive,
   }) => {
     const {
       moveTrack,
@@ -857,6 +868,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
             onDrop={memoizedHandlers.onDrop}
             allTracksCount={tracks.length}
             onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
+            isSplitModeActive={isSplitModeActive}
           />
         ))}
       </div>
@@ -889,7 +901,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Prevent re-render for small scroll changes
       Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) < 0.1 && // Prevent re-render for small zoom changes
       JSON.stringify(prevProps.selectedTrackIds) ===
-        JSON.stringify(nextProps.selectedTrackIds)
+        JSON.stringify(nextProps.selectedTrackIds) &&
+      prevProps.isSplitModeActive === nextProps.isSplitModeActive
     );
   },
 );

@@ -45,6 +45,7 @@ export interface TimelineState {
   selectedTrackIds: string[];
   playheadVisible: boolean;
   snapEnabled: boolean;
+  isSplitModeActive: boolean;
 }
 
 export interface PlaybackState {
@@ -184,6 +185,8 @@ interface VideoEditorStore {
   setOutPoint: (frame?: number) => void;
   setSelectedTracks: (trackIds: string[]) => void;
   toggleSnap: () => void;
+  toggleSplitMode: () => void;
+  setSplitMode: (active: boolean) => void;
 
   // Track Actions
   addTrack: (track: Omit<VideoTrack, 'id'>) => Promise<string>;
@@ -203,6 +206,7 @@ interface VideoEditorStore {
   duplicateTrack: (trackId: string) => string;
   splitTrack: (trackId: string, frame: number) => void;
   splitAtPlayhead: () => boolean;
+  splitAtPosition: (frame: number, trackId?: string) => boolean;
   toggleTrackVisibility: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
 
@@ -1481,6 +1485,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       selectedTrackIds: [] as string[],
       playheadVisible: true,
       snapEnabled: true, // Snap enabled by default
+      isSplitModeActive: false,
     },
     playback: {
       isPlaying: false,
@@ -1609,6 +1614,22 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         timeline: {
           ...state.timeline,
           snapEnabled: !state.timeline.snapEnabled,
+        },
+      })),
+
+    toggleSplitMode: () =>
+      set((state) => ({
+        timeline: {
+          ...state.timeline,
+          isSplitModeActive: !state.timeline.isSplitModeActive,
+        },
+      })),
+
+    setSplitMode: (active) =>
+      set((state) => ({
+        timeline: {
+          ...state.timeline,
+          isSplitModeActive: active,
         },
       })),
 
@@ -2430,6 +2451,100 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
       return true;
     },
 
+    splitAtPosition: (frame, trackId) => {
+      const state = get();
+
+      console.log(
+        `✂️ Split at position (frame ${frame})${trackId ? ` - Target track: ${trackId}` : ' - All intersecting tracks'}`,
+      );
+
+      let tracksToSplit: VideoTrack[] = [];
+
+      if (trackId) {
+        // Split specific track if it intersects with the frame
+        const targetTrack = state.tracks.find((track) => track.id === trackId);
+        if (
+          targetTrack &&
+          frame > targetTrack.startFrame &&
+          frame < targetTrack.endFrame
+        ) {
+          tracksToSplit = [targetTrack];
+
+          // If the track is linked, also split the linked track if it intersects
+          if (targetTrack.isLinked && targetTrack.linkedTrackId) {
+            const linkedTrack = state.tracks.find(
+              (t) => t.id === targetTrack.linkedTrackId,
+            );
+            if (
+              linkedTrack &&
+              frame > linkedTrack.startFrame &&
+              frame < linkedTrack.endFrame
+            ) {
+              tracksToSplit.push(linkedTrack);
+            }
+          }
+        }
+      } else {
+        // Split all tracks that intersect with the frame
+        const intersectingTracks = state.tracks.filter(
+          (track) => frame > track.startFrame && frame < track.endFrame,
+        );
+
+        // Handle linked tracks properly
+        const processedTrackIds = new Set<string>();
+
+        intersectingTracks.forEach((track) => {
+          if (processedTrackIds.has(track.id)) return;
+
+          if (track.isLinked && track.linkedTrackId) {
+            const linkedTrack = state.tracks.find(
+              (t) => t.id === track.linkedTrackId,
+            );
+            if (
+              linkedTrack &&
+              frame > linkedTrack.startFrame &&
+              frame < linkedTrack.endFrame
+            ) {
+              // Both tracks intersect - split both
+              tracksToSplit.push(track, linkedTrack);
+              processedTrackIds.add(track.id);
+              processedTrackIds.add(linkedTrack.id);
+            } else {
+              // Only one track intersects - split just this one
+              tracksToSplit.push(track);
+              processedTrackIds.add(track.id);
+            }
+          } else {
+            // Unlinked track - split it
+            tracksToSplit.push(track);
+            processedTrackIds.add(track.id);
+          }
+        });
+      }
+
+      if (tracksToSplit.length === 0) {
+        console.log('🚫 No tracks to split at the specified position');
+        return false;
+      }
+
+      // Split all determined tracks
+      let splitCount = 0;
+      const processedIds = new Set<string>();
+
+      tracksToSplit.forEach((track) => {
+        if (processedIds.has(track.id)) return;
+
+        get().splitTrack(track.id, frame);
+        splitCount++;
+        processedIds.add(track.id);
+      });
+
+      console.log(
+        `✅ Successfully split ${splitCount} track(s) at frame ${frame}`,
+      );
+      return true;
+    },
+
     toggleTrackVisibility: (trackId) => {
       const targetTrack = get().tracks.find((t) => t.id === trackId);
       if (!targetTrack) return;
@@ -2764,6 +2879,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           selectedTrackIds: [],
           playheadVisible: true,
           snapEnabled: true,
+          isSplitModeActive: false,
         },
         playback: {
           isPlaying: false,
