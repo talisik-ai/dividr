@@ -1826,9 +1826,8 @@ export function buildFfmpegCommand(
   cmd.args.push('-c:v', ENCODING_DEFAULTS.VIDEO_CODEC);
   cmd.args.push('-c:a', ENCODING_DEFAULTS.AUDIO_CODEC);
   
-  if (job.operations.preset) {
-    cmd.args.push('-preset', job.operations.preset);
-  }
+  handlePreset(job, cmd);
+  handleThreads(job, cmd);
 
   const outputFilePath = location
     ? path.join(location, job.output)
