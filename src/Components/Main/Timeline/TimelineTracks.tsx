@@ -74,11 +74,178 @@ interface TrackItemProps {
   isSplitModeActive: boolean;
 }
 
+// CRITICAL: Memoize the TrackItem's children to prevent TrackContextMenu re-renders
+const TrackItemContent = React.memo<{
+  track: VideoTrack;
+  frameWidth: number;
+  clampedWidth: number;
+  zoomLevel: number;
+  isSelected: boolean;
+  isDragging: boolean;
+  isSplitModeActive: boolean;
+  onSelect: (e: React.MouseEvent) => void;
+  onMouseDown: (e: React.MouseEvent) => void;
+}>(
+  ({
+    track,
+    frameWidth,
+    clampedWidth,
+    zoomLevel,
+    isSelected,
+    isDragging,
+    isSplitModeActive,
+    onSelect,
+    onMouseDown,
+  }) => {
+    const left = track.startFrame * frameWidth;
+
+    const getTrackGradient = (type: VideoTrack['type']) => {
+      switch (type) {
+        case 'subtitle':
+          return 'linear-gradient(135deg, #1f1f1f, #2a2a2a)';
+        case 'video':
+          return 'linear-gradient(135deg, #8e44ad, #9b59b6)';
+        case 'audio':
+          return 'hsl(var(--secondary) / 0.3)';
+        case 'image':
+          return 'linear-gradient(135deg, #e67e22, #f39c12)';
+        default:
+          return 'linear-gradient(135deg, #34495e, #7f8c8d)';
+      }
+    };
+
+    return (
+      <div
+        className={`
+        absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded z-10 flex items-center overflow-hidden select-none
+        ${isSelected ? 'border-2 border-secondary' : ''}
+        ${isSplitModeActive ? 'cursor-split' : track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
+        ${track.visible ? 'opacity-100' : 'opacity-50'}
+      `}
+        style={{
+          left: `${left}px`,
+          width: `${clampedWidth}px`,
+          background:
+            track.type === 'video'
+              ? 'transparent'
+              : getTrackGradient(track.type),
+        }}
+        onClick={onSelect}
+        onMouseDown={onMouseDown}
+      >
+        {/* Video sprite sheet strip for video tracks */}
+        {track.type === 'video' && (
+          <VideoSpriteSheetStrip
+            track={track}
+            frameWidth={frameWidth}
+            width={clampedWidth}
+            height={
+              window.innerWidth <= 640 ? 24 : window.innerWidth <= 768 ? 26 : 40
+            }
+            zoomLevel={zoomLevel}
+          />
+        )}
+
+        {/* Audio waveform for audio tracks */}
+        {track.type === 'audio' && (
+          <div
+            className={`w-full h-full ${
+              track.muted ? 'opacity-50 grayscale' : ''
+            }`}
+          >
+            <AudioWaveform
+              track={track}
+              frameWidth={frameWidth}
+              width={clampedWidth}
+              height={
+                window.innerWidth <= 640
+                  ? 24
+                  : window.innerWidth <= 768
+                    ? 26
+                    : 40
+              }
+              zoomLevel={zoomLevel}
+            />
+          </div>
+        )}
+
+        {/* Text content for non-video, non-audio tracks */}
+        {track.type !== 'video' && track.type !== 'audio' && (
+          <div
+            className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
+            style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
+          >
+            {track.type === 'subtitle' && track.subtitleText
+              ? track.subtitleText
+              : track.name}
+          </div>
+        )}
+
+        {/* Volume indicator for audio tracks */}
+        {track.type === 'audio' && track.volume !== undefined && (
+          <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
+            {Math.round(track.volume * 100)}%
+          </div>
+        )}
+
+        {/* Lock indicator */}
+        {track.locked && (
+          <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
+            🔒
+          </div>
+        )}
+
+        {/* Link indicator for linked video/audio tracks */}
+        {track.isLinked && (
+          <div
+            className="absolute top-0.5 left-0.5 text-[10px] text-blue-400 z-20 animate-pulse"
+            title={`Linked to ${track.type === 'video' ? 'audio' : 'video'} track`}
+          >
+            🔗
+          </div>
+        )}
+
+        {/* Unlinked indicator for tracks that could be linked */}
+        {!track.isLinked &&
+          (track.type === 'video' || track.type === 'audio') && (
+            <div
+              className="absolute top-0.5 left-0.5 text-[10px] text-gray-400 z-20 opacity-50"
+              title="Unlinked track - can be linked"
+            >
+              ⚪
+            </div>
+          )}
+      </div>
+    );
+  },
+  (prev, next) => {
+    return (
+      prev.track.id === next.track.id &&
+      prev.track.startFrame === next.track.startFrame &&
+      prev.track.endFrame === next.track.endFrame &&
+      prev.track.visible === next.track.visible &&
+      prev.track.locked === next.track.locked &&
+      prev.track.muted === next.track.muted &&
+      prev.track.type === next.track.type &&
+      prev.track.volume === next.track.volume &&
+      prev.track.isLinked === next.track.isLinked &&
+      prev.track.subtitleText === next.track.subtitleText &&
+      prev.track.name === next.track.name &&
+      prev.frameWidth === next.frameWidth &&
+      prev.clampedWidth === next.clampedWidth &&
+      prev.zoomLevel === next.zoomLevel &&
+      prev.isSelected === next.isSelected &&
+      prev.isDragging === next.isDragging &&
+      prev.isSplitModeActive === next.isSplitModeActive
+    );
+  },
+);
+
 export const TrackItem: React.FC<TrackItemProps> = React.memo(
   ({
     track,
     frameWidth,
-    scrollX, // eslint-disable-line @typescript-eslint/no-unused-vars
+    scrollX,
     zoomLevel,
     isSelected,
     onSelect,
@@ -95,7 +262,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       x: 0,
       startFrame: 0,
       endFrame: 0,
-      originalStartFrame: 0, // Track original position for directional snapping
+      originalStartFrame: 0,
     });
     const [lastSnappedFrame, setLastSnappedFrame] = useState<number | null>(
       null,
@@ -106,15 +273,40 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const startX = track.startFrame * frameWidth;
     const endX = track.endFrame * frameWidth;
     const width = endX - startX;
-
-    // Position relative to the scrolled container
     const left = startX;
     const clampedWidth = Math.max(1, width);
-    // Mouse handlers for resize
+
+    // Memoize click handler to keep TrackContextMenu children stable
+    const handleClick = useCallback(
+      (e: React.MouseEvent) => {
+        if (isSplitModeActive) return;
+        e.stopPropagation();
+        onSelect(e.altKey);
+      },
+      [isSplitModeActive, onSelect],
+    );
+
+    // Memoize mouse down handler to keep TrackContextMenu children stable
+    const handleMouseDownTrack = useCallback(
+      (e: React.MouseEvent) => {
+        if (track.locked || isSplitModeActive) return;
+        e.stopPropagation();
+        setIsDragging(true);
+        setDragStart({
+          x: e.clientX,
+          startFrame: track.startFrame,
+          endFrame: track.endFrame,
+          originalStartFrame: track.startFrame,
+        });
+        setLastSnappedFrame(null);
+        setIsApproachingSnap(false);
+      },
+      [track.locked, track.startFrame, track.endFrame, isSplitModeActive],
+    );
+
     const handleMouseDown = useCallback(
       (side: 'left' | 'right', e: React.MouseEvent) => {
-        if (isSplitModeActive) return; // Prevent resize in split mode
-
+        if (isSplitModeActive) return;
         e.stopPropagation();
         e.preventDefault();
         setIsResizing(side);
@@ -124,8 +316,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           endFrame: track.endFrame,
           originalStartFrame: track.startFrame,
         });
-        setLastSnappedFrame(null); // Reset snap state when starting drag
-        setIsApproachingSnap(false); // Reset approaching state
+        setLastSnappedFrame(null);
+        setIsApproachingSnap(false);
       },
       [track.startFrame, track.endFrame, isSplitModeActive],
     );
@@ -137,7 +329,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         const deltaX = e.clientX - dragStart.x;
         const deltaFrames = Math.round(deltaX / frameWidth);
 
-        // Get snap settings from store
         const { timeline, tracks } = useVideoEditorStore.getState();
         const snapEnabled = timeline.snapEnabled;
 
@@ -150,17 +341,15 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             ),
           );
 
-          // Apply snapping for left resize
           if (snapEnabled) {
             const snapPoints = findSnapPoints(
               timeline.currentFrame,
               tracks,
               timeline.inPoint,
               timeline.outPoint,
-              track.id, // Exclude current track from snap points
+              track.id,
             );
 
-            // Check if we're approaching a snap point
             const approachingThreshold = SNAP_THRESHOLD * 1.5;
             let isApproaching = false;
 
@@ -179,9 +368,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               snapPoints,
               SNAP_THRESHOLD,
               track.id,
-              track.startFrame, // Current position to avoid snapping to same position
-              lastSnappedFrame, // Previous snap frame for hysteresis
-              isApproaching, // Whether we're approaching a snap point
+              track.startFrame,
+              lastSnappedFrame,
+              isApproaching,
             );
             if (snappedFrame !== null) {
               newStartFrame = snappedFrame;
@@ -198,17 +387,15 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             dragStart.endFrame + deltaFrames,
           );
 
-          // Apply snapping for right resize
           if (snapEnabled) {
             const snapPoints = findSnapPoints(
               timeline.currentFrame,
               tracks,
               timeline.inPoint,
               timeline.outPoint,
-              track.id, // Exclude current track from snap points
+              track.id,
             );
 
-            // Check if we're approaching a snap point
             const approachingThreshold = SNAP_THRESHOLD * 1.5;
             let isApproaching = false;
 
@@ -227,9 +414,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               snapPoints,
               SNAP_THRESHOLD,
               track.id,
-              track.endFrame, // Current position to avoid snapping to same position
-              lastSnappedFrame, // Previous snap frame for hysteresis
-              isApproaching, // Whether we're approaching a snap point
+              track.endFrame,
+              lastSnappedFrame,
+              isApproaching,
             );
             if (snappedFrame !== null) {
               newEndFrame = snappedFrame;
@@ -243,17 +430,15 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         } else if (isDragging) {
           let newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
 
-          // Apply snapping for drag - use smooth snap point for continuous dragging
           if (snapEnabled) {
             const snapPoints = findSnapPoints(
               timeline.currentFrame,
               tracks,
               timeline.inPoint,
               timeline.outPoint,
-              track.id, // Exclude current track from snap points
+              track.id,
             );
 
-            // Check if we're approaching a snap point (within 1.5x threshold)
             const approachingThreshold = SNAP_THRESHOLD * 1.5;
             let isApproaching = false;
 
@@ -274,9 +459,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               snapPoints,
               SNAP_THRESHOLD,
               track.id,
-              track.startFrame, // Current position to avoid snapping to same position
-              lastSnappedFrame, // Previous snap frame for hysteresis
-              isApproaching, // Whether we're approaching a snap point
+              track.startFrame,
+              lastSnappedFrame,
+              isApproaching,
             );
             if (snappedFrame !== null) {
               newStartFrame = snappedFrame;
@@ -289,17 +474,27 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           onMove(newStartFrame);
         }
       },
-      [isResizing, isDragging, dragStart, frameWidth, onResize, onMove],
+      [
+        isResizing,
+        isDragging,
+        dragStart,
+        frameWidth,
+        onResize,
+        onMove,
+        track.id,
+        track.startFrame,
+        track.endFrame,
+        lastSnappedFrame,
+      ],
     );
 
     const handleMouseUp = useCallback(() => {
       setIsResizing(false);
       setIsDragging(false);
-      setLastSnappedFrame(null); // Reset snap state when ending drag
-      setIsApproachingSnap(false); // Reset approaching state
+      setLastSnappedFrame(null);
+      setIsApproachingSnap(false);
     }, []);
 
-    // Add global mouse listeners when resizing or dragging
     React.useEffect(() => {
       if (isResizing || isDragging) {
         document.addEventListener('mousemove', handleMouseMove);
@@ -311,148 +506,38 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       }
     }, [isResizing, isDragging, handleMouseMove, handleMouseUp]);
 
-    const getTrackGradient = (type: VideoTrack['type']) => {
-      switch (type) {
-        case 'subtitle':
-          return 'linear-gradient(135deg, #1f1f1f, #2a2a2a)';
-        case 'video':
-          return 'linear-gradient(135deg, #8e44ad, #9b59b6)';
-        case 'audio':
-          return 'hsl(var(--secondary) / 0.3)';
-        case 'image':
-          return 'linear-gradient(135deg, #e67e22, #f39c12)';
-        default:
-          return 'linear-gradient(135deg, #34495e, #7f8c8d)';
-      }
-    };
+    // Memoize the track content to prevent creating new children on every render
+    const trackContent = useMemo(
+      () => (
+        <TrackItemContent
+          track={track}
+          frameWidth={frameWidth}
+          clampedWidth={clampedWidth}
+          zoomLevel={zoomLevel}
+          isSelected={isSelected}
+          isDragging={isDragging}
+          isSplitModeActive={isSplitModeActive}
+          onSelect={handleClick}
+          onMouseDown={handleMouseDownTrack}
+        />
+      ),
+      [
+        track,
+        frameWidth,
+        clampedWidth,
+        zoomLevel,
+        isSelected,
+        isDragging,
+        isSplitModeActive,
+        handleClick,
+        handleMouseDownTrack,
+      ],
+    );
 
     return (
       <>
         {/* Main track - positioned absolutely within the shared container */}
-        <TrackContextMenu track={track}>
-          <div
-            ref={nodeRef}
-            className={`
-            absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded z-10 flex items-center overflow-hidden select-none
-            ${isSelected ? 'border-2 border-secondary' : ''}
-            ${isSplitModeActive ? 'cursor-split' : track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
-            ${track.visible ? 'opacity-100' : 'opacity-50'}
-          `}
-            style={{
-              left: `${left}px`,
-              width: `${clampedWidth}px`,
-              background:
-                track.type === 'video'
-                  ? 'transparent'
-                  : getTrackGradient(track.type),
-            }}
-            onClick={(e) => {
-              if (isSplitModeActive) return; // Prevent selection in split mode
-              e.stopPropagation();
-              onSelect(e.altKey); // Pass Alt key state for multi-select
-            }}
-            onMouseDown={(e) => {
-              if (track.locked || isSplitModeActive) return; // Prevent drag in split mode
-              e.stopPropagation();
-              setIsDragging(true);
-              setDragStart({
-                x: e.clientX,
-                startFrame: track.startFrame,
-                endFrame: track.endFrame,
-                originalStartFrame: track.startFrame,
-              });
-              setLastSnappedFrame(null); // Reset snap state when starting drag
-              setIsApproachingSnap(false); // Reset approaching state
-            }}
-          >
-            {/* Video sprite sheet strip for video tracks */}
-            {track.type === 'video' && (
-              <VideoSpriteSheetStrip
-                track={track}
-                frameWidth={frameWidth}
-                width={clampedWidth}
-                height={
-                  window.innerWidth <= 640
-                    ? 24
-                    : window.innerWidth <= 768
-                      ? 26
-                      : 40
-                }
-                zoomLevel={zoomLevel}
-              />
-            )}
-
-            {/* Audio waveform for audio tracks */}
-            {track.type === 'audio' && (
-              <div
-                className={`w-full h-full ${
-                  track.muted ? 'opacity-50 grayscale' : ''
-                }`}
-              >
-                <AudioWaveform
-                  track={track}
-                  frameWidth={frameWidth}
-                  width={clampedWidth}
-                  height={
-                    window.innerWidth <= 640
-                      ? 24
-                      : window.innerWidth <= 768
-                        ? 26
-                        : 40
-                  }
-                  zoomLevel={zoomLevel}
-                />
-              </div>
-            )}
-
-            {/* Text content for non-video, non-audio tracks */}
-            {track.type !== 'video' && track.type !== 'audio' && (
-              <div
-                className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
-                style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
-              >
-                {track.type === 'subtitle' && track.subtitleText
-                  ? track.subtitleText
-                  : track.name}
-              </div>
-            )}
-
-            {/* Volume indicator for audio tracks */}
-            {track.type === 'audio' && track.volume !== undefined && (
-              <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
-                {Math.round(track.volume * 100)}%
-              </div>
-            )}
-
-            {/* Lock indicator */}
-            {track.locked && (
-              <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
-                🔒
-              </div>
-            )}
-
-            {/* Link indicator for linked video/audio tracks */}
-            {track.isLinked && (
-              <div
-                className="absolute top-0.5 left-0.5 text-[10px] text-blue-400 z-20 animate-pulse"
-                title={`Linked to ${track.type === 'video' ? 'audio' : 'video'} track`}
-              >
-                🔗
-              </div>
-            )}
-
-            {/* Unlinked indicator for tracks that could be linked */}
-            {!track.isLinked &&
-              (track.type === 'video' || track.type === 'audio') && (
-                <div
-                  className="absolute top-0.5 left-0.5 text-[10px] text-gray-400 z-20 opacity-50"
-                  title="Unlinked track - can be linked"
-                >
-                  ⚪
-                </div>
-              )}
-          </div>
-        </TrackContextMenu>
+        <TrackContextMenu track={track}>{trackContent}</TrackContextMenu>
 
         {/* Left resize handle */}
         {!track.locked && isSelected && !isSplitModeActive && (
@@ -481,7 +566,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     );
   },
   (prevProps, nextProps) => {
-    // Custom equality check to prevent unnecessary re-renders
     const shouldRerender = !(
       prevProps.track.id === nextProps.track.id &&
       prevProps.track.startFrame === nextProps.track.startFrame &&
@@ -497,8 +581,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.linkedTrackId === nextProps.track.linkedTrackId &&
       prevProps.track.previewUrl === nextProps.track.previewUrl &&
       prevProps.frameWidth === nextProps.frameWidth &&
-      Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Only re-render for significant scroll changes
-      prevProps.zoomLevel === nextProps.zoomLevel && // Re-render on any zoom change for proper positioning
+      Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 &&
+      prevProps.zoomLevel === nextProps.zoomLevel &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive
     );
