@@ -1,908 +1,832 @@
-import { Film } from 'lucide-react';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { cn } from '@/Lib/utils';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import {
-  findBufferedSnapPoint,
-  findSnapPoints,
-  SNAP_THRESHOLD,
   useVideoEditorStore,
   VideoTrack,
 } from '../../../Store/VideoEditorStore';
-import { AudioWaveform } from './AudioWaveform';
-import { TrackContextMenu } from './TrackContextMenu';
-import { VideoSpriteSheetStrip } from './VideoSpriteSheetStrip';
+import { ProjectThumbnailSetter } from './ProjectThumbnailSetter';
+import { TimelineControls } from './TimelineControls';
+import { TimelinePlayhead } from './TimelinePlayhead';
+import { TimelineRuler } from './TimelineRuler';
+import { TimelineTrackControllers } from './TimelineTrackControllers';
+import { TimelineTracks } from './TimelineTracks';
 
-// Define track row types - easy to extend in the future
-export interface TrackRowDefinition {
-  id: string;
-  name: string;
-  trackTypes: VideoTrack['type'][];
-  color: string;
-  icon: string;
+interface TimelineProps {
+  className?: string;
 }
 
-export const TRACK_ROWS: TrackRowDefinition[] = [
-  {
-    id: 'subtitle',
-    name: 'Subtitles',
-    trackTypes: ['subtitle'],
-    color: '#9b59b6',
-    icon: '💬',
-  },
-  {
-    id: 'logo',
-    name: 'Images/Overlays',
-    trackTypes: ['image'],
-    color: '#e67e22',
-    icon: '🖼️',
-  },
-  {
-    id: 'video',
-    name: 'Video',
-    trackTypes: ['video'],
-    color: '#8e44ad',
-    icon: '🎬',
-  },
-  {
-    id: 'audio',
-    name: 'Audio',
-    trackTypes: ['audio'],
-    color: '#27ae60',
-    icon: '🎵',
-  },
-];
+export const Timeline: React.FC<TimelineProps> = React.memo(
+  ({ className }) => {
+    const timelineRef = useRef<HTMLDivElement>(null);
+    const tracksRef = useRef<HTMLDivElement>(null);
+    const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const autoFollowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const playbackIntervalRef = useRef<number | null>(null);
+    const lastFrameUpdateRef = useRef<number>(0);
+    const isManualScrollingRef = useRef<boolean>(false);
+    const [, setDropActive] = useState(false);
+    const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
+    const [splitIndicatorPosition, setSplitIndicatorPosition] = useState<
+      number | null
+    >(null);
+    const [hoveredTrack, setHoveredTrack] = useState<VideoTrack | null>(null);
+    const [hoveredTrackRow, setHoveredTrackRow] = useState<string | null>(null);
+    const [linkedTrackIndicators, setLinkedTrackIndicators] = useState<
+      Array<{ trackType: string; position: number }>
+    >([]);
+    const [splitModeUpdateKey, setSplitModeUpdateKey] = useState(0);
 
-interface TimelineTracksProps {
-  tracks: VideoTrack[];
-  frameWidth: number;
-  timelineWidth: number;
-  scrollX: number;
-  zoomLevel: number;
-  selectedTrackIds: string[];
-  onTrackSelect: (trackIds: string[]) => void;
-  isSplitModeActive: boolean;
-}
-
-interface TrackItemProps {
-  track: VideoTrack;
-  frameWidth: number;
-  scrollX: number;
-  zoomLevel: number;
-  isSelected: boolean;
-  onSelect: (multiSelect?: boolean) => void;
-  onMove: (newStartFrame: number) => void;
-  onResize: (newStartFrame?: number, newEndFrame?: number) => void;
-  isSplitModeActive: boolean;
-}
-
-export const TrackItem: React.FC<TrackItemProps> = React.memo(
-  ({
-    track,
-    frameWidth,
-    scrollX, // eslint-disable-line @typescript-eslint/no-unused-vars
-    zoomLevel,
-    isSelected,
-    onSelect,
-    onMove,
-    onResize,
-    isSplitModeActive,
-  }) => {
-    const nodeRef = useRef<HTMLDivElement>(null);
-    const [isResizing, setIsResizing] = useState<'left' | 'right' | false>(
-      false,
+    // Selectively subscribe to store to prevent unnecessary re-renders
+    const timeline = useVideoEditorStore((state) => state.timeline);
+    const tracks = useVideoEditorStore((state) => state.tracks);
+    const playback = useVideoEditorStore((state) => state.playback);
+    const setCurrentFrame = useVideoEditorStore(
+      (state) => state.setCurrentFrame,
     );
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState({
-      x: 0,
-      startFrame: 0,
-      endFrame: 0,
-      originalStartFrame: 0, // Track original position for directional snapping
-    });
-    const [lastSnappedFrame, setLastSnappedFrame] = useState<number | null>(
-      null,
+    const setScrollX = useVideoEditorStore((state) => state.setScrollX);
+    const setZoom = useVideoEditorStore((state) => state.setZoom);
+    const togglePlayback = useVideoEditorStore((state) => state.togglePlayback);
+    const pause = useVideoEditorStore((state) => state.pause);
+    const setInPoint = useVideoEditorStore((state) => state.setInPoint);
+    const setOutPoint = useVideoEditorStore((state) => state.setOutPoint);
+    const setSelectedTracks = useVideoEditorStore(
+      (state) => state.setSelectedTracks,
     );
-    const [, setIsApproachingSnap] = useState(false);
-
-    // Calculate positions relative to the scrolled timeline
-    const startX = track.startFrame * frameWidth;
-    const endX = track.endFrame * frameWidth;
-    const width = endX - startX;
-
-    // Position relative to the scrolled container
-    const left = startX;
-    const clampedWidth = Math.max(1, width);
-    // Mouse handlers for resize
-    const handleMouseDown = useCallback(
-      (side: 'left' | 'right', e: React.MouseEvent) => {
-        if (isSplitModeActive) return; // Prevent resize in split mode
-
-        e.stopPropagation();
-        e.preventDefault();
-        setIsResizing(side);
-        setDragStart({
-          x: e.clientX,
-          startFrame: track.startFrame,
-          endFrame: track.endFrame,
-          originalStartFrame: track.startFrame,
-        });
-        setLastSnappedFrame(null); // Reset snap state when starting drag
-        setIsApproachingSnap(false); // Reset approaching state
-      },
-      [track.startFrame, track.endFrame, isSplitModeActive],
+    const removeSelectedTracks = useVideoEditorStore(
+      (state) => state.removeSelectedTracks,
+    );
+    const toggleSnap = useVideoEditorStore((state) => state.toggleSnap);
+    const toggleSplitMode = useVideoEditorStore(
+      (state) => state.toggleSplitMode,
+    );
+    const setSplitMode = useVideoEditorStore((state) => state.setSplitMode);
+    const isSplitModeActive = useVideoEditorStore(
+      (state) => state.timeline.isSplitModeActive,
+    );
+    const splitAtPosition = useVideoEditorStore(
+      (state) => state.splitAtPosition,
+    );
+    const addTrackFromMediaLibrary = useVideoEditorStore(
+      (state) => state.addTrackFromMediaLibrary,
+    );
+    const importMediaToTimeline = useVideoEditorStore(
+      (state) => state.importMediaToTimeline,
     );
 
-    const handleMouseMove = useCallback(
-      (e: MouseEvent) => {
-        if (!isResizing && !isDragging) return;
+    // Calculate effective timeline duration based on actual track content - memoized
+    const effectiveEndFrame = useMemo(() => {
+      return tracks.length > 0
+        ? Math.max(
+            ...tracks.map((track) => track.endFrame),
+            timeline.totalFrames,
+          )
+        : timeline.totalFrames;
+    }, [tracks, timeline.totalFrames]);
 
-        const deltaX = e.clientX - dragStart.x;
-        const deltaFrames = Math.round(deltaX / frameWidth);
-
-        // Get snap settings from store
-        const { timeline, tracks } = useVideoEditorStore.getState();
-        const snapEnabled = timeline.snapEnabled;
-
-        if (isResizing === 'left') {
-          let newStartFrame = Math.max(
-            0,
-            Math.min(
-              dragStart.endFrame - 1,
-              dragStart.startFrame + deltaFrames,
-            ),
-          );
-
-          // Apply snapping for left resize
-          if (snapEnabled) {
-            const snapPoints = findSnapPoints(
-              timeline.currentFrame,
-              tracks,
-              timeline.inPoint,
-              timeline.outPoint,
-              track.id, // Exclude current track from snap points
-            );
-
-            // Check if we're approaching a snap point
-            const approachingThreshold = SNAP_THRESHOLD * 1.5;
-            let isApproaching = false;
-
-            for (const snapPoint of snapPoints) {
-              if (snapPoint.trackId !== track.id) {
-                const distance = Math.abs(snapPoint.frame - newStartFrame);
-                if (distance <= approachingThreshold) {
-                  isApproaching = true;
-                  break;
-                }
-              }
-            }
-
-            const snappedFrame = findBufferedSnapPoint(
-              newStartFrame,
-              snapPoints,
-              SNAP_THRESHOLD,
-              track.id,
-              track.startFrame, // Current position to avoid snapping to same position
-              lastSnappedFrame, // Previous snap frame for hysteresis
-              isApproaching, // Whether we're approaching a snap point
-            );
-            if (snappedFrame !== null) {
-              newStartFrame = snappedFrame;
-              setLastSnappedFrame(snappedFrame);
-            } else {
-              setLastSnappedFrame(null);
-            }
-          }
-
-          onResize(newStartFrame, undefined);
-        } else if (isResizing === 'right') {
-          let newEndFrame = Math.max(
-            dragStart.startFrame + 1,
-            dragStart.endFrame + deltaFrames,
-          );
-
-          // Apply snapping for right resize
-          if (snapEnabled) {
-            const snapPoints = findSnapPoints(
-              timeline.currentFrame,
-              tracks,
-              timeline.inPoint,
-              timeline.outPoint,
-              track.id, // Exclude current track from snap points
-            );
-
-            // Check if we're approaching a snap point
-            const approachingThreshold = SNAP_THRESHOLD * 1.5;
-            let isApproaching = false;
-
-            for (const snapPoint of snapPoints) {
-              if (snapPoint.trackId !== track.id) {
-                const distance = Math.abs(snapPoint.frame - newEndFrame);
-                if (distance <= approachingThreshold) {
-                  isApproaching = true;
-                  break;
-                }
-              }
-            }
-
-            const snappedFrame = findBufferedSnapPoint(
-              newEndFrame,
-              snapPoints,
-              SNAP_THRESHOLD,
-              track.id,
-              track.endFrame, // Current position to avoid snapping to same position
-              lastSnappedFrame, // Previous snap frame for hysteresis
-              isApproaching, // Whether we're approaching a snap point
-            );
-            if (snappedFrame !== null) {
-              newEndFrame = snappedFrame;
-              setLastSnappedFrame(snappedFrame);
-            } else {
-              setLastSnappedFrame(null);
-            }
-          }
-
-          onResize(undefined, newEndFrame);
-        } else if (isDragging) {
-          let newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
-
-          // Apply snapping for drag - use smooth snap point for continuous dragging
-          if (snapEnabled) {
-            const snapPoints = findSnapPoints(
-              timeline.currentFrame,
-              tracks,
-              timeline.inPoint,
-              timeline.outPoint,
-              track.id, // Exclude current track from snap points
-            );
-
-            // Check if we're approaching a snap point (within 1.5x threshold)
-            const approachingThreshold = SNAP_THRESHOLD * 1.5;
-            let isApproaching = false;
-
-            for (const snapPoint of snapPoints) {
-              if (snapPoint.trackId !== track.id) {
-                const distance = Math.abs(snapPoint.frame - newStartFrame);
-                if (distance <= approachingThreshold) {
-                  isApproaching = true;
-                  break;
-                }
-              }
-            }
-
-            setIsApproachingSnap(isApproaching);
-
-            const snappedFrame = findBufferedSnapPoint(
-              newStartFrame,
-              snapPoints,
-              SNAP_THRESHOLD,
-              track.id,
-              track.startFrame, // Current position to avoid snapping to same position
-              lastSnappedFrame, // Previous snap frame for hysteresis
-              isApproaching, // Whether we're approaching a snap point
-            );
-            if (snappedFrame !== null) {
-              newStartFrame = snappedFrame;
-              setLastSnappedFrame(snappedFrame);
-            } else {
-              setLastSnappedFrame(null);
-            }
-          }
-
-          onMove(newStartFrame);
-        }
-      },
-      [isResizing, isDragging, dragStart, frameWidth, onResize, onMove],
-    );
-
-    const handleMouseUp = useCallback(() => {
-      setIsResizing(false);
-      setIsDragging(false);
-      setLastSnappedFrame(null); // Reset snap state when ending drag
-      setIsApproachingSnap(false); // Reset approaching state
-    }, []);
-
-    // Add global mouse listeners when resizing or dragging
-    React.useEffect(() => {
-      if (isResizing || isDragging) {
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return () => {
-          document.removeEventListener('mousemove', handleMouseMove);
-          document.removeEventListener('mouseup', handleMouseUp);
-        };
-      }
-    }, [isResizing, isDragging, handleMouseMove, handleMouseUp]);
-
-    const getTrackGradient = (type: VideoTrack['type']) => {
-      switch (type) {
-        case 'subtitle':
-          return 'linear-gradient(135deg, #1f1f1f, #2a2a2a)';
-        case 'video':
-          return 'linear-gradient(135deg, #8e44ad, #9b59b6)';
-        case 'audio':
-          return 'hsl(var(--secondary) / 0.3)';
-        case 'image':
-          return 'linear-gradient(135deg, #e67e22, #f39c12)';
-        default:
-          return 'linear-gradient(135deg, #34495e, #7f8c8d)';
-      }
-    };
-
-    return (
-      <>
-        {/* Main track - positioned absolutely within the shared container */}
-        <TrackContextMenu track={track}>
-          <div
-            ref={nodeRef}
-            className={`
-            absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded z-10 flex items-center overflow-hidden select-none
-            ${isSelected ? 'border-2 border-secondary' : ''}
-            ${isSplitModeActive ? 'cursor-split' : track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
-            ${track.visible ? 'opacity-100' : 'opacity-50'}
-          `}
-            style={{
-              left: `${left}px`,
-              width: `${clampedWidth}px`,
-              background:
-                track.type === 'video'
-                  ? 'transparent'
-                  : getTrackGradient(track.type),
-            }}
-            onClick={(e) => {
-              if (isSplitModeActive) return; // Prevent selection in split mode
-              e.stopPropagation();
-              onSelect(e.altKey); // Pass Alt key state for multi-select
-            }}
-            onMouseDown={(e) => {
-              if (track.locked || isSplitModeActive) return; // Prevent drag in split mode
-              e.stopPropagation();
-              setIsDragging(true);
-              setDragStart({
-                x: e.clientX,
-                startFrame: track.startFrame,
-                endFrame: track.endFrame,
-                originalStartFrame: track.startFrame,
-              });
-              setLastSnappedFrame(null); // Reset snap state when starting drag
-              setIsApproachingSnap(false); // Reset approaching state
-            }}
-          >
-            {/* Video sprite sheet strip for video tracks */}
-            {track.type === 'video' && (
-              <VideoSpriteSheetStrip
-                track={track}
-                frameWidth={frameWidth}
-                width={clampedWidth}
-                height={
-                  window.innerWidth <= 640
-                    ? 24
-                    : window.innerWidth <= 768
-                      ? 26
-                      : 40
-                }
-                zoomLevel={zoomLevel}
-              />
-            )}
-
-            {/* Audio waveform for audio tracks */}
-            {track.type === 'audio' && (
-              <div
-                className={`w-full h-full ${
-                  track.muted ? 'opacity-50 grayscale' : ''
-                }`}
-              >
-                <AudioWaveform
-                  track={track}
-                  frameWidth={frameWidth}
-                  width={clampedWidth}
-                  height={
-                    window.innerWidth <= 640
-                      ? 24
-                      : window.innerWidth <= 768
-                        ? 26
-                        : 40
-                  }
-                  zoomLevel={zoomLevel}
-                />
-              </div>
-            )}
-
-            {/* Text content for non-video, non-audio tracks */}
-            {track.type !== 'video' && track.type !== 'audio' && (
-              <div
-                className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
-                style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
-              >
-                {track.type === 'subtitle' && track.subtitleText
-                  ? track.subtitleText
-                  : track.name}
-              </div>
-            )}
-
-            {/* Volume indicator for audio tracks */}
-            {track.type === 'audio' && track.volume !== undefined && (
-              <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
-                {Math.round(track.volume * 100)}%
-              </div>
-            )}
-
-            {/* Lock indicator */}
-            {track.locked && (
-              <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
-                🔒
-              </div>
-            )}
-
-            {/* Link indicator for linked video/audio tracks */}
-            {track.isLinked && (
-              <div
-                className="absolute top-0.5 left-0.5 text-[10px] text-blue-400 z-20 animate-pulse"
-                title={`Linked to ${track.type === 'video' ? 'audio' : 'video'} track`}
-              >
-                🔗
-              </div>
-            )}
-
-            {/* Unlinked indicator for tracks that could be linked */}
-            {!track.isLinked &&
-              (track.type === 'video' || track.type === 'audio') && (
-                <div
-                  className="absolute top-0.5 left-0.5 text-[10px] text-gray-400 z-20 opacity-50"
-                  title="Unlinked track - can be linked"
-                >
-                  ⚪
-                </div>
-              )}
-          </div>
-        </TrackContextMenu>
-
-        {/* Left resize handle */}
-        {!track.locked && isSelected && !isSplitModeActive && (
-          <div
-            className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-ew-resize z-20 lg:rounded-r flex items-center justify-center
-            ${isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary'}`}
-            style={{ left: left }}
-            onMouseDown={(e) => handleMouseDown('left', e)}
-          >
-            <div className="w-0.5 h-3/4 bg-primary-foreground rounded-full" />
-          </div>
-        )}
-
-        {/* Right resize handle */}
-        {!track.locked && isSelected && !isSplitModeActive && (
-          <div
-            className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-ew-resize z-20 lg:rounded-l flex items-center justify-center
-            ${isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary'}`}
-            style={{ left: left + clampedWidth - 8 }}
-            onMouseDown={(e) => handleMouseDown('right', e)}
-          >
-            <div className="w-0.5 h-3/4 bg-primary-foreground rounded-full" />
-          </div>
-        )}
-      </>
-    );
-  },
-  (prevProps, nextProps) => {
-    // Custom equality check to prevent unnecessary re-renders
-    const shouldRerender = !(
-      prevProps.track.id === nextProps.track.id &&
-      prevProps.track.startFrame === nextProps.track.startFrame &&
-      prevProps.track.endFrame === nextProps.track.endFrame &&
-      prevProps.track.name === nextProps.track.name &&
-      prevProps.track.source === nextProps.track.source &&
-      prevProps.track.visible === nextProps.track.visible &&
-      prevProps.track.locked === nextProps.track.locked &&
-      prevProps.track.muted === nextProps.track.muted &&
-      prevProps.track.subtitleText === nextProps.track.subtitleText &&
-      prevProps.track.volume === nextProps.track.volume &&
-      prevProps.track.isLinked === nextProps.track.isLinked &&
-      prevProps.track.linkedTrackId === nextProps.track.linkedTrackId &&
-      prevProps.track.previewUrl === nextProps.track.previewUrl &&
-      prevProps.frameWidth === nextProps.frameWidth &&
-      Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Only re-render for significant scroll changes
-      prevProps.zoomLevel === nextProps.zoomLevel && // Re-render on any zoom change for proper positioning
-      prevProps.isSelected === nextProps.isSelected &&
-      prevProps.isSplitModeActive === nextProps.isSplitModeActive
-    );
-
-    return !shouldRerender;
-  },
-);
-
-interface TrackRowProps {
-  rowDef: TrackRowDefinition;
-  tracks: VideoTrack[];
-  frameWidth: number;
-  timelineWidth: number;
-  scrollX: number;
-  zoomLevel: number;
-  selectedTrackIds: string[];
-  onTrackSelect: (trackId: string, multiSelect?: boolean) => void;
-  onTrackMove: (trackId: string, newStartFrame: number) => void;
-  onTrackResize: (
-    trackId: string,
-    newStartFrame?: number,
-    newEndFrame?: number,
-  ) => void;
-  onDrop: (rowId: string, files: FileList) => void;
-  allTracksCount: number;
-  onPlaceholderClick?: () => void;
-  isSplitModeActive: boolean;
-}
-
-const TrackRow: React.FC<TrackRowProps> = React.memo(
-  ({
-    rowDef,
-    tracks,
-    frameWidth,
-    timelineWidth,
-    scrollX,
-    zoomLevel,
-    selectedTrackIds,
-    onTrackSelect,
-    onTrackMove,
-    onTrackResize,
-    onDrop,
-    allTracksCount,
-    onPlaceholderClick,
-    isSplitModeActive,
-  }) => {
-    const [isDragOver, setIsDragOver] = useState(false);
-
-    // Viewport culling for performance optimization
-    const visibleTracks = useMemo(() => {
-      if (!window || tracks.length === 0) return tracks;
-
-      const viewportWidth = window.innerWidth;
-      const viewportStart = scrollX;
-      const viewportEnd = scrollX + viewportWidth;
-      const bufferSize = viewportWidth * 0.5; // 50% buffer on each side
-
-      return tracks.filter((track) => {
-        const trackStart = track.startFrame * frameWidth;
-        const trackEnd = track.endFrame * frameWidth;
-
-        // Include tracks that are visible or within buffer zone
-        return (
-          trackEnd >= viewportStart - bufferSize &&
-          trackStart <= viewportEnd + bufferSize
-        );
-      });
-    }, [tracks, scrollX, frameWidth]);
-
+    // Drop handlers for media from library
     const handleDragOver = useCallback((e: React.DragEvent) => {
       e.preventDefault();
-      setIsDragOver(true);
+      e.dataTransfer.dropEffect = 'copy';
+      setDropActive(true);
     }, []);
 
     const handleDragLeave = useCallback((e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragOver(false);
+      // Only set dropActive to false if we're actually leaving the timeline area
+      if (!timelineRef.current?.contains(e.relatedTarget as Node)) {
+        setDropActive(false);
+      }
     }, []);
 
     const handleDrop = useCallback(
-      (e: React.DragEvent) => {
+      async (e: React.DragEvent) => {
         e.preventDefault();
-        setIsDragOver(false);
-        if (e.dataTransfer.files) {
-          onDrop(rowDef.id, e.dataTransfer.files);
+        setDropActive(false);
+
+        // Check if this is a media library item (internal drag)
+        const mediaId = e.dataTransfer.getData('text/plain');
+        if (mediaId) {
+          // Always start at frame 0 when dragging from MediaImportPanel
+          const dropFrame = 0;
+
+          console.log(`🎯 Dropping media library item at frame ${dropFrame}`);
+          addTrackFromMediaLibrary(mediaId, dropFrame).catch(console.error);
+          return;
+        }
+
+        // Check if this is a file drop (external)
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          const files = Array.from(e.dataTransfer.files);
+          console.log(`🎯 Dropping ${files.length} files onto timeline`);
+
+          try {
+            const result = await importMediaToTimeline(files);
+            if (result.success) {
+              console.log(
+                `✅ Successfully imported ${result.importedFiles.length} files to timeline`,
+              );
+            } else {
+              console.error('❌ Failed to import files to timeline');
+            }
+          } catch (error) {
+            console.error('❌ Error importing files to timeline:', error);
+          }
         }
       },
-      [rowDef.id, onDrop],
+      [
+        timeline.scrollX,
+        timeline.zoom,
+        addTrackFromMediaLibrary,
+        importMediaToTimeline,
+      ],
     );
 
-    return (
-      <div
-        className={`relative sm:h-6 md:h-8 lg:h-12 border-l-[3px]
-        ${isDragOver ? 'bg-secondary/10 border-l-secondary' : 'bg-transparent border-l-transparent'}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        {/* Row background and grid */}
-        <div
-          className="absolute top-0 h-full pointer-events-none"
-          style={{
-            left: 0,
-            width: timelineWidth,
-            background: `repeating-linear-gradient(
-          90deg,
-          transparent,
-          transparent ${frameWidth * 30 - 1}px,
-          hsl(var(--foreground) / 0.05) ${frameWidth * 30 - 1}px,
-          hsl(var(--foreground) / 0.05) ${frameWidth * 30}px
-        )`,
-          }}
-        />
-
-        {/* Tracks in this row */}
-        <div className="py-1.5 h-full">
-          {visibleTracks.map((track) => (
-            <TrackItem
-              key={`${track.id}-${track.source}-${track.name}`}
-              track={track}
-              frameWidth={frameWidth}
-              scrollX={scrollX}
-              zoomLevel={zoomLevel}
-              isSelected={selectedTrackIds.includes(track.id)}
-              onSelect={(multiSelect) => onTrackSelect(track.id, multiSelect)}
-              onMove={(newStartFrame) => onTrackMove(track.id, newStartFrame)}
-              onResize={(newStartFrame, newEndFrame) =>
-                onTrackResize(track.id, newStartFrame, newEndFrame)
-              }
-              isSplitModeActive={isSplitModeActive}
-            />
-          ))}
-        </div>
-
-        {/* Drop hint */}
-        {allTracksCount === 0 && rowDef.id === 'subtitle' && (
-          <div
-            className={`absolute inset-0 flex items-center px-8 cursor-pointer transition-all duration-200 rounded-lg border-2 border-dashed
-            ${
-              isDragOver
-                ? 'border-secondary bg-secondary/10 text-secondary'
-                : 'border-accent hover:border-secondary hover:bg-secondary/10 bg-accent text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={onPlaceholderClick}
-          >
-            <div className="flex items-center gap-2 text-xs">
-              <Film className="h-4 w-4" />
-              <span>Drag and drop your media here</span>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  },
-  (prevProps, nextProps) => {
-    // Custom equality check for TrackRow
-    return (
-      prevProps.rowDef.id === nextProps.rowDef.id &&
-      prevProps.tracks.length === nextProps.tracks.length &&
-      prevProps.tracks.every((track, index) => {
-        const nextTrack = nextProps.tracks[index];
-        return (
-          track &&
-          nextTrack &&
-          track.id === nextTrack.id &&
-          track.startFrame === nextTrack.startFrame &&
-          track.endFrame === nextTrack.endFrame &&
-          track.source === nextTrack.source &&
-          track.name === nextTrack.name &&
-          track.visible === nextTrack.visible &&
-          track.locked === nextTrack.locked &&
-          track.muted === nextTrack.muted &&
-          track.isLinked === nextTrack.isLinked &&
-          track.linkedTrackId === nextTrack.linkedTrackId &&
-          track.previewUrl === nextTrack.previewUrl
-        );
-      }) &&
-      prevProps.frameWidth === nextProps.frameWidth &&
-      prevProps.timelineWidth === nextProps.timelineWidth &&
-      prevProps.scrollX === nextProps.scrollX &&
-      JSON.stringify(prevProps.selectedTrackIds) ===
-        JSON.stringify(nextProps.selectedTrackIds) &&
-      prevProps.allTracksCount === nextProps.allTracksCount
-    );
-  },
-);
-
-export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
-  ({
-    tracks,
-    frameWidth,
-    timelineWidth,
-    scrollX,
-    zoomLevel,
-    selectedTrackIds,
-    onTrackSelect,
-    isSplitModeActive,
-  }) => {
-    const {
-      moveTrack,
-      resizeTrack,
-      importMediaFromFiles,
-      importMediaFromDialog,
-    } = useVideoEditorStore();
-
-    const handleTrackSelect = useCallback(
-      (trackId: string, multiSelect = false) => {
-        const { tracks: allTracks } = useVideoEditorStore.getState();
-        const selectedTrack = allTracks.find((t) => t.id === trackId);
-
-        // Get tracks to select (include linked track if applicable)
-        const tracksToSelect = [trackId];
-        if (selectedTrack?.isLinked && selectedTrack.linkedTrackId) {
-          tracksToSelect.push(selectedTrack.linkedTrackId);
-          console.log(
-            `🔗 Selecting linked track pair: ${trackId} and ${selectedTrack.linkedTrackId}`,
-          );
+    // Animation loop for playback
+    useEffect(() => {
+      if (!playback.isPlaying) {
+        if (playbackIntervalRef.current) {
+          cancelAnimationFrame(playbackIntervalRef.current);
+          playbackIntervalRef.current = null;
         }
+        return;
+      }
 
-        if (multiSelect) {
-          // Handle multi-select with linked tracks
-          let newSelection = [...selectedTrackIds];
+      const startTime = performance.now();
+      const startFrame = lastFrameUpdateRef.current;
 
-          const isCurrentlySelected = tracksToSelect.some((id) =>
-            selectedTrackIds.includes(id),
-          );
-          if (isCurrentlySelected) {
-            // Remove both tracks from selection
-            newSelection = newSelection.filter(
-              (id) => !tracksToSelect.includes(id),
-            );
-          } else {
-            // Add both tracks to selection
-            tracksToSelect.forEach((id) => {
-              if (!newSelection.includes(id)) {
-                newSelection.push(id);
-              }
+      // Use RAF for smooth playback that matches video timing
+      const animate = () => {
+        if (!playback.isPlaying) return;
+
+        const elapsed = (performance.now() - startTime) / 1000; // elapsed seconds
+        const frameAdvance = elapsed * timeline.fps * playback.playbackRate;
+        const targetFrame = Math.floor(startFrame + frameAdvance);
+
+        // Linear playback - respect gaps like Premiere Pro
+        // No gap skipping - playhead moves continuously through the entire timeline
+
+        if (targetFrame >= effectiveEndFrame) {
+          const finalFrame = playback.isLooping
+            ? 0
+            : Math.max(0, effectiveEndFrame - 1);
+          lastFrameUpdateRef.current = finalFrame;
+          setCurrentFrame(finalFrame);
+
+          if (playback.isLooping) {
+            // Restart the animation from frame 0
+            playbackIntervalRef.current = requestAnimationFrame(() => {
+              const newStartTime = performance.now();
+              const newAnimate = () => {
+                if (!playback.isPlaying) return;
+
+                const newElapsed = (performance.now() - newStartTime) / 1000;
+                const newFrameAdvance =
+                  newElapsed * timeline.fps * playback.playbackRate;
+                const newTargetFrame = Math.floor(newFrameAdvance);
+
+                if (newTargetFrame < effectiveEndFrame) {
+                  const clampedFrame = Math.max(
+                    0,
+                    Math.min(newTargetFrame, effectiveEndFrame - 1),
+                  );
+                  lastFrameUpdateRef.current = clampedFrame;
+                  setCurrentFrame(clampedFrame);
+                  playbackIntervalRef.current =
+                    requestAnimationFrame(newAnimate);
+                }
+              };
+              newAnimate();
             });
           }
-          onTrackSelect(newSelection);
         } else {
-          // Single select - select both linked tracks
-          onTrackSelect(tracksToSelect);
-        }
-      },
-      [selectedTrackIds, onTrackSelect],
-    );
-
-    const handleTrackMove = useCallback(
-      (trackId: string, newStartFrame: number) => {
-        moveTrack(trackId, newStartFrame);
-      },
-      [moveTrack],
-    );
-
-    const handleTrackResize = useCallback(
-      (trackId: string, newStartFrame?: number, newEndFrame?: number) => {
-        resizeTrack(trackId, newStartFrame, newEndFrame);
-      },
-      [resizeTrack],
-    );
-
-    const handleRowDrop = useCallback(
-      async (rowId: string, files: FileList) => {
-        // Filter files based on row type
-        const fileArray = Array.from(files);
-        const rowDef = TRACK_ROWS.find((row) => row.id === rowId);
-
-        if (!rowDef) return;
-
-        // Filter files that match the row's accepted types
-        const validFiles = fileArray.filter((file) => {
-          if (rowDef.trackTypes.includes('video')) {
-            return file.type.startsWith('video/');
-          }
-          if (rowDef.trackTypes.includes('audio')) {
-            return file.type.startsWith('audio/');
-          }
-          if (rowDef.trackTypes.includes('image')) {
-            return file.type.startsWith('image/');
-          }
-          return false;
-        });
-
-        if (validFiles.length > 0) {
-          // Import files using the existing store method
-          await importMediaFromFiles(validFiles);
-        } else {
-          console.warn(
-            `No valid ${rowDef.trackTypes.join('/')} files found for ${rowId} row`,
+          const clampedFrame = Math.max(
+            0,
+            Math.min(targetFrame, effectiveEndFrame - 1),
           );
+          lastFrameUpdateRef.current = clampedFrame;
+          setCurrentFrame(clampedFrame);
+          playbackIntervalRef.current = requestAnimationFrame(animate);
         }
+      };
+
+      playbackIntervalRef.current = requestAnimationFrame(animate);
+
+      return () => {
+        if (playbackIntervalRef.current) {
+          cancelAnimationFrame(playbackIntervalRef.current);
+          playbackIntervalRef.current = null;
+        }
+      };
+    }, [
+      playback.isPlaying,
+      playback.isLooping,
+      playback.playbackRate,
+      timeline.fps,
+      effectiveEndFrame,
+      setCurrentFrame,
+      tracks,
+    ]);
+
+    // Sync lastFrameUpdateRef with actual currentFrame changes
+    useEffect(() => {
+      lastFrameUpdateRef.current = timeline.currentFrame;
+    }, [timeline.currentFrame]);
+
+    // Force re-render when split mode changes to bypass memoization
+    useEffect(() => {
+      setSplitModeUpdateKey((prev) => prev + 1);
+    }, [isSplitModeActive]);
+
+    // Keyboard shortcuts
+    useHotkeys('space', (e) => {
+      e.preventDefault();
+      togglePlayback();
+    });
+
+    useHotkeys('home', () => setCurrentFrame(0));
+    useHotkeys('end', () => setCurrentFrame(effectiveEndFrame - 1));
+    useHotkeys('left', () =>
+      setCurrentFrame(Math.max(0, timeline.currentFrame - 1)),
+    );
+    useHotkeys('right', () =>
+      setCurrentFrame(
+        Math.min(effectiveEndFrame - 1, timeline.currentFrame + 1),
+      ),
+    );
+    useHotkeys('i', () => setInPoint(timeline.currentFrame));
+    useHotkeys('o', () => setOutPoint(timeline.currentFrame));
+    useHotkeys('s', () => {
+      const { splitAtPlayhead } = useVideoEditorStore.getState();
+      splitAtPlayhead();
+    });
+    useHotkeys('ctrl+k', (e) => {
+      e.preventDefault();
+      const { splitAtPlayhead } = useVideoEditorStore.getState();
+      splitAtPlayhead();
+    });
+    useHotkeys('cmd+k', (e) => {
+      e.preventDefault();
+      const { splitAtPlayhead } = useVideoEditorStore.getState();
+      splitAtPlayhead();
+    });
+    useHotkeys('ctrl+d', (e) => {
+      e.preventDefault();
+      const { duplicateTrack } = useVideoEditorStore.getState();
+      const selectedTracks = timeline.selectedTrackIds;
+      selectedTracks.forEach((trackId) => duplicateTrack(trackId));
+    });
+    useHotkeys('v', () => {
+      const { toggleTrackVisibility } = useVideoEditorStore.getState();
+      const selectedTracks = timeline.selectedTrackIds;
+      selectedTracks.forEach((trackId) => toggleTrackVisibility(trackId));
+    });
+    useHotkeys('m', () => {
+      const { toggleTrackMute } = useVideoEditorStore.getState();
+      const selectedTracks = timeline.selectedTrackIds;
+      selectedTracks.forEach((trackId) => toggleTrackMute(trackId));
+    });
+    useHotkeys('s', () => {
+      toggleSnap();
+    });
+    useHotkeys('c', (e) => {
+      e.preventDefault();
+      toggleSplitMode();
+    });
+    useHotkeys('escape', (e) => {
+      e.preventDefault();
+      setSplitMode(false);
+    });
+    useHotkeys(
+      'del',
+      (e) => {
+        e.preventDefault();
+        removeSelectedTracks();
       },
-      [importMediaFromFiles],
+      { enableOnFormTags: false },
+    );
+    useHotkeys(
+      'backspace',
+      (e) => {
+        e.preventDefault();
+        removeSelectedTracks();
+      },
+      { enableOnFormTags: false },
     );
 
-    const handlePlaceholderClick = useCallback(async () => {
-      const result = await importMediaFromDialog();
-      if (result.success && result.importedFiles.length > 0) {
-        console.log(
-          'Files imported successfully from timeline placeholder:',
-          result.importedFiles,
-        );
-      }
-    }, [importMediaFromDialog]);
-
-    // Group tracks by their designated rows with subtitle optimization
-    const tracksByRow = useMemo(() => {
-      const grouped: Record<string, VideoTrack[]> = {};
-
-      TRACK_ROWS.forEach((row) => {
-        grouped[row.id] = tracks.filter((track) =>
-          row.trackTypes.includes(track.type),
-        );
-
-        // Sort subtitle tracks by start time for better performance and visual organization
-        if (row.id === 'subtitle' && grouped[row.id].length > 0) {
-          grouped[row.id].sort((a, b) => a.startFrame - b.startFrame);
+    // Global keyboard event listener as fallback
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          removeSelectedTracks();
         }
-      });
+      };
 
-      // Tracks organized by row type for rendering
-      return grouped;
-    }, [tracks]);
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [timeline.selectedTrackIds, removeSelectedTracks]);
 
-    // Memoize individual callback handlers to prevent re-creation
-    const memoizedHandlers = useMemo(
-      () => ({
-        onTrackSelect: (trackId: string, multiSelect?: boolean) =>
-          handleTrackSelect(trackId, multiSelect || false),
-        onTrackMove: handleTrackMove,
-        onTrackResize: handleTrackResize,
-        onDrop: handleRowDrop,
-        onPlaceholderClick: handlePlaceholderClick,
-      }),
+    // Cleanup timeouts and intervals on unmount
+    useEffect(() => {
+      return () => {
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+        if (autoFollowTimeoutRef.current) {
+          clearTimeout(autoFollowTimeoutRef.current);
+        }
+        if (playbackIntervalRef.current) {
+          cancelAnimationFrame(playbackIntervalRef.current);
+        }
+      };
+    }, []);
+
+    // Zoom controls
+    useHotkeys('equal', () => setZoom(Math.min(timeline.zoom * 1.2, 10)));
+    useHotkeys('minus', () => setZoom(Math.max(timeline.zoom / 1.2, 0.1)));
+    useHotkeys('0', () => setZoom(1));
+
+    // Handle wheel zoom
+    const handleWheel = useCallback(
+      (e: WheelEvent) => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+          setZoom(Math.max(0.1, Math.min(timeline.zoom * zoomFactor, 10)));
+        } else {
+          // Horizontal scroll - let the native scroll handle this
+          // The onScroll event will update the store
+          e.stopPropagation();
+        }
+      },
+      [timeline.zoom, setZoom],
+    );
+
+    useEffect(() => {
+      const timelineElement = timelineRef.current;
+      if (timelineElement) {
+        timelineElement.addEventListener('wheel', handleWheel, {
+          passive: false,
+        });
+        return () => timelineElement.removeEventListener('wheel', handleWheel);
+      }
+    }, [handleWheel]);
+
+    // Sync scrollX state with actual scroll position
+    useEffect(() => {
+      const tracksElement = tracksRef.current;
+      if (
+        tracksElement &&
+        Math.abs(tracksElement.scrollLeft - timeline.scrollX) > 1 &&
+        !isManualScrollingRef.current
+      ) {
+        tracksElement.scrollLeft = timeline.scrollX;
+      }
+    }, [timeline.scrollX]);
+
+    // Calculate frame width based on zoom - memoized
+    const frameWidth = useMemo(() => 2 * timeline.zoom, [timeline.zoom]);
+    const timelineWidth = useMemo(
+      () => effectiveEndFrame * frameWidth,
+      [effectiveEndFrame, frameWidth],
+    );
+
+    // Auto-follow playhead during playback
+    const autoFollowPlayhead = useCallback(() => {
+      if (
+        !playback.isPlaying ||
+        !tracksRef.current ||
+        !autoFollowEnabled ||
+        isManualScrollingRef.current
+      ) {
+        return;
+      }
+
+      const tracksElement = tracksRef.current;
+      const playheadPosition = timeline.currentFrame * frameWidth;
+      const viewportWidth = tracksElement.clientWidth;
+      const currentScrollX = tracksElement.scrollLeft;
+
+      // Calculate visible range
+      const leftBound = currentScrollX;
+      const rightBound = currentScrollX + viewportWidth;
+
+      const optimalPosition = viewportWidth * 0.3;
+      const scrollBuffer = viewportWidth * 0.1;
+
+      let targetScrollX = currentScrollX;
+
+      if (playheadPosition > rightBound - scrollBuffer) {
+        targetScrollX = playheadPosition - optimalPosition;
+      } else if (playheadPosition < leftBound + scrollBuffer) {
+        targetScrollX = Math.max(0, playheadPosition - optimalPosition);
+      }
+
+      const scrollDifference = Math.abs(targetScrollX - currentScrollX);
+      if (scrollDifference > 5) {
+        const finalScrollX = Math.max(0, targetScrollX);
+
+        // Update both DOM and store immediately for sync
+        tracksElement.scrollLeft = finalScrollX;
+        setScrollX(finalScrollX);
+      }
+    }, [
+      timeline.currentFrame,
+      frameWidth,
+      playback.isPlaying,
+      autoFollowEnabled,
+      setScrollX,
+    ]);
+
+    // Auto-follow effect
+    useEffect(() => {
+      if (!playback.isPlaying || !autoFollowEnabled) {
+        return;
+      }
+
+      const throttleTimeout = setTimeout(autoFollowPlayhead, 16);
+
+      return () => clearTimeout(throttleTimeout);
+    }, [
+      timeline.currentFrame,
+      autoFollowPlayhead,
+      playback.isPlaying,
+      autoFollowEnabled,
+    ]);
+
+    // Re-enable auto-follow when playback starts, but only if not manually scrolling or dragging
+    useEffect(() => {
+      if (playback.isPlaying && !isManualScrollingRef.current) {
+        setAutoFollowEnabled(true);
+      }
+    }, [playback.isPlaying]);
+
+    // Helper function to find which track is being hovered at a specific position
+    const findHoveredTrack = useCallback(
+      (clientX: number, clientY: number) => {
+        if (!tracksRef.current) return null;
+
+        const rect = tracksRef.current.getBoundingClientRect();
+        const x = clientX - rect.left + tracksRef.current.scrollLeft;
+        const y = clientY - rect.top;
+        const frame = Math.floor(x / frameWidth);
+
+        // Find which track row is being hovered based on Y position
+        const trackRowHeight = 48; // Approximate height of each track row
+        const rowIndex = Math.floor(y / trackRowHeight);
+
+        // Map row index to track type based on the TRACK_ROWS order
+        const trackTypes = ['subtitle', 'image', 'video', 'audio'];
+        const trackType = trackTypes[rowIndex] as VideoTrack['type'];
+
+        if (!trackType) return null;
+
+        // Find tracks of this type that intersect with the frame
+        const intersectingTracks = tracks.filter(
+          (track) =>
+            track.type === trackType &&
+            frame > track.startFrame &&
+            frame < track.endFrame,
+        );
+
+        // Return the first intersecting track, or null if none found
+        return intersectingTracks.length > 0 ? intersectingTracks[0] : null;
+      },
+      [frameWidth, tracks],
+    );
+
+    // Split mode handlers
+    const handleSplitClick = useCallback(
+      (e: React.MouseEvent) => {
+        if (!isSplitModeActive || !tracksRef.current) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const hoveredTrackAtClick = findHoveredTrack(e.clientX, e.clientY);
+
+        if (!hoveredTrackAtClick) return;
+
+        const rect = tracksRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
+        const frame = Math.floor(x / frameWidth);
+
+        // Split only the hovered track (and its linked partners if any)
+        splitAtPosition(frame, hoveredTrackAtClick.id);
+      },
+      [isSplitModeActive, frameWidth, splitAtPosition, findHoveredTrack],
+    );
+
+    const handleSplitMouseMove = useCallback(
+      (e: React.MouseEvent) => {
+        if (!isSplitModeActive || !tracksRef.current) {
+          setSplitIndicatorPosition(null);
+          setHoveredTrack(null);
+          setHoveredTrackRow(null);
+          setLinkedTrackIndicators([]);
+          return;
+        }
+
+        const hoveredTrackAtPosition = findHoveredTrack(e.clientX, e.clientY);
+
+        if (hoveredTrackAtPosition) {
+          const rect = tracksRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
+          const frame = Math.floor(x / frameWidth);
+          const indicatorPosition =
+            frame * frameWidth - tracksRef.current.scrollLeft;
+
+          setHoveredTrack(hoveredTrackAtPosition);
+          setHoveredTrackRow(hoveredTrackAtPosition.type);
+          setSplitIndicatorPosition(indicatorPosition);
+
+          // Handle linked track indicators
+          const indicators: Array<{ trackType: string; position: number }> = [];
+
+          if (
+            hoveredTrackAtPosition.isLinked &&
+            hoveredTrackAtPosition.linkedTrackId
+          ) {
+            const linkedTrack = tracks.find(
+              (t) => t.id === hoveredTrackAtPosition.linkedTrackId,
+            );
+            if (
+              linkedTrack &&
+              frame > linkedTrack.startFrame &&
+              frame < linkedTrack.endFrame
+            ) {
+              // Add indicator for the linked track
+              indicators.push({
+                trackType: linkedTrack.type,
+                position: indicatorPosition,
+              });
+            }
+          }
+
+          setLinkedTrackIndicators(indicators);
+        } else {
+          setHoveredTrack(null);
+          setHoveredTrackRow(null);
+          setSplitIndicatorPosition(null);
+          setLinkedTrackIndicators([]);
+        }
+      },
+      [isSplitModeActive, frameWidth, findHoveredTrack, tracks],
+    );
+
+    const handleSplitMouseLeave = useCallback(() => {
+      setSplitIndicatorPosition(null);
+      setHoveredTrack(null);
+      setHoveredTrackRow(null);
+      setLinkedTrackIndicators([]);
+    }, []);
+
+    // Helper functions to get track row positions
+    const getTrackRowTop = useCallback((trackType: string) => {
+      const trackRowHeight = 48; // Height of each track row
+      const trackTypes = ['subtitle', 'image', 'video', 'audio'];
+      const rowIndex = trackTypes.indexOf(trackType);
+      return rowIndex >= 0 ? rowIndex * trackRowHeight : 0;
+    }, []);
+
+    const getTrackRowHeight = useCallback(() => {
+      return 48; // Standard track row height
+    }, []);
+
+    // Handle mouse down for instant seeking
+    const handleMouseDown = useCallback(
+      (e: React.MouseEvent) => {
+        if (!tracksRef.current) return;
+
+        // If in split mode, handle split click instead of seeking
+        if (isSplitModeActive) {
+          handleSplitClick(e);
+          return;
+        }
+
+        // Calculate and apply seek immediately
+        const rect = tracksRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
+        const frame = Math.floor(x / frameWidth);
+        const clampedFrame = Math.max(
+          0,
+          Math.min(frame, effectiveEndFrame - 1),
+        );
+
+        // INSTANT seek - no delays
+        pause();
+        isManualScrollingRef.current = true;
+        setAutoFollowEnabled(false);
+
+        lastFrameUpdateRef.current = clampedFrame;
+        setCurrentFrame(clampedFrame);
+
+        // Re-enable auto-follow after a short delay
+        setTimeout(() => {
+          setAutoFollowEnabled(true);
+          isManualScrollingRef.current = false;
+        }, 200);
+
+        e.preventDefault();
+        e.stopPropagation();
+      },
       [
-        handleTrackSelect,
-        handleTrackMove,
-        handleTrackResize,
-        handleRowDrop,
-        handlePlaceholderClick,
+        isSplitModeActive,
+        handleSplitClick,
+        frameWidth,
+        effectiveEndFrame,
+        setCurrentFrame,
+        pause,
+        playback.isPlaying,
       ],
     );
 
     return (
       <div
-        className="relative min-h-full overflow-visible"
-        style={{
-          width: timelineWidth,
-          minWidth: timelineWidth,
-        }}
+        ref={timelineRef}
+        className={cn(
+          'timeline-container flex flex-col flex-1 overflow-hidden',
+          isSplitModeActive && hoveredTrack ? 'cursor-split' : '',
+          isSplitModeActive && !hoveredTrack ? 'cursor-split-not-allowed' : '',
+          className,
+        )}
+        tabIndex={0}
+        onMouseMove={handleSplitMouseMove}
+        onMouseLeave={handleSplitMouseLeave}
       >
-        {/* Render each track row */}
-        {TRACK_ROWS.map((rowDef) => (
-          <TrackRow
-            key={rowDef.id}
-            rowDef={rowDef}
-            tracks={tracksByRow[rowDef.id] || []}
-            frameWidth={frameWidth}
-            timelineWidth={timelineWidth}
-            scrollX={scrollX}
-            zoomLevel={zoomLevel}
-            selectedTrackIds={selectedTrackIds}
-            onTrackSelect={memoizedHandlers.onTrackSelect}
-            onTrackMove={memoizedHandlers.onTrackMove}
-            onTrackResize={memoizedHandlers.onTrackResize}
-            onDrop={memoizedHandlers.onDrop}
-            allTracksCount={tracks.length}
-            onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
-            isSplitModeActive={isSplitModeActive}
+        {/* Timeline Header with Controls */}
+        {/* TimelineHeader component removed as per edit hint */}
+
+        {/* Timeline Controls */}
+        <TimelineControls />
+
+        <div className="flex flex-1">
+          {/* Timeline Track Controllers */}
+          <TimelineTrackControllers
+            tracks={tracks}
+            className="w-fit flex-shrink-0"
           />
-        ))}
+
+          {/* Project Thumbnail Setter - Only show if there are video tracks */}
+          {tracks.some((track) => track.type === 'video') && (
+            <ProjectThumbnailSetter />
+          )}
+          {/* Timeline Content Area */}
+          <div className="flex flex-col flex-1 relative overflow-hidden">
+            {/* Timeline Ruler - Fixed at top but scrolls horizontally */}
+            <div
+              className="relative overflow-hidden z-10 cursor-pointer"
+              onMouseDown={handleMouseDown}
+              title="Click to seek"
+            >
+              <TimelineRuler
+                frameWidth={frameWidth}
+                totalFrames={timeline.totalFrames}
+                scrollX={timeline.scrollX}
+                fps={timeline.fps}
+                tracks={tracks}
+                inPoint={timeline.inPoint}
+                outPoint={timeline.outPoint}
+                onClick={undefined} // Handle clicks at parent level
+                timelineScrollElement={tracksRef.current}
+              />
+            </div>
+
+            {/* Timeline Tracks Area */}
+            <div className="flex-1 relative overflow-visible">
+              <div
+                ref={tracksRef}
+                className={cn(
+                  'relative overflow-auto transition-colors duration-200',
+                  isSplitModeActive && hoveredTrack ? 'cursor-split' : '',
+                  isSplitModeActive && !hoveredTrack
+                    ? 'cursor-split-not-allowed'
+                    : '',
+                  !isSplitModeActive ? 'cursor-pointer' : '',
+                )}
+                title="Click to seek"
+                style={{
+                  scrollBehavior:
+                    autoFollowEnabled && playback.isPlaying ? 'smooth' : 'auto',
+                }}
+                onMouseDown={handleMouseDown}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onScroll={(e) => {
+                  // Scroll handling
+                  const scrollLeft = (e.target as HTMLElement).scrollLeft;
+                  const scrollDifference = Math.abs(
+                    scrollLeft - timeline.scrollX,
+                  );
+
+                  // Immediately update store to keep ruler in sync
+                  setScrollX(scrollLeft);
+
+                  // Only handle auto-follow disabling during playback
+                  if (
+                    playback.isPlaying &&
+                    autoFollowEnabled &&
+                    scrollDifference > 10
+                  ) {
+                    if (
+                      !isManualScrollingRef.current &&
+                      scrollDifference > 30
+                    ) {
+                      isManualScrollingRef.current = true;
+                      setAutoFollowEnabled(false);
+
+                      if (autoFollowTimeoutRef.current) {
+                        clearTimeout(autoFollowTimeoutRef.current);
+                      }
+                      autoFollowTimeoutRef.current = setTimeout(() => {
+                        if (playback.isPlaying) {
+                          setAutoFollowEnabled(true);
+                        }
+                        isManualScrollingRef.current = false;
+                      }, 1500);
+                    }
+                  }
+
+                  // Debounced scroll finalization for performance
+                  if (scrollTimeoutRef.current) {
+                    clearTimeout(scrollTimeoutRef.current);
+                  }
+
+                  scrollTimeoutRef.current = setTimeout(() => {
+                    const currentScrollLeft = (e.target as HTMLElement)
+                      .scrollLeft;
+                    if (Math.abs(currentScrollLeft - scrollLeft) < 2) {
+                      setScrollX(currentScrollLeft);
+                    }
+                  }, 16);
+                }}
+              >
+                <TimelineTracks
+                  key={splitModeUpdateKey}
+                  tracks={tracks}
+                  frameWidth={frameWidth}
+                  timelineWidth={timelineWidth}
+                  scrollX={timeline.scrollX}
+                  zoomLevel={timeline.zoom}
+                  selectedTrackIds={timeline.selectedTrackIds}
+                  onTrackSelect={setSelectedTracks}
+                  isSplitModeActive={isSplitModeActive}
+                />
+              </div>
+
+              {/* Global Playhead - spans across ruler and tracks */}
+              <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-[999]">
+                <TimelinePlayhead
+                  currentFrame={timeline.currentFrame}
+                  frameWidth={frameWidth}
+                  scrollX={timeline.scrollX}
+                  visible={timeline.playheadVisible}
+                  timelineScrollElement={tracksRef.current}
+                />
+              </div>
+
+              {/* Split Indicator Line - confined to hovered track row */}
+              {isSplitModeActive &&
+                splitIndicatorPosition !== null &&
+                hoveredTrackRow && (
+                  <div
+                    className="split-indicator"
+                    style={{
+                      left: `${splitIndicatorPosition}px`,
+                      top: `${getTrackRowTop(hoveredTrackRow)}px`,
+                      height: `${getTrackRowHeight()}px`,
+                    }}
+                  />
+                )}
+
+              {/* Linked Track Indicators */}
+              {isSplitModeActive &&
+                linkedTrackIndicators.map((indicator, index) => (
+                  <div
+                    key={`linked-indicator-${index}`}
+                    className="split-indicator"
+                    style={{
+                      left: `${indicator.position}px`,
+                      top: `${getTrackRowTop(indicator.trackType)}px`,
+                      height: `${getTrackRowHeight()}px`,
+                    }}
+                  />
+                ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   },
   (prevProps, nextProps) => {
-    // Custom equality check for TimelineTracks
-    return (
-      prevProps.tracks.length === nextProps.tracks.length &&
-      prevProps.tracks.every((track, index) => {
-        const nextTrack = nextProps.tracks[index];
-        return (
-          track &&
-          nextTrack &&
-          track.id === nextTrack.id &&
-          track.startFrame === nextTrack.startFrame &&
-          track.endFrame === nextTrack.endFrame &&
-          track.source === nextTrack.source &&
-          track.name === nextTrack.name &&
-          track.visible === nextTrack.visible &&
-          track.locked === nextTrack.locked &&
-          track.muted === nextTrack.muted &&
-          track.isLinked === nextTrack.isLinked &&
-          track.linkedTrackId === nextTrack.linkedTrackId &&
-          track.previewUrl === nextTrack.previewUrl
-        );
-      }) &&
-      prevProps.frameWidth === nextProps.frameWidth &&
-      prevProps.timelineWidth === nextProps.timelineWidth &&
-      Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Prevent re-render for small scroll changes
-      Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) < 0.1 && // Prevent re-render for small zoom changes
-      JSON.stringify(prevProps.selectedTrackIds) ===
-        JSON.stringify(nextProps.selectedTrackIds) &&
-      prevProps.isSplitModeActive === nextProps.isSplitModeActive
-    );
+    // Custom equality check for Timeline component
+    return prevProps.className === nextProps.className;
   },
 );
