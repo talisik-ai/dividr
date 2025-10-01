@@ -1,5 +1,5 @@
 import { Film } from 'lucide-react';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   findBufferedSnapPoint,
   findSnapPoints,
@@ -65,7 +65,6 @@ interface TimelineTracksProps {
 interface TrackItemProps {
   track: VideoTrack;
   frameWidth: number;
-  scrollX: number;
   zoomLevel: number;
   isSelected: boolean;
   onSelect: (multiSelect?: boolean) => void;
@@ -85,6 +84,7 @@ const TrackItemContent = React.memo<{
   isSplitModeActive: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
+  onContextMenu?: () => void;
 }>(
   ({
     track,
@@ -96,6 +96,7 @@ const TrackItemContent = React.memo<{
     isSplitModeActive,
     onSelect,
     onMouseDown,
+    onContextMenu,
   }) => {
     const left = track.startFrame * frameWidth;
 
@@ -132,6 +133,7 @@ const TrackItemContent = React.memo<{
         }}
         onClick={onSelect}
         onMouseDown={onMouseDown}
+        onContextMenu={onContextMenu}
       >
         {/* Video sprite sheet strip for video tracks */}
         {track.type === 'video' && (
@@ -236,7 +238,8 @@ const TrackItemContent = React.memo<{
       prev.zoomLevel === next.zoomLevel &&
       prev.isSelected === next.isSelected &&
       prev.isDragging === next.isDragging &&
-      prev.isSplitModeActive === next.isSplitModeActive
+      prev.isSplitModeActive === next.isSplitModeActive &&
+      prev.onContextMenu === next.onContextMenu
     );
   },
 );
@@ -245,7 +248,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
   ({
     track,
     frameWidth,
-    scrollX,
     zoomLevel,
     isSelected,
     onSelect,
@@ -253,7 +255,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     onResize,
     isSplitModeActive,
   }) => {
-    const nodeRef = useRef<HTMLDivElement>(null);
     const [isResizing, setIsResizing] = useState<'left' | 'right' | false>(
       false,
     );
@@ -280,7 +281,10 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const handleClick = useCallback(
       (e: React.MouseEvent) => {
         if (isSplitModeActive) return;
-        e.stopPropagation();
+        // Don't stop propagation for right-clicks to allow context menu
+        if (e.button !== 2) {
+          e.stopPropagation();
+        }
         onSelect(e.altKey);
       },
       [isSplitModeActive, onSelect],
@@ -290,6 +294,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const handleMouseDownTrack = useCallback(
       (e: React.MouseEvent) => {
         if (track.locked || isSplitModeActive) return;
+        // Don't handle right-clicks to allow context menu
+        if (e.button === 2) return;
         e.stopPropagation();
         setIsDragging(true);
         setDragStart({
@@ -302,6 +308,21 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         setIsApproachingSnap(false);
       },
       [track.locked, track.startFrame, track.endFrame, isSplitModeActive],
+    );
+
+    // Handle context menu to prevent conflicts
+    const handleContextMenu = useCallback(
+      (e?: React.MouseEvent) => {
+        // Stop propagation to prevent timeline seeking
+        if (e) {
+          e.stopPropagation();
+        }
+        // Ensure the track is selected for context actions
+        if (!isSelected) {
+          onSelect(false); // Select without multi-select
+        }
+      },
+      [isSelected, onSelect],
     );
 
     const handleMouseDown = useCallback(
@@ -519,6 +540,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           isSplitModeActive={isSplitModeActive}
           onSelect={handleClick}
           onMouseDown={handleMouseDownTrack}
+          onContextMenu={handleContextMenu}
         />
       ),
       [
@@ -531,6 +553,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         isSplitModeActive,
         handleClick,
         handleMouseDownTrack,
+        handleContextMenu,
       ],
     );
 
@@ -581,7 +604,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.linkedTrackId === nextProps.track.linkedTrackId &&
       prevProps.track.previewUrl === nextProps.track.previewUrl &&
       prevProps.frameWidth === nextProps.frameWidth &&
-      Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 &&
       prevProps.zoomLevel === nextProps.zoomLevel &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive
@@ -704,7 +726,6 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
               key={`${track.id}-${track.source}-${track.name}`}
               track={track}
               frameWidth={frameWidth}
-              scrollX={scrollX}
               zoomLevel={zoomLevel}
               isSelected={selectedTrackIds.includes(track.id)}
               onSelect={(multiSelect) => onTrackSelect(track.id, multiSelect)}

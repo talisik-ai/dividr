@@ -26,10 +26,8 @@ interface TrackContextMenuProps {
   children: React.ReactNode;
 }
 
-// Memoized component with custom comparison
 export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
   ({ track, children }) => {
-    // Only subscribe to the specific values we need
     const currentFrame = useVideoEditorStore(
       (state) => state.timeline.currentFrame,
     );
@@ -40,7 +38,6 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
       (state) => state.timeline.selectedTrackIds.length,
     );
 
-    // Get store actions using getState() to avoid reactive subscriptions
     const storeActions = useMemo(() => {
       const state = useVideoEditorStore.getState();
       return {
@@ -52,9 +49,8 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
         setSelectedTracks: state.setSelectedTracks,
         removeSelectedTracks: state.removeSelectedTracks,
       };
-    }, []); // Empty deps - actions are stable
+    }, []);
 
-    // Memoize computed values
     const hasMultipleSelected = selectedCount > 1;
 
     const canSplit = useMemo(
@@ -65,12 +61,18 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
       [currentFrame, track.startFrame, track.endFrame, track.locked],
     );
 
-    const hasAudio = track.type === 'audio' || track.type === 'video';
+    // Only audio tracks get mute option
+    const hasAudio = track.type === 'audio';
+    // Video, image, and subtitle tracks get visibility option
+    const hasVisibility =
+      track.type === 'video' ||
+      track.type === 'image' ||
+      track.type === 'subtitle';
 
-    // Memoized handlers with stable dependencies
     const handleSelectTrack = useCallback(
       (e: React.MouseEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         if (!isSelected) {
           storeActions.setSelectedTracks([track.id]);
         }
@@ -81,6 +83,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
     const handleDeleteTrack = useCallback(
       (e: React.MouseEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         if (hasMultipleSelected) {
           storeActions.removeSelectedTracks();
         } else {
@@ -93,6 +96,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
     const handleDuplicateTrack = useCallback(
       (e: React.MouseEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         storeActions.duplicateTrack(track.id);
       },
       [track.id, storeActions],
@@ -101,6 +105,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
     const handleSplitTrack = useCallback(
       (e: React.MouseEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         if (canSplit) {
           storeActions.splitTrack(track.id, currentFrame);
         }
@@ -111,6 +116,7 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
     const handleToggleVisibility = useCallback(
       (e: React.MouseEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         storeActions.toggleTrackVisibility(track.id);
       },
       [track.id, storeActions],
@@ -119,18 +125,21 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
     const handleToggleMute = useCallback(
       (e: React.MouseEvent) => {
         e.preventDefault();
-        if (hasAudio) {
-          storeActions.toggleTrackMute(track.id);
-        }
+        e.stopPropagation();
+        storeActions.toggleTrackMute(track.id);
       },
-      [track.id, hasAudio, storeActions],
+      [track.id, storeActions],
     );
 
     return (
       <ContextMenu>
-        <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-        <ContextMenuContent className="w-56">
-          {/* Selection actions */}
+        <ContextMenuTrigger asChild onContextMenu={(e) => e.stopPropagation()}>
+          {children}
+        </ContextMenuTrigger>
+        <ContextMenuContent
+          className="w-56"
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
           {!isSelected && (
             <>
               <ContextMenuItem onClick={handleSelectTrack}>
@@ -140,7 +149,6 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
             </>
           )}
 
-          {/* Track manipulation */}
           <ContextMenuItem
             onClick={handleDuplicateTrack}
             disabled={track.locked}
@@ -159,20 +167,20 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
             <ContextMenuShortcut>S</ContextMenuShortcut>
           </ContextMenuItem>
 
-          <ContextMenuSeparator />
+          {(hasVisibility || hasAudio) && <ContextMenuSeparator />}
 
-          {/* Visibility controls */}
-          <ContextMenuItem onClick={handleToggleVisibility}>
-            {track.visible ? (
-              <EyeOff className="mr-2" />
-            ) : (
-              <Eye className="mr-2" />
-            )}
-            {track.visible ? 'Hide Track' : 'Show Track'}
-            <ContextMenuShortcut>V</ContextMenuShortcut>
-          </ContextMenuItem>
+          {hasVisibility && (
+            <ContextMenuItem onClick={handleToggleVisibility}>
+              {track.visible ? (
+                <EyeOff className="mr-2" />
+              ) : (
+                <Eye className="mr-2" />
+              )}
+              {track.visible ? 'Hide Track' : 'Show Track'}
+              <ContextMenuShortcut>V</ContextMenuShortcut>
+            </ContextMenuItem>
+          )}
 
-          {/* Audio controls (only for audio/video tracks) */}
           {hasAudio && (
             <ContextMenuItem onClick={handleToggleMute}>
               {track.muted ? (
@@ -185,9 +193,8 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
             </ContextMenuItem>
           )}
 
-          <ContextMenuSeparator />
+          {(hasVisibility || hasAudio) && <ContextMenuSeparator />}
 
-          {/* Destructive actions */}
           <ContextMenuItem
             onClick={handleDeleteTrack}
             variant="destructive"
@@ -204,8 +211,6 @@ export const TrackContextMenu: React.FC<TrackContextMenuProps> = memo(
     );
   },
   (prevProps, nextProps) => {
-    // Custom comparison function for memo
-    // Only re-render if track properties we care about have changed
     const prevTrack = prevProps.track;
     const nextTrack = nextProps.track;
 

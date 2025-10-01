@@ -599,10 +599,29 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       return 48; // Standard track row height
     }, []);
 
-    // Handle mouse down for instant seeking
+    // Add this helper function near the top of the Timeline component
+    const isContextMenuClick = (target: EventTarget | null): boolean => {
+      if (!target || !(target instanceof Element)) return false;
+      // Check if the click is within a context menu
+      return (
+        target.closest('[role="menu"]') !== null ||
+        target.closest('[data-radix-context-menu-content]') !== null
+      );
+    };
+
+    // Then update the handleMouseDown function:
     const handleMouseDown = useCallback(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
+
+        // Ignore right-clicks - they're for context menus only
+        if (e.button === 2) return;
+
+        // NEW: Ignore clicks from context menu interactions
+        if (isContextMenuClick(e.target)) {
+          e.stopPropagation();
+          return;
+        }
 
         // If in split mode, handle split click instead of seeking
         if (isSplitModeActive) {
