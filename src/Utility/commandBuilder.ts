@@ -11,6 +11,12 @@ import {
   ProcessedTimelineSegment,
   ProcessedTimeline
 } from '../Schema/ffmpegConfig';
+import {
+  getHardwareAcceleration,
+  getSpecificHardwareAcceleration,
+  clearHardwareAccelerationCache,
+  type HardwareAcceleration,
+} from './hardwareAccelerationDetector';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -80,6 +86,49 @@ const ENCODING_DEFAULTS = {
   VIDEO_CODEC: 'libx264',
   AUDIO_CODEC: 'aac',
 } as const;
+
+/**
+ * Gets the appropriate hardware acceleration settings for a job
+ */
+async function getHardwareAccelerationForJob(job: VideoEditJob): Promise<HardwareAcceleration | null> {
+  // If hardware acceleration is explicitly disabled, return null
+  if (job.operations.useHardwareAcceleration === false || job.operations.hwaccelType === 'none') {
+    console.log('🚫 Hardware acceleration disabled by job config');
+    return null;
+  }
+
+  // Default to enabling hardware acceleration if not specified
+  // To disable, explicitly set useHardwareAcceleration: false
+  // Since we passed the check above, hardware acceleration is enabled
+  console.log('🎮 Hardware acceleration is enabled (default behavior)');
+
+  try {
+    // If specific hardware type is requested
+    if (job.operations.hwaccelType && job.operations.hwaccelType !== 'auto') {
+      const specificHW = await getSpecificHardwareAcceleration(job.operations.hwaccelType);
+      if (specificHW) {
+        console.log(`🎮 Using requested hardware acceleration: ${job.operations.hwaccelType.toUpperCase()}`);
+        return specificHW;
+      } else {
+        console.warn(`⚠️ Requested hardware acceleration "${job.operations.hwaccelType}" not available, falling back to software`);
+        return null;
+      }
+    }
+
+    // Auto-detect best hardware acceleration
+    const detection = await getHardwareAcceleration();
+    if (detection.primary) {
+      console.log(`🎮 Auto-detected hardware acceleration: ${detection.primary.type.toUpperCase()}`);
+      return detection.primary;
+    }
+
+    console.log('⚠️ No hardware acceleration available, using software encoding');
+    return null;
+  } catch (error) {
+    console.error('❌ Error detecting hardware acceleration:', error);
+    return null;
+  }
+}
 
 // -------------------------
 // Input Processing Utilities
@@ -1734,11 +1783,20 @@ function handleThreads(job: VideoEditJob, cmd: CommandParts) {
 // -------------------------
 // Main builder
 // -------------------------
-export function buildFfmpegCommand(
+export async function buildFfmpegCommand(
   job: VideoEditJob,
   location?: string,
-): string[] {
+): Promise<string[]> {
   const cmd: CommandParts = { args: [], filters: [] };
+
+  // Detect hardware acceleration if enabled
+  const hwAccel = await getHardwareAccelerationForJob(job);
+
+  // Add hardware decoder flags before inputs if available
+  if (hwAccel?.decoderFlags) {
+    console.log('🎬 Adding hardware decoder flags:', hwAccel.decoderFlags.join(' '));
+    cmd.args.push(...hwAccel.decoderFlags);
+  }
 
   // Add all real file inputs first
   job.inputs.forEach((input) => {
@@ -1823,10 +1881,33 @@ export function buildFfmpegCommand(
   }
 
   // Add encoding settings
-  cmd.args.push('-c:v', ENCODING_DEFAULTS.VIDEO_CODEC);
+  let videoCodec: string = ENCODING_DEFAULTS.VIDEO_CODEC;
+  
+  if (hwAccel) {
+    // Use hardware codec
+    videoCodec = job.operations.preferHEVC && hwAccel.hevcCodec 
+      ? hwAccel.hevcCodec 
+      : hwAccel.videoCodec;
+    
+    console.log(`🎮 Attempting hardware video codec: ${videoCodec}`);
+    console.log(`⚠️ Note: If encoding fails, FFmpeg may not support this codec. Will fallback to software.`);
+  } else {
+    console.log(`💻 Using software video codec: ${videoCodec}`);
+  }
+  
+  cmd.args.push('-c:v', videoCodec);
   cmd.args.push('-c:a', ENCODING_DEFAULTS.AUDIO_CODEC);
   
-  handlePreset(job, cmd);
+  // Add hardware encoder flags if available
+  if (hwAccel?.encoderFlags) {
+    console.log('🎮 Adding hardware encoder flags:', hwAccel.encoderFlags.join(' '));
+    cmd.args.push(...hwAccel.encoderFlags);
+  } else {
+    // Use software encoding preset
+    console.log('💻 Using software encoding preset');
+    handlePreset(job, cmd);
+  }
+  
   handleThreads(job, cmd);
 
   const outputFilePath = location
@@ -1848,7 +1929,7 @@ function timeToSeconds(time: string): number {
 }
 
 // Test function for debugging command generation
-export function testConcatCommand() {
+export async function testConcatCommand() {
   const testJob: VideoEditJob = {
     inputs: ['video1.mp4', 'video2.mp4'],
     output: 'output.mp4',
@@ -1859,13 +1940,13 @@ export function testConcatCommand() {
     },
   };
 
-  const command = buildFfmpegCommand(testJob);
+  const command = await buildFfmpegCommand(testJob);
   console.log('🧪 Test Concat Command:', command.join(' '));
   return command;
 }
 
 // Test function for mixed video/audio inputs (audio replacement)
-export function testAudioReplacementCommand() {
+export async function testAudioReplacementCommand() {
   const testJob: VideoEditJob = {
     inputs: ['video1.mp4', 'audio1.mp3', 'video2.mp4'],
     output: 'output.mp4',
@@ -1876,13 +1957,13 @@ export function testAudioReplacementCommand() {
     },
   };
 
-  const command = buildFfmpegCommand(testJob);
+  const command = await buildFfmpegCommand(testJob);
   console.log('🎵 Test Audio Replacement Command:', command.join(' '));
   return command;
 }
 
 // Test function for track trimming
-export function testTrackTrimmingCommand() {
+export async function testTrackTrimmingCommand() {
   const testJob: VideoEditJob = {
     inputs: [
       { path: 'video1.mp4', startTime: 10, duration: 20 }, // Start at 10s, take 20s
@@ -1906,13 +1987,13 @@ export function testTrackTrimmingCommand() {
   console.log(
     '🎵 Audio trimming: Independent of video - can trim start/end separately!',
   );
-  const command = buildFfmpegCommand(testJob);
+  const command = await buildFfmpegCommand(testJob);
   console.log('✂️ Test Track Trimming Command:', command.join(' '));
   return command;
 }
 
 // Test function for single track trimming
-export function testSingleTrackTrimming() {
+export async function testSingleTrackTrimming() {
   const testJob: VideoEditJob = {
     inputs: [
       { path: 'video1.mp4', startTime: 5, duration: 10 }, // Start at 5s, take 10s
@@ -1924,13 +2005,13 @@ export function testSingleTrackTrimming() {
     },
   };
 
-  const command = buildFfmpegCommand(testJob);
+  const command = await buildFfmpegCommand(testJob);
   console.log('🎬 Single Track Trimming:', command.join(' '));
   return command;
 }
 
 // Test function for independent audio trimming
-export function testIndependentAudioTrimming() {
+export async function testIndependentAudioTrimming() {
   const testJob: VideoEditJob = {
     inputs: [
       { path: 'video1.mp4', startTime: 10, duration: 30 }, // Video: 10s-40s (30s duration)
@@ -1948,13 +2029,13 @@ export function testIndependentAudioTrimming() {
   );
   console.log('📹 Video: 10s start, 30s duration');
   console.log('🎵 Audio: 5s start, 25s duration (completely independent!)');
-  const command = buildFfmpegCommand(testJob);
+  const command = await buildFfmpegCommand(testJob);
   console.log('🎛️ Command:', command.join(' '));
   return command;
 }
 
 // Test function for the specific export error scenario
-export function testExportErrorScenario() {
+export async function testExportErrorScenario() {
   const testJob: VideoEditJob = {
     inputs: [
       { path: 'uu.mp4', startTime: 0, duration: 10 },
@@ -1970,7 +2051,7 @@ export function testExportErrorScenario() {
 
   console.log('🐛 Testing Export Error Scenario Fix:');
   console.log('📹 Two video clips with FPS normalization');
-  const command = buildFfmpegCommand(testJob);
+  const command = await buildFfmpegCommand(testJob);
   console.log('🎬 Fixed Command:', command.join(' '));
 
   // Validate filter complex structure
@@ -1993,7 +2074,7 @@ export function testExportErrorScenario() {
 }
 
 // Test function for encoding presets
-export function testEncodingPresets() {
+export async function testEncodingPresets() {
   const testJob: VideoEditJob = {
     inputs: ['video1.mp4', 'video2.mp4'],
     output: 'output_superfast.mp4',
@@ -2007,7 +2088,7 @@ export function testEncodingPresets() {
 
   console.log('🚀 Testing Encoding Presets:');
   console.log('⚡ Using "superfast" preset for speed optimization');
-  const command = buildFfmpegCommand(testJob);
+  const command = await buildFfmpegCommand(testJob);
   console.log('🎬 Preset Command:', command.join(' '));
 
   // Validate preset is in the command
@@ -2023,7 +2104,7 @@ export function testEncodingPresets() {
 }
 
 // Test all available presets
-export function testAllPresets() {
+export async function testAllPresets() {
   const presets = [
     'ultrafast',
     'superfast',
@@ -2038,7 +2119,7 @@ export function testAllPresets() {
 
   console.log('🎛️ Testing all available encoding presets:');
 
-  presets.forEach((preset) => {
+  for (const preset of presets) {
     const testJob: VideoEditJob = {
       inputs: ['input.mp4'],
       output: `output_${preset}.mp4`,
@@ -2047,10 +2128,10 @@ export function testAllPresets() {
       },
     };
 
-    const command = buildFfmpegCommand(testJob);
+    const command = await buildFfmpegCommand(testJob);
     const presetIndex = command.indexOf('-preset');
     const appliedPreset =
       presetIndex !== -1 ? command[presetIndex + 1] : 'NOT_FOUND';
     console.log(`  ${preset.padEnd(10)} → ${appliedPreset}`);
-  });
+  }
 }

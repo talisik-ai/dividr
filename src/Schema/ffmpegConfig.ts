@@ -57,6 +57,9 @@ export interface VideoEditJob {
     textStyle?: TextStyleConfig; // Text styling for subtitles
     preset?: EncodingPreset; // FFmpeg encoding preset for speed/quality tradeoff
     threads?: number; // Limit used threads
+    useHardwareAcceleration?: boolean; // Enable hardware acceleration if available
+    hwaccelType?: 'auto' | 'nvenc' | 'qsv' | 'amf' | 'videotoolbox' | 'vaapi' | 'none'; // Specific hardware type or auto-detect
+    preferHEVC?: boolean; // Prefer H.265/HEVC over H.264 if available
   };
   gaps?: TimelineGaps;
   subtitleContent?: string; // SRT content to be written to a temporary file
