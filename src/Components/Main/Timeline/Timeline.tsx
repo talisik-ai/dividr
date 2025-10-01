@@ -42,6 +42,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       Array<{ trackType: string; position: number }>
     >([]);
     const [splitModeUpdateKey, setSplitModeUpdateKey] = useState(0);
+    const [marqueeSelection, setMarqueeSelection] = useState<{
+      isActive: boolean;
+      startX: number;
+      startY: number;
+      currentX: number;
+      currentY: number;
+    } | null>(null);
 
     // Selectively subscribe to store to prevent unnecessary re-renders
     const timeline = useVideoEditorStore((state) => state.timeline);
@@ -332,6 +339,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       return () => document.removeEventListener('keydown', handleKeyDown);
     }, [timeline.selectedTrackIds, removeSelectedTracks]);
 
+    // Marquee selection mouse event listeners
+    useEffect(() => {
+      if (marqueeSelection?.isActive) {
+        document.addEventListener('mousemove', handleMarqueeMouseMove);
+        document.addEventListener('mouseup', handleMarqueeMouseUp);
+        return () => {
+          document.removeEventListener('mousemove', handleMarqueeMouseMove);
+          document.removeEventListener('mouseup', handleMarqueeMouseUp);
+        };
+      }
+    }, [marqueeSelection]);
+
     // Cleanup timeouts and intervals on unmount
     useEffect(() => {
       return () => {
@@ -501,6 +520,41 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       [frameWidth, tracks],
     );
 
+    // Helper function to find tracks within marquee selection
+    const findTracksInMarquee = useCallback(
+      (rect: { left: number; top: number; right: number; bottom: number }) => {
+        const selectedIds: string[] = [];
+        const trackRowHeight = 48;
+
+        tracks.forEach((track) => {
+          const trackLeft = track.startFrame * frameWidth;
+          const trackRight = track.endFrame * frameWidth;
+          const trackTypes = ['subtitle', 'image', 'video', 'audio'];
+          const rowIndex = trackTypes.indexOf(track.type);
+          const trackTop = rowIndex * trackRowHeight;
+          const trackBottom = trackTop + trackRowHeight;
+
+          // Check if track intersects with marquee
+          const intersects =
+            trackLeft < rect.right &&
+            trackRight > rect.left &&
+            trackTop < rect.bottom &&
+            trackBottom > rect.top;
+
+          if (intersects) {
+            selectedIds.push(track.id);
+            // If track is linked, also select its partner
+            if (track.isLinked && track.linkedTrackId) {
+              selectedIds.push(track.linkedTrackId);
+            }
+          }
+        });
+
+        return [...new Set(selectedIds)]; // Remove duplicates
+      },
+      [tracks, frameWidth],
+    );
+
     // Split mode handlers
     const handleSplitClick = useCallback(
       (e: React.MouseEvent) => {
@@ -587,6 +641,98 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       setLinkedTrackIndicators([]);
     }, []);
 
+    // Marquee selection handlers
+    const handleMarqueeMouseMove = useCallback(
+      (e: MouseEvent) => {
+        if (
+          !marqueeSelection ||
+          !marqueeSelection.isActive ||
+          !tracksRef.current
+        )
+          return;
+
+        const rect = tracksRef.current.getBoundingClientRect();
+        const currentX = e.clientX - rect.left + tracksRef.current.scrollLeft;
+        const currentY = e.clientY - rect.top;
+
+        setMarqueeSelection({
+          ...marqueeSelection,
+          currentX,
+          currentY,
+        });
+      },
+      [marqueeSelection],
+    );
+
+    const handleMarqueeMouseUp = useCallback(
+      (e: MouseEvent) => {
+        if (
+          !marqueeSelection ||
+          !marqueeSelection.isActive ||
+          !tracksRef.current
+        )
+          return;
+
+        const rect = tracksRef.current.getBoundingClientRect();
+        const endX = e.clientX - rect.left + tracksRef.current.scrollLeft;
+        const endY = e.clientY - rect.top;
+
+        // Calculate marquee bounds
+        const left = Math.min(marqueeSelection.startX, endX);
+        const right = Math.max(marqueeSelection.startX, endX);
+        const top = Math.min(marqueeSelection.startY, endY);
+        const bottom = Math.max(marqueeSelection.startY, endY);
+
+        // Only perform selection if marquee has meaningful size (> 5px in any direction)
+        const width = right - left;
+        const height = bottom - top;
+
+        if (width > 5 || height > 5) {
+          // Find tracks within marquee
+          const tracksInMarquee = findTracksInMarquee({
+            left,
+            top,
+            right,
+            bottom,
+          });
+
+          if (tracksInMarquee.length > 0) {
+            // Handle modifier keys
+            const isModifierPressed =
+              (e as any).shiftKey || (e as any).ctrlKey || (e as any).metaKey;
+
+            if (isModifierPressed) {
+              // Add to existing selection or toggle
+              const newSelection = [...timeline.selectedTrackIds];
+              tracksInMarquee.forEach((id) => {
+                const index = newSelection.indexOf(id);
+                if (index >= 0) {
+                  // Toggle off if already selected
+                  newSelection.splice(index, 1);
+                } else {
+                  // Add to selection
+                  newSelection.push(id);
+                }
+              });
+              setSelectedTracks(newSelection);
+            } else {
+              // Replace selection
+              setSelectedTracks(tracksInMarquee);
+            }
+          }
+        }
+
+        // Clear marquee
+        setMarqueeSelection(null);
+      },
+      [
+        marqueeSelection,
+        findTracksInMarquee,
+        timeline.selectedTrackIds,
+        setSelectedTracks,
+      ],
+    );
+
     // Helper functions to get track row positions
     const getTrackRowTop = useCallback((trackType: string) => {
       const trackRowHeight = 48; // Height of each track row
@@ -629,8 +775,35 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           return;
         }
 
-        // Calculate and apply seek immediately
         const rect = tracksRef.current.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+
+        // Check if clicking on an empty area (not on a track)
+        const clickedTrack = findHoveredTrack(e.clientX, e.clientY);
+
+        if (!clickedTrack) {
+          // Start marquee selection on empty area
+          const scrollLeft = tracksRef.current.scrollLeft;
+          setMarqueeSelection({
+            isActive: true,
+            startX: clickX + scrollLeft,
+            startY: clickY,
+            currentX: clickX + scrollLeft,
+            currentY: clickY,
+          });
+
+          // If no modifier key, clear selection
+          if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+            setSelectedTracks([]);
+          }
+
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        // Calculate and apply seek immediately (only when clicking on tracks or ruler)
         const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
         const frame = Math.floor(x / frameWidth);
         const clampedFrame = Math.max(
@@ -663,6 +836,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         setCurrentFrame,
         pause,
         playback.isPlaying,
+        findHoveredTrack,
+        setSelectedTracks,
       ],
     );
 
@@ -838,6 +1013,19 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     }}
                   />
                 ))}
+
+              {/* Marquee Selection Box */}
+              {marqueeSelection?.isActive && (
+                <div
+                  className="absolute border-2 border-zinc-500 bg-zinc-500/20 dark:border-zinc-300 dark:bg-zinc-300/20 pointer-events-none z-[1000]"
+                  style={{
+                    left: `${Math.min(marqueeSelection.startX, marqueeSelection.currentX)}px`,
+                    top: `${Math.min(marqueeSelection.startY, marqueeSelection.currentY)}px`,
+                    width: `${Math.abs(marqueeSelection.currentX - marqueeSelection.startX)}px`,
+                    height: `${Math.abs(marqueeSelection.currentY - marqueeSelection.startY)}px`,
+                  }}
+                />
+              )}
             </div>
           </div>
         </div>
