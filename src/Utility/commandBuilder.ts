@@ -1635,131 +1635,32 @@ function handleMultipleInputsNoConcatWorkflow(
 // -------------------------
 // Step handlers
 // -------------------------
-const steps: ((job: VideoEditJob, cmd: CommandParts) => void)[] = [
-  handleInputs,
-  handleTrim,
-  handleCrop,
-  handleSubtitles,
-  handleAspect,
-  handleReplaceAudio,
-  handlePreset,
-  handleThreads,
-];
 
-function handleInputs(job: VideoEditJob, cmd: CommandParts) {
-  const inputCount = job.inputs.length;
-
-  if (job.operations.concat && inputCount > 1) {
-    handleConcatenationWorkflow(job, cmd);
-  } else if (inputCount === 1) {
-    handleSingleInputWorkflow(job, cmd);
-  } else {
-    handleMultipleInputsNoConcatWorkflow(job, cmd);
-  }
-}
-
-function handleTrim(job: VideoEditJob, cmd: CommandParts) {
-  const trim = job.operations.trim;
-  if (!trim) return;
-
-  const { start, duration, end } = trim;
-  if (start) cmd.args.unshift('-ss', start);
-  if (duration) {
-    cmd.args.push('-t', duration);
-  } else if (end && start) {
-    const dur = timeToSeconds(end) - timeToSeconds(start);
-    cmd.args.push('-t', String(dur));
-  }
-}
-
-function handleCrop(job: VideoEditJob, cmd: CommandParts) {
-  const crop = job.operations.crop;
-  if (crop)
-    cmd.filters.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
-}
-
-function handleSubtitles(job: VideoEditJob, cmd: CommandParts) {
-  // Only add subtitles to -vf filters if we're NOT using concatenation
-  // Concatenation uses -filter_complex, so subtitles must be integrated there
-  if (
-    job.operations.subtitles &&
-    !(job.operations.concat && job.inputs.length > 1)
-  ) {
-    const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
-
-    const subtitleFilter = `subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'`;
-    cmd.filters.push(subtitleFilter);
-    console.log('📝 Added subtitle filter to -vf:', subtitleFilter);
-  } else if (job.operations.subtitles) {
-    console.log(
-      '📝 Subtitle file detected, will be integrated into filter complex:',
-      job.operations.subtitles,
-    );
-  }
-}
-
-function handleAspect(job: VideoEditJob, cmd: CommandParts) {
-  if (job.operations.aspect) cmd.args.push('-aspect', job.operations.aspect);
-}
-
-function handleReplaceAudio(job: VideoEditJob, cmd: CommandParts) {
-  if (!job.operations.replaceAudio) return;
-  cmd.args.push('-i', job.operations.replaceAudio);
-  cmd.args.push('-map', '0:v', '-map', `${job.inputs.length}:a`);
-}
-
-function handlePreset(job: VideoEditJob, cmd: CommandParts) {
-  if (!job.operations.preset) return;
-
-  // Add preset before codec specifications for optimal placement
-  cmd.args.push('-c:v', 'libx264');
-  cmd.args.push('-preset', job.operations.preset);
-  cmd.args.push('-crf', '29');
-  cmd.args.push('-c:a', 'aac');
-  cmd.args.push('-b:a', '96k');
-
-  console.log(`🚀 Applied encoding preset: ${job.operations.preset}`);
-}
-
-function handleThreads(job: VideoEditJob, cmd: CommandParts) {
-  //if(!job.operations.threads) return;
-
-  cmd.args.push('-threads', String(job.operations.threads));
-  cmd.args.push('-movflags');
-  cmd.args.push('+faststart');
-
-  console.log(`🚀 Applied thread limit: ${job.operations.threads}`);
-}
-
-// -------------------------
-// Main builder
-// -------------------------
-export function buildFfmpegCommand(
-  job: VideoEditJob,
-  location?: string,
-): string[] {
-  const cmd: CommandParts = { args: [], filters: [] };
-
-  // Add all real file inputs first
+/**
+ * Adds file inputs to the command
+ */
+function handleFileInputs(job: VideoEditJob, cmd: CommandParts): void {
   job.inputs.forEach((input) => {
     const path = getInputPath(input);
     if (!isGapInput(path)) {
       cmd.args.push('-i', escapePath(path));
     }
   });
+}
 
+/**
+ * Builds and processes separate video and audio timelines
+ */
+function handleTimelineProcessing(
+  job: VideoEditJob,
+  targetFrameRate: number
+): { 
+  finalVideoTimeline: ProcessedTimeline; 
+  finalAudioTimeline: ProcessedTimeline;
+  categorizedInputs: CategorizedInputs;
+} {
   // Build separate initial timelines
-  const initialTimelines = buildSeparateTimelines(
-    job.inputs,
-    job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS
-  );
-
-  console.log('Initial Video Timeline:', initialTimelines.video.segments.map(s => 
-    `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`
-  ));
-  console.log('Initial Audio Timeline:', initialTimelines.audio.segments.map(s => 
-    `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`
-  ));
+  const initialTimelines = buildSeparateTimelines(job.inputs, targetFrameRate);
 
   // Process gaps for each timeline
   let finalVideoTimeline = initialTimelines.video;
@@ -1770,7 +1671,7 @@ export function buildFfmpegCommand(
       finalVideoTimeline = processGapsInTimeline(
         initialTimelines.video,
         job.gaps.video,
-        job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS
+        targetFrameRate
       );
     }
 
@@ -1778,7 +1679,7 @@ export function buildFfmpegCommand(
       finalAudioTimeline = processGapsInTimeline(
         initialTimelines.audio,
         job.gaps.audio,
-        job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS
+        targetFrameRate
       );
     }
   }
@@ -1809,10 +1710,22 @@ export function buildFfmpegCommand(
     duration: ai.trackInfo.duration
   })));
 
-  // Build filter complex with separate timelines
+  return { finalVideoTimeline, finalAudioTimeline, categorizedInputs };
+}
+
+/**
+ * Builds and applies filter complex to command
+ */
+function handleFilterComplex(
+  job: VideoEditJob,
+  cmd: CommandParts,
+  videoTimeline: ProcessedTimeline,
+  audioTimeline: ProcessedTimeline,
+  categorizedInputs: CategorizedInputs
+): void {
   const filterComplex = buildSeparateTimelineFilterComplex(
-    finalVideoTimeline,
-    finalAudioTimeline,
+    videoTimeline,
+    audioTimeline,
     job,
     categorizedInputs
   );
@@ -1821,19 +1734,77 @@ export function buildFfmpegCommand(
     cmd.args.push('-filter_complex', filterComplex);
     cmd.args.push('-map', '[video]', '-map', '[audio]');
   }
+}
 
-  // Add encoding settings
+/**
+ * Applies encoding settings to command
+ */
+function handleEncodingSettings(job: VideoEditJob, cmd: CommandParts): void {
   cmd.args.push('-c:v', ENCODING_DEFAULTS.VIDEO_CODEC);
   cmd.args.push('-c:a', ENCODING_DEFAULTS.AUDIO_CODEC);
-  
-  handlePreset(job, cmd);
-  handleThreads(job, cmd);
+}
 
+/**
+ * Applies encoding preset if specified
+ */
+function handlePreset(job: VideoEditJob, cmd: CommandParts): void {
+  if (!job.operations.preset) return;
+
+  cmd.args.push('-preset', job.operations.preset);
+  cmd.args.push('-crf', '29');
+  cmd.args.push('-b:a', '96k');
+
+  console.log(`🚀 Applied encoding preset: ${job.operations.preset}`);
+}
+
+/**
+ * Applies thread settings and faststart flag
+ */
+function handleThreads(job: VideoEditJob, cmd: CommandParts): void {
+  cmd.args.push('-threads', String(job.operations.threads));
+  cmd.args.push('-movflags', '+faststart');
+
+  console.log(`🚀 Applied thread limit: ${job.operations.threads}`);
+}
+
+/**
+ * Adds output file path to command
+ */
+function handleOutput(job: VideoEditJob, cmd: CommandParts, location?: string): void {
   const outputFilePath = location
     ? path.join(location, job.output)
     : job.output;
 
   cmd.args.push(outputFilePath);
+}
+
+// -------------------------
+// Main builder
+// -------------------------
+export function buildFfmpegCommand(
+  job: VideoEditJob,
+  location?: string,
+): string[] {
+  const cmd: CommandParts = { args: [], filters: [] };
+  const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+
+  // Step 1: Add file inputs
+  handleFileInputs(job, cmd);
+
+  // Step 2: Build and process timelines with gaps
+  const { finalVideoTimeline, finalAudioTimeline, categorizedInputs } = 
+    handleTimelineProcessing(job, targetFrameRate);
+
+  // Step 3: Build and apply filter complex
+  handleFilterComplex(job, cmd, finalVideoTimeline, finalAudioTimeline, categorizedInputs);
+
+  // Step 4: Apply encoding settings
+  handleEncodingSettings(job, cmd);
+  handlePreset(job, cmd);
+  handleThreads(job, cmd);
+
+  // Step 5: Add output file
+  handleOutput(job, cmd, location);
 
   console.log('FFmpeg Command Args:', cmd.args);
   console.log('Full FFmpeg Command:', ['ffmpeg', ...cmd.args].join(' '));
@@ -2054,3 +2025,4 @@ export function testAllPresets() {
     console.log(`  ${preset.padEnd(10)} → ${appliedPreset}`);
   });
 }
+
