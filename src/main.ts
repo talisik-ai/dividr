@@ -5,13 +5,13 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { VideoEditJob } from './Schema/ffmpegConfig';
-import { buildFfmpegCommand } from './Utility/commandBuilder';
+import { buildFfmpegCommand } from './backend/ffmpeg/commandBuilder';
 import {
   cancelCurrentFfmpeg,
   runFfmpeg,
   runFfmpegWithProgress,
-} from './Utility/ffmpegRunner';
+} from './backend/ffmpeg/ffmpegRunner';
+import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
 
 // Import Vite dev server URL
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -1549,28 +1549,32 @@ ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
   });
 });
 
-ipcMain.handle("getVideoDimensions", async (_event, filePath: string) => {
+ipcMain.handle('getVideoDimensions', async (_event, filePath: string) => {
   return new Promise<{ width: number; height: number }>((resolve, reject) => {
-    const ffprobe = spawn("ffprobe", [
-      "-v", "error",
-      "-select_streams", "v:0",
-      "-show_entries", "stream=width,height",
-      "-of", "json",
+    const ffprobe = spawn('ffprobe', [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=width,height',
+      '-of',
+      'json',
       filePath,
     ]);
 
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
 
-    ffprobe.stdout.on("data", (data) => {
+    ffprobe.stdout.on('data', (data) => {
       stdout += data.toString();
     });
 
-    ffprobe.stderr.on("data", (data) => {
+    ffprobe.stderr.on('data', (data) => {
       stderr += data.toString();
     });
 
-    ffprobe.on("close", (code) => {
+    ffprobe.on('close', (code) => {
       if (code !== 0) {
         reject(new Error(`ffprobe exited with code ${code}: ${stderr}`));
         return;
@@ -1580,7 +1584,7 @@ ipcMain.handle("getVideoDimensions", async (_event, filePath: string) => {
         const json = JSON.parse(stdout);
         const stream = json.streams?.[0];
         if (!stream?.width || !stream?.height) {
-          reject(new Error("Could not read video dimensions"));
+          reject(new Error('Could not read video dimensions'));
           return;
         }
         resolve({ width: stream.width, height: stream.height });
@@ -1589,7 +1593,7 @@ ipcMain.handle("getVideoDimensions", async (_event, filePath: string) => {
       }
     });
 
-    ffprobe.on("error", (err) => {
+    ffprobe.on('error', (err) => {
       reject(err);
     });
   });

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { VideoEditJob } from './Schema/ffmpegConfig';
-import { FfmpegProgress } from './Utility/ffmpegRunner';
+import { FfmpegProgress } from './backend/ffmpeg/ffmpegRunner';
+import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
 
 // Progress event handlers type
 export interface FfmpegEventHandlers {
@@ -68,7 +68,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('run-custom-ffmpeg', args, outputDir),
 
   // Get Dimensions
-  getVideoDimensions: (filePath: string) => ipcRenderer.invoke('getVideoDimensions', filePath),
+  getVideoDimensions: (filePath: string) =>
+    ipcRenderer.invoke('getVideoDimensions', filePath),
   // Audio extraction method
   extractAudioFromVideo: (videoPath: string, outputDir?: string) =>
     ipcRenderer.invoke('extract-audio-from-video', videoPath, outputDir),
