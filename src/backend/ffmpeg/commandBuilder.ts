@@ -11,6 +11,12 @@ import {
   VideoEditJob,
   VideoProcessingContext,
 } from './schema/ffmpegConfig';
+import {
+  getHardwareAcceleration,
+  getSpecificHardwareAcceleration,
+  clearHardwareAccelerationCache,
+  type HardwareAcceleration,
+} from './hardwareAccelerationDetector';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -510,7 +516,8 @@ function createSilentAudioFilters(
   return {
     filterRef: silentAudioRef,
     filters: [
-      `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[temp_silent_${originalIndex}]`,
+      `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}[temp_silent_pre_${originalIndex}]`,
+      `[temp_silent_pre_${originalIndex}]atrim=duration=${duration}[temp_silent_${originalIndex}]`,
       `[temp_silent_${originalIndex}]asetpts=PTS-STARTPTS${silentAudioRef}`,
     ],
   };
@@ -545,7 +552,7 @@ function handleAudioReplacementProcessing(
   if (audioTrackInfo.muted && audioTrackInfo.trackType === 'audio') {
     // Generate silent audio for muted audio tracks
     const duration = audioTrackInfo.duration || 1;
-    filterComplex += `;anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+    filterComplex += `;anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}[temp_muted_audio];[temp_muted_audio]atrim=duration=${duration}[outa]`;
     console.log(`🔇 Muted audio track - using silent audio`);
   } else {
     // Apply audio trimming if specified
@@ -1189,20 +1196,41 @@ function buildSeparateTimelineFilterComplex(
   let audioConcatFilter = '';
 
   if (videoConcatInputs.length > 0) {
-    if (job.operations.subtitles) {
-      // Apply subtitles after concatenation
-      videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[temp_video];`;
-
-      const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
-      videoConcatFilter += `[temp_video]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[video]`;
-      console.log('🎬 Added subtitles to video concatenation');
+    if (videoConcatInputs.length === 1) {
+      // Single input - no concatenation needed, just rename the stream
+      if (job.operations.subtitles) {
+        const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
+        videoConcatFilter = `${videoConcatInputs[0]}subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[video]`;
+        console.log('🎬 Added subtitles to single video input');
+      } else {
+        // Use null filter to passthrough and rename the stream
+        const inputRef = videoConcatInputs[0].replace('[', '').replace(']', '');
+        videoConcatFilter = `[${inputRef}]null[video]`;
+      }
     } else {
-      videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[video]`;
+      // Multiple inputs - use concat filter
+      if (job.operations.subtitles) {
+        // Apply subtitles after concatenation
+        videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[temp_video];`;
+
+        const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
+        videoConcatFilter += `[temp_video]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[video]`;
+        console.log('🎬 Added subtitles to video concatenation');
+      } else {
+        videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[video]`;
+      }
     }
   }
 
   if (audioConcatInputs.length > 0) {
-    audioConcatFilter = `${audioConcatInputs.join('')}concat=n=${audioConcatInputs.length}:v=0:a=1[audio]`;
+    if (audioConcatInputs.length === 1) {
+      // Single audio input - no concatenation needed, use anull passthrough
+      const inputRef = audioConcatInputs[0].replace('[', '').replace(']', '');
+      audioConcatFilter = `[${inputRef}]anull[audio]`;
+    } else {
+      // Multiple inputs - use concat filter
+      audioConcatFilter = `${audioConcatInputs.join('')}concat=n=${audioConcatInputs.length}:v=0:a=1[audio]`;
+    }
   }
 
   // Combine all filters
@@ -1259,7 +1287,8 @@ function createGapFilters(
       audioFilter: {
         filterRef: audioGapRef,
         filters: [
-          `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[temp_gap_a${originalIndex}]`,
+          `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}[temp_gap_a_pre_${originalIndex}]`,
+          `[temp_gap_a_pre_${originalIndex}]atrim=duration=${duration}[temp_gap_a${originalIndex}]`,
           `[temp_gap_a${originalIndex}]asetpts=PTS-STARTPTS${audioGapRef}`,
         ],
       },
@@ -1272,7 +1301,8 @@ function createGapFilters(
       audioFilter: {
         filterRef: audioGapRef,
         filters: [
-          `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[temp_gap_a${originalIndex}]`,
+          `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}[temp_gap_a_pre_${originalIndex}]`,
+          `[temp_gap_a_pre_${originalIndex}]atrim=duration=${duration}[temp_gap_a${originalIndex}]`,
           `[temp_gap_a${originalIndex}]asetpts=PTS-STARTPTS${audioGapRef}`,
         ],
       },
@@ -1329,7 +1359,7 @@ function createSingleTrackTrimFilters(
   if (trackInfo.muted && trackInfo.trackType === 'video') {
     // Generate silent audio for muted video tracks
     const duration = trackInfo.duration || 1;
-    audioFilter = `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+    audioFilter = `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}[temp_muted];[temp_muted]atrim=duration=${duration}[outa]`;
     console.log(`🔇 Single track trim with muted video - using silent audio`);
   } else {
     audioFilter = `[0:a]atrim=${paramString}[outa]`;
@@ -1711,7 +1741,7 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
       if (trackInfo.muted && trackInfo.trackType === 'video') {
         // Generate silent audio for muted video tracks
         const duration = trackInfo.duration || 1;
-        filterComplex += `;anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[outa]`;
+        filterComplex += `;anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}[temp_single_muted];[temp_single_muted]atrim=duration=${duration}[outa]`;
         console.log(`🔇 Single muted video track - using silent audio`);
       } else {
         filterComplex += ';[0:a]acopy[outa]';
@@ -1844,8 +1874,9 @@ function handleFilterComplex(
   videoTimeline: ProcessedTimeline,
   audioTimeline: ProcessedTimeline,
   categorizedInputs: CategorizedInputs,
+  hwAccel: HardwareAcceleration | null,
 ): void {
-  const filterComplex = buildSeparateTimelineFilterComplex(
+  let filterComplex = buildSeparateTimelineFilterComplex(
     videoTimeline,
     audioTimeline,
     job,
@@ -1853,8 +1884,16 @@ function handleFilterComplex(
   );
 
   if (filterComplex) {
-    cmd.args.push('-filter_complex', filterComplex);
-    cmd.args.push('-map', '[video]', '-map', '[audio]');
+    // Add hardware upload filter for VAAPI if needed
+    if (hwAccel?.type === 'vaapi') {
+      console.log('🎮 Adding VAAPI hardware upload filter');
+      filterComplex += ';[video]format=nv12,hwupload=extra_hw_frames=64:derive_device=vaapi[video_hw]';
+      cmd.args.push('-filter_complex', filterComplex);
+      cmd.args.push('-map', '[video_hw]', '-map', '[audio]');
+    } else {
+      cmd.args.push('-filter_complex', filterComplex);
+      cmd.args.push('-map', '[video]', '-map', '[audio]');
+    }
   }
 }
 
@@ -1862,22 +1901,56 @@ function handleFilterComplex(
 /**
  * Applies encoding settings to command
  */
-function handleEncodingSettings(job: VideoEditJob, cmd: CommandParts): void {
-  cmd.args.push('-c:v', ENCODING_DEFAULTS.VIDEO_CODEC);
+function handleEncodingSettings(
+  job: VideoEditJob,
+  cmd: CommandParts,
+  hwAccel: HardwareAcceleration | null,
+): void {
+  let videoCodec: string = ENCODING_DEFAULTS.VIDEO_CODEC;
+
+  if (hwAccel) {
+    // Use hardware codec
+    videoCodec = job.operations.preferHEVC && hwAccel.hevcCodec
+      ? hwAccel.hevcCodec
+      : hwAccel.videoCodec;
+
+    console.log(`🎮 Using hardware video codec: ${videoCodec}`);
+    console.log(`⚠️  Note: If encoding fails, FFmpeg may not support this codec on your system.`);
+  } else {
+    console.log(`💻 Using software video codec: ${videoCodec}`);
+  }
+
+  cmd.args.push('-c:v', videoCodec);
   cmd.args.push('-c:a', ENCODING_DEFAULTS.AUDIO_CODEC);
+
+  // Add hardware encoder flags if available
+  if (hwAccel?.encoderFlags) {
+    console.log('🎮 Adding hardware encoder flags:', hwAccel.encoderFlags.join(' '));
+    cmd.args.push(...hwAccel.encoderFlags);
+  }
 }
 
 /**
- * Applies encoding preset if specified
+ * Applies encoding preset if specified (for software encoding only)
  */
-function handlePreset(job: VideoEditJob, cmd: CommandParts): void {
+function handlePreset(
+  job: VideoEditJob,
+  cmd: CommandParts,
+  hwAccel: HardwareAcceleration | null,
+): void {
+  // Only apply software preset if not using hardware acceleration
+  if (hwAccel) {
+    console.log('ℹ️  Skipping software preset (using hardware encoder settings instead)');
+    return;
+  }
+
   if (!job.operations.preset) return;
 
   cmd.args.push('-preset', job.operations.preset);
   cmd.args.push('-crf', '29');
   cmd.args.push('-b:a', '96k');
 
-  console.log(`🚀 Applied encoding preset: ${job.operations.preset}`);
+  console.log(`🚀 Applied software encoding preset: ${job.operations.preset}`);
 }
 
 /**
@@ -1908,12 +1981,35 @@ function handleOutput(
 // -------------------------
 // Main builder
 // -------------------------
-export function buildFfmpegCommand(
+export async function buildFfmpegCommand(
   job: VideoEditJob,
   location?: string,
-): string[] {
+): Promise<string[]> {
   const cmd: CommandParts = { args: [], filters: [] };
   const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+
+  // Step 0: Detect hardware acceleration if enabled
+  // Clear cache to ensure fresh detection on each export
+  console.log('🔄 Clearing hardware acceleration cache for fresh detection...');
+  clearHardwareAccelerationCache();
+  
+  const hwAccel = await getHardwareAccelerationForJob(job);
+
+  // NOTE: We skip hardware decoder flags because:
+  // 1. Input files may use codecs that don't support hardware decoding
+  // 2. Hardware decoding often causes compatibility issues
+  // 3. We only use hardware for ENCODING, which is where the speed benefit matters most
+  // 4. Decoding is already fast enough with software
+  if (hwAccel) {
+    console.log(`🎮 Hardware acceleration detected: ${hwAccel.type.toUpperCase()}`);
+    console.log('ℹ️  Using hardware encoding only (software decoding for compatibility)');
+    
+    // Initialize hardware device for VAAPI
+    if (hwAccel.type === 'vaapi') {
+      console.log('🎮 Initializing VAAPI hardware device');
+      cmd.args.push('-init_hw_device', `vaapi=va:${hwAccel.hwaccelDevice || '/dev/dri/renderD128'}`);
+    }
+  }
 
   // Step 1: Add file inputs
   handleFileInputs(job, cmd);
@@ -1929,11 +2025,12 @@ export function buildFfmpegCommand(
     finalVideoTimeline,
     finalAudioTimeline,
     categorizedInputs,
+    hwAccel,
   );
 
-  // Step 4: Apply encoding settings
-  handleEncodingSettings(job, cmd);
-  handlePreset(job, cmd);
+  // Step 4: Apply encoding settings with hardware acceleration
+  handleEncodingSettings(job, cmd, hwAccel);
+  handlePreset(job, cmd, hwAccel);
   handleThreads(job, cmd);
 
   // Step 5: Add output file

@@ -12,7 +12,7 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
-      unpack: '**/node_modules/{ffmpeg-static,ffprobe-static}/**/*',
+      unpack: '**/node_modules/{@ffmpeg-installer,ffmpeg-static,ffprobe-static}/**/*',
     },
     icon: './favicon.ico',
     name: 'Dividr',

@@ -43,15 +43,102 @@ const activeSpriteSheetJobs = new Map<string, SpriteSheetJob>();
 let spriteSheetJobCounter = 0;
 
 // Initialize ffmpeg paths dynamically with fallbacks
-function initializeFfmpegPaths() {
+async function initializeFfmpegPaths() {
   console.log('🔍 Initializing FFmpeg paths...');
   console.log('📦 Is packaged:', app.isPackaged);
   console.log('🌍 Environment:', process.env.NODE_ENV || 'production');
 
-  // Method 1: Try require approach (only for development)
-  if (!app.isPackaged) {
+  // Method 1: Try ffbinaries first (downloads latest FFmpeg on demand - works on all platforms)
+  if (!ffmpegPath) {
     try {
-      console.log('🔄 Attempting require method (development mode)...');
+      console.log('🔄 Attempting ffbinaries (downloads FFmpeg if needed)...');
+      
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const ffbinaries = require('ffbinaries');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const path = require('path');
+      
+      // Directory to store downloaded binaries
+      const binDir = path.join(app.getPath('userData'), 'ffmpeg-bin');
+      
+      // Check if already downloaded
+      const platform = ffbinaries.detectPlatform();
+      const expectedPath = path.join(binDir, platform === 'windows-64' ? 'ffmpeg.exe' : 'ffmpeg');
+      
+      if (require('fs').existsSync(expectedPath)) {
+        ffmpegPath = expectedPath;
+        console.log('✅ FFmpeg already downloaded via ffbinaries:', ffmpegPath);
+      } else {
+        console.log('📥 Downloading FFmpeg via ffbinaries (first time setup)...');
+        
+        // Download FFmpeg (async operation)
+        await new Promise((resolve, reject) => {
+          ffbinaries.downloadBinaries('ffmpeg', { destination: binDir }, (err: any) => {
+            if (err) {
+              console.error('❌ Failed to download FFmpeg:', err);
+              reject(err);
+            } else {
+              ffmpegPath = expectedPath;
+              console.log('✅ FFmpeg downloaded successfully:', ffmpegPath);
+              resolve(null);
+            }
+          });
+        });
+      }
+      
+      // Check version
+      if (ffmpegPath) {
+        try {
+          const { execSync } = require('child_process');
+          const versionOutput = execSync(`"${ffmpegPath}" -version`, { encoding: 'utf8' });
+          const versionMatch = versionOutput.match(/ffmpeg version (\d+)\.(\d+)/);
+          if (versionMatch) {
+            console.log(`ℹ️  FFmpeg version ${versionMatch[1]}.${versionMatch[2]} from ffbinaries`);
+          }
+        } catch (vErr) {
+          console.log('ℹ️  (Could not detect version, but FFmpeg is ready)');
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ ffbinaries failed:', error.message);
+      console.log('ℹ️  Install with: yarn add ffbinaries');
+    }
+  }
+
+  // Method 2: Try system FFmpeg as fallback
+  if (!ffmpegPath && !app.isPackaged) {
+    try {
+      console.log('🔄 Attempting system FFmpeg fallback...');
+      const { execSync } = require('child_process');
+      const systemFfmpeg = execSync('which ffmpeg', { encoding: 'utf8' }).trim();
+      
+      if (systemFfmpeg && require('fs').existsSync(systemFfmpeg)) {
+        // Check if system FFmpeg is recent enough (5.0+)
+        const versionOutput = execSync(`${systemFfmpeg} -version`, { encoding: 'utf8' });
+        const versionMatch = versionOutput.match(/ffmpeg version (\d+)\.(\d+)/);
+        
+        if (versionMatch) {
+          const major = parseInt(versionMatch[1]);
+          const minor = parseInt(versionMatch[2]);
+          
+          if (major >= 5) {
+            ffmpegPath = systemFfmpeg;
+            console.log('✅ FFmpeg resolved via system:', ffmpegPath);
+            console.log(`ℹ️  Version ${major}.${minor}`);
+          } else {
+            console.log(`⚠️ System FFmpeg version ${major}.${minor} is too old (need 5.0+), skipping`);
+          }
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ System FFmpeg not available:', error.message);
+    }
+  }
+
+  // Method 2: Try ffmpeg-static 5.2.0 as fallback (software encoding only)
+  if (!ffmpegPath && !app.isPackaged) {
+    try {
+      console.log('🔄 Attempting ffmpeg-static 5.2.0 fallback (development mode)...');
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const ffmpegStatic = require('ffmpeg-static');
@@ -60,17 +147,54 @@ function initializeFfmpegPaths() {
         const fs = require('fs');
         if (fs.existsSync(ffmpegStatic)) {
           ffmpegPath = ffmpegStatic;
-          console.log('✅ FFmpeg resolved via require:', ffmpegPath);
+          console.log('✅ FFmpeg resolved via ffmpeg-static:', ffmpegPath);
+          console.log('⚠️  Note: Static builds cannot initialize VAAPI, will use software encoding');
+          
+          // Check version to confirm it's modern
+          try {
+            const { execSync } = require('child_process');
+            const versionOutput = execSync(`${ffmpegStatic} -version`, { encoding: 'utf8' });
+            const versionMatch = versionOutput.match(/ffmpeg version (\d+)\.(\d+)/);
+            if (versionMatch) {
+              console.log(`ℹ️  FFmpeg version ${versionMatch[1]}.${versionMatch[2]}`);
+            }
+          } catch (vErr) {
+            console.log('ℹ️  (Could not detect version, but using ffmpeg-static)');
+          }
         } else {
-          console.log('⚠️ FFmpeg require returned invalid path:', ffmpegStatic);
+          console.log('⚠️ ffmpeg-static returned invalid path:', ffmpegStatic);
         }
       }
     } catch (requireError) {
-      console.log('⚠️ Require method failed:', requireError.message);
+      console.log('⚠️ ffmpeg-static not available:', requireError.message);
+      console.log('ℹ️  Install with: yarn add ffmpeg-static@5.2.0');
     }
-  } else {
+  }
+
+  // Method 3: Try @ffmpeg-installer/ffmpeg (old 2018 build, last resort)
+  if (!ffmpegPath && !app.isPackaged) {
+    try {
+      console.log('🔄 Attempting @ffmpeg-installer/ffmpeg (last resort)...');
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+      if (ffmpegInstaller?.path) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+        const fs = require('fs');
+        if (fs.existsSync(ffmpegInstaller.path)) {
+          ffmpegPath = ffmpegInstaller.path;
+          console.log('✅ FFmpeg resolved via @ffmpeg-installer:', ffmpegPath);
+          console.log('⚠️  Warning: This is a 2018 build with limited hardware acceleration');
+        } else {
+          console.log('⚠️ @ffmpeg-installer returned invalid path:', ffmpegInstaller.path);
+        }
+      }
+    } catch (installerError) {
+      console.log('⚠️ @ffmpeg-installer not available:', installerError.message);
+    }
+  } else if (!ffmpegPath) {
     console.log(
-      '🚫 Skipping require method for packaged app - using manual resolution',
+      '🚫 Skipping require methods for packaged app - using manual resolution',
     );
   }
 
@@ -113,7 +237,28 @@ function initializeFfmpegPaths() {
       console.log('🖥️ Platform:', process.platform);
 
       const possiblePaths = [
-        // Primary: Resources path + app.asar.unpacked - try without .exe first (common for ffmpeg-static)
+        // Try @ffmpeg-installer first (better hardware acceleration)
+        path.join(
+          resourcesPath,
+          'app.asar.unpacked',
+          'node_modules',
+          '@ffmpeg-installer',
+          'ffmpeg',
+          ffmpegBinary,
+        ),
+        path.join(
+          appPath,
+          '..',
+          'app.asar.unpacked',
+          'node_modules',
+          '@ffmpeg-installer',
+          'ffmpeg',
+          ffmpegBinary,
+        ),
+        path.join(appPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', ffmpegBinary),
+        path.join(resourcesPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', ffmpegBinary),
+        
+        // Fallback to ffmpeg-static - try without .exe first (common for ffmpeg-static)
         path.join(
           resourcesPath,
           'app.asar.unpacked',
@@ -1651,7 +1796,7 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
     console.log(['ffmpeg', ...args].join(' '));
 
     return new Promise((resolve, reject) => {
-      console.log('🚀 Starting FFmpeg with args:', args);
+      //console.log('🚀 Starting FFmpeg with args:', args);
 
       // Double-check subtitle file still exists right before spawning
       if (tempSubtitlePath && !fs.existsSync(tempSubtitlePath)) {
@@ -1902,9 +2047,9 @@ async function getRunInBackgroundSetting(): Promise<boolean> {
   return false;
 }
 
-app.on('ready', () => {
-  // Initialize FFmpeg paths before creating the window
-  initializeFfmpegPaths();
+app.on('ready', async () => {
+  // Initialize FFmpeg paths before creating the window (now async)
+  await initializeFfmpegPaths();
   createWindow();
 });
 

@@ -284,10 +284,9 @@ const ExportButton: React.FC<ExportButtonProps> = ({
           normalizeFrameRate: trackInfos.length > 1,
           subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
           textStyle: currentTextStyle,
-          useHardwareAcceleration: false, // 🎮 Disabled - your FFmpeg doesn't have working hardware encoders
-          // To enable: set to true (will auto-detect NVENC/QSV/AMF/VideoToolbox/VAAPI)
-          // hwaccelType: 'auto', // Optional: specify 'nvenc', 'qsv', 'amf', 'videotoolbox', 'vaapi', or 'auto'
-          // preferHEVC: false, // Optional: use H.265 instead of H.264
+          useHardwareAcceleration: true, 
+          hwaccelType: 'auto', // Auto-detect best available hardware acceleration
+          preferHEVC: false, // Use H.264 (set to true for H.265/HEVC)
         },
         subtitleContent, // Pass the subtitle content separately so main process can create the file
         subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,

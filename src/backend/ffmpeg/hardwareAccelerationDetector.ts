@@ -38,7 +38,7 @@ async function detectNVENC(encodersOutput: string): Promise<HardwareAcceleration
     await execAsync('ffmpeg -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_nvenc -f null - 2>&1');
     console.log('✅ NVENC encoder test successful');
   } catch (error) {
-    console.warn('⚠️ NVENC detected in encoder list but test encoding failed:', error);
+    console.warn('⚠️ NVENC detected in encoder list but test encoding failed:');
     return null; // Encoder listed but doesn't work
   }
 
@@ -70,6 +70,16 @@ async function detectQSV(encodersOutput: string): Promise<HardwareAcceleration |
     return null;
   }
 
+  // Test if the encoder actually works
+  try {
+    await execAsync('ffmpeg -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_qsv -f null - 2>&1');
+    console.log('✅ QSV encoder test successful');
+  } catch (error) {
+    console.warn('⚠️ QSV detected in encoder list but test encoding failed');
+    console.warn('   This usually means Intel iGPU drivers are not properly installed');
+    return null; // Encoder listed but doesn't work
+  }
+
   return {
     type: 'qsv',
     available: true,
@@ -98,6 +108,16 @@ async function detectAMF(encodersOutput: string): Promise<HardwareAcceleration |
     return null;
   }
 
+  // Test if the encoder actually works
+  try {
+    await execAsync('ffmpeg -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_amf -f null - 2>&1');
+    console.log('✅ AMF encoder test successful');
+  } catch (error) {
+    console.warn('⚠️ AMF detected in encoder list but test encoding failed');
+    console.warn('   This usually means AMD GPU drivers (Adrenalin) are not properly installed');
+    return null; // Encoder listed but doesn't work
+  }
+
   return {
     type: 'amf',
     available: true,
@@ -123,6 +143,15 @@ async function detectVideoToolbox(encodersOutput: string): Promise<HardwareAccel
     return null;
   }
 
+  // Test if the encoder actually works
+  try {
+    await execAsync('ffmpeg -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_videotoolbox -f null - 2>&1');
+    console.log('✅ VideoToolbox encoder test successful');
+  } catch (error) {
+    console.warn('⚠️ VideoToolbox detected in encoder list but test encoding failed');
+    return null; // Encoder listed but doesn't work
+  }
+
   return {
     type: 'videotoolbox',
     available: true,
@@ -145,6 +174,50 @@ async function detectVAAPI(encodersOutput: string): Promise<HardwareAcceleration
   const hasHEVC = encodersOutput.includes('hevc_vaapi');
 
   if (!hasH264 && !hasHEVC) {
+    return null;
+  }
+
+  // Test if VAAPI device initialization actually works
+  try {
+    // First check if device exists
+    const fs = require('fs');
+    if (!fs.existsSync('/dev/dri/renderD128')) {
+      console.warn('⚠️ VAAPI encoder found but /dev/dri/renderD128 does not exist');
+      return null;
+    }
+
+    // Test device initialization (this is what actually fails in your case)
+    const { stdout, stderr } = await execAsync(
+      'ffmpeg -hide_banner -init_hw_device vaapi=va:/dev/dri/renderD128 -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -vf format=nv12,hwupload=derive_device=vaapi -c:v h264_vaapi -f null - 2>&1',
+      { timeout: 5000 }
+    );
+    
+    // Check for device initialization errors
+    const output = (stdout + stderr).toLowerCase();
+    const errorPatterns = [
+      'no va display',
+      'device creation failed',
+      'failed to set value',
+      'error parsing global options',
+      'impossible to convert',
+      'error reinitializing',
+      'function not implemented',
+      'invalid argument',
+    ];
+    
+    for (const pattern of errorPatterns) {
+      if (output.includes(pattern)) {
+        console.warn('⚠️ VAAPI device initialization failed');
+        console.warn(`   Found error pattern: "${pattern}"`);
+        console.warn('   VAAPI hardware encoding is not properly supported on this system');
+        return null;
+      }
+    }
+    
+    console.log('✅ VAAPI device initialization and encoding test successful');
+  } catch (error) {
+    console.warn('⚠️ VAAPI detected in encoder list but device initialization failed');
+    console.warn('   Error:', error.message || 'Unknown error');
     return null;
   }
 
