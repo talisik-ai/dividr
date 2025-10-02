@@ -1,4 +1,4 @@
-import { ExportButton } from './header/exportButton';
+import { ExportButton } from '../../export/components/exportButton';
 import { ProjectNameInput } from './header/projectNameInput';
 import { VideoPlayerControls } from './header/videoPlayerControls';
 
