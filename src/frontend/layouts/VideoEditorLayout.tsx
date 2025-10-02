@@ -5,8 +5,8 @@ import { ToolsPanel } from '@/frontend/features/editor/preview/ToolsPanel';
 import { useIsPanelVisible } from '@/frontend/features/editor/stores/PanelStore';
 import { Outlet } from 'react-router-dom';
 import { Timeline } from '../features/editor/timeline/timeline';
-import TitleBar from '../features/editor/Titlebar';
 import Toolbar from '../features/editor/Toolbar';
+import TitleBar from './Titlebar';
 
 const VideoEditorLayout = () => {
   const isPanelVisible = useIsPanelVisible();

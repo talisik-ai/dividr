@@ -1,5 +1,5 @@
-import TitleBar from '@/frontend/features/editor/Titlebar';
 import { Outlet } from 'react-router-dom';
+import TitleBar from './Titlebar';
 
 export default function AppLayout() {
   return (
