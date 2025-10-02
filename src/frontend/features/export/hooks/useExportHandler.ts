@@ -1,5 +1,5 @@
 /**
- * useExportHandler Hook
+ * useExportHandler Hook (Updated with RenderProcessDialog Integration)
  * Handles FFmpeg execution and progress tracking
  */
 import {
@@ -7,11 +7,12 @@ import {
   runFfmpegWithProgress,
 } from '@/backend/ffmpeg/ffmpegRunner';
 import { VideoEditJob } from '@/backend/ffmpeg/schema/ffmpegConfig';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
   useTimelineUtils,
   useVideoEditorStore,
 } from '../../editor/stores/VideoEditorStore';
+import { RenderState } from '../components/renderProcessDialog';
 
 export const useExportHandler = () => {
   const render = useVideoEditorStore((state) => state.render);
@@ -23,6 +24,12 @@ export const useExportHandler = () => {
   const cancelRender = useVideoEditorStore((state) => state.cancelRender);
   const { getTimelineGaps } = useTimelineUtils();
 
+  // Dialog state management
+  const [isRenderDialogOpen, setIsRenderDialogOpen] = useState(false);
+  const [renderDialogState, setRenderDialogState] =
+    useState<RenderState>('rendering');
+  const [renderError, setRenderError] = useState<string | undefined>();
+
   const executeExport = useCallback(
     async (job: VideoEditJob): Promise<void> => {
       try {
@@ -32,7 +39,6 @@ export const useExportHandler = () => {
 
         // Add gaps to job
         job.gaps = gaps;
-
         console.log('🎬 FFmpeg Job:', job);
         console.log('🗂️ Output Path:', job.outputPath);
 
@@ -68,6 +74,12 @@ export const useExportHandler = () => {
         };
 
         console.log('🚀 Starting render process...');
+
+        // Open dialog and set to rendering state
+        setRenderDialogState('rendering');
+        setIsRenderDialogOpen(true);
+        setRenderError(undefined);
+
         startRender({
           outputPath: job.output,
           format: 'mp4',
@@ -79,10 +91,15 @@ export const useExportHandler = () => {
         console.log('✅ runFfmpegWithProgress completed:', result);
 
         finishRender();
-        alert('Render completed successfully!');
+
+        // Update dialog to completed state
+        setRenderDialogState('completed');
       } catch (error) {
         cancelRender();
-        alert(`Render failed: ${error}`);
+
+        // Update dialog to failed state with error message
+        setRenderDialogState('failed');
+        setRenderError(error instanceof Error ? error.message : String(error));
       }
     },
     [
@@ -97,5 +114,24 @@ export const useExportHandler = () => {
     ],
   );
 
-  return { executeExport };
+  const handleCancelRender = useCallback(() => {
+    cancelRender();
+    setRenderDialogState('cancelled');
+  }, [cancelRender]);
+
+  const handleCloseDialog = useCallback(() => {
+    setIsRenderDialogOpen(false);
+    setRenderDialogState('rendering');
+    setRenderError(undefined);
+  }, []);
+
+  return {
+    executeExport,
+    // Dialog state for component integration
+    isRenderDialogOpen,
+    renderDialogState,
+    renderError,
+    handleCancelRender,
+    handleCloseDialog,
+  };
 };
