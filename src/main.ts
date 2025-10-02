@@ -1789,7 +1789,7 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
     }
 
     // Build proper FFmpeg command
-    const baseArgs = await buildFfmpegCommand(job, absoluteLocation);
+    const baseArgs = await buildFfmpegCommand(job, absoluteLocation, ffmpegPath);
     const args = ['-progress', 'pipe:1', '-y', ...baseArgs];
 
     console.log('🎬 COMPLETE FFMPEG COMMAND:');

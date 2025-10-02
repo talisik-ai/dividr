@@ -90,7 +90,7 @@ const ENCODING_DEFAULTS = {
 /**
  * Gets the appropriate hardware acceleration settings for a job
  */
-async function getHardwareAccelerationForJob(job: VideoEditJob): Promise<HardwareAcceleration | null> {
+async function getHardwareAccelerationForJob(job: VideoEditJob, ffmpegPath?: string): Promise<HardwareAcceleration | null> {
   // If hardware acceleration is explicitly disabled, return null
   if (job.operations.useHardwareAcceleration === false || job.operations.hwaccelType === 'none') {
     console.log('🚫 Hardware acceleration disabled by job config');
@@ -105,7 +105,7 @@ async function getHardwareAccelerationForJob(job: VideoEditJob): Promise<Hardwar
   try {
     // If specific hardware type is requested
     if (job.operations.hwaccelType && job.operations.hwaccelType !== 'auto') {
-      const specificHW = await getSpecificHardwareAcceleration(job.operations.hwaccelType);
+      const specificHW = await getSpecificHardwareAcceleration(job.operations.hwaccelType, ffmpegPath);
       if (specificHW) {
         console.log(`🎮 Using requested hardware acceleration: ${job.operations.hwaccelType.toUpperCase()}`);
         return specificHW;
@@ -116,7 +116,7 @@ async function getHardwareAccelerationForJob(job: VideoEditJob): Promise<Hardwar
     }
 
     // Auto-detect best hardware acceleration
-    const detection = await getHardwareAcceleration();
+    const detection = await getHardwareAcceleration(ffmpegPath);
     if (detection.primary) {
       console.log(`🎮 Auto-detected hardware acceleration: ${detection.primary.type.toUpperCase()}`);
       return detection.primary;
@@ -1984,6 +1984,7 @@ function handleOutput(
 export async function buildFfmpegCommand(
   job: VideoEditJob,
   location?: string,
+  ffmpegPath?: string,
 ): Promise<string[]> {
   const cmd: CommandParts = { args: [], filters: [] };
   const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
@@ -1993,7 +1994,7 @@ export async function buildFfmpegCommand(
   console.log('🔄 Clearing hardware acceleration cache for fresh detection...');
   clearHardwareAccelerationCache();
   
-  const hwAccel = await getHardwareAccelerationForJob(job);
+  const hwAccel = await getHardwareAccelerationForJob(job, ffmpegPath);
 
   // NOTE: We skip hardware decoder flags because:
   // 1. Input files may use codecs that don't support hardware decoding

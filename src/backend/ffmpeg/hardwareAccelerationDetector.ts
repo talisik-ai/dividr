@@ -25,7 +25,7 @@ export interface HardwareDetectionResult {
 /**
  * Detects NVIDIA NVENC hardware acceleration
  */
-async function detectNVENC(encodersOutput: string): Promise<HardwareAcceleration | null> {
+async function detectNVENC(encodersOutput: string, ffmpegPath: string): Promise<HardwareAcceleration | null> {
   const hasH264 = encodersOutput.includes('h264_nvenc');
   const hasHEVC = encodersOutput.includes('hevc_nvenc');
 
@@ -35,7 +35,7 @@ async function detectNVENC(encodersOutput: string): Promise<HardwareAcceleration
 
   // Test if the encoder actually works
   try {
-    await execAsync('ffmpeg -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_nvenc -f null - 2>&1');
+    await execAsync(`"${ffmpegPath}" -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_nvenc -f null - 2>&1`);
     console.log('✅ NVENC encoder test successful');
   } catch (error) {
     console.warn('⚠️ NVENC detected in encoder list but test encoding failed:');
@@ -52,8 +52,10 @@ async function detectNVENC(encodersOutput: string): Promise<HardwareAcceleration
     hwaccelOutputFormat: 'cuda',
     decoderFlags: ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'],
     encoderFlags: [
-      '-preset', 'medium', // Compatible preset (p1-p7 or slow/medium/fast)
-      '-b:v', '5M', // Bitrate (use bitrate mode instead of CQ for compatibility)
+      '-preset', 'p6', // NVENC preset p6 (medium quality/speed balance)
+      '-cq', '32', // Higher CQ for smaller files (was 28)
+      '-maxrate', '3M', // Lower maximum bitrate cap
+      '-bufsize', '6M', // Buffer size
     ],
     description: 'NVIDIA NVENC (CUDA) - Hardware encoding via NVIDIA GPU',
   };
@@ -62,7 +64,7 @@ async function detectNVENC(encodersOutput: string): Promise<HardwareAcceleration
 /**
  * Detects Intel Quick Sync Video (QSV) hardware acceleration
  */
-async function detectQSV(encodersOutput: string): Promise<HardwareAcceleration | null> {
+async function detectQSV(encodersOutput: string, ffmpegPath: string): Promise<HardwareAcceleration | null> {
   const hasH264 = encodersOutput.includes('h264_qsv');
   const hasHEVC = encodersOutput.includes('hevc_qsv');
 
@@ -72,7 +74,7 @@ async function detectQSV(encodersOutput: string): Promise<HardwareAcceleration |
 
   // Test if the encoder actually works
   try {
-    await execAsync('ffmpeg -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_qsv -f null - 2>&1');
+    await execAsync(`"${ffmpegPath}" -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_qsv -f null - 2>&1`);
     console.log('✅ QSV encoder test successful');
   } catch (error) {
     console.warn('⚠️ QSV detected in encoder list but test encoding failed');
@@ -90,8 +92,8 @@ async function detectQSV(encodersOutput: string): Promise<HardwareAcceleration |
     hwaccelOutputFormat: 'qsv',
     decoderFlags: ['-hwaccel', 'qsv', '-hwaccel_output_format', 'qsv'],
     encoderFlags: [
-      '-preset', 'medium',
-      '-b:v', '5M', // Use bitrate for compatibility
+      '-preset', 'medium', // QSV preset
+      '-b:v', '2M', // Lower bitrate for smaller file size
     ],
     description: 'Intel Quick Sync Video - Hardware encoding via Intel integrated GPU',
   };
@@ -100,7 +102,7 @@ async function detectQSV(encodersOutput: string): Promise<HardwareAcceleration |
 /**
  * Detects AMD AMF hardware acceleration
  */
-async function detectAMF(encodersOutput: string): Promise<HardwareAcceleration | null> {
+async function detectAMF(encodersOutput: string, ffmpegPath: string): Promise<HardwareAcceleration | null> {
   const hasH264 = encodersOutput.includes('h264_amf');
   const hasHEVC = encodersOutput.includes('hevc_amf');
 
@@ -110,7 +112,7 @@ async function detectAMF(encodersOutput: string): Promise<HardwareAcceleration |
 
   // Test if the encoder actually works
   try {
-    await execAsync('ffmpeg -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_amf -f null - 2>&1');
+    await execAsync(`"${ffmpegPath}" -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_amf -f null - 2>&1`);
     console.log('✅ AMF encoder test successful');
   } catch (error) {
     console.warn('⚠️ AMF detected in encoder list but test encoding failed');
@@ -125,8 +127,8 @@ async function detectAMF(encodersOutput: string): Promise<HardwareAcceleration |
     hevcCodec: hasHEVC ? 'hevc_amf' : undefined,
     hwaccel: 'auto',
     encoderFlags: [
-      '-b:v', '5M', // Use bitrate for compatibility
-      '-quality', 'balanced',
+      '-quality', 'balanced', // AMF quality preset
+      '-b:v', '2M', // Lower bitrate for smaller file size
     ],
     description: 'AMD AMF - Hardware encoding via AMD GPU',
   };
@@ -135,7 +137,7 @@ async function detectAMF(encodersOutput: string): Promise<HardwareAcceleration |
 /**
  * Detects Apple VideoToolbox hardware acceleration (macOS)
  */
-async function detectVideoToolbox(encodersOutput: string): Promise<HardwareAcceleration | null> {
+async function detectVideoToolbox(encodersOutput: string, ffmpegPath: string): Promise<HardwareAcceleration | null> {
   const hasH264 = encodersOutput.includes('h264_videotoolbox');
   const hasHEVC = encodersOutput.includes('hevc_videotoolbox');
 
@@ -145,7 +147,7 @@ async function detectVideoToolbox(encodersOutput: string): Promise<HardwareAccel
 
   // Test if the encoder actually works
   try {
-    await execAsync('ffmpeg -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_videotoolbox -f null - 2>&1');
+    await execAsync(`"${ffmpegPath}" -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -c:v h264_videotoolbox -f null - 2>&1`);
     console.log('✅ VideoToolbox encoder test successful');
   } catch (error) {
     console.warn('⚠️ VideoToolbox detected in encoder list but test encoding failed');
@@ -169,7 +171,7 @@ async function detectVideoToolbox(encodersOutput: string): Promise<HardwareAccel
 /**
  * Detects VAAPI hardware acceleration (Linux)
  */
-async function detectVAAPI(encodersOutput: string): Promise<HardwareAcceleration | null> {
+async function detectVAAPI(encodersOutput: string, ffmpegPath: string): Promise<HardwareAcceleration | null> {
   const hasH264 = encodersOutput.includes('h264_vaapi');
   const hasHEVC = encodersOutput.includes('hevc_vaapi');
 
@@ -188,7 +190,7 @@ async function detectVAAPI(encodersOutput: string): Promise<HardwareAcceleration
 
     // Test device initialization (this is what actually fails in your case)
     const { stdout, stderr } = await execAsync(
-      'ffmpeg -hide_banner -init_hw_device vaapi=va:/dev/dri/renderD128 -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -vf format=nv12,hwupload=derive_device=vaapi -c:v h264_vaapi -f null - 2>&1',
+      `"${ffmpegPath}" -hide_banner -init_hw_device vaapi=va:/dev/dri/renderD128 -f lavfi -i testsrc=duration=0.1:size=320x240:rate=1 -vf format=nv12,hwupload=derive_device=vaapi -c:v h264_vaapi -f null - 2>&1`,
       { timeout: 5000 }
     );
     
@@ -261,41 +263,41 @@ function getSoftwareFallback(): HardwareAcceleration {
 /**
  * Detects all available hardware acceleration methods
  */
-export async function detectAllHardwareAcceleration(): Promise<HardwareDetectionResult> {
+export async function detectAllHardwareAcceleration(ffmpegPath: string = 'ffmpeg'): Promise<HardwareDetectionResult> {
   try {
     console.log('🔍 Detecting hardware acceleration capabilities...');
 
     // Query FFmpeg for available encoders
-    const { stdout } = await execAsync('ffmpeg -hide_banner -encoders 2>&1');
+    const { stdout } = await execAsync(`"${ffmpegPath}" -hide_banner -encoders 2>&1`);
     
     const allAccelerations: HardwareAcceleration[] = [];
 
     // Check for each hardware acceleration type (in priority order)
-    const nvenc = await detectNVENC(stdout);
+    const nvenc = await detectNVENC(stdout, ffmpegPath);
     if (nvenc) {
       allAccelerations.push(nvenc);
       console.log('✅ NVIDIA NVENC detected');
     }
 
-    const qsv = await detectQSV(stdout);
+    const qsv = await detectQSV(stdout, ffmpegPath);
     if (qsv) {
       allAccelerations.push(qsv);
       console.log('✅ Intel Quick Sync detected');
     }
 
-    const videotoolbox = await detectVideoToolbox(stdout);
+    const videotoolbox = await detectVideoToolbox(stdout, ffmpegPath);
     if (videotoolbox) {
       allAccelerations.push(videotoolbox);
       console.log('✅ Apple VideoToolbox detected');
     }
 
-    const amf = await detectAMF(stdout);
+    const amf = await detectAMF(stdout, ffmpegPath);
     if (amf) {
       allAccelerations.push(amf);
       console.log('✅ AMD AMF detected');
     }
 
-    const vaapi = await detectVAAPI(stdout);
+    const vaapi = await detectVAAPI(stdout, ffmpegPath);
     if (vaapi) {
       allAccelerations.push(vaapi);
       console.log('✅ VAAPI detected');
@@ -332,10 +334,12 @@ export async function detectAllHardwareAcceleration(): Promise<HardwareDetection
  * Gets the best available hardware acceleration (cached)
  */
 let cachedDetection: HardwareDetectionResult | null = null;
+let cachedFfmpegPath: string | null = null;
 
-export async function getHardwareAcceleration(): Promise<HardwareDetectionResult> {
-  if (!cachedDetection) {
-    cachedDetection = await detectAllHardwareAcceleration();
+export async function getHardwareAcceleration(ffmpegPath: string = 'ffmpeg'): Promise<HardwareDetectionResult> {
+  if (!cachedDetection || cachedFfmpegPath !== ffmpegPath) {
+    cachedDetection = await detectAllHardwareAcceleration(ffmpegPath);
+    cachedFfmpegPath = ffmpegPath;
   }
   return cachedDetection;
 }
@@ -345,6 +349,7 @@ export async function getHardwareAcceleration(): Promise<HardwareDetectionResult
  */
 export function clearHardwareAccelerationCache(): void {
   cachedDetection = null;
+  cachedFfmpegPath = null;
   console.log('🔄 Hardware acceleration cache cleared');
 }
 
@@ -352,25 +357,26 @@ export function clearHardwareAccelerationCache(): void {
  * Gets hardware acceleration for a specific type
  */
 export async function getSpecificHardwareAcceleration(
-  type: 'nvenc' | 'qsv' | 'amf' | 'videotoolbox' | 'vaapi'
+  type: 'nvenc' | 'qsv' | 'amf' | 'videotoolbox' | 'vaapi',
+  ffmpegPath: string = 'ffmpeg'
 ): Promise<HardwareAcceleration | null> {
-  const detection = await getHardwareAcceleration();
+  const detection = await getHardwareAcceleration(ffmpegPath);
   return detection.all.find(hw => hw.type === type) || null;
 }
 
 /**
  * Checks if any hardware acceleration is available
  */
-export async function hasHardwareAcceleration(): Promise<boolean> {
-  const detection = await getHardwareAcceleration();
+export async function hasHardwareAcceleration(ffmpegPath: string = 'ffmpeg'): Promise<boolean> {
+  const detection = await getHardwareAcceleration(ffmpegPath);
   return detection.primary !== undefined;
 }
 
 /**
  * Gets codec name for the best available hardware acceleration
  */
-export async function getBestVideoCodec(preferHEVC: boolean = false): Promise<string> {
-  const detection = await getHardwareAcceleration();
+export async function getBestVideoCodec(preferHEVC: boolean = false, ffmpegPath: string = 'ffmpeg'): Promise<string> {
+  const detection = await getHardwareAcceleration(ffmpegPath);
   
   if (detection.primary) {
     if (preferHEVC && detection.primary.hevcCodec) {
@@ -385,8 +391,8 @@ export async function getBestVideoCodec(preferHEVC: boolean = false): Promise<st
 /**
  * Prints a summary of available hardware acceleration
  */
-export async function printHardwareAccelerationSummary(): Promise<void> {
-  const detection = await getHardwareAcceleration();
+export async function printHardwareAccelerationSummary(ffmpegPath: string = 'ffmpeg'): Promise<void> {
+  const detection = await getHardwareAcceleration(ffmpegPath);
   
   console.log('\n📊 Hardware Acceleration Summary:');
   console.log('═'.repeat(60));
