@@ -1,8 +1,8 @@
 import { RouterProvider } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import { router } from './Routes';
-import './Styles/app.css';
-import { ThemeProvider } from './Utility/ThemeProvider';
+import { ThemeProvider } from './frontend/providers/ThemeProvider';
+import { router } from './frontend/routes';
+import './frontend/styles/app.css';
 
 function App() {
   return (

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
 import { FfmpegEventHandlers } from './preload';
-import { VideoEditJob } from './Schema/ffmpegConfig';
 
 // Type definitions for the exposed API
 declare global {
@@ -126,13 +126,13 @@ declare global {
         error?: string;
       }>;
       getDuration: (filePath: string) => Promise<number>;
-      
+
       // Video dimensions method
       getVideoDimensions: (filePath: string) => Promise<{
         width: number;
         height: number;
       }>;
-      
+
       runFfmpegWithProgress: (
         job: VideoEditJob,
         handlers?: FfmpegEventHandlers,

@@ -17,7 +17,7 @@ const config: ForgeConfig = {
     icon: './favicon.ico',
     name: 'Dividr',
     executableName: 'Dividr',
-    extraResource: ['./src/Assets/Logo'],
+    extraResource: ['./src/frontend/assets/logo'],
     // Ensure native modules and ffmpeg binaries are included
     ignore: [/^\/\.gitignore$/, /^\/README\.md$/, /^\/docs\//],
   },
