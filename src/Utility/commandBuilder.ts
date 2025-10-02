@@ -8,6 +8,8 @@ import {
   TrackInfo,
   VideoEditJob,
   VideoProcessingContext,
+  ProcessedTimelineSegment,
+  ProcessedTimeline
 } from '../Schema/ffmpegConfig';
 
 const VIDEO_DEFAULTS = {
@@ -29,11 +31,6 @@ interface TimelineSegment {
   startTime: number; // Timeline position where this segment starts
   duration: number; // How long this segment lasts
   endTime: number; // Timeline position where this segment ends
-}
-
-interface ProcessedTimeline {
-  segments: TimelineSegment[];
-  totalDuration: number;
 }
 
 /**
@@ -139,38 +136,6 @@ function calculateTrackDuration(
 }
 
 /**
- * Builds a timeline with proper cumulative positioning
- */
-function buildCumulativeTimeline(
-  inputs: (string | TrackInfo)[],
-  targetFrameRate: number = VIDEO_DEFAULTS.FPS,
-): ProcessedTimeline {
-  const segments: TimelineSegment[] = [];
-  let currentTime = 0;
-
-  inputs.forEach((input, originalIndex) => {
-    const trackInfo = getTrackInfo(input);
-    const duration = calculateTrackDuration(trackInfo, 1);
-
-    const segment: TimelineSegment = {
-      input: trackInfo,
-      originalIndex,
-      startTime: currentTime,
-      duration,
-      endTime: currentTime + duration,
-    };
-
-    segments.push(segment);
-    currentTime += duration;
-  });
-
-  return {
-    segments,
-    totalDuration: currentTime,
-  };
-}
-
-/**
  * Converts frame position to time position
  */
 function framesToTime(frames: number, frameRate: number): number {
@@ -178,94 +143,73 @@ function framesToTime(frames: number, frameRate: number): number {
 }
 
 /**
- * Adjusts timeline positions after insertion
+ * Enhanced input categorization that handles split segments
  */
-function adjustTimelineAfterInsertion(
-  timeline: ProcessedTimeline,
-  insertIndex: number,
-  gapDuration: number,
-): void {
-  // Adjust all segments after the insertion point
-  for (let i = insertIndex + 1; i < timeline.segments.length; i++) {
-    timeline.segments[i].startTime += gapDuration;
-    timeline.segments[i].endTime += gapDuration;
-  }
+function categorizeInputsFromSegments(segments: ProcessedTimelineSegment[]): CategorizedInputs {
+  const videoInputs: InputCategory[] = [];
+  const audioInputs: Omit<InputCategory, 'isGap'>[] = [];
+  
+  // Track file paths and their assigned indices
+  const filePathToIndex = new Map<string, number>();
+  let nextFileIndex = 0;
 
-  timeline.totalDuration += gapDuration;
-}
-
-/**
- * Splits a segment at the specified time
- */
-function splitSegmentAtTime(
-  segment: TimelineSegment,
-  splitTime: number,
-  nextOriginalIndex: number,
-): { beforeSplit: TimelineSegment; afterSplit: TimelineSegment } {
-  const splitOffset = splitTime - segment.startTime;
-  const remainingDuration = segment.duration - splitOffset;
-
-  const beforeSplit: TimelineSegment = {
-    ...segment,
-    duration: splitOffset,
-    endTime: splitTime,
-  };
-
-  // Create new TrackInfo for the second part with adjusted startTime
-  const afterSplitTrackInfo: TrackInfo = {
-    ...segment.input,
-    startTime: (segment.input.startTime || 0) + splitOffset,
-  };
-
-  const afterSplit: TimelineSegment = {
-    input: afterSplitTrackInfo,
-    originalIndex: nextOriginalIndex,
-    startTime: splitTime,
-    duration: remainingDuration,
-    endTime: splitTime + remainingDuration,
-  };
-
-  return { beforeSplit, afterSplit };
-}
-
-/**
- * Finds the correct insertion point for a gap based on cumulative timeline position
- */
-function findGapInsertionPoint(
-  timeline: ProcessedTimeline,
-  gapStartFrame: number,
-  frameRate: number,
-): {
-  insertIndex: number;
-  splitSegment?: { segment: TimelineSegment; splitTime: number };
-} {
-  const gapStartTime = framesToTime(gapStartFrame, frameRate);
-
-  // Find if the gap falls within an existing segment or between segments
-  for (let i = 0; i < timeline.segments.length; i++) {
-    const segment = timeline.segments[i];
-
-    // Gap starts before this segment - insert here
-    if (gapStartTime < segment.startTime) {
-      return { insertIndex: i };
+  // First pass: collect all unique file paths (excluding gaps)
+  segments.forEach(segment => {
+    const path = getInputPath(segment.input);
+    if (!isGapInput(path) && !filePathToIndex.has(path)) {
+      filePathToIndex.set(path, nextFileIndex);
+      nextFileIndex++;
     }
+  });
 
-    // Gap starts within this segment - need to split the segment
-    if (gapStartTime >= segment.startTime && gapStartTime < segment.endTime) {
-      return {
-        insertIndex: i + 1,
-        splitSegment: {
-          segment,
-          splitTime: gapStartTime,
-        },
-      };
+  // Second pass: categorize segments with proper file indexing
+  segments.forEach(segment => {
+    const { input: trackInfo, originalIndex, timelineType } = segment;
+    const path = getInputPath(trackInfo);
+    const isGap = isGapInput(path);
+    
+    const fileIndex = isGap ? -1 : filePathToIndex.get(path);
+
+    if (timelineType === 'video') {
+      videoInputs.push({
+        originalIndex: segment.originalIndex, // Use the segment's originalIndex
+        fileIndex: fileIndex ?? -1,
+        trackInfo: segment.input, // Use the segment's trackInfo which has the correct trim params
+        isGap,
+      });
+    } else if (timelineType === 'audio') {
+      audioInputs.push({
+        originalIndex: segment.originalIndex, // Use the segment's originalIndex
+        fileIndex: fileIndex ?? -1,
+        trackInfo: segment.input, // Use the segment's trackInfo which has the correct trim params
+      });
     }
-  }
+  });
 
-  // Gap starts after all segments - insert at end
-  return { insertIndex: timeline.segments.length };
+  console.log('🔍 Enhanced Categorized Inputs from Segments:');
+  console.log('File mappings:', Array.from(filePathToIndex.entries()));
+  console.log('Video inputs:', videoInputs.map(vi => ({
+    segmentOriginalIndex: vi.originalIndex,
+    fileIndex: vi.fileIndex,
+    path: vi.trackInfo.path,
+    startTime: vi.trackInfo.startTime,
+    duration: vi.trackInfo.duration,
+    isGap: vi.isGap
+  })));
+  console.log('Audio inputs:', audioInputs.map(ai => ({
+    segmentOriginalIndex: ai.originalIndex,
+    fileIndex: ai.fileIndex,
+    path: ai.trackInfo.path,
+    startTime: ai.trackInfo.startTime,
+    duration: ai.trackInfo.duration
+  })));
+
+  return { 
+    videoInputs, 
+    audioInputs, 
+    fileInputIndex: filePathToIndex.size 
+  };
 }
-
 /**
  * Categorizes inputs into video and audio arrays with proper indexing
  * @param inputs - Array of video edit job inputs
@@ -276,43 +220,81 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
   const audioInputs: Omit<InputCategory, 'isGap'>[] = [];
   let fileInputIndex = 0;
 
+  // Track which files we've already added
+  const addedFiles = new Set<string>();
+  // Track original file mappings for split segments
+  const filePathToIndex = new Map<string, number>();
+
   inputs.forEach((input, originalIndex) => {
     const path = getInputPath(input);
     const trackInfo = getTrackInfo(input);
     const isGap = isGapInput(path);
-    const isVideo = FILE_EXTENSIONS.VIDEO.test(path) || isGap;
-    const isAudio = FILE_EXTENSIONS.AUDIO.test(path);
+    
+    const isVideo = !isGap && FILE_EXTENSIONS.VIDEO.test(path);
+    const isAudio = !isGap && FILE_EXTENSIONS.AUDIO.test(path);
 
     if (isVideo) {
-      if (isGap) {
+      let fileIndex = -1;
+      
+      if (!isGap) {
+        // For non-gap files, assign file index
+        if (!addedFiles.has(path)) {
+          fileIndex = fileInputIndex;
+          filePathToIndex.set(path, fileIndex);
+          addedFiles.add(path);
+          fileInputIndex++;
+        } else {
+          // Use the existing file index for this file
+          fileIndex = filePathToIndex.get(path) ?? -1;
+        }
+      }
+
+      videoInputs.push({
+        originalIndex,
+        fileIndex,
+        trackInfo,
+        isGap: false,
+      });
+    } else if (isAudio) {
+      let fileIndex = -1;
+      
+      if (!isGap) {
+        if (!addedFiles.has(path)) {
+          fileIndex = fileInputIndex;
+          filePathToIndex.set(path, fileIndex);
+          addedFiles.add(path);
+          fileInputIndex++;
+        } else {
+          fileIndex = filePathToIndex.get(path) ?? -1;
+        }
+      }
+
+      audioInputs.push({
+        originalIndex,
+        fileIndex,
+        trackInfo,
+      });
+    } else if (isGap) {
+      // Handle gap markers
+      if (trackInfo.gapType === 'video' || trackInfo.trackType === 'video') {
         videoInputs.push({
           originalIndex,
           fileIndex: -1,
           trackInfo,
           isGap: true,
         });
-      } else {
-        videoInputs.push({
+      } else if (trackInfo.gapType === 'audio' || trackInfo.trackType === 'audio') {
+        audioInputs.push({
           originalIndex,
-          fileIndex: fileInputIndex,
+          fileIndex: -1,
           trackInfo,
-          isGap: false,
         });
-        fileInputIndex++;
       }
-    } else if (isAudio) {
-      audioInputs.push({
-        originalIndex,
-        fileIndex: fileInputIndex,
-        trackInfo,
-      });
-      fileInputIndex++;
     }
   });
 
   return { videoInputs, audioInputs, fileInputIndex };
 }
-
 // -------------------------
 // Video Processing Functions
 // -------------------------
@@ -624,76 +606,113 @@ function processAudioForConcatenationWithGaps(
 
   return { audioTrimFilters, silentAudioFilters, concatAudioInputs };
 }
-
 /**
- * Processes gaps and inserts them into the input timeline
- * @param inputs - Original array of inputs
- * @param gaps - Gap information from TimelineGaps interface
- * @param targetFrameRate - Target frame rate for frame-to-time conversion
- * @returns Processed inputs with gap markers inserted
+ * Builds separate video and audio timelines from inputs
  */
-/**
- * Enhanced gap processing with proper timeline management
- */
-function processGapsInTimeline(
+function buildSeparateTimelines(
   inputs: (string | TrackInfo)[],
-  gaps?: {
-    video?: Array<{ startFrame: number; length: number }>;
-    audio?: Array<{ startFrame: number; length: number }>;
-  },
   targetFrameRate: number = VIDEO_DEFAULTS.FPS,
-): TrackInfo[] {
-  if (!gaps || (!gaps.video?.length && !gaps.audio?.length)) {
-    return inputs.map((input) =>
-      typeof input === 'string' ? { path: input } : input,
-    );
+): { video: ProcessedTimeline; audio: ProcessedTimeline } {
+  const videoSegments: ProcessedTimelineSegment[] = [];
+  const audioSegments: ProcessedTimelineSegment[] = [];
+  
+  let videoCurrentTime = 0;
+  let audioCurrentTime = 0;
+
+  inputs.forEach((input, originalIndex) => {
+    const trackInfo = getTrackInfo(input);
+    const path = getInputPath(input);
+    
+    // Determine if this is video, audio, or both
+    const isVideo = FILE_EXTENSIONS.VIDEO.test(path) || isGapInput(path);
+    const isAudio = FILE_EXTENSIONS.AUDIO.test(path) || isGapInput(path);
+    
+    const duration = calculateTrackDuration(trackInfo, 1);
+
+    if (isVideo) {
+      const segment: ProcessedTimelineSegment = {
+        input: trackInfo,
+        originalIndex,
+        startTime: videoCurrentTime,
+        duration,
+        endTime: videoCurrentTime + duration,
+        timelineType: 'video'
+      };
+      videoSegments.push(segment);
+      videoCurrentTime += duration;
+    }
+    
+    if (isAudio) {
+      const segment: ProcessedTimelineSegment = {
+        input: trackInfo,
+        originalIndex,
+        startTime: audioCurrentTime,
+        duration,
+        endTime: audioCurrentTime + duration,
+        timelineType: 'audio'
+      };
+      audioSegments.push(segment);
+      audioCurrentTime += duration;
+    }
+  });
+
+  return {
+    video: {
+      segments: videoSegments,
+      totalDuration: videoCurrentTime,
+      timelineType: 'video'
+    },
+    audio: {
+      segments: audioSegments,
+      totalDuration: audioCurrentTime,
+      timelineType: 'audio'
+    }
+  };
+}
+
+/**
+* Processes gaps for a specific timeline type
+*/
+function processGapsInTimeline(
+  timeline: ProcessedTimeline,
+  gaps: Array<{ startFrame: number; length: number }>,
+  targetFrameRate: number = VIDEO_DEFAULTS.FPS,
+ ): ProcessedTimeline {
+  if (!gaps || gaps.length === 0) {
+    return timeline;
   }
-
-  // Build initial timeline
-  let timeline = buildCumulativeTimeline(inputs, targetFrameRate);
-  let nextOriginalIndex = inputs.length;
-
+ 
+  const processedSegments = [...timeline.segments];
+  let nextOriginalIndex = Math.max(...processedSegments.map(s => s.originalIndex)) + 1;
+ /** 
   console.log(
-    'Initial timeline:',
-    timeline.segments.map(
+    `Initial ${timeline.timelineType} timeline:`,
+    processedSegments.map(
       (s) =>
-        `[${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s] ${s.input.path}`,
+        `[${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s] ${s.input.path}`
     ),
-  );
-
-  // Collect all gaps and sort by start frame (process in chronological order)
-  const allGaps: Array<{
-    startFrame: number;
-    length: number;
-    type: 'video' | 'audio';
-  }> = [];
-
-  if (gaps.video) {
-    gaps.video.forEach((gap) => allGaps.push({ ...gap, type: 'video' }));
-  }
-  if (gaps.audio) {
-    gaps.audio.forEach((gap) => allGaps.push({ ...gap, type: 'audio' }));
-  }
-
+  );*/
+ 
   // Sort gaps by start frame to process in chronological order
-  allGaps.sort((a, b) => a.startFrame - b.startFrame);
-
-  // Process each gap
-  allGaps.forEach((gap, gapIndex) => {
+  const sortedGaps = [...gaps].sort((a, b) => a.startFrame - b.startFrame);
+ 
+  sortedGaps.forEach((gap, gapIndex) => {
     const gapDuration = gap.length / targetFrameRate;
-    const insertionResult = findGapInsertionPoint(
-      timeline,
-      gap.startFrame,
-      targetFrameRate,
+    const gapStartTime = framesToTime(gap.startFrame, targetFrameRate);
+    
+    const insertionResult = findGapInsertionPointInTimeline(
+      processedSegments,
+      gapStartTime,
+      timeline.timelineType
     );
-
+ 
     console.log(
-      `Processing ${gap.type} gap at frame ${gap.startFrame} (${framesToTime(gap.startFrame, targetFrameRate).toFixed(2)}s), duration: ${gapDuration.toFixed(2)}s`,
+      `Processing ${timeline.timelineType} gap at frame ${gap.startFrame} (${gapStartTime.toFixed(2)}s), duration: ${gapDuration.toFixed(2)}s`,
     );
-
+ 
     let insertIndex = insertionResult.insertIndex;
-    let newSegments: TimelineSegment[] = [];
-
+    let newSegments: ProcessedTimelineSegment[] = [];
+ 
     // Handle segment splitting if necessary
     if (insertionResult.splitSegment) {
       const { segment, splitTime } = insertionResult.splitSegment;
@@ -701,86 +720,397 @@ function processGapsInTimeline(
         segment,
         splitTime,
         nextOriginalIndex++,
+        timeline.timelineType
       );
-
-      // Replace the original segment with the split parts
-      timeline.segments[insertIndex - 1] = beforeSplit;
-      newSegments.push(afterSplit);
-
+ 
+      // === ADD FILTER FOR 0-SECOND SEGMENTS HERE ===
+      // Only keep split segments that have meaningful duration (> 0.001 seconds)
+      if (beforeSplit.duration > 0.001) {
+        processedSegments[insertionResult.segmentIndex] = beforeSplit;
+      } else {
+        // Remove the segment if it's 0 seconds by setting insertIndex earlier
+        processedSegments.splice(insertionResult.segmentIndex, 1);
+        insertIndex--; // Adjust insert index since we removed a segment
+        console.log(`✂️ Removed 0-second beforeSplit segment`);
+      }
+ 
+      if (afterSplit.duration > 0.001) {
+        newSegments.push(afterSplit);
+      } else {
+        console.log(`✂️ Removed 0-second afterSplit segment`);
+      }
+ 
       console.log(
-        `Split segment at ${splitTime.toFixed(2)}s: before=[${beforeSplit.startTime.toFixed(2)}-${beforeSplit.endTime.toFixed(2)}], after=[${afterSplit.startTime.toFixed(2)}-${afterSplit.endTime.toFixed(2)}]`,
+        `Split segment at ${splitTime.toFixed(2)}s: before=[${beforeSplit.startTime.toFixed(2)}-${beforeSplit.endTime.toFixed(2)}] (${beforeSplit.duration.toFixed(3)}s), after=[${afterSplit.startTime.toFixed(2)}-${afterSplit.endTime.toFixed(2)}] (${afterSplit.duration.toFixed(3)}s)`,
       );
     }
-
+ 
     // Create gap segment
-    const gapStartTime = insertionResult.splitSegment
+    const gapStartTimeActual = insertionResult.splitSegment
       ? insertionResult.splitSegment.splitTime
-      : insertIndex < timeline.segments.length
-        ? timeline.segments[insertIndex].startTime
+      : insertIndex < processedSegments.length
+        ? processedSegments[insertIndex].startTime
         : timeline.totalDuration;
-
+ 
     const gapTrackInfo: TrackInfo = {
       path: GAP_MARKER,
       duration: gapDuration,
       startFrame: gap.startFrame,
-      trackType: gap.type,
-      gapType: gap.type,
+      trackType: timeline.timelineType,
+      gapType: timeline.timelineType,
     };
-
-    const gapSegment: TimelineSegment = {
+ 
+    const gapSegment: ProcessedTimelineSegment = {
       input: gapTrackInfo,
       originalIndex: nextOriginalIndex++,
-      startTime: gapStartTime,
+      startTime: gapStartTimeActual,
       duration: gapDuration,
-      endTime: gapStartTime + gapDuration,
+      endTime: gapStartTimeActual + gapDuration,
+      timelineType: timeline.timelineType
     };
-
-    // Insert gap and any split segments
+ 
+    // Insert gap and any split segments (only if we have segments to insert)
     const segmentsToInsert = [gapSegment, ...newSegments];
-    timeline.segments.splice(insertIndex, 0, ...segmentsToInsert);
-
-    // Adjust timeline positions after insertion
-    adjustTimelineAfterInsertion(timeline, insertIndex, gapDuration);
-
-    console.log(
-      `Inserted ${gap.type} gap: [${gapSegment.startTime.toFixed(2)}s-${gapSegment.endTime.toFixed(2)}s]`,
-    );
+    if (segmentsToInsert.length > 0) {
+      processedSegments.splice(insertIndex, 0, ...segmentsToInsert);
+      
+      // Adjust timeline positions after insertion
+      adjustTimelineAfterInsertionInPlace(processedSegments, insertIndex, gapDuration);
+    } else {
+      console.log(`⏩ No segments to insert for gap at ${gapStartTime.toFixed(2)}s`);
+    }
   });
-
+ 
+  const totalDuration = processedSegments.length > 0 
+    ? Math.max(...processedSegments.map(s => s.endTime))
+    : 0;
+ 
   console.log(
-    'Final timeline:',
-    timeline.segments.map(
+    `Final ${timeline.timelineType} timeline:`,
+    processedSegments.map(
       (s) =>
         `[${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s] ${s.input.path}${s.input.gapType ? ` (${s.input.gapType} gap)` : ''}`,
     ),
   );
-  console.log(`Total timeline duration: ${timeline.totalDuration.toFixed(2)}s`);
+  console.log(`Total ${timeline.timelineType} duration: ${totalDuration.toFixed(2)}s`);
+ 
+  return {
+    segments: processedSegments,
+    totalDuration,
+    timelineType: timeline.timelineType
+  };
+ }
 
-  // Return the processed inputs
-  return timeline.segments.map((segment) => segment.input);
+/**
+ * Modified splitSegmentAtTime to include timeline type
+ */
+function splitSegmentAtTime(
+  segment: ProcessedTimelineSegment,
+  splitTime: number,
+  nextOriginalIndex: number,
+  timelineType: 'video' | 'audio'
+): { beforeSplit: ProcessedTimelineSegment; afterSplit: ProcessedTimelineSegment } {
+  const splitOffset = splitTime - segment.startTime;
+  const remainingDuration = segment.duration - splitOffset;
+
+  const beforeSplit: ProcessedTimelineSegment = {
+    ...segment,
+    duration: splitOffset,
+    endTime: splitTime,
+  };
+
+  // Create new TrackInfo for the second part with adjusted startTime
+  const afterSplitTrackInfo: TrackInfo = {
+    ...segment.input,
+    startTime: (segment.input.startTime || 0) + splitOffset,
+  };
+
+  const afterSplit: ProcessedTimelineSegment = {
+    input: afterSplitTrackInfo,
+    originalIndex: nextOriginalIndex,
+    startTime: splitTime,
+    duration: remainingDuration,
+    endTime: splitTime + remainingDuration,
+    timelineType
+  };
+
+  return { beforeSplit, afterSplit };
+}
+/**
+ * Finds gap insertion point in a timeline
+ */
+function findGapInsertionPointInTimeline(
+  segments: ProcessedTimelineSegment[],
+  gapStartTime: number,
+  timelineType: 'video' | 'audio'
+): {
+  insertIndex: number;
+  segmentIndex?: number;
+  splitSegment?: { segment: ProcessedTimelineSegment; splitTime: number };
+} {
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+
+    // Gap starts before this segment - insert here
+    if (gapStartTime < segment.startTime) {
+      return { insertIndex: i };
+    }
+
+    // Gap starts within this segment - need to split the segment
+    if (gapStartTime >= segment.startTime && gapStartTime < segment.endTime) {
+      return {
+        insertIndex: i + 1,
+        segmentIndex: i,
+        splitSegment: {
+          segment,
+          splitTime: gapStartTime,
+        },
+      };
+    }
+  }
+
+  // Gap starts after all segments - insert at end
+  return { insertIndex: segments.length };
 }
 
 /**
- * Finds the correct insertion index for a gap based on timeline position
+ * Adjusts timeline positions after insertion
  */
-function findInsertionIndex(
-  inputs: TrackInfo[],
-  gapStartFrame: number,
-  targetFrameRate: number,
-): number {
-  for (let i = 0; i < inputs.length; i++) {
-    const track = inputs[i];
-    const trackStartFrame =
-      track.startFrame ??
-      (track.startTime !== undefined ? track.startTime * targetFrameRate : 0);
-
-    if (trackStartFrame > gapStartFrame) {
-      return i;
-    }
+function adjustTimelineAfterInsertionInPlace(
+  segments: ProcessedTimelineSegment[],
+  insertIndex: number,
+  gapDuration: number,
+): void {
+  // Adjust all segments after the insertion point
+  for (let i = insertIndex + 1; i < segments.length; i++) {
+    segments[i].startTime += gapDuration;
+    segments[i].endTime += gapDuration;
   }
-  return inputs.length; // Insert at end if no suitable position found
 }
 
+/**
+ * Find file index for a segment in categorized inputs - FIXED VERSION
+ */
+function findFileIndexForSegment(
+  segment: ProcessedTimelineSegment,
+  categorizedInputs: CategorizedInputs,
+  timelineType: 'video' | 'audio'
+): number | undefined {
+  const inputs = timelineType === 'video' ? categorizedInputs.videoInputs : categorizedInputs.audioInputs;
+  const segmentPath = getInputPath(segment.input);
+  
+  console.log(`🔍 Looking for file index for ${timelineType} segment:`, {
+    segmentOriginalIndex: segment.originalIndex,
+    segmentPath: segmentPath,
+    segmentStart: segment.input.startTime,
+    segmentDuration: segment.input.duration
+  });
+
+  // If it's a gap, no file index needed
+  if (isGapInput(segmentPath)) {
+    return undefined;
+  }
+
+  // Strategy 1: Look for exact originalIndex match
+  let fileIndex = inputs.find(vi => vi.originalIndex === segment.originalIndex)?.fileIndex;
+  
+  if (fileIndex !== undefined) {
+    console.log(`✅ Found file index ${fileIndex} by originalIndex match`);
+    return fileIndex;
+  }
+
+  // Strategy 2: Look by path only (for split segments from the same source)
+  const matchingByPath = inputs.find(input => 
+    getInputPath(input.trackInfo) === segmentPath
+  );
+  
+  if (matchingByPath) {
+    console.log(`✅ Found file index ${matchingByPath.fileIndex} by path match`);
+    return matchingByPath.fileIndex;
+  }
+
+  // Strategy 3: Debug - log all available inputs to see what we have
+  console.log(`❌ No file index found. Available ${timelineType} inputs:`, inputs.map(input => ({
+    originalIndex: input.originalIndex,
+    fileIndex: input.fileIndex,
+    path: getInputPath(input.trackInfo),
+    startTime: input.trackInfo.startTime,
+    duration: input.trackInfo.duration
+  })));
+
+  return undefined;
+}
+
+/**
+ * Builds filter complex for separate video and audio timelines - FIXED VERSION
+ */
+function buildSeparateTimelineFilterComplex(
+  videoTimeline: ProcessedTimeline,
+  audioTimeline: ProcessedTimeline,
+  job: VideoEditJob,
+  categorizedInputs: CategorizedInputs
+): string {
+  const videoFilters: string[] = [];
+  const audioFilters: string[] = [];
+  const videoConcatInputs: string[] = [];
+  const audioConcatInputs: string[] = [];
+
+  console.log('🎬 Building filter complex from timelines:');
+  console.log('Video segments:', videoTimeline.segments.map(s => 
+    `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`
+  ));
+  console.log('Audio segments:', audioTimeline.segments.map(s => 
+    `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`
+  ));
+
+  // Process video timeline segments IN ORDER
+  videoTimeline.segments.forEach((segment, segmentIndex) => {
+    const { input: trackInfo, originalIndex, timelineType } = segment;
+    
+    console.log(`🎬 Processing video segment ${segmentIndex}: ${trackInfo.path} [${segment.startTime.toFixed(2)}s-${segment.endTime.toFixed(2)}s]`);
+
+    if (isGapInput(trackInfo.path)) {
+      // Video gap - create black video
+      const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+      const videoDim = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
+      const gapResult = createGapVideoFilters(
+        segmentIndex, // Use segment index to avoid conflicts
+        trackInfo.duration || 1,
+        targetFps,
+        videoDim
+      );
+      videoFilters.push(...gapResult.filters);
+      videoConcatInputs.push(gapResult.filterRef);
+      console.log(`🎬 Added video gap: ${gapResult.filterRef}`);
+    } else {
+      // Regular video file - find the original file index
+      const fileIndex = findFileIndexForSegment(segment, categorizedInputs, 'video');
+
+      if (fileIndex !== undefined) {
+        console.log(`🎬 Processing video segment ${segmentIndex} with fileIndex ${fileIndex}`);
+        
+        const context: VideoProcessingContext = {
+          trackInfo,
+          originalIndex: segmentIndex,
+          fileIndex,
+          inputStreamRef: `[${fileIndex}:v]`,
+        };
+
+        console.log(`🎬 Created video context:`, context);
+
+        const trimResult = createVideoTrimFilters(context);
+        console.log(`🎬 Video trim result:`, trimResult);
+        
+        if (trimResult.filters.length > 0) {
+          videoFilters.push(...trimResult.filters);
+          console.log(`🎬 Added ${trimResult.filters.length} video trim filters`);
+        }
+
+        // Apply FPS normalization if needed
+        let videoStreamRef = trimResult.filterRef;
+        console.log(`🎬 Initial video stream ref: ${videoStreamRef}`);
+        
+        if (job.operations.normalizeFrameRate) {
+          const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+          const fpsResult = createFpsNormalizationFilters(
+            segmentIndex,
+            videoStreamRef,
+            targetFps
+          );
+          console.log(`🎬 FPS normalization result:`, fpsResult);
+          videoFilters.push(...fpsResult.filters);
+          videoStreamRef = fpsResult.filterRef;
+          console.log(`🎬 After FPS normalization: ${videoStreamRef}`);
+        }
+
+        videoConcatInputs.push(videoStreamRef);
+        console.log(`🎬 Added video concat input: ${videoStreamRef}`);
+        console.log(`🎬 Current video concat inputs:`, videoConcatInputs);
+      } else {
+        console.warn(`❌ Could not find file index for video segment ${segmentIndex}`);
+      }
+    }
+  });
+
+  // Process audio timeline segments IN ORDER
+  audioTimeline.segments.forEach((segment, segmentIndex) => {
+    const { input: trackInfo, originalIndex, timelineType } = segment;
+    
+    console.log(`🎵 Processing audio segment ${segmentIndex}: ${trackInfo.path} [${segment.startTime.toFixed(2)}s-${segment.endTime.toFixed(2)}s]`);
+
+    if (isGapInput(trackInfo.path)) {
+      // Audio gap - create silent audio
+      const silentResult = createSilentAudioFilters(
+        segmentIndex, // Use segment index to avoid conflicts
+        trackInfo.duration || 1
+      );
+      audioFilters.push(...silentResult.filters);
+      audioConcatInputs.push(silentResult.filterRef);
+      console.log(`🎵 Added audio gap: ${silentResult.filterRef}`);
+    } else {
+      // Regular audio file - find the original file index
+      const fileIndex = findFileIndexForSegment(segment, categorizedInputs, 'audio');
+
+      if (fileIndex !== undefined) {
+        console.log(`🎵 Processing audio segment ${segmentIndex} with fileIndex ${fileIndex}`);
+        
+        const context: AudioProcessingContext = {
+          trackInfo,
+          originalIndex: segmentIndex,
+          fileIndex,
+          inputStreamRef: `[${fileIndex}:a]`,
+        };
+
+        console.log(`🎵 Created audio context:`, context);
+
+        const trimResult = createAudioTrimFilters(context);
+        console.log(`🎵 Audio trim result:`, trimResult);
+        
+        audioFilters.push(...trimResult.filters);
+        audioConcatInputs.push(trimResult.filterRef);
+        console.log(`🎵 Added audio concat input: ${trimResult.filterRef}`);
+        console.log(`🎵 Current audio concat inputs:`, audioConcatInputs);
+      } else {
+        console.warn(`❌ Could not find file index for audio segment ${segmentIndex}`);
+      }
+    }
+  });
+
+  // Build concatenation filters WITH SUBTITLE SUPPORT
+  let videoConcatFilter = '';
+  let audioConcatFilter = '';
+
+  if (videoConcatInputs.length > 0) {
+    if (job.operations.subtitles) {
+      // Apply subtitles after concatenation
+      videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[temp_video];`;
+      
+      const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
+      videoConcatFilter += `[temp_video]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[video]`;
+      console.log('🎬 Added subtitles to video concatenation');
+    } else {
+      videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[video]`;
+    }
+  }
+
+  if (audioConcatInputs.length > 0) {
+    audioConcatFilter = `${audioConcatInputs.join('')}concat=n=${audioConcatInputs.length}:v=0:a=1[audio]`;
+  }
+
+  // Combine all filters
+  const allFilters = [...videoFilters, ...audioFilters];
+  if (videoConcatFilter) allFilters.push(videoConcatFilter);
+  if (audioConcatFilter) allFilters.push(audioConcatFilter);
+
+  const filterComplex = allFilters.join(';');
+  
+  console.log('🎛️ Final Filter Complex Structure:');
+  console.log('Video concat inputs:', videoConcatInputs);
+  console.log('Audio concat inputs:', audioConcatInputs);
+  console.log('Filter complex:', filterComplex);
+
+  return filterComplex;
+}
 /**
  * Enhanced helper to check if input is a gap marker with specific gap type
  */
@@ -1305,100 +1635,147 @@ function handleMultipleInputsNoConcatWorkflow(
 // -------------------------
 // Step handlers
 // -------------------------
-const steps: ((job: VideoEditJob, cmd: CommandParts) => void)[] = [
-  handleInputs,
-  handleTrim,
-  handleCrop,
-  handleSubtitles,
-  handleAspect,
-  handleReplaceAudio,
-  handlePreset,
-  handleThreads,
-];
 
-function handleInputs(job: VideoEditJob, cmd: CommandParts) {
-  const inputCount = job.inputs.length;
+/**
+ * Adds file inputs to the command
+ */
+function handleFileInputs(job: VideoEditJob, cmd: CommandParts): void {
+  job.inputs.forEach((input) => {
+    const path = getInputPath(input);
+    if (!isGapInput(path)) {
+      cmd.args.push('-i', escapePath(path));
+    }
+  });
+}
 
-  if (job.operations.concat && inputCount > 1) {
-    handleConcatenationWorkflow(job, cmd);
-  } else if (inputCount === 1) {
-    handleSingleInputWorkflow(job, cmd);
-  } else {
-    handleMultipleInputsNoConcatWorkflow(job, cmd);
+/**
+ * Builds and processes separate video and audio timelines
+ */
+function handleTimelineProcessing(
+  job: VideoEditJob,
+  targetFrameRate: number
+): { 
+  finalVideoTimeline: ProcessedTimeline; 
+  finalAudioTimeline: ProcessedTimeline;
+  categorizedInputs: CategorizedInputs;
+} {
+  // Build separate initial timelines
+  const initialTimelines = buildSeparateTimelines(job.inputs, targetFrameRate);
+
+  // Process gaps for each timeline
+  let finalVideoTimeline = initialTimelines.video;
+  let finalAudioTimeline = initialTimelines.audio;
+
+  if (job.gaps) {
+    if (job.gaps.video?.length) {
+      finalVideoTimeline = processGapsInTimeline(
+        initialTimelines.video,
+        job.gaps.video,
+        targetFrameRate
+      );
+    }
+
+    if (job.gaps.audio?.length) {
+      finalAudioTimeline = processGapsInTimeline(
+        initialTimelines.audio,
+        job.gaps.audio,
+        targetFrameRate
+      );
+    }
+  }
+
+  console.log('Final Video Timeline:', finalVideoTimeline.segments.map(s => 
+    `${s.input.path}${s.input.gapType ? ` (${s.input.gapType} gap)` : ''} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`
+  ));
+  console.log('Final Audio Timeline:', finalAudioTimeline.segments.map(s => 
+    `${s.input.path}${s.input.gapType ? ` (${s.input.gapType} gap)` : ''} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`
+  ));
+
+  // Categorize inputs for file indexing
+  const categorizedInputs = categorizeInputs(job.inputs);
+  
+  console.log('🔍 Categorized Inputs Debug:');
+  console.log('Video Inputs:', categorizedInputs.videoInputs.map(vi => ({
+    originalIndex: vi.originalIndex,
+    fileIndex: vi.fileIndex,
+    path: vi.trackInfo.path,
+    startTime: vi.trackInfo.startTime,
+    duration: vi.trackInfo.duration
+  })));
+  console.log('Audio Inputs:', categorizedInputs.audioInputs.map(ai => ({
+    originalIndex: ai.originalIndex,
+    fileIndex: ai.fileIndex,
+    path: ai.trackInfo.path,
+    startTime: ai.trackInfo.startTime,
+    duration: ai.trackInfo.duration
+  })));
+
+  return { finalVideoTimeline, finalAudioTimeline, categorizedInputs };
+}
+
+/**
+ * Builds and applies filter complex to command
+ */
+function handleFilterComplex(
+  job: VideoEditJob,
+  cmd: CommandParts,
+  videoTimeline: ProcessedTimeline,
+  audioTimeline: ProcessedTimeline,
+  categorizedInputs: CategorizedInputs
+): void {
+  const filterComplex = buildSeparateTimelineFilterComplex(
+    videoTimeline,
+    audioTimeline,
+    job,
+    categorizedInputs
+  );
+
+  if (filterComplex) {
+    cmd.args.push('-filter_complex', filterComplex);
+    cmd.args.push('-map', '[video]', '-map', '[audio]');
   }
 }
 
-function handleTrim(job: VideoEditJob, cmd: CommandParts) {
-  const trim = job.operations.trim;
-  if (!trim) return;
-
-  const { start, duration, end } = trim;
-  if (start) cmd.args.unshift('-ss', start);
-  if (duration) {
-    cmd.args.push('-t', duration);
-  } else if (end && start) {
-    const dur = timeToSeconds(end) - timeToSeconds(start);
-    cmd.args.push('-t', String(dur));
-  }
+/**
+ * Applies encoding settings to command
+ */
+function handleEncodingSettings(job: VideoEditJob, cmd: CommandParts): void {
+  cmd.args.push('-c:v', ENCODING_DEFAULTS.VIDEO_CODEC);
+  cmd.args.push('-c:a', ENCODING_DEFAULTS.AUDIO_CODEC);
 }
 
-function handleCrop(job: VideoEditJob, cmd: CommandParts) {
-  const crop = job.operations.crop;
-  if (crop)
-    cmd.filters.push(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`);
-}
-
-function handleSubtitles(job: VideoEditJob, cmd: CommandParts) {
-  // Only add subtitles to -vf filters if we're NOT using concatenation
-  // Concatenation uses -filter_complex, so subtitles must be integrated there
-  if (
-    job.operations.subtitles &&
-    !(job.operations.concat && job.inputs.length > 1)
-  ) {
-    const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
-
-    const subtitleFilter = `subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'`;
-    cmd.filters.push(subtitleFilter);
-    console.log('📝 Added subtitle filter to -vf:', subtitleFilter);
-  } else if (job.operations.subtitles) {
-    console.log(
-      '📝 Subtitle file detected, will be integrated into filter complex:',
-      job.operations.subtitles,
-    );
-  }
-}
-
-function handleAspect(job: VideoEditJob, cmd: CommandParts) {
-  if (job.operations.aspect) cmd.args.push('-aspect', job.operations.aspect);
-}
-
-function handleReplaceAudio(job: VideoEditJob, cmd: CommandParts) {
-  if (!job.operations.replaceAudio) return;
-  cmd.args.push('-i', job.operations.replaceAudio);
-  cmd.args.push('-map', '0:v', '-map', `${job.inputs.length}:a`);
-}
-
-function handlePreset(job: VideoEditJob, cmd: CommandParts) {
+/**
+ * Applies encoding preset if specified
+ */
+function handlePreset(job: VideoEditJob, cmd: CommandParts): void {
   if (!job.operations.preset) return;
 
-  // Add preset before codec specifications for optimal placement
-  cmd.args.push('-c:v', 'libx264');
   cmd.args.push('-preset', job.operations.preset);
   cmd.args.push('-crf', '29');
-  cmd.args.push('-c:a', 'aac');
   cmd.args.push('-b:a', '96k');
 
   console.log(`🚀 Applied encoding preset: ${job.operations.preset}`);
 }
 
-function handleThreads(job: VideoEditJob, cmd: CommandParts) {
-  //if(!job.operations.threads) return;
-
+/**
+ * Applies thread settings and faststart flag
+ */
+function handleThreads(job: VideoEditJob, cmd: CommandParts): void {
   cmd.args.push('-threads', String(job.operations.threads));
-  cmd.args.push('-movflags');
-  cmd.args.push('+faststart');
+  cmd.args.push('-movflags', '+faststart');
 
   console.log(`🚀 Applied thread limit: ${job.operations.threads}`);
+}
+
+/**
+ * Adds output file path to command
+ */
+function handleOutput(job: VideoEditJob, cmd: CommandParts, location?: string): void {
+  const outputFilePath = location
+    ? path.join(location, job.output)
+    : job.output;
+
+  cmd.args.push(outputFilePath);
 }
 
 // -------------------------
@@ -1408,50 +1785,31 @@ export function buildFfmpegCommand(
   job: VideoEditJob,
   location?: string,
 ): string[] {
-  // Enhanced gap preprocessing
-  let processedInputs = job.inputs;
-  console.log('Taken inputs from VideoEditJob: ' + processedInputs);
-  if (job.gaps && (job.gaps.video?.length || job.gaps.audio?.length)) {
-    processedInputs = processGapsInTimeline(
-      job.inputs,
-      job.gaps,
-      job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS,
-    );
-
-    console.log('Gap processing completed:');
-    console.log('  - Video gaps:', job.gaps.video?.length || 0);
-    console.log('  - Audio gaps:', job.gaps.audio?.length || 0);
-    console.log('  - Total processed inputs:', processedInputs.length);
-  }
-
   const cmd: CommandParts = { args: [], filters: [] };
+  const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
 
-  // Run all step handlers with processed inputs
-  for (const step of steps) step({ ...job, inputs: processedInputs }, cmd);
+  // Step 1: Add file inputs
+  handleFileInputs(job, cmd);
 
-  // Apply -vf filters ONLY if we're not using -filter_complex
-  const usesFilterComplex = cmd.args.includes('-filter_complex');
+  // Step 2: Build and process timelines with gaps
+  const { finalVideoTimeline, finalAudioTimeline, categorizedInputs } = 
+    handleTimelineProcessing(job, targetFrameRate);
 
-  if (cmd.filters.length > 0 && !usesFilterComplex) {
-    cmd.args.push('-vf', cmd.filters.join(','));
-  } else if (cmd.filters.length > 0 && usesFilterComplex) {
-    console.warn(
-      'Attempted to use -vf filters when -filter_complex is already in use. Filters ignored:',
-      cmd.filters,
-    );
-  }
+  // Step 3: Build and apply filter complex
+  handleFilterComplex(job, cmd, finalVideoTimeline, finalAudioTimeline, categorizedInputs);
 
-  const outputFilePath = location
-    ? path.join(location, job.output)
-    : job.output;
+  // Step 4: Apply encoding settings
+  handleEncodingSettings(job, cmd);
+  handlePreset(job, cmd);
+  handleThreads(job, cmd);
 
-  // Output file
-  cmd.args.push(outputFilePath);
+  // Step 5: Add output file
+  handleOutput(job, cmd, location);
+
   console.log('FFmpeg Command Args:', cmd.args);
   console.log('Full FFmpeg Command:', ['ffmpeg', ...cmd.args].join(' '));
   return cmd.args;
 }
-
 // -------------------------
 // Helpers
 // -------------------------
@@ -1667,3 +2025,4 @@ export function testAllPresets() {
     console.log(`  ${preset.padEnd(10)} → ${appliedPreset}`);
   });
 }
+

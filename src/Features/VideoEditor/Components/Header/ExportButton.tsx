@@ -219,7 +219,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         if (track.startFrame > currentTimelineFrame) {
           const gapDurationFrames = track.startFrame - currentTimelineFrame;
           const gapDurationSeconds = gapDurationFrames / timelineFps;
-
+          /**
           if (gapDurationSeconds > 0.033) {
             // Only add significant gaps (> 1 frame)
             console.log(
@@ -233,7 +233,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
               duration: gapDurationSeconds,
               startTime: 0,
             });
-          }
+          }*/
         }
 
         // Add the actual track with proper source timing

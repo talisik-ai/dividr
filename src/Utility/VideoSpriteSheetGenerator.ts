@@ -475,33 +475,38 @@ export class VideoSpriteSheetGenerator {
         }
 
         // Use select filter to extract exact frames (prevents excess frames)
-        const selectFilter = frameNumbers
-          .map((frame) => `eq(n\\,${frame})`)
-          .join('+');
+        //const selectFilter = frameNumbers
+        //  .map((frame) => `eq(n\\,${frame})`)
+        //  .join('+');
+        const framesPerSheet = optimalCols * optimalRows;
+        //const sheetDuration = framesPerSheet * intervalSeconds;
+        //const startTime = sheetIndex * sheetDuration;
 
         const spriteSheetCommand = [
+          '-ss',
+          String(startTime), // seek to where this sheet should start
           '-i',
           videoPath,
           '-vf',
           [
-            `select='${selectFilter}'`, // Extract exact frames by frame number
-            `scale=${thumbWidth}:${thumbHeight}:force_original_aspect_ratio=increase`, // Scale to fill, may crop
-            `crop=${thumbWidth}:${thumbHeight}`, // Crop to exact dimensions (no padding/black strips)
-            `tile=${optimalCols}x${optimalRows}`, // Use calculated grid dimensions
+            `fps=1/${intervalSeconds}`, // sample frames evenly by time
+            `scale=${thumbWidth}:${thumbHeight}:force_original_aspect_ratio=increase`,
+            `crop=${thumbWidth}:${thumbHeight}`,
+            `tile=${optimalCols}x${optimalRows}`,
           ].join(','),
           '-q:v',
           '5',
           '-f',
           'image2',
           '-avoid_negative_ts',
-          'make_zero', // Handle negative timestamps
+          'make_zero',
           '-vsync',
-          '0', // Prevent frame dropping
+          '0',
           '-threads',
           '4',
           '-frames:v',
-          '1', // Generate exactly one output image (the tiled sprite sheet)
-          '-y', // Overwrite output files
+          '1', // still one sheet per run
+          '-y',
           `${outputDir}/sprite_${sheetIndex.toString().padStart(3, '0')}.jpg`,
         ];
 
@@ -871,12 +876,19 @@ export class VideoSpriteSheetGenerator {
     } else if (duration <= 30) {
       return 0.25; // Dense coverage for short videos
     } else if (duration <= 120) {
+      // 02:00
       return 0.5; // Good coverage for medium videos
-    } else if (duration <= 600) {
+    } else if (duration >= 121 && duration <= 300) {
+      // 02:01 - 05:00
+      return 1.0;
+    } else if (duration <= 600 || duration >= 301) {
+      // 10 minutes
       return 1.0; // Reasonable coverage for long videos
     } else if (duration <= 3599 && duration >= 601) {
+      // 10:01 - 59:59
       return duration / 300;
     } else if (duration >= 3600) {
+      // over an hour
       return duration / 1200; // Sparse coverage for very long videos to prevent memory issues
     } else {
       return 2.0;
