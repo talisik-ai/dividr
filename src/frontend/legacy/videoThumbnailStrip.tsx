@@ -1,5 +1,6 @@
-import VideoThumbnailGenerator, {
+import {
   VideoThumbnail,
+  VideoThumbnailGenerator,
 } from '@/backend/ffmpeg/videoThumbnailGenerator';
 import {
   useVideoEditorStore,
@@ -368,7 +369,7 @@ interface ThumbnailImageProps {
 }
 
 const ThumbnailImage: React.FC<ThumbnailImageProps> = React.memo(
-  ({ thumbnail, x, width, height, index }) => {
+  ({ thumbnail, x, width, height }) => {
     const [isLoaded, setIsLoaded] = useState(false);
     const [hasError, setHasError] = useState(false);
     const imgRef = useRef<HTMLImageElement>(null);

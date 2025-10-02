@@ -376,7 +376,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         } else if (pixelsPerSample >= 0.5) {
           // MEDIUM ZOOM: 2-1 samples per pixel
           // Use simple averaging for clean downsampling
-          const samplesPerPixel = Math.ceil(1 / pixelsPerSample);
+          // const samplesPerPixel = Math.ceil(1 / pixelsPerSample);
           const targetSamples = Math.floor(displayWidth);
           resampledPeaks = [];
 

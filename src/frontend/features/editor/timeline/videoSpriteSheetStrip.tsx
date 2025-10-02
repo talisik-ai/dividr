@@ -1,7 +1,7 @@
 import {
-  default as VideoSpriteSheetGenerator,
   SpriteSheet,
   SpriteSheetThumbnail,
+  default as VideoSpriteSheetGenerator,
 } from '@/backend/ffmpeg/videoSpriteSheetGenerator';
 import { Loader2 } from 'lucide-react';
 import React, {

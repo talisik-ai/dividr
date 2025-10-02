@@ -1253,7 +1253,8 @@ export function findBufferedSnapPoint(
   excludeTrackId?: string,
   currentFrame?: number,
   lastSnappedFrame?: number,
-  isApproaching?: boolean,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _isApproaching?: boolean,
 ): number | null {
   let nearestSnapPoint: SnapPoint | null = null;
   let minDistance = threshold + 1;

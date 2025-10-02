@@ -16,19 +16,19 @@ const debounce = <T extends (...args: unknown[]) => unknown>(
   };
 };
 
-const throttle = <T extends (...args: unknown[]) => unknown>(
-  func: T,
-  limit: number,
-): ((...args: Parameters<T>) => void) => {
-  let inThrottle: boolean;
-  return (...args: Parameters<T>) => {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => (inThrottle = false), limit);
-    }
-  };
-};
+// const throttle = <T extends (...args: unknown[]) => unknown>(
+//   func: T,
+//   limit: number,
+// ): ((...args: Parameters<T>) => void) => {
+//   let inThrottle: boolean;
+//   return (...args: Parameters<T>) => {
+//     if (!inThrottle) {
+//       func(...args);
+//       inThrottle = true;
+//       setTimeout(() => (inThrottle = false), limit);
+//     }
+//   };
+// };
 
 interface VideoPreviewProps {
   className?: string;
@@ -55,15 +55,15 @@ const calculateMediaTime = (
 };
 
 // Remotion-inspired seeking logic
-const shouldSeek = (
-  currentTime: number,
-  targetTime: number,
-  isPlaying: boolean,
-) => {
-  const seekThreshold = isPlaying ? 0.15 : 0.01;
-  const timeDiff = Math.abs(currentTime - targetTime);
-  return timeDiff > seekThreshold && timeDiff < 3; // Don't seek if too far apart
-};
+// const shouldSeek = (
+//   currentTime: number,
+//   targetTime: number,
+//   isPlaying: boolean,
+// ) => {
+//   const seekThreshold = isPlaying ? 0.15 : 0.01;
+//   const timeDiff = Math.abs(currentTime - targetTime);
+//   return timeDiff > seekThreshold && timeDiff < 3; // Don't seek if too far apart
+// };
 
 export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -324,7 +324,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           // console.log(`✅ Video loaded: ${track.name}`);
         };
 
-        const handleError = (e: Event) => {
+        const handleError = () => {
           //   console.error(`❌ Failed to load: ${track.name}`);
           setLoadingTracks((prev) => {
             const newSet = new Set(prev);
@@ -457,7 +457,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
         // Don't play if any video is buffering (Remotion-inspired behavior)
         if (isTrackActive && playback.isPlaying && !anyBuffering) {
-          videoElement.element.play().catch((e) => {
+          videoElement.element.play().catch(() => {
             // console.log('Autoplay prevented for', track.name);
           });
         } else {

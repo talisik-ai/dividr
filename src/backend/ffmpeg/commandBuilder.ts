@@ -118,7 +118,7 @@ function getGapDuration(trackInfo: TrackInfo): number {
  */
 function calculateTrackDuration(
   trackInfo: TrackInfo,
-  defaultDuration: number = 1,
+  defaultDuration = 1,
 ): number {
   // If explicit duration is set, use it
   if (trackInfo.duration !== undefined) {
@@ -715,7 +715,7 @@ function processGapsInTimeline(
     const insertionResult = findGapInsertionPointInTimeline(
       processedSegments,
       gapStartTime,
-      timeline.timelineType,
+      // timeline.timelineType,
     );
 
     console.log(
@@ -723,7 +723,7 @@ function processGapsInTimeline(
     );
 
     let insertIndex = insertionResult.insertIndex;
-    let newSegments: ProcessedTimelineSegment[] = [];
+    const newSegments: ProcessedTimelineSegment[] = [];
 
     // Handle segment splitting if necessary
     if (insertionResult.splitSegment) {
@@ -866,7 +866,6 @@ function splitSegmentAtTime(
 function findGapInsertionPointInTimeline(
   segments: ProcessedTimelineSegment[],
   gapStartTime: number,
-  timelineType: 'video' | 'audio',
 ): {
   insertIndex: number;
   segmentIndex?: number;
@@ -939,7 +938,7 @@ function findFileIndexForSegment(
   }
 
   // Strategy 1: Look for exact originalIndex match
-  let fileIndex = inputs.find(
+  const fileIndex = inputs.find(
     (vi) => vi.originalIndex === segment.originalIndex,
   )?.fileIndex;
 
@@ -1007,7 +1006,7 @@ function buildSeparateTimelineFilterComplex(
 
   // Process video timeline segments IN ORDER
   videoTimeline.segments.forEach((segment, segmentIndex) => {
-    const { input: trackInfo, originalIndex, timelineType } = segment;
+    const { input: trackInfo } = segment;
 
     console.log(
       `🎬 Processing video segment ${segmentIndex}: ${trackInfo.path} [${segment.startTime.toFixed(2)}s-${segment.endTime.toFixed(2)}s]`,
@@ -1089,7 +1088,7 @@ function buildSeparateTimelineFilterComplex(
 
   // Process audio timeline segments IN ORDER
   audioTimeline.segments.forEach((segment, segmentIndex) => {
-    const { input: trackInfo, originalIndex, timelineType } = segment;
+    const { input: trackInfo } = segment;
 
     console.log(
       `🎵 Processing audio segment ${segmentIndex}: ${trackInfo.path} [${segment.startTime.toFixed(2)}s-${segment.endTime.toFixed(2)}s]`,
@@ -1190,6 +1189,7 @@ function isAudioGap(trackInfo: TrackInfo): boolean {
   return isGapInput(trackInfo.path) && trackInfo.gapType === 'audio';
 }
 
+// TODO: DELETE IF NOT NEEDED
 /**
  * Enhanced gap video filter creation that handles both video and audio gaps
  */
@@ -1347,6 +1347,7 @@ function buildConcatFilter(
   return concatFilter + ';' + finalVideoFilter + ';' + finalAudioFilter;
 }
 
+// TODO: DELETE IF NOT NEEDED
 /**
  * Builds filter complex for single gap input
  * @param duration - Duration of the gap
@@ -1395,6 +1396,7 @@ function interleaveInputsForConcat(
 // Workflow Handlers
 // -------------------------
 
+// TODO: DELETE IF NOT NEEDED
 /**
  * Handles concatenation workflow with multiple inputs
  * @param job - Video edit job
@@ -1562,6 +1564,7 @@ function handleConcatenationWorkflow(
   }
 }
 
+// TODO: DELETE IF NOT NEEDEDs
 /**
  * Handles single input workflow
  * @param job - Video edit job
@@ -1680,6 +1683,7 @@ function handleSingleInputWorkflow(job: VideoEditJob, cmd: CommandParts): void {
   }
 }
 
+// TODO: DELETE IF NOT NEEDED
 /**
  * Handles multiple inputs without concatenation
  * @param job - Video edit job
@@ -1899,6 +1903,8 @@ export function buildFfmpegCommand(
   console.log('Full FFmpeg Command:', ['ffmpeg', ...cmd.args].join(' '));
   return cmd.args;
 }
+
+// TODO: DELETE IF NOT NEEDED
 // -------------------------
 // Helpers
 // -------------------------

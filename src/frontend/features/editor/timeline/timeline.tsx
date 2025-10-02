@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { cn } from '@/frontend/utils/utils';
 import React, {
   useCallback,

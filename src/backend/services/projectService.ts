@@ -1,13 +1,13 @@
 import {
   isValidProject,
-  ProjectData,
-  ProjectExportData,
-  ProjectSummary,
-  projectToSummary,
   PROJECT_DB_NAME,
   PROJECT_DB_VERSION,
   PROJECT_STORE_NAME,
   PROJECT_VERSION,
+  ProjectData,
+  ProjectExportData,
+  ProjectSummary,
+  projectToSummary,
 } from '@/shared/types/project.types';
 
 export class ProjectService {

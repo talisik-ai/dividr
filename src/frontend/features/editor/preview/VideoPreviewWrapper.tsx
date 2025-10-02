@@ -124,4 +124,4 @@ const VideoDirectErrorBoundary: React.FC<{
 };
 
 // Export both components for direct usage if needed
-export { VideoPreview, VideoBlobPreview };
+export { VideoBlobPreview, VideoPreview };
