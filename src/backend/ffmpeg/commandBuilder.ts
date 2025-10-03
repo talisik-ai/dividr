@@ -833,10 +833,6 @@ function buildSeparateTimelineFilterComplex(
   videoTimeline.segments.forEach((segment, segmentIndex) => {
     const { input: trackInfo, originalIndex, timelineType } = segment;
 
-    console.log(
-      `🎬 Processing video segment ${segmentIndex}: ${trackInfo.path} [${segment.startTime.toFixed(2)}s-${segment.endTime.toFixed(2)}s]`,
-    );
-
     if (isGapInput(trackInfo.path)) {
       // Video gap - create black video
       const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
@@ -870,21 +866,14 @@ function buildSeparateTimelineFilterComplex(
           inputStreamRef: `[${fileIndex}:v]`,
         };
 
-        console.log(`🎬 Created video context:`, context);
-
         const trimResult = createVideoTrimFilters(context);
-        console.log(`🎬 Video trim result:`, trimResult);
 
         if (trimResult.filters.length > 0) {
           videoFilters.push(...trimResult.filters);
-          console.log(
-            `🎬 Added ${trimResult.filters.length} video trim filters`,
-          );
         }
 
         // Apply FPS normalization if needed
         let videoStreamRef = trimResult.filterRef;
-        console.log(`🎬 Initial video stream ref: ${videoStreamRef}`);
 
         if (job.operations.normalizeFrameRate) {
           const targetFps =
@@ -894,15 +883,11 @@ function buildSeparateTimelineFilterComplex(
             videoStreamRef,
             targetFps,
           );
-          console.log(`🎬 FPS normalization result:`, fpsResult);
           videoFilters.push(...fpsResult.filters);
           videoStreamRef = fpsResult.filterRef;
-          console.log(`🎬 After FPS normalization: ${videoStreamRef}`);
         }
 
         videoConcatInputs.push(videoStreamRef);
-        console.log(`🎬 Added video concat input: ${videoStreamRef}`);
-        console.log(`🎬 Current video concat inputs:`, videoConcatInputs);
       } else {
         console.warn(
           `❌ Could not find file index for video segment ${segmentIndex}`,
@@ -948,15 +933,9 @@ function buildSeparateTimelineFilterComplex(
           inputStreamRef: `[${fileIndex}:a]`,
         };
 
-        console.log(`🎵 Created audio context:`, context);
-
         const trimResult = createAudioTrimFilters(context);
-        console.log(`🎵 Audio trim result:`, trimResult);
-
         audioFilters.push(...trimResult.filters);
         audioConcatInputs.push(trimResult.filterRef);
-        console.log(`🎵 Added audio concat input: ${trimResult.filterRef}`);
-        console.log(`🎵 Current audio concat inputs:`, audioConcatInputs);
       } else {
         console.warn(
           `❌ Could not find file index for audio segment ${segmentIndex}`,
@@ -1013,11 +992,6 @@ function buildSeparateTimelineFilterComplex(
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
 
   const filterComplex = allFilters.join(';');
-
-  console.log('🎛️ Final Filter Complex Structure:');
-  console.log('Video concat inputs:', videoConcatInputs);
-  console.log('Audio concat inputs:', audioConcatInputs);
-  console.log('Filter complex:', filterComplex);
 
   return filterComplex;
 }
@@ -1162,28 +1136,6 @@ function handleTimelineProcessing(
 
   // Categorize inputs for file indexing
   const categorizedInputs = categorizeInputs(job.inputs);
-
-  console.log('🔍 Categorized Inputs Debug:');
-  console.log(
-    'Video Inputs:',
-    categorizedInputs.videoInputs.map((vi) => ({
-      originalIndex: vi.originalIndex,
-      fileIndex: vi.fileIndex,
-      path: vi.trackInfo.path,
-      startTime: vi.trackInfo.startTime,
-      duration: vi.trackInfo.duration,
-    })),
-  );
-  console.log(
-    'Audio Inputs:',
-    categorizedInputs.audioInputs.map((ai) => ({
-      originalIndex: ai.originalIndex,
-      fileIndex: ai.fileIndex,
-      path: ai.trackInfo.path,
-      startTime: ai.trackInfo.startTime,
-      duration: ai.trackInfo.duration,
-    })),
-  );
 
   return { finalVideoTimeline, finalAudioTimeline, categorizedInputs };
 }
@@ -1497,7 +1449,6 @@ export async function testExportErrorScenario() {
   const filterIndex = command.indexOf('-filter_complex');
   if (filterIndex !== -1 && filterIndex + 1 < command.length) {
     const filterComplex = command[filterIndex + 1];
-    console.log('🎛️ Filter Complex:', filterComplex);
 
     // Check for proper video/audio interleaving
     if (
