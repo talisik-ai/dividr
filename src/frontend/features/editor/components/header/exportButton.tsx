@@ -284,7 +284,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
           normalizeFrameRate: trackInfos.length > 1,
           subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined, // FFmpeg will look for this file
           textStyle: currentTextStyle,
-          useHardwareAcceleration: true, 
+          useHardwareAcceleration: false, 
           hwaccelType: 'auto', // Auto-detect best available hardware acceleration
           preferHEVC: false, // Use H.264 (set to true for H.265/HEVC)
         },
