@@ -105,36 +105,6 @@ async function initializeFfmpegPaths() {
     }
   }
 
-  // Method 2: Try system FFmpeg as fallback
-  if (!ffmpegPath && !app.isPackaged) {
-    try {
-      console.log('🔄 Attempting system FFmpeg fallback...');
-      const { execSync } = require('child_process');
-      const systemFfmpeg = execSync('which ffmpeg', { encoding: 'utf8' }).trim();
-      
-      if (systemFfmpeg && require('fs').existsSync(systemFfmpeg)) {
-        // Check if system FFmpeg is recent enough (5.0+)
-        const versionOutput = execSync(`${systemFfmpeg} -version`, { encoding: 'utf8' });
-        const versionMatch = versionOutput.match(/ffmpeg version (\d+)\.(\d+)/);
-        
-        if (versionMatch) {
-          const major = parseInt(versionMatch[1]);
-          const minor = parseInt(versionMatch[2]);
-          
-          if (major >= 5) {
-            ffmpegPath = systemFfmpeg;
-            console.log('✅ FFmpeg resolved via system:', ffmpegPath);
-            console.log(`ℹ️  Version ${major}.${minor}`);
-          } else {
-            console.log(`⚠️ System FFmpeg version ${major}.${minor} is too old (need 5.0+), skipping`);
-          }
-        }
-      }
-    } catch (error) {
-      console.log('⚠️ System FFmpeg not available:', error.message);
-    }
-  }
-
   // Method 2: Try ffmpeg-static 5.2.0 as fallback (software encoding only)
   if (!ffmpegPath && !app.isPackaged) {
     try {
@@ -171,31 +141,9 @@ async function initializeFfmpegPaths() {
     }
   }
 
-  // Method 3: Try @ffmpeg-installer/ffmpeg (old 2018 build, last resort)
-  if (!ffmpegPath && !app.isPackaged) {
-    try {
-      console.log('🔄 Attempting @ffmpeg-installer/ffmpeg (last resort)...');
-
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-      const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-      if (ffmpegInstaller?.path) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-        const fs = require('fs');
-        if (fs.existsSync(ffmpegInstaller.path)) {
-          ffmpegPath = ffmpegInstaller.path;
-          console.log('✅ FFmpeg resolved via @ffmpeg-installer:', ffmpegPath);
-          console.log('⚠️  Warning: This is a 2018 build with limited hardware acceleration');
-        } else {
-          console.log('⚠️ @ffmpeg-installer returned invalid path:', ffmpegInstaller.path);
-        }
-      }
-    } catch (installerError) {
-      console.log('⚠️ @ffmpeg-installer not available:', installerError.message);
-    }
-  } else if (!ffmpegPath) {
-    console.log(
-      '🚫 Skipping require methods for packaged app - using manual resolution',
-    );
+  // Log if no FFmpeg found yet
+  if (!ffmpegPath) {
+    console.log('⚠️ No FFmpeg binary found in standard locations');
   }
 
   // FFprobe require method (only for development, same issue as ffmpeg)
