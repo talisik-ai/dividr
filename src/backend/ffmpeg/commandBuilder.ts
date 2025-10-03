@@ -1223,7 +1223,7 @@ function handlePreset(
 
   cmd.args.push('-preset', job.operations.preset);
   cmd.args.push('-crf', '29');
-  cmd.args.push('-b:a', '96k');
+  cmd.args.push('-b:a', '128k');
 
   console.log(`🚀 Applied software encoding preset: ${job.operations.preset}`);
 }
@@ -1233,7 +1233,6 @@ function handlePreset(
  */
 function handleThreads(job: VideoEditJob, cmd: CommandParts): void {
   cmd.args.push('-threads', String(job.operations.threads));
-  cmd.args.push('-movflags', '+faststart');
 
   console.log(`🚀 Applied thread limit: ${job.operations.threads}`);
 }
@@ -1278,12 +1277,6 @@ export async function buildFfmpegCommand(
   if (hwAccel) {
     console.log(`🎮 Hardware acceleration detected: ${hwAccel.type.toUpperCase()}`);
     console.log('ℹ️  Using hardware encoding only (software decoding for compatibility)');
-    
-    // Initialize hardware device for VAAPI
-    if (hwAccel.type === 'vaapi') {
-      console.log('🎮 Initializing VAAPI hardware device');
-      cmd.args.push('-init_hw_device', `vaapi=va:${hwAccel.hwaccelDevice || '/dev/dri/renderD128'}`);
-    }
   }
 
   // Step 1: Add file inputs
