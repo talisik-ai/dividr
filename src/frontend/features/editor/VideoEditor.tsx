@@ -1,7 +1,7 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback } from 'react';
 import { VideoPreviewWrapper } from './preview/VideoPreviewWrapper';
-import { useVideoEditorStore } from './stores/VideoEditorStore';
+import { useVideoEditorStore } from './stores/videoEditor/index';
 
 interface VideoEditorProps {
   className?: string;

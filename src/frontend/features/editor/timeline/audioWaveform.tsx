@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useVideoEditorStore, VideoTrack } from '../stores/VideoEditorStore';
+import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 
 // Debounce utility for performance optimization
 const useDebounce = <T,>(value: T, delay: number): T => {

@@ -11,7 +11,7 @@ import { useCallback, useState } from 'react';
 import {
   useTimelineUtils,
   useVideoEditorStore,
-} from '../../editor/stores/VideoEditorStore';
+} from '../../editor/stores/videoEditor/index';
 import { RenderState } from '../components/renderProcessDialog';
 
 export const useExportHandler = () => {

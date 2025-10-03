@@ -1,4 +1,4 @@
-import { useVideoEditorStore } from '@/frontend/features/editor/stores/VideoEditorStore';
+import { useVideoEditorStore } from '@/frontend/features/editor/stores/videoEditor/index';
 import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
 import { useEffect } from 'react';
 

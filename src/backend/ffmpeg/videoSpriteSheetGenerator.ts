@@ -1,4 +1,4 @@
-import { VideoTrack } from '../../frontend/features/editor/stores/VideoEditorStore';
+import { VideoTrack } from '@/frontend/features/editor/stores/videoEditor/index';
 
 export interface SpriteSheetOptions {
   videoPath: string;
@@ -478,7 +478,7 @@ export class VideoSpriteSheetGenerator {
         //const selectFilter = frameNumbers
         //  .map((frame) => `eq(n\\,${frame})`)
         //  .join('+');
-        const framesPerSheet = optimalCols * optimalRows;
+        // const framesPerSheet = optimalCols * optimalRows;
         //const sheetDuration = framesPerSheet * intervalSeconds;
         //const startTime = sheetIndex * sheetDuration;
 

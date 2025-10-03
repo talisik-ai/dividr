@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useVideoEditorStore, VideoTrack } from '../stores/VideoEditorStore';
+import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { ProjectThumbnailSetter } from './projectThumbnailSetter';
 import { TimelineControls } from './timelineControls';
 import { TimelinePlayhead } from './timelinePlayhead';

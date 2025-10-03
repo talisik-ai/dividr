@@ -6,7 +6,7 @@ import {
   SNAP_THRESHOLD,
   useVideoEditorStore,
   VideoTrack,
-} from '../stores/VideoEditorStore';
+} from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { TrackContextMenu } from './trackContextMenu';
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';

@@ -6,7 +6,7 @@ import {
   PreviewState,
   TimelineState,
   VideoTrack,
-} from '@/frontend/features/editor/stores/VideoEditorStore';
+} from '@/frontend/features/editor/stores/videoEditor/index';
 
 // Project persistence types
 export interface ProjectData {

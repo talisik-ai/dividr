@@ -5,7 +5,7 @@ import {
 import {
   useVideoEditorStore,
   VideoTrack,
-} from '@/frontend/features/editor/stores/VideoEditorStore';
+} from '@/frontend/features/editor/stores/videoEditor/index';
 import React, {
   useCallback,
   useEffect,

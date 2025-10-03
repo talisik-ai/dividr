@@ -7,7 +7,7 @@ import { useCallback } from 'react';
 import {
   useVideoEditorStore,
   VideoTrack,
-} from '../../editor/stores/VideoEditorStore';
+} from '../../editor/stores/videoEditor/index';
 import { generateSubtitleContent } from '../utils/subtitleUtils';
 
 export const useExportJob = () => {

@@ -1,6 +1,6 @@
 import { cn } from '@/frontend/utils/utils';
 import React from 'react';
-import { useVideoEditorStore } from '../../../stores/VideoEditorStore';
+import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { BasePanel } from '../basePanel';
 import { CustomPanelProps } from '../panelRegistry';
 

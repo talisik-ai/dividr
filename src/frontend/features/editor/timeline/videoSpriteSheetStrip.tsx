@@ -11,7 +11,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useVideoEditorStore, VideoTrack } from '../stores/VideoEditorStore';
+import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 
 const useDebounce = <T,>(value: T, delay: number): T => {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);

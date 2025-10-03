@@ -2,7 +2,7 @@ import { Button } from '@/frontend/components/ui/button';
 import { cn } from '@/frontend/utils/utils';
 import { Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
-import { useVideoEditorStore, VideoTrack } from '../stores/VideoEditorStore';
+import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { TRACK_ROWS, TrackRowDefinition } from './timelineTracks';
 
 interface TrackControllerRowProps {

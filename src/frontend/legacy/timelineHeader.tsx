@@ -1,5 +1,5 @@
 import React from 'react';
-import { useVideoEditorStore } from '../features/editor/stores/VideoEditorStore';
+import { useVideoEditorStore } from '../features/editor/stores/videoEditor/index';
 
 export const TimelineHeader: React.FC = React.memo(() => {
   const { timeline, setZoom, setFps } = useVideoEditorStore();

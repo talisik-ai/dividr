@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 
+// --
 export interface VideoTrack {
   id: string;
   type: 'video' | 'audio' | 'image' | 'subtitle';
@@ -34,6 +35,7 @@ export interface VideoTrack {
   isLinked?: boolean; // Whether this track is part of a video/audio pair
 }
 
+// --
 export interface TimelineState {
   currentFrame: number;
   totalFrames: number;
@@ -48,6 +50,7 @@ export interface TimelineState {
   isSplitModeActive: boolean;
 }
 
+// --
 export interface PlaybackState {
   isPlaying: boolean;
   isLooping: boolean;
@@ -56,6 +59,7 @@ export interface PlaybackState {
   muted: boolean;
 }
 
+// --
 export interface PreviewState {
   canvasWidth: number;
   canvasHeight: number;
@@ -65,6 +69,7 @@ export interface PreviewState {
   backgroundColor: string;
 }
 
+// --
 export interface RenderState {
   isRendering: boolean;
   progress: number;
@@ -77,6 +82,7 @@ export interface RenderState {
   };
 }
 
+// --
 export interface MediaLibraryItem {
   id: string;
   name: string;
@@ -139,6 +145,7 @@ export interface MediaLibraryItem {
   };
 }
 
+// --
 export interface TextStyleState {
   activeStyle: string;
   styles: {
@@ -1472,6 +1479,7 @@ export const useTimelineUtils = () => {
 
   return { getTimelineGaps };
 };
+
 export const useVideoEditorStore = create<VideoEditorStore>()(
   subscribeWithSelector((set, get) => ({
     // Initial State

@@ -3,7 +3,7 @@ import New from '@/frontend/assets/logo/New-Light.svg';
 import { useTheme } from '@/frontend/providers/ThemeProvider';
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useVideoEditorStore, VideoTrack } from '../stores/VideoEditorStore';
+import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 
 interface VideoBlobPreviewProps {
   className?: string;

@@ -1,4 +1,4 @@
-import { VideoTrack } from '@/frontend/features/editor/stores/VideoEditorStore';
+import { VideoTrack } from '@/frontend/features/editor/stores/videoEditor/index';
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useMemo } from 'react';
 

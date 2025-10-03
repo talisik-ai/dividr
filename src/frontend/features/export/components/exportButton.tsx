@@ -7,7 +7,7 @@ import { Button } from '@/frontend/components/ui/button';
 import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
 import { Upload } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
-import { useVideoEditorStore } from '../../editor/stores/VideoEditorStore';
+import { useVideoEditorStore } from '../../editor/stores/videoEditor/index';
 import { useTimelineDuration } from '../../editor/timeline/hooks/useTimelineDuration';
 import { ExportModal } from '../../export/ExportModal';
 import { RenderProcessDialog } from '../components/renderProcessDialog';

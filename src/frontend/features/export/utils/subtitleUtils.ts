@@ -10,7 +10,7 @@ import {
 import {
   useVideoEditorStore,
   VideoTrack,
-} from '../../editor/stores/VideoEditorStore';
+} from '../../editor/stores/videoEditor/index';
 
 interface SubtitleGenerationResult {
   subtitleContent: string;

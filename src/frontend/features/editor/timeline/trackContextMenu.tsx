@@ -16,7 +16,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import React, { memo, useCallback, useMemo } from 'react';
-import { useVideoEditorStore, VideoTrack } from '../stores/VideoEditorStore';
+import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 
 interface TrackContextMenuProps {
   track: VideoTrack;

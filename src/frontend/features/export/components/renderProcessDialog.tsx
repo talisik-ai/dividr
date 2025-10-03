@@ -213,7 +213,7 @@ export const RenderProcessDialog: React.FC<RenderProcessDialogProps> = ({
 
   return (
     <AlertDialog open={isOpen} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="sm:max-w-md">
+      <AlertDialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         {renderContent()}
       </AlertDialogContent>
     </AlertDialog>

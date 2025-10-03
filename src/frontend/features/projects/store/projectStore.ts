@@ -7,7 +7,7 @@ import {
 } from '@/shared/types/project.types';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import { useVideoEditorStore } from '../../editor/stores/VideoEditorStore';
+import { useVideoEditorStore } from '../../editor/stores/videoEditor/index';
 
 // Current project state
 interface ProjectStore {
@@ -401,7 +401,7 @@ export const useProjectStore = create<ProjectStore>()(
       });
 
       // Also reset VideoEditorStore
-      import('../../editor/stores/VideoEditorStore').then(
+      import('../../editor/stores/videoEditor/index').then(
         ({ useVideoEditorStore }) => {
           const videoEditorStore = useVideoEditorStore.getState();
           videoEditorStore.reset();

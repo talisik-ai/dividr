@@ -1,7 +1,7 @@
 import {
   TimelineState,
   VideoTrack,
-} from '../../frontend/features/editor/stores/VideoEditorStore';
+} from '@/frontend/features/editor/stores/videoEditor/index';
 
 export interface SubtitleSegment {
   startTime: number; // in seconds

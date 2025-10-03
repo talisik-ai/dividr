@@ -30,7 +30,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useVideoEditorStore } from '../stores/VideoEditorStore';
+import { useVideoEditorStore } from '../stores/videoEditor/index';
 
 // Throttle utility for zoom operations to prevent lag
 const useThrottledCallback = <T extends (...args: any[]) => void>(

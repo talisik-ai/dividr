@@ -20,7 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { useVideoEditorStore } from '../../../stores/VideoEditorStore';
+import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { BasePanel } from '../basePanel';
 import { CustomPanelProps } from '../panelRegistry';
 

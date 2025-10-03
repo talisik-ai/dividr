@@ -2,7 +2,7 @@
 import { motion } from 'framer-motion';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaSquarePlus } from 'react-icons/fa6';
-import { useVideoEditorStore } from '../stores/VideoEditorStore';
+import { useVideoEditorStore } from '../stores/videoEditor/index';
 
 // Custom debounce and throttle utilities to avoid external dependencies
 const debounce = <T extends (...args: unknown[]) => unknown>(
