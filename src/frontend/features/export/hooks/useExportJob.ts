@@ -12,6 +12,7 @@ import { generateSubtitleContent } from '../utils/subtitleUtils';
 
 export const useExportJob = () => {
   const tracks = useVideoEditorStore((state) => state.tracks);
+  const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
   const timelineFps = useVideoEditorStore((state) => state.timeline.fps);
   const textStyle = useVideoEditorStore((state) => state.textStyle);
   const getTextStyleForSubtitle = useVideoEditorStore(
@@ -64,7 +65,11 @@ export const useExportJob = () => {
       }
 
       // Convert tracks to FFmpeg input format
-      const trackInfos = convertTracksToFFmpegInputs(sortedTracks, timelineFps);
+      const trackInfos = convertTracksToFFmpegInputs(
+        sortedTracks,
+        timelineFps,
+        mediaLibrary,
+      );
 
       // Generate subtitle content if needed
       const { subtitleContent, currentTextStyle } = generateSubtitleContent(
@@ -94,7 +99,7 @@ export const useExportJob = () => {
         videoDimensions,
       };
     },
-    [tracks, timelineFps, textStyle, getTextStyleForSubtitle],
+    [tracks, mediaLibrary, timelineFps, textStyle, getTextStyleForSubtitle],
   );
 
   return { createFFmpegJob };
@@ -188,6 +193,13 @@ function processLinkedTracks(
 function convertTracksToFFmpegInputs(
   tracks: VideoTrack[],
   timelineFps: number,
+  mediaLibrary: {
+    id: string;
+    type: string;
+    source: string;
+    tempFilePath?: string;
+    extractedAudio?: { audioPath: string };
+  }[],
 ): TrackInfo[] {
   return tracks.map((track) => {
     const trackDurationSeconds = track.duration / timelineFps;
@@ -197,13 +209,40 @@ function convertTracksToFFmpegInputs(
       `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
     );
 
-    return {
+    // For video tracks that are NOT muted, check if there's extracted audio available
+    let audioPath: string | undefined = undefined;
+
+    if (track.type === 'video' && !track.muted) {
+      // Find the media library item for this video track
+      const mediaItem = mediaLibrary.find(
+        (item) =>
+          item.type === 'video' &&
+          (item.source === track.source || item.tempFilePath === track.source),
+      );
+
+      // If we found the media item and it has extracted audio, use it
+      if (mediaItem?.extractedAudio?.audioPath) {
+        audioPath = mediaItem.extractedAudio.audioPath;
+        console.log(
+          `🎵 Using extracted audio for video track "${track.name}": ${audioPath}`,
+        );
+      } else {
+        console.log(
+          `⚠️ No extracted audio found for video track "${track.name}", FFmpeg will extract from video file`,
+        );
+      }
+    }
+
+    const trackInfo: TrackInfo = {
       path: track.source,
+      audioPath: audioPath, // Separate audio path if available
       startTime: sourceStartTime,
       duration: Math.max(0.033, trackDurationSeconds),
       muted: track.muted || false,
       trackType: track.type,
       visible: track.visible,
     };
+
+    return trackInfo;
   });
 }

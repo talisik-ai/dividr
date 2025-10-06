@@ -239,6 +239,29 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
           // Use the existing file index for this file
           fileIndex = filePathToIndex.get(path) ?? -1;
         }
+
+        // If this video has a separate audio file, add it to the file index
+        if (trackInfo.audioPath && !addedFiles.has(trackInfo.audioPath)) {
+          const audioFileIndex = fileInputIndex;
+          filePathToIndex.set(trackInfo.audioPath, audioFileIndex);
+          addedFiles.add(trackInfo.audioPath);
+          fileInputIndex++;
+
+          // Create a modified trackInfo with the audio file index stored
+          const modifiedTrackInfo = { ...trackInfo, audioFileIndex };
+
+          videoInputs.push({
+            originalIndex,
+            fileIndex,
+            trackInfo: modifiedTrackInfo,
+            isGap: false,
+          });
+
+          console.log(
+            `📹 Video input ${originalIndex}: video file index ${fileIndex}, audio file index ${audioFileIndex}`,
+          );
+          return; // Early return to avoid duplicate push
+        }
       }
 
       videoInputs.push({
@@ -492,6 +515,23 @@ function buildSeparateTimelines(
       };
       videoSegments.push(segment);
       videoCurrentTime += duration;
+
+      // If this video has a separate audio file, create an audio segment for it
+      if (trackInfo.audioPath && !trackInfo.muted) {
+        const audioSegment: ProcessedTimelineSegment = {
+          input: trackInfo,
+          originalIndex,
+          startTime: audioCurrentTime,
+          duration,
+          endTime: audioCurrentTime + duration,
+          timelineType: 'audio',
+        };
+        audioSegments.push(audioSegment);
+        audioCurrentTime += duration;
+        console.log(
+          `🎵 Created audio timeline segment from separate audio file for video input ${originalIndex}`,
+        );
+      }
     }
 
     if (isAudio) {
@@ -771,11 +811,28 @@ function findFileIndexForSegment(
     segmentPath: segmentPath,
     segmentStart: segment.input.startTime,
     segmentDuration: segment.input.duration,
+    hasAudioPath: !!segment.input.audioPath,
   });
 
   // If it's a gap, no file index needed
   if (isGapInput(segmentPath)) {
     return undefined;
+  }
+
+  // Special handling for audio segments from video tracks with separate audio files
+  if (timelineType === 'audio' && segment.input.audioPath) {
+    // Look for the video input with this originalIndex
+    const videoInput = categorizedInputs.videoInputs.find(
+      (vi) => vi.originalIndex === segment.originalIndex,
+    );
+
+    if (videoInput && videoInput.trackInfo.audioFileIndex !== undefined) {
+      const audioFileIndex = videoInput.trackInfo.audioFileIndex;
+      console.log(
+        `✅ Found audio file index ${audioFileIndex} from video track's separate audio file`,
+      );
+      return audioFileIndex;
+    }
   }
 
   // Strategy 1: Look for exact originalIndex match
@@ -1089,12 +1146,28 @@ function createSingleTrackTrimFilters(
 
 /**
  * Adds file inputs to the command
+ * For video tracks with separate audio files, adds both the video and audio as inputs
  */
 function handleFileInputs(job: VideoEditJob, cmd: CommandParts): void {
+  const addedFiles = new Set<string>();
+
   job.inputs.forEach((input) => {
     const path = getInputPath(input);
+    const trackInfo = getTrackInfo(input);
+
     if (!isGapInput(path)) {
-      cmd.args.push('-i', escapePath(path));
+      // Add the main file (video or audio)
+      if (!addedFiles.has(path)) {
+        cmd.args.push('-i', escapePath(path));
+        addedFiles.add(path);
+      }
+
+      // If this is a video track with a separate audio file, add the audio file too
+      if (trackInfo.audioPath && !addedFiles.has(trackInfo.audioPath)) {
+        cmd.args.push('-i', escapePath(trackInfo.audioPath));
+        addedFiles.add(trackInfo.audioPath);
+        console.log(`🎵 Added separate audio input: ${trackInfo.audioPath}`);
+      }
     }
   });
 }

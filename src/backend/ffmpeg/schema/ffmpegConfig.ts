@@ -1,6 +1,7 @@
 export interface TrackInfo {
   path: string;
   audioPath?: string;
+  audioFileIndex?: number; // File index for the separate audio file (if audioPath is provided)
   startTime?: number; // in seconds
   duration?: number; // in seconds
   endTime?: number; // in seconds
@@ -60,7 +61,14 @@ export interface VideoEditJob {
     preset?: EncodingPreset; // FFmpeg encoding preset for speed/quality tradeoff
     threads?: number; // Limit used threads
     useHardwareAcceleration?: boolean; // Enable hardware acceleration if available
-    hwaccelType?: 'auto' | 'nvenc' | 'qsv' | 'amf' | 'videotoolbox' | 'vaapi' | 'none'; // Specific hardware type or auto-detect
+    hwaccelType?:
+      | 'auto'
+      | 'nvenc'
+      | 'qsv'
+      | 'amf'
+      | 'videotoolbox'
+      | 'vaapi'
+      | 'none'; // Specific hardware type or auto-detect
     preferHEVC?: boolean; // Prefer H.265/HEVC over H.264 if available
   };
   gaps?: TimelineGaps;
