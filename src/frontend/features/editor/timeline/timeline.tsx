@@ -615,70 +615,37 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           currentX,
           currentY,
         });
-      },
-      [marqueeSelection],
-    );
 
-    const handleMarqueeMouseUp = useCallback(
-      (e: MouseEvent) => {
-        if (
-          !marqueeSelection ||
-          !marqueeSelection.isActive ||
-          !tracksRef.current
-        )
-          return;
+        // Real-time selection: Update selected tracks as marquee moves
+        const left = Math.min(marqueeSelection.startX, currentX);
+        const right = Math.max(marqueeSelection.startX, currentX);
+        const top = Math.min(marqueeSelection.startY, currentY);
+        const bottom = Math.max(marqueeSelection.startY, currentY);
 
-        const rect = tracksRef.current.getBoundingClientRect();
-        const endX = e.clientX - rect.left + tracksRef.current.scrollLeft;
-        const endY = e.clientY - rect.top;
+        // Find tracks within current marquee bounds
+        const tracksInMarquee = findTracksInMarquee({
+          left,
+          top,
+          right,
+          bottom,
+        });
 
-        // Calculate marquee bounds
-        const left = Math.min(marqueeSelection.startX, endX);
-        const right = Math.max(marqueeSelection.startX, endX);
-        const top = Math.min(marqueeSelection.startY, endY);
-        const bottom = Math.max(marqueeSelection.startY, endY);
+        // Update selection in real-time
+        const isModifierPressed = e.shiftKey || e.ctrlKey || e.metaKey;
 
-        // Only perform selection if marquee has meaningful size (> 5px in any direction)
-        const width = right - left;
-        const height = bottom - top;
-
-        if (width > 5 || height > 5) {
-          // Find tracks within marquee
-          const tracksInMarquee = findTracksInMarquee({
-            left,
-            top,
-            right,
-            bottom,
-          });
-
-          if (tracksInMarquee.length > 0) {
-            // Handle modifier keys
-            const isModifierPressed =
-              (e as any).shiftKey || (e as any).ctrlKey || (e as any).metaKey;
-
-            if (isModifierPressed) {
-              // Add to existing selection or toggle
-              const newSelection = [...timeline.selectedTrackIds];
-              tracksInMarquee.forEach((id) => {
-                const index = newSelection.indexOf(id);
-                if (index >= 0) {
-                  // Toggle off if already selected
-                  newSelection.splice(index, 1);
-                } else {
-                  // Add to selection
-                  newSelection.push(id);
-                }
-              });
-              setSelectedTracks(newSelection);
-            } else {
-              // Replace selection
-              setSelectedTracks(tracksInMarquee);
+        if (isModifierPressed) {
+          // Add to existing selection (don't toggle during drag)
+          const newSelection = [...timeline.selectedTrackIds];
+          tracksInMarquee.forEach((id) => {
+            if (!newSelection.includes(id)) {
+              newSelection.push(id);
             }
-          }
+          });
+          setSelectedTracks(newSelection);
+        } else {
+          // Replace selection with tracks in marquee
+          setSelectedTracks(tracksInMarquee);
         }
-
-        // Clear marquee
-        setMarqueeSelection(null);
       },
       [
         marqueeSelection,
@@ -687,6 +654,15 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         setSelectedTracks,
       ],
     );
+
+    const handleMarqueeMouseUp = useCallback(() => {
+      if (!marqueeSelection || !marqueeSelection.isActive || !tracksRef.current)
+        return;
+
+      // Selection is already updated in real-time during mousemove
+      // Just clear the marquee visual
+      setMarqueeSelection(null);
+    }, [marqueeSelection]);
 
     // Marquee selection mouse event listeners
     useEffect(() => {
@@ -725,13 +701,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         }
       };
 
-      const handleGlobalMouseUp = (e: MouseEvent) => {
+      const handleGlobalMouseUp = () => {
         // Clear marquee start tracking
         marqueeStartRef.current = null;
 
         // Handle marquee end if active
         if (marqueeSelection?.isActive) {
-          handleMarqueeMouseUp(e);
+          handleMarqueeMouseUp();
         }
       };
 
