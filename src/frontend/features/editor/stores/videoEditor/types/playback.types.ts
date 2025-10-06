@@ -4,4 +4,6 @@ export interface PlaybackState {
   playbackRate: number;
   volume: number;
   muted: boolean;
+  isDraggingTrack: boolean;
+  wasPlayingBeforeDrag: boolean;
 }

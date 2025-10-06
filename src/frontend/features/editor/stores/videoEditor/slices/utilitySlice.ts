@@ -35,6 +35,8 @@ export const createUtilitySlice: StateCreator<
       playback: {
         isPlaying: false,
         isLooping: false,
+        isDraggingTrack: false,
+        wasPlayingBeforeDrag: false,
         ...DEFAULT_PLAYBACK_CONFIG,
       },
       preview: {

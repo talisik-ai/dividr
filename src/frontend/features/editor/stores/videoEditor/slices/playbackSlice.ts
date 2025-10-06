@@ -13,6 +13,8 @@ export interface PlaybackSlice {
   setVolume: (volume: number) => void;
   toggleMute: () => void;
   toggleLoop: () => void;
+  startDraggingTrack: () => void;
+  endDraggingTrack: () => void;
 }
 
 export const createPlaybackSlice: StateCreator<
@@ -24,6 +26,8 @@ export const createPlaybackSlice: StateCreator<
   playback: {
     isPlaying: false,
     isLooping: false,
+    isDraggingTrack: false,
+    wasPlayingBeforeDrag: false,
     ...DEFAULT_PLAYBACK_CONFIG,
   },
 
@@ -76,4 +80,32 @@ export const createPlaybackSlice: StateCreator<
     set((state: any) => ({
       playback: { ...state.playback, isLooping: !state.playback.isLooping },
     })),
+
+  startDraggingTrack: () =>
+    set((state: any) => {
+      const wasPlaying = state.playback.isPlaying;
+      console.log(`🎬 [DragState] Starting drag - wasPlaying: ${wasPlaying}`);
+      return {
+        playback: {
+          ...state.playback,
+          isDraggingTrack: true,
+          wasPlayingBeforeDrag: wasPlaying,
+          isPlaying: false, // Pause playback during drag
+        },
+      };
+    }),
+
+  endDraggingTrack: () =>
+    set((state: any) => {
+      const shouldResume = state.playback.wasPlayingBeforeDrag;
+      console.log(`🎬 [DragState] Ending drag - shouldResume: ${shouldResume}`);
+      return {
+        playback: {
+          ...state.playback,
+          isDraggingTrack: false,
+          isPlaying: shouldResume, // Resume if was playing before
+          wasPlayingBeforeDrag: false,
+        },
+      };
+    }),
 });

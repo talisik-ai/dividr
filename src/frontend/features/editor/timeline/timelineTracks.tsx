@@ -297,6 +297,11 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         // Don't handle right-clicks to allow context menu
         if (e.button === 2) return;
         e.stopPropagation();
+
+        // Start drag state in store (pauses playback if active)
+        const { startDraggingTrack } = useVideoEditorStore.getState();
+        startDraggingTrack();
+
         setIsDragging(true);
         setDragStart({
           x: e.clientX,
@@ -330,6 +335,11 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         if (isSplitModeActive) return;
         e.stopPropagation();
         e.preventDefault();
+
+        // Start drag state in store (pauses playback if active)
+        const { startDraggingTrack } = useVideoEditorStore.getState();
+        startDraggingTrack();
+
         setIsResizing(side);
         setDragStart({
           x: e.clientX,
@@ -510,6 +520,10 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     );
 
     const handleMouseUp = useCallback(() => {
+      // End drag state in store (resumes playback if was playing)
+      const { endDraggingTrack } = useVideoEditorStore.getState();
+      endDraggingTrack();
+
       setIsResizing(false);
       setIsDragging(false);
       setLastSnappedFrame(null);

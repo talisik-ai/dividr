@@ -54,6 +54,8 @@ export const createProjectSlice: StateCreator<
           ...state.playback,
           ...videoEditor.playback,
           isPlaying: false, // Always start paused when loading a project
+          isDraggingTrack: false, // Reset drag state when loading
+          wasPlayingBeforeDrag: false,
         },
         preview: { ...state.preview, ...videoEditor.preview },
         currentProjectId: projectId,
