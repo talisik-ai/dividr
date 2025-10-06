@@ -85,6 +85,9 @@ export const useExportJob = () => {
           normalizeFrameRate: trackInfos.length > 1,
           subtitles: subtitleContent ? 'temp_subtitles.ass' : undefined,
           textStyle: currentTextStyle,
+          useHardwareAcceleration: false,
+          hwaccelType: 'auto', // Auto-detect best available hardware acceleration
+          preferHEVC: false, // Use H.264 (set to true for H.265/HEVC)
         },
         subtitleContent,
         subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
