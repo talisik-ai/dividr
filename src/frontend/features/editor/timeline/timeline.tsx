@@ -1093,11 +1093,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 ))}
 
               {/* Marquee Selection Box */}
-              {marqueeSelection?.isActive && (
+              {marqueeSelection?.isActive && tracksRef.current && (
                 <div
                   className="absolute border-2 border-zinc-500 bg-zinc-500/20 dark:border-zinc-300 dark:bg-zinc-300/20 pointer-events-none z-[1000]"
                   style={{
-                    left: `${Math.min(marqueeSelection.startX, marqueeSelection.currentX)}px`,
+                    left: `${Math.min(marqueeSelection.startX, marqueeSelection.currentX) - timeline.scrollX}px`,
                     top: `${Math.min(marqueeSelection.startY, marqueeSelection.currentY)}px`,
                     width: `${Math.abs(marqueeSelection.currentX - marqueeSelection.startX)}px`,
                     height: `${Math.abs(marqueeSelection.currentY - marqueeSelection.startY)}px`,
