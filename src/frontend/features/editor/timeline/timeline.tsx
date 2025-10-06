@@ -15,6 +15,14 @@ import { TimelinePlayhead } from './timelinePlayhead';
 import { TimelineRuler } from './timelineRuler';
 import { TimelineTrackControllers } from './timelineTrackControllers';
 import { TimelineTracks } from './timelineTracks';
+import {
+  calculateFrameFromPosition,
+  handleTimelineMouseDown as centralizedHandleMouseDown,
+  ClickInfo,
+  findTrackAtPosition,
+  isContextMenuClick,
+  TimelineInteractionHandlers,
+} from './utils/timelineInteractionHandlers';
 
 interface TimelineProps {
   className?: string;
@@ -29,6 +37,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const playbackIntervalRef = useRef<number | null>(null);
     const lastFrameUpdateRef = useRef<number>(0);
     const isManualScrollingRef = useRef<boolean>(false);
+    const marqueeStartRef = useRef<{
+      x: number;
+      y: number;
+      hasMoved: boolean;
+    } | null>(null);
+    const lastClickTimeRef = useRef<number>(0);
+    const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [, setDropActive] = useState(false);
     const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
     const [splitIndicatorPosition, setSplitIndicatorPosition] = useState<
@@ -337,18 +352,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       return () => document.removeEventListener('keydown', handleKeyDown);
     }, [timeline.selectedTrackIds, removeSelectedTracks]);
 
-    // Marquee selection mouse event listeners
-    useEffect(() => {
-      if (marqueeSelection?.isActive) {
-        document.addEventListener('mousemove', handleMarqueeMouseMove);
-        document.addEventListener('mouseup', handleMarqueeMouseUp);
-        return () => {
-          document.removeEventListener('mousemove', handleMarqueeMouseMove);
-          document.removeEventListener('mouseup', handleMarqueeMouseUp);
-        };
-      }
-    }, [marqueeSelection]);
-
     // Cleanup timeouts and intervals on unmount
     useEffect(() => {
       return () => {
@@ -357,6 +360,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         }
         if (autoFollowTimeoutRef.current) {
           clearTimeout(autoFollowTimeoutRef.current);
+        }
+        if (clickTimeoutRef.current) {
+          clearTimeout(clickTimeoutRef.current);
         }
         if (playbackIntervalRef.current) {
           cancelAnimationFrame(playbackIntervalRef.current);
@@ -484,40 +490,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       }
     }, [playback.isPlaying]);
 
-    // Helper function to find which track is being hovered at a specific position
-    const findHoveredTrack = useCallback(
-      (clientX: number, clientY: number) => {
-        if (!tracksRef.current) return null;
-
-        const rect = tracksRef.current.getBoundingClientRect();
-        const x = clientX - rect.left + tracksRef.current.scrollLeft;
-        const y = clientY - rect.top;
-        const frame = Math.floor(x / frameWidth);
-
-        // Find which track row is being hovered based on Y position
-        const trackRowHeight = 48; // Approximate height of each track row
-        const rowIndex = Math.floor(y / trackRowHeight);
-
-        // Map row index to track type based on the TRACK_ROWS order
-        const trackTypes = ['subtitle', 'image', 'video', 'audio'];
-        const trackType = trackTypes[rowIndex] as VideoTrack['type'];
-
-        if (!trackType) return null;
-
-        // Find tracks of this type that intersect with the frame
-        const intersectingTracks = tracks.filter(
-          (track) =>
-            track.type === trackType &&
-            frame > track.startFrame &&
-            frame < track.endFrame,
-        );
-
-        // Return the first intersecting track, or null if none found
-        return intersectingTracks.length > 0 ? intersectingTracks[0] : null;
-      },
-      [frameWidth, tracks],
-    );
-
     // Helper function to find tracks within marquee selection
     const findTracksInMarquee = useCallback(
       (rect: { left: number; top: number; right: number; bottom: number }) => {
@@ -554,27 +526,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     );
 
     // Split mode handlers
-    const handleSplitClick = useCallback(
-      (e: React.MouseEvent) => {
-        if (!isSplitModeActive || !tracksRef.current) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        const hoveredTrackAtClick = findHoveredTrack(e.clientX, e.clientY);
-
-        if (!hoveredTrackAtClick) return;
-
-        const rect = tracksRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
-        const frame = Math.floor(x / frameWidth);
-
-        // Split only the hovered track (and its linked partners if any)
-        splitAtPosition(frame, hoveredTrackAtClick.id);
-      },
-      [isSplitModeActive, frameWidth, splitAtPosition, findHoveredTrack],
-    );
-
     const handleSplitMouseMove = useCallback(
       (e: React.MouseEvent) => {
         if (!isSplitModeActive || !tracksRef.current) {
@@ -585,7 +536,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           return;
         }
 
-        const hoveredTrackAtPosition = findHoveredTrack(e.clientX, e.clientY);
+        const hoveredTrackAtPosition = findTrackAtPosition(
+          e.clientX,
+          e.clientY,
+          tracksRef.current,
+          frameWidth,
+          tracks,
+        );
 
         if (hoveredTrackAtPosition) {
           const rect = tracksRef.current.getBoundingClientRect();
@@ -629,7 +586,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           setLinkedTrackIndicators([]);
         }
       },
-      [isSplitModeActive, frameWidth, findHoveredTrack, tracks],
+      [isSplitModeActive, frameWidth, tracks],
     );
 
     const handleSplitMouseLeave = useCallback(() => {
@@ -731,6 +688,63 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       ],
     );
 
+    // Marquee selection mouse event listeners
+    useEffect(() => {
+      const handleGlobalMouseMove = (e: MouseEvent) => {
+        // Handle active marquee movement first
+        if (marqueeSelection?.isActive) {
+          handleMarqueeMouseMove(e);
+          return;
+        }
+
+        // Check if we have a potential marquee start (not yet active)
+        if (
+          marqueeStartRef.current &&
+          !marqueeStartRef.current.hasMoved &&
+          tracksRef.current
+        ) {
+          const rect = tracksRef.current.getBoundingClientRect();
+          const currentX = e.clientX - rect.left + tracksRef.current.scrollLeft;
+          const currentY = e.clientY - rect.top;
+
+          // Check if mouse moved more than 5px (drag threshold)
+          const deltaX = Math.abs(currentX - marqueeStartRef.current.x);
+          const deltaY = Math.abs(currentY - marqueeStartRef.current.y);
+
+          if (deltaX > 5 || deltaY > 5) {
+            // User is dragging, activate marquee
+            marqueeStartRef.current.hasMoved = true;
+            setMarqueeSelection({
+              isActive: true,
+              startX: marqueeStartRef.current.x,
+              startY: marqueeStartRef.current.y,
+              currentX,
+              currentY,
+            });
+          }
+        }
+      };
+
+      const handleGlobalMouseUp = (e: MouseEvent) => {
+        // Clear marquee start tracking
+        marqueeStartRef.current = null;
+
+        // Handle marquee end if active
+        if (marqueeSelection?.isActive) {
+          handleMarqueeMouseUp(e);
+        }
+      };
+
+      if (marqueeSelection?.isActive || marqueeStartRef.current) {
+        document.addEventListener('mousemove', handleGlobalMouseMove);
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+        return () => {
+          document.removeEventListener('mousemove', handleGlobalMouseMove);
+          document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+      }
+    }, [marqueeSelection, handleMarqueeMouseMove, handleMarqueeMouseUp]);
+
     // Helper functions to get track row positions
     const getTrackRowTop = useCallback((trackType: string) => {
       const trackRowHeight = 48; // Height of each track row
@@ -743,99 +757,189 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       return 48; // Standard track row height
     }, []);
 
-    // Add this helper function near the top of the Timeline component
-    const isContextMenuClick = (target: EventTarget | null): boolean => {
-      if (!target || !(target instanceof Element)) return false;
-      // Check if the click is within a context menu
-      return (
-        target.closest('[role="menu"]') !== null ||
-        target.closest('[data-radix-context-menu-content]') !== null
-      );
-    };
+    // Centralized interaction handlers
+    const interactionHandlers: TimelineInteractionHandlers = useMemo(
+      () => ({
+        onSeek: (frame: number) => {
+          const currentTime = Date.now();
+          const timeSinceLastClick = currentTime - lastClickTimeRef.current;
+          const DOUBLE_CLICK_THRESHOLD = 400; // ms - increased for easier double-clicking
 
-    // Then update the handleMouseDown function:
+          // Clear any pending seek
+          if (clickTimeoutRef.current) {
+            clearTimeout(clickTimeoutRef.current);
+            clickTimeoutRef.current = null;
+          }
+
+          // Check if this is a double-click
+          if (
+            timeSinceLastClick < DOUBLE_CLICK_THRESHOLD &&
+            timeSinceLastClick > 0
+          ) {
+            // Double-click detected - don't seek, just prepare for marquee
+            lastClickTimeRef.current = 0; // Reset to prevent triple-click issues
+            return;
+          }
+
+          // Update last click time
+          lastClickTimeRef.current = currentTime;
+
+          // Delay the seek to allow double-click detection (CapCut-style)
+          clickTimeoutRef.current = setTimeout(() => {
+            // Double-check that marquee wasn't activated in the meantime
+            if (marqueeSelection?.isActive) {
+              return; // Don't seek if marquee is active
+            }
+
+            const clampedFrame = Math.max(
+              0,
+              Math.min(frame, effectiveEndFrame - 1),
+            );
+            pause();
+            isManualScrollingRef.current = true;
+            setAutoFollowEnabled(false);
+            lastFrameUpdateRef.current = clampedFrame;
+            setCurrentFrame(clampedFrame);
+
+            setTimeout(() => {
+              setAutoFollowEnabled(true);
+              isManualScrollingRef.current = false;
+            }, 200);
+          }, 250); // Increased delay for better double-click detection
+        },
+        onStartMarquee: (
+          startX: number,
+          startY: number,
+          clearSelection: boolean,
+        ) => {
+          const currentTime = Date.now();
+          const timeSinceLastClick = currentTime - lastClickTimeRef.current;
+          const DOUBLE_CLICK_THRESHOLD = 400; // ms - matches seek threshold
+
+          // On double-click, activate marquee immediately
+          if (
+            timeSinceLastClick < DOUBLE_CLICK_THRESHOLD &&
+            timeSinceLastClick > 0
+          ) {
+            // This is the second click of a double-click
+            // Activate marquee immediately for double-click
+            setMarqueeSelection({
+              isActive: true,
+              startX,
+              startY,
+              currentX: startX,
+              currentY: startY,
+            });
+            marqueeStartRef.current = { x: startX, y: startY, hasMoved: true };
+
+            if (clearSelection) {
+              setSelectedTracks([]);
+            }
+            return;
+          }
+
+          // Store the start position but don't activate marquee yet
+          // Marquee will activate only if user drags (mousemove)
+          marqueeStartRef.current = { x: startX, y: startY, hasMoved: false };
+
+          if (clearSelection) {
+            setSelectedTracks([]);
+          }
+        },
+        onSelectTrack: () => {
+          // This is handled by the track component itself
+          // We just need to ensure it doesn't conflict with other interactions
+        },
+        onStartDrag: () => {
+          // Drag is handled by the track component
+        },
+        onStartResize: () => {
+          // Resize is handled by the track component
+        },
+        onSplit: (frame: number, trackId: string) => {
+          splitAtPosition(frame, trackId);
+        },
+      }),
+      [
+        effectiveEndFrame,
+        pause,
+        setCurrentFrame,
+        setSelectedTracks,
+        splitAtPosition,
+      ],
+    );
+
+    // Centralized mouse down handler
     const handleMouseDown = useCallback(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
 
-        // Ignore right-clicks - they're for context menus only
-        if (e.button === 2) return;
-
-        // NEW: Ignore clicks from context menu interactions
+        // Check for context menu clicks
         if (isContextMenuClick(e.target)) {
           e.stopPropagation();
-          return;
-        }
-
-        // If in split mode, handle split click instead of seeking
-        if (isSplitModeActive) {
-          handleSplitClick(e);
           return;
         }
 
         const rect = tracksRef.current.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;
+        const scrollLeft = tracksRef.current.scrollLeft;
 
-        // Check if clicking on an empty area (not on a track)
-        const clickedTrack = findHoveredTrack(e.clientX, e.clientY);
-
-        if (!clickedTrack) {
-          // Start marquee selection on empty area
-          const scrollLeft = tracksRef.current.scrollLeft;
-          setMarqueeSelection({
-            isActive: true,
-            startX: clickX + scrollLeft,
-            startY: clickY,
-            currentX: clickX + scrollLeft,
-            currentY: clickY,
-          });
-
-          // If no modifier key, clear selection
-          if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
-            setSelectedTracks([]);
-          }
-
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-
-        // Calculate and apply seek immediately (only when clicking on tracks or ruler)
-        const x = e.clientX - rect.left + tracksRef.current.scrollLeft;
-        const frame = Math.floor(x / frameWidth);
-        const clampedFrame = Math.max(
-          0,
-          Math.min(frame, effectiveEndFrame - 1),
+        // Determine what was clicked
+        const clickedTrack = findTrackAtPosition(
+          e.clientX,
+          e.clientY,
+          tracksRef.current,
+          frameWidth,
+          tracks,
+        );
+        const frame = calculateFrameFromPosition(
+          e.clientX,
+          tracksRef.current,
+          frameWidth,
+          effectiveEndFrame - 1,
         );
 
-        // INSTANT seek - no delays
-        pause();
-        isManualScrollingRef.current = true;
-        setAutoFollowEnabled(false);
+        const clickInfo: ClickInfo = {
+          target: clickedTrack ? 'track' : 'empty-space',
+          button: e.button,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          frame,
+          trackId: clickedTrack?.id,
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          metaKey: e.metaKey,
+        };
 
-        lastFrameUpdateRef.current = clampedFrame;
-        setCurrentFrame(clampedFrame);
+        // Add position info for marquee
+        (clickInfo as any).startX = clickX + scrollLeft;
+        (clickInfo as any).startY = clickY;
 
-        // Re-enable auto-follow after a short delay
-        setTimeout(() => {
-          setAutoFollowEnabled(true);
-          isManualScrollingRef.current = false;
-        }, 200);
+        const timelineState = {
+          isSplitModeActive,
+          tracks,
+        };
 
-        e.preventDefault();
-        e.stopPropagation();
+        const result = centralizedHandleMouseDown(
+          clickInfo,
+          timelineState,
+          interactionHandlers,
+        );
+
+        if (result.shouldStopPropagation) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
       },
       [
-        isSplitModeActive,
-        handleSplitClick,
+        tracksRef,
         frameWidth,
+        tracks,
         effectiveEndFrame,
-        setCurrentFrame,
-        pause,
-        playback.isPlaying,
-        findHoveredTrack,
-        setSelectedTracks,
+        isSplitModeActive,
+        interactionHandlers,
       ],
     );
 
