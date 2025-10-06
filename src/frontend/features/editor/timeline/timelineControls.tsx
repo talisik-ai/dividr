@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Button } from '@/frontend/components/ui/button';
-import ElasticSlider from '@/frontend/components/ui/elastic-slider';
 import {
   Select,
   SelectContent,
@@ -8,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/frontend/components/ui/select';
+import { Slider } from '@/frontend/components/ui/slider';
 import {
   CopyPlus,
   Link,
@@ -388,18 +388,18 @@ const ZoomSlider: React.FC = React.memo(() => {
   );
 
   return (
-    <ElasticSlider
-      leftIcon={<ZoomOut className="translate scale-x-[-1]" size={16} />}
-      rightIcon={<ZoomIn className="translate scale-x-[-1]" size={16} />}
-      startingValue={0.2}
-      defaultValue={localZoom}
-      maxValue={10}
-      showLabel={false}
-      thickness={4}
-      isStepped={true}
-      stepSize={0.1}
-      onChange={handleZoomChange}
-    />
+    <div className="flex items-center gap-2 w-48">
+      <ZoomOut className="scale-x-[-1] text-muted-foreground" size={16} />
+      <Slider
+        value={[localZoom]}
+        onValueChange={(values) => handleZoomChange(values[0])}
+        min={0.2}
+        max={10}
+        step={0.1}
+        className="flex-1"
+      />
+      <ZoomIn className="scale-x-[-1] text-muted-foreground" size={16} />
+    </div>
   );
 });
 
