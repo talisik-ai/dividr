@@ -12,7 +12,7 @@ export interface MediaLibrarySlice {
   generatingSpriteSheets: Set<string>;
   generatingWaveforms: Set<string>;
   addToMediaLibrary: (item: Omit<MediaLibraryItem, 'id'>) => string;
-  removeFromMediaLibrary: (mediaId: string) => void;
+  removeFromMediaLibrary: (mediaId: string, force?: boolean) => void;
   updateMediaLibraryItem: (
     mediaId: string,
     updates: Partial<MediaLibraryItem>,
@@ -37,6 +37,7 @@ export interface MediaLibrarySlice {
   // State management helpers
   markUnsavedChanges?: () => void;
   updateTrack?: (trackId: string, updates: any) => void;
+  removeTrack?: (trackId: string) => void;
 }
 
 export const createMediaLibrarySlice: StateCreator<
@@ -66,14 +67,62 @@ export const createMediaLibrarySlice: StateCreator<
     return id;
   },
 
-  removeFromMediaLibrary: (mediaId) => {
+  removeFromMediaLibrary: (mediaId, force = false) => {
+    const state = get() as any;
+    const mediaItem = state.mediaLibrary?.find(
+      (item: MediaLibraryItem) => item.id === mediaId,
+    );
+
+    if (!mediaItem) {
+      console.warn(`Media item ${mediaId} not found`);
+      return;
+    }
+
+    // Find all tracks that use this media (by source or tempFilePath)
+    const affectedTracks = state.tracks?.filter(
+      (track: any) =>
+        track.source === mediaItem.source ||
+        track.source === mediaItem.tempFilePath ||
+        (mediaItem.extractedAudio &&
+          track.source === mediaItem.extractedAudio.audioPath),
+    );
+
+    if (affectedTracks && affectedTracks.length > 0) {
+      if (!force) {
+        // Prevent deletion and throw error for UI to handle
+        console.log(
+          `🚫 Cannot delete media "${mediaItem.name}" - it's used by ${affectedTracks.length} track(s) on the timeline`,
+        );
+        console.log(
+          'Affected tracks:',
+          affectedTracks.map((t: any) => t.name),
+        );
+
+        throw new Error(
+          `Cannot delete "${mediaItem.name}" - it's currently used by ${affectedTracks.length} track(s) on the timeline. Please remove the tracks first.`,
+        );
+      } else {
+        // Force delete: cascade remove all affected tracks
+        console.log(
+          `⚠️ Force deleting media "${mediaItem.name}" and removing ${affectedTracks.length} track(s) from timeline`,
+        );
+
+        affectedTracks.forEach((track: any) => {
+          console.log(`  - Removing track: ${track.name}`);
+          state.removeTrack?.(track.id);
+        });
+      }
+    }
+
+    // Safe to delete - no tracks are using this media (or we force deleted them)
+    console.log(`🗑️ Deleting media from library: ${mediaItem.name}`);
+
     set((state: any) => ({
       mediaLibrary: state.mediaLibrary.filter(
         (item: MediaLibraryItem) => item.id !== mediaId,
       ),
     }));
 
-    const state = get() as any;
     state.markUnsavedChanges?.();
   },
 

@@ -1,3 +1,12 @@
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/frontend/components/ui/alert-dialog';
 import { Badge } from '@/frontend/components/ui/badge';
 import { Button } from '@/frontend/components/ui/button';
 import {
@@ -92,6 +101,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
     const [draggedMediaId, setDraggedMediaId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Alert dialog state for deletion errors
+    const [deleteError, setDeleteError] = useState<{
+      show: boolean;
+      message: string;
+      mediaId?: string;
+    }>({ show: false, message: '' });
+
     // Handle drag events
     const handleDrag = useCallback((e: React.DragEvent) => {
       e.preventDefault();
@@ -167,8 +183,27 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
 
     const removeFile = useCallback(
       (id: string) => {
-        // Remove from media library
-        removeFromMediaLibrary(id);
+        try {
+          // Try to remove from media library
+          removeFromMediaLibrary(id);
+        } catch (error) {
+          // Show error dialog if media is in use
+          if (error instanceof Error) {
+            setDeleteError({
+              show: true,
+              message: error.message,
+              mediaId: id,
+            });
+          } else {
+            setDeleteError({
+              show: true,
+              message:
+                'Failed to delete media. It may be in use on the timeline.',
+              mediaId: id,
+            });
+          }
+          console.error('Failed to remove media:', error);
+        }
       },
       [removeFromMediaLibrary],
     );
@@ -670,68 +705,93 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = React.memo(
     );
 
     return (
-      <BasePanel
-        title="Your uploads"
-        description="Import and manage media files"
-        className={className}
-      >
-        <div className="flex flex-col h-full gap-4">
-          {/* Upload Button */}
-          <Button
-            onClick={async () => {
-              const result = await importMediaFromDialog();
-              if (result.success && result.importedFiles.length > 0) {
-                console.log(
-                  `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
-                );
-              }
-            }}
-            className="w-full"
-          >
-            Upload Files
-            <Download />
-          </Button>
+      <>
+        <BasePanel
+          title="Your uploads"
+          description="Import and manage media files"
+          className={className}
+        >
+          <div className="flex flex-col h-full gap-4">
+            {/* Upload Button */}
+            <Button
+              onClick={async () => {
+                const result = await importMediaFromDialog();
+                if (result.success && result.importedFiles.length > 0) {
+                  console.log(
+                    `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
+                  );
+                }
+              }}
+              className="w-full"
+            >
+              Upload Files
+              <Download />
+            </Button>
 
-          {/* Tab Navigation and Content */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Tabs defaultValue="all" className="flex-1 gap-4 flex flex-col">
-              <TabsList variant="text" className="w-full justify-start">
-                <TabsTrigger value="all" variant="text">
-                  All
-                </TabsTrigger>
-                <TabsTrigger value="videos" variant="text">
-                  Videos
-                </TabsTrigger>
-                <TabsTrigger value="audio" variant="text">
-                  Audio
-                </TabsTrigger>
-                <TabsTrigger value="images" variant="text">
-                  Images
-                </TabsTrigger>
-                <TabsTrigger value="subtitles" variant="text">
-                  Subtitles
-                </TabsTrigger>
-              </TabsList>
+            {/* Tab Navigation and Content */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <Tabs defaultValue="all" className="flex-1 gap-4 flex flex-col">
+                <TabsList variant="text" className="w-full justify-start">
+                  <TabsTrigger value="all" variant="text">
+                    All
+                  </TabsTrigger>
+                  <TabsTrigger value="videos" variant="text">
+                    Videos
+                  </TabsTrigger>
+                  <TabsTrigger value="audio" variant="text">
+                    Audio
+                  </TabsTrigger>
+                  <TabsTrigger value="images" variant="text">
+                    Images
+                  </TabsTrigger>
+                  <TabsTrigger value="subtitles" variant="text">
+                    Subtitles
+                  </TabsTrigger>
+                </TabsList>
 
-              <TabsContent value="all" className="flex-1 overflow-hidden">
-                {getTabContent('all')}
-              </TabsContent>
-              <TabsContent value="videos" className="flex-1 overflow-hidden">
-                {getTabContent('videos')}
-              </TabsContent>
-              <TabsContent value="audio" className="flex-1 overflow-hidden">
-                {getTabContent('audio')}
-              </TabsContent>
-              <TabsContent value="images" className="flex-1 overflow-hidden">
-                {getTabContent('images')}
-              </TabsContent>
-              <TabsContent value="subtitles" className="flex-1 overflow-hidden">
-                {getTabContent('subtitles')}
-              </TabsContent>
-            </Tabs>
+                <TabsContent value="all" className="flex-1 overflow-hidden">
+                  {getTabContent('all')}
+                </TabsContent>
+                <TabsContent value="videos" className="flex-1 overflow-hidden">
+                  {getTabContent('videos')}
+                </TabsContent>
+                <TabsContent value="audio" className="flex-1 overflow-hidden">
+                  {getTabContent('audio')}
+                </TabsContent>
+                <TabsContent value="images" className="flex-1 overflow-hidden">
+                  {getTabContent('images')}
+                </TabsContent>
+                <TabsContent
+                  value="subtitles"
+                  className="flex-1 overflow-hidden"
+                >
+                  {getTabContent('subtitles')}
+                </TabsContent>
+              </Tabs>
+            </div>
           </div>
-        </div>
-      </BasePanel>
+        </BasePanel>
+
+        {/* Error Alert Dialog */}
+        <AlertDialog
+          open={deleteError.show}
+          onOpenChange={(open) =>
+            setDeleteError({ show: open, message: '', mediaId: undefined })
+          }
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cannot Delete Media</AlertDialogTitle>
+              <AlertDialogDescription>
+                {deleteError.message}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>OK</AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
     );
   },
   (prevProps, nextProps) => {

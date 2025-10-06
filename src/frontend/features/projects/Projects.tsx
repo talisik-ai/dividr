@@ -1,5 +1,15 @@
 import NewDark from '@/frontend/assets/logo/New-Dark.svg';
 import New from '@/frontend/assets/logo/New-Light.svg';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/frontend/components/ui/alert-dialog';
 import { Button } from '@/frontend/components/ui/button';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
 import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
@@ -45,6 +55,13 @@ const Projects = () => {
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(
     new Set(),
   );
+
+  // Alert dialog state for project deletion
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    show: boolean;
+    projectId: string | null;
+    projectName: string;
+  }>({ show: false, projectId: null, projectName: '' });
 
   // Get current view mode from layout store
   const { viewMode, isGridView } = useLayout();
@@ -118,18 +135,25 @@ const Projects = () => {
   };
 
   const handleDeleteProject = async (id: string) => {
-    if (
-      window.confirm(
-        'Are you sure you want to delete this project? This action cannot be undone.',
-      )
-    ) {
-      try {
-        await deleteProject(id);
-        toast.success('Project deleted successfully!');
-      } catch (error) {
-        console.error('Failed to delete project:', error);
-        toast.error('Failed to delete project');
-      }
+    const project = projects.find((p) => p.id === id);
+    setDeleteConfirm({
+      show: true,
+      projectId: id,
+      projectName: project?.title || 'this project',
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm.projectId) return;
+
+    try {
+      await deleteProject(deleteConfirm.projectId);
+      toast.success('Project deleted successfully!');
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      toast.error('Failed to delete project');
+    } finally {
+      setDeleteConfirm({ show: false, projectId: null, projectName: '' });
     }
   };
 
@@ -324,6 +348,34 @@ const Projects = () => {
           )}
         </div>
       </ScrollArea>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={deleteConfirm.show}
+        onOpenChange={(open) =>
+          setDeleteConfirm({ show: open, projectId: null, projectName: '' })
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteConfirm.projectName}"?
+              This action cannot be undone and will permanently remove all
+              project data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Project
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
