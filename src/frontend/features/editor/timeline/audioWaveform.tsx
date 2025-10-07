@@ -9,23 +9,6 @@ import React, {
 } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 
-// Debounce utility for performance optimization
-const useDebounce = <T,>(value: T, delay: number): T => {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-};
-
 interface AudioWaveformProps {
   track: VideoTrack;
   frameWidth: number;
@@ -44,16 +27,14 @@ interface ResampledWaveform {
 export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
   ({ track, frameWidth, width, height, zoomLevel }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [lastRenderedFrame, setLastRenderedFrame] = useState<number>(-1);
+    const progressOverlayRef = useRef<HTMLDivElement>(null);
     const [lastRenderedZoom, setLastRenderedZoom] = useState<number>(0);
 
     // Cache resampled waveforms per zoom level
     const resampledCache = useRef<Map<string, ResampledWaveform>>(new Map());
 
-    const currentFrame = useVideoEditorStore(
-      (state) => state.timeline.currentFrame,
-    );
-    const debouncedCurrentFrame = useDebounce(currentFrame, 16);
+    // CRITICAL: Do NOT subscribe to currentFrame here to prevent re-renders
+    // Progress updates are handled via direct DOM manipulation below
 
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
@@ -439,24 +420,23 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       [track.id, zoomLevel],
     );
 
-    // Draw waveform with multi-resolution rendering
+    // Draw static waveform (renders both base and progress layers once)
     const drawWaveform = useCallback(() => {
-      const canvas = canvasRef.current;
-      if (!canvas || !waveformData) return;
+      const baseCanvas = canvasRef.current;
+      const progressCanvas =
+        progressOverlayRef.current?.querySelector('canvas');
+      if (!baseCanvas || !progressCanvas || !waveformData) return;
 
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      const baseCtx = baseCanvas.getContext('2d');
+      const progressCtx = progressCanvas.getContext('2d');
+      if (!baseCtx || !progressCtx) return;
 
       const { peaks } = waveformData;
       if (!peaks || peaks.length === 0) return;
 
-      const currentFrame = debouncedCurrentFrame;
       const zoomChanged = Math.abs(zoomLevel - lastRenderedZoom) > 0.01;
       const shouldRedraw =
-        lastRenderedFrame !== currentFrame ||
-        zoomChanged ||
-        canvas.width === 0 ||
-        canvas.height === 0;
+        zoomChanged || baseCanvas.width === 0 || baseCanvas.height === 0;
 
       if (!shouldRedraw) return;
 
@@ -465,15 +445,22 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       const safeWidth = Math.min(width * dpr, maxCanvasSize);
       const safeHeight = Math.min(height * dpr, maxCanvasSize);
 
-      canvas.width = safeWidth;
-      canvas.height = safeHeight;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
+      // Setup both canvases
+      [baseCanvas, progressCanvas].forEach((canvas) => {
+        canvas.width = safeWidth;
+        canvas.height = safeHeight;
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+      });
 
       const scaleX = safeWidth / width;
       const scaleY = safeHeight / height;
-      ctx.scale(scaleX, scaleY);
-      ctx.clearRect(0, 0, width, height);
+
+      baseCtx.scale(scaleX, scaleY);
+      progressCtx.scale(scaleX, scaleY);
+
+      baseCtx.clearRect(0, 0, width, height);
+      progressCtx.clearRect(0, 0, width, height);
 
       const trackDurationInFrames = trackMetrics.durationFrames;
       const displayWidth = Math.min(width, trackDurationInFrames * frameWidth);
@@ -487,16 +474,8 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       const progressStackedColor = 'rgba(161, 94, 253, 1)';
       const backgroundColor = 'rgba(156, 163, 175, 0.1)';
 
-      ctx.fillStyle = backgroundColor;
-      ctx.fillRect(0, 0, width, height);
-
-      // Calculate progress position
-      let progressPosition = 0;
-      if (currentFrame >= track.startFrame && currentFrame < track.endFrame) {
-        const trackFrame = currentFrame - track.startFrame;
-        progressPosition = trackFrame * frameWidth;
-        progressPosition = Math.min(progressPosition, displayWidth);
-      }
+      baseCtx.fillStyle = backgroundColor;
+      baseCtx.fillRect(0, 0, width, height);
 
       const calculateStackedPercentage = (
         peak: number,
@@ -519,7 +498,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       const barWidth = Math.max(1, Math.min(3, pixelsPerSample));
       const barSpacing = barWidth > 2 ? 0.5 : 0;
 
-      // Render waveform bars
+      // Render waveform on both canvases (base and progress versions)
       for (let i = 0; i < resampledPeaks.length; i++) {
         const peak = Math.max(0, Math.min(1, resampledPeaks[i]));
         const barHeight = peak * maxBarHeight;
@@ -532,12 +511,10 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         const stackedHeight = barHeight * stackedPercentage;
         const baseHeight = barHeight - stackedHeight;
 
-        const isInProgress = x <= progressPosition;
-
-        // Draw base gray bar
+        // Draw base (unprogressed) waveform
         if (baseHeight > 0) {
-          ctx.fillStyle = isInProgress ? progressBaseColor : baseBarColor;
-          ctx.fillRect(
+          baseCtx.fillStyle = baseBarColor;
+          baseCtx.fillRect(
             x,
             height - baseHeight,
             barWidth - barSpacing,
@@ -545,10 +522,30 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
           );
         }
 
-        // Draw purple stacked portion
         if (stackedHeight > 0) {
-          ctx.fillStyle = isInProgress ? progressStackedColor : stackedBarColor;
-          ctx.fillRect(
+          baseCtx.fillStyle = stackedBarColor;
+          baseCtx.fillRect(
+            x,
+            height - baseHeight - stackedHeight,
+            barWidth - barSpacing,
+            stackedHeight,
+          );
+        }
+
+        // Draw progress (brighter) waveform on overlay canvas
+        if (baseHeight > 0) {
+          progressCtx.fillStyle = progressBaseColor;
+          progressCtx.fillRect(
+            x,
+            height - baseHeight,
+            barWidth - barSpacing,
+            baseHeight,
+          );
+        }
+
+        if (stackedHeight > 0) {
+          progressCtx.fillStyle = progressStackedColor;
+          progressCtx.fillRect(
             x,
             height - baseHeight - stackedHeight,
             barWidth - barSpacing,
@@ -557,7 +554,6 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         }
       }
 
-      setLastRenderedFrame(currentFrame);
       setLastRenderedZoom(zoomLevel);
     }, [
       waveformData,
@@ -566,8 +562,6 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       frameWidth,
       track,
       trackMetrics.durationFrames,
-      debouncedCurrentFrame,
-      lastRenderedFrame,
       zoomLevel,
       lastRenderedZoom,
       getResampledWaveform,
@@ -576,6 +570,39 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     React.useEffect(() => {
       drawWaveform();
     }, [drawWaveform]);
+
+    // CRITICAL: Subscribe to playback updates outside React render cycle
+    // This updates the progress overlay via direct DOM manipulation
+    React.useEffect(() => {
+      const unsubscribe = useVideoEditorStore.subscribe(
+        (state) => state.timeline.currentFrame,
+        (currentFrame) => {
+          const overlay = progressOverlayRef.current;
+          if (!overlay) return;
+
+          // Calculate progress position
+          let progressPosition = 0;
+          if (
+            currentFrame >= track.startFrame &&
+            currentFrame < track.endFrame
+          ) {
+            const trackFrame = currentFrame - track.startFrame;
+            progressPosition = trackFrame * frameWidth;
+            const trackDurationInFrames = track.endFrame - track.startFrame;
+            const displayWidth = Math.min(
+              width,
+              trackDurationInFrames * frameWidth,
+            );
+            progressPosition = Math.min(progressPosition, displayWidth);
+          }
+
+          // Update overlay width via direct DOM manipulation (no React re-render)
+          overlay.style.width = `${progressPosition}px`;
+        },
+      );
+
+      return () => unsubscribe();
+    }, [track.startFrame, track.endFrame, frameWidth, width]);
 
     const handleCanvasClick = useCallback(
       (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -641,15 +668,28 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         className="relative bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden"
         style={{ width, height }}
       >
+        {/* Static waveform canvas - never re-renders during playback */}
         <canvas
           ref={canvasRef}
           className="w-full h-full"
           onClick={handleCanvasClick}
         />
 
+        {/* Progress overlay - updated via direct DOM manipulation (no React re-render) */}
+        <div
+          ref={progressOverlayRef}
+          className="absolute top-0 left-0 h-full pointer-events-none overflow-hidden"
+          style={{
+            width: '0px',
+            willChange: 'width',
+          }}
+        >
+          <canvas className="w-full h-full" />
+        </div>
+
         {height <= 26 && (
           <div
-            className="absolute bottom-0 left-1 text-[8px] text-white font-bold pointer-events-none"
+            className="absolute bottom-0 left-1 text-[8px] text-white font-bold pointer-events-none z-10"
             style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
           >
             {track.name.replace(/\.[^/.]+$/, '').substring(0, 12)}
