@@ -6,10 +6,11 @@ export interface VideoTrack {
   previewUrl?: string;
   originalFile?: File;
   tempFilePath?: string;
-  duration: number;
+  duration: number; // Current visible duration in frames (timeline length)
+  sourceDuration?: number; // Original source media duration in frames (for trimming boundaries)
   startFrame: number;
   endFrame: number;
-  sourceStartTime?: number;
+  sourceStartTime?: number; // in seconds - where in the source file this track segment starts (trim in-point)
   offsetX?: number;
   offsetY?: number;
   width?: number;

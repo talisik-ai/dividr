@@ -399,12 +399,22 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               ),
             );
             onResize(newStartFrame, undefined);
+
+            // Real-time preview update during left trim (CapCut behavior)
+            // Update playhead to show the new in-point
+            const { setCurrentFrame } = useVideoEditorStore.getState();
+            setCurrentFrame(newStartFrame);
           } else if (isResizing === 'right') {
             const newEndFrame = Math.max(
               dragStart.startFrame + 1,
               dragStart.endFrame + deltaFrames,
             );
             onResize(undefined, newEndFrame);
+
+            // Real-time preview update during right trim (CapCut behavior)
+            // Update playhead to show the new out-point
+            const { setCurrentFrame } = useVideoEditorStore.getState();
+            setCurrentFrame(Math.max(dragStart.startFrame, newEndFrame - 1));
           } else if (isDragging) {
             const newStartFrame = Math.max(
               0,

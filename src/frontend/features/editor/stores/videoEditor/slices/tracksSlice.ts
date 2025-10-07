@@ -9,6 +9,139 @@ import {
   getTrackColor,
 } from '../utils/trackHelpers';
 
+/**
+ * CapCut-style non-destructive trimming helper
+ * Clamps track resizing within the original source media boundaries
+ *
+ * FIXED: Prevents resize actions from converting to drag actions when
+ * reaching trim boundaries by maintaining original timeline positions
+ * when source boundaries are hit.
+ */
+const resizeTrackWithTrimming = (
+  track: VideoTrack,
+  newStartFrame: number | undefined,
+  newEndFrame: number | undefined,
+  fps: number,
+): VideoTrack => {
+  const currentStartFrame = track.startFrame;
+  const currentEndFrame = track.endFrame;
+  const currentSourceStartTime = track.sourceStartTime || 0;
+
+  // Use sourceDuration if available, otherwise fall back to current duration
+  const sourceDurationFrames = track.sourceDuration || track.duration;
+  const sourceDurationSeconds = sourceDurationFrames / fps;
+
+  // Calculate the current source end time
+  const currentSourceEndTime =
+    currentSourceStartTime + (currentEndFrame - currentStartFrame) / fps;
+
+  // Determine the new timeline positions
+  const updatedStartFrame = newStartFrame ?? currentStartFrame;
+  const updatedEndFrame = newEndFrame ?? currentEndFrame;
+
+  // Calculate how much we're trimming from each side (in frames)
+  const leftTrimFrames = updatedStartFrame - currentStartFrame;
+  const rightTrimFrames = currentEndFrame - updatedEndFrame;
+
+  // Calculate new source start time (trimming from left moves in-point forward)
+  let newSourceStartTime = currentSourceStartTime;
+  if (newStartFrame !== undefined) {
+    newSourceStartTime = currentSourceStartTime + leftTrimFrames / fps;
+  }
+
+  // Calculate new source end time (trimming from right moves out-point backward)
+  let newSourceEndTime = currentSourceEndTime;
+  if (newEndFrame !== undefined) {
+    newSourceEndTime = currentSourceEndTime - rightTrimFrames / fps;
+  }
+
+  // CRITICAL: Clamp to source media boundaries (CapCut behavior)
+  // The in-point cannot go before 0
+  newSourceStartTime = Math.max(0, newSourceStartTime);
+  // The out-point cannot exceed the source duration
+  newSourceEndTime = Math.min(sourceDurationSeconds, newSourceEndTime);
+
+  // Ensure we don't have negative or zero duration
+  if (newSourceEndTime <= newSourceStartTime) {
+    // Prevent invalid state - maintain at least 1 frame
+    newSourceEndTime = newSourceStartTime + 1 / fps;
+  }
+
+  // Calculate the final duration in frames
+  const newDurationSeconds = newSourceEndTime - newSourceStartTime;
+  const newDurationFrames = Math.round(newDurationSeconds * fps);
+
+  // Calculate final timeline positions
+  // If trimming from left, the start frame changes
+  // If trimming from right, the end frame changes
+  let finalStartFrame = updatedStartFrame;
+  let finalEndFrame = updatedEndFrame;
+
+  // Check if we hit source boundaries and need to adjust timeline positions
+  // Use a small epsilon to account for floating point precision
+  const epsilon = 0.001;
+  const hitLeftBoundary =
+    newStartFrame !== undefined && newSourceStartTime <= epsilon;
+  const hitRightBoundary =
+    newEndFrame !== undefined &&
+    Math.abs(newSourceEndTime - sourceDurationSeconds) <= epsilon;
+
+  // Only adjust timeline positions if we hit boundaries
+  if (hitLeftBoundary && newStartFrame !== undefined) {
+    // We hit the left boundary, so the start frame is clamped to the original position
+    // and we adjust the end frame to maintain the new duration
+    finalStartFrame = currentStartFrame;
+    finalEndFrame = finalStartFrame + newDurationFrames;
+  } else if (hitRightBoundary && newEndFrame !== undefined) {
+    // We hit the right boundary, so the end frame is clamped to the original position
+    // and we adjust the start frame to maintain the new duration
+    finalEndFrame = currentEndFrame;
+    finalStartFrame = finalEndFrame - newDurationFrames;
+  } else {
+    // No boundary hit, use the normal logic
+    if (newStartFrame !== undefined) {
+      finalEndFrame = finalStartFrame + newDurationFrames;
+    } else if (newEndFrame !== undefined) {
+      finalStartFrame = finalEndFrame - newDurationFrames;
+    }
+  }
+
+  // Ensure minimum track length (1 frame)
+  if (finalEndFrame <= finalStartFrame) {
+    finalEndFrame = finalStartFrame + 1;
+  }
+
+  console.log(`[Trim] ${track.name}:`, {
+    timeline: {
+      old: `${currentStartFrame} → ${currentEndFrame}`,
+      new: `${finalStartFrame} → ${finalEndFrame}`,
+    },
+    source: {
+      oldStart: currentSourceStartTime.toFixed(3),
+      newStart: newSourceStartTime.toFixed(3),
+      oldEnd: currentSourceEndTime.toFixed(3),
+      newEnd: newSourceEndTime.toFixed(3),
+      duration: sourceDurationSeconds.toFixed(3),
+    },
+    trim: {
+      leftFrames: leftTrimFrames,
+      rightFrames: rightTrimFrames,
+    },
+    boundaries: {
+      hitLeft: hitLeftBoundary,
+      hitRight: hitRightBoundary,
+    },
+  });
+
+  return {
+    ...track,
+    startFrame: finalStartFrame,
+    endFrame: finalEndFrame,
+    duration: newDurationFrames,
+    sourceStartTime: newSourceStartTime,
+  };
+};
+
 export interface TracksSlice {
   tracks: VideoTrack[];
   addTrack: (track: Omit<VideoTrack, 'id'>) => Promise<string>;
@@ -81,6 +214,7 @@ export const createTracksSlice: StateCreator<
         startFrame: videoStartFrame,
         endFrame: videoStartFrame + duration,
         sourceStartTime: trackData.sourceStartTime || 0,
+        sourceDuration: duration, // Store original duration for trimming boundaries
         color: getTrackColor(state.tracks.length),
         muted: false,
         linkedTrackId: audioId,
@@ -103,6 +237,7 @@ export const createTracksSlice: StateCreator<
         startFrame: audioStartFrame,
         endFrame: audioStartFrame + duration,
         sourceStartTime: trackData.sourceStartTime || 0,
+        sourceDuration: duration, // Store original duration for trimming boundaries
         color: getTrackColor(state.tracks.length + 1),
         muted: false,
         linkedTrackId: id,
@@ -138,6 +273,7 @@ export const createTracksSlice: StateCreator<
         startFrame,
         endFrame: startFrame + duration,
         sourceStartTime: trackData.sourceStartTime || 0,
+        sourceDuration: duration, // Store original duration for trimming boundaries
         color: getTrackColor(state.tracks.length),
         muted: trackData.type === 'audio' ? false : undefined,
       };
@@ -416,31 +552,30 @@ export const createTracksSlice: StateCreator<
         (t: VideoTrack) => t.id === trackId,
       );
 
+      if (!trackToResize) return state;
+
       return {
         tracks: state.tracks.map((track: VideoTrack) => {
           if (track.id === trackId) {
-            const updatedStartFrame = newStartFrame || track.startFrame;
-            const updatedEndFrame = newEndFrame || track.endFrame;
-            return {
-              ...track,
-              startFrame: updatedStartFrame,
-              endFrame: updatedEndFrame,
-              duration: updatedEndFrame - updatedStartFrame,
-            };
+            return resizeTrackWithTrimming(
+              track,
+              newStartFrame,
+              newEndFrame,
+              state.timeline.fps,
+            );
           }
 
+          // Handle linked track resizing
           if (
             trackToResize?.isLinked &&
             track.id === trackToResize.linkedTrackId
           ) {
-            const updatedStartFrame = newStartFrame || track.startFrame;
-            const updatedEndFrame = newEndFrame || track.endFrame;
-            return {
-              ...track,
-              startFrame: updatedStartFrame,
-              endFrame: updatedEndFrame,
-              duration: updatedEndFrame - updatedStartFrame,
-            };
+            return resizeTrackWithTrimming(
+              track,
+              newStartFrame,
+              newEndFrame,
+              state.timeline.fps,
+            );
           }
           return track;
         }),
@@ -475,6 +610,7 @@ export const createTracksSlice: StateCreator<
           startFrame: originalTrack.endFrame,
           endFrame: originalTrack.endFrame + duration,
           linkedTrackId: newLinkedId,
+          sourceDuration: originalTrack.sourceDuration, // Preserve source duration
         };
 
         const duplicatedLinkedTrack: VideoTrack = {
@@ -484,6 +620,7 @@ export const createTracksSlice: StateCreator<
           startFrame: linkedTrack.endFrame,
           endFrame: linkedTrack.endFrame + duration,
           linkedTrackId: newId,
+          sourceDuration: linkedTrack.sourceDuration, // Preserve source duration
         };
 
         set((state: any) => ({
@@ -497,6 +634,7 @@ export const createTracksSlice: StateCreator<
         name: `${originalTrack.name} Copy`,
         startFrame: originalTrack.endFrame,
         endFrame: originalTrack.endFrame + duration,
+        sourceDuration: originalTrack.sourceDuration, // Preserve source duration
       };
 
       set((state: any) => ({
@@ -521,6 +659,7 @@ export const createTracksSlice: StateCreator<
       endFrame: frame,
       duration: frame - track.startFrame,
       sourceStartTime: originalSourceStartTime,
+      sourceDuration: track.sourceDuration, // Preserve original source duration
     };
 
     const secondPartId = uuidv4();
@@ -532,6 +671,7 @@ export const createTracksSlice: StateCreator<
       endFrame: track.endFrame,
       duration: track.endFrame - frame,
       sourceStartTime: originalSourceStartTime + splitTimeInSeconds,
+      sourceDuration: track.sourceDuration, // Preserve original source duration
     };
 
     let linkedTrackSecondPartId: string | undefined;
@@ -550,6 +690,7 @@ export const createTracksSlice: StateCreator<
           endFrame: frame,
           duration: frame - linkedTrack.startFrame,
           sourceStartTime: linkedOriginalSourceStartTime,
+          sourceDuration: linkedTrack.sourceDuration, // Preserve original source duration
         };
 
         linkedTrackSecondPartId = uuidv4();
@@ -562,6 +703,7 @@ export const createTracksSlice: StateCreator<
           duration: linkedTrack.endFrame - frame,
           sourceStartTime:
             linkedOriginalSourceStartTime + linkedSplitTimeInSeconds,
+          sourceDuration: linkedTrack.sourceDuration, // Preserve original source duration
         };
 
         firstPart.linkedTrackId = linkedFirstPart.id;
