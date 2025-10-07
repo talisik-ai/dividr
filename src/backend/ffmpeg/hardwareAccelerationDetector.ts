@@ -343,6 +343,16 @@ export async function getHardwareAcceleration(ffmpegPath: string = 'ffmpeg'): Pr
   }
   return cachedDetection;
 }
+
+/**
+ * Clears the hardware acceleration cache (useful for re-detection)
+ */
+export function clearHardwareAccelerationCache(): void {
+  cachedDetection = null;
+  cachedFfmpegPath = null;
+  console.log('🔄 Hardware acceleration cache cleared');
+}
+
 /**
  * Gets hardware acceleration for a specific type
  */

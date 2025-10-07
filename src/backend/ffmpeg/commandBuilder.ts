@@ -14,6 +14,7 @@ import {
 import {
   getHardwareAcceleration,
   getSpecificHardwareAcceleration,
+  clearHardwareAccelerationCache,
   type HardwareAcceleration,
 } from './hardwareAccelerationDetector';
 
@@ -433,7 +434,8 @@ function createSilentAudioFilters(
   return {
     filterRef: silentAudioRef,
     filters: [
-      `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}:duration=${duration}[temp_silent_${originalIndex}]`,
+      `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}[temp_silent_pre_${originalIndex}]`,
+      `[temp_silent_pre_${originalIndex}]atrim=duration=${duration}[temp_silent_${originalIndex}]`,
       `[temp_silent_${originalIndex}]asetpts=PTS-STARTPTS${silentAudioRef}`,
     ],
   };
@@ -1231,7 +1233,6 @@ function handlePreset(
  */
 function handleThreads(job: VideoEditJob, cmd: CommandParts): void {
   cmd.args.push('-threads', String(job.operations.threads));
-  cmd.args.push('-movflags', '+faststart');
 
   console.log(`🚀 Applied thread limit: ${job.operations.threads}`);
 }
@@ -1263,8 +1264,16 @@ export async function buildFfmpegCommand(
   const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
 
   // Step 0: Detect hardware acceleration if enabled
+  // Clear cache to ensure fresh detection on each export
+  clearHardwareAccelerationCache();
   
   const hwAccel = await getHardwareAccelerationForJob(job, ffmpegPath);
+
+  // NOTE: We skip hardware decoder flags because:
+  // 1. Input files may use codecs that don't support hardware decoding
+  // 2. Hardware decoding often causes compatibility issues
+  // 3. We only use hardware for ENCODING, which is where the speed benefit matters most
+  // 4. Decoding is already fast enough with software
   if (hwAccel) {
     console.log(`🎮 Hardware acceleration detected: ${hwAccel.type.toUpperCase()}`);
     console.log('ℹ️  Using hardware encoding only (software decoding for compatibility)');
