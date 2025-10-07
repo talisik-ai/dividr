@@ -1223,7 +1223,7 @@ function handlePreset(
 
   cmd.args.push('-preset', job.operations.preset);
   cmd.args.push('-crf', '29');
-  cmd.args.push('-b:a', '128k');
+  cmd.args.push('-b:a', '96k');
 
   console.log(`🚀 Applied software encoding preset: ${job.operations.preset}`);
 }
@@ -1262,10 +1262,6 @@ export async function buildFfmpegCommand(
 ): Promise<string[]> {
   const cmd: CommandParts = { args: [], filters: [] };
   const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
-
-  // Step 0: Detect hardware acceleration if enabled
-  // Clear cache to ensure fresh detection on each export
-  clearHardwareAccelerationCache();
   
   const hwAccel = await getHardwareAccelerationForJob(job, ffmpegPath);
 
