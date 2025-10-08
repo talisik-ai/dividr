@@ -18,36 +18,35 @@ export const useTrackShortcuts = () => {
   const trackShortcuts = useMemo(() => createTrackShortcuts(store), []);
 
   // Register shortcuts individually to comply with React hooks rules
-  // Note: Multiple shortcuts with same handler (split, duplicate) consolidated
 
-  // Split at playhead (S key)
-  useHotkeys('s', trackShortcuts[0].handler, trackShortcuts[0].options, [
+  // Slice at playhead (Ctrl+B)
+  useHotkeys('ctrl+b', trackShortcuts[0].handler, trackShortcuts[0].options, [
     timeline.selectedTrackIds,
   ]);
 
-  // Split at playhead (Ctrl+K)
-  useHotkeys('ctrl+k', trackShortcuts[1].handler, trackShortcuts[1].options, [
-    timeline.selectedTrackIds,
-  ]);
-
-  // Split at playhead (Cmd+K)
-  useHotkeys('cmd+k', trackShortcuts[2].handler, trackShortcuts[2].options, [
+  // Slice at playhead (Cmd+B)
+  useHotkeys('cmd+b', trackShortcuts[1].handler, trackShortcuts[1].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Duplicate track (Ctrl+D)
-  useHotkeys('ctrl+d', trackShortcuts[3].handler, trackShortcuts[3].options, [
+  useHotkeys('ctrl+d', trackShortcuts[2].handler, trackShortcuts[2].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Duplicate track (Cmd+D)
-  useHotkeys('cmd+d', trackShortcuts[4].handler, trackShortcuts[4].options, [
+  useHotkeys('cmd+d', trackShortcuts[3].handler, trackShortcuts[3].options, [
     timeline.selectedTrackIds,
   ]);
 
-  // Toggle visibility
-  useHotkeys('v', trackShortcuts[5].handler, trackShortcuts[5].options, [
-    timeline.selectedTrackIds,
+  // Selection tool (V key)
+  useHotkeys('v', trackShortcuts[4].handler, trackShortcuts[4].options, [
+    timeline.isSplitModeActive,
+  ]);
+
+  // Slice tool mode (B key)
+  useHotkeys('b', trackShortcuts[5].handler, trackShortcuts[5].options, [
+    timeline.isSplitModeActive,
   ]);
 
   // Toggle mute

@@ -200,7 +200,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       (e: React.MouseEvent) => {
         if (isSplitModeActive || e.button === 2) return;
         e.stopPropagation();
-        onSelect(e.altKey);
+        // Use Shift for multi-select (toggle), without modifier = replace selection
+        onSelect(e.shiftKey);
       },
       [isSplitModeActive, onSelect],
     );

@@ -11,7 +11,7 @@ import { Keyboard } from 'lucide-react';
 import React, { useEffect, useMemo } from 'react';
 
 interface HotkeyItemProps {
-  keys: string[];
+  keys: (string | string[])[];
   description: string;
   category?: string;
 }
@@ -20,14 +20,29 @@ const HotkeyItem: React.FC<HotkeyItemProps> = ({ keys, description }) => {
   return (
     <div className="flex items-center justify-between py-3 px-1 hover:bg-muted/30 rounded-md transition-colors">
       <span className="text-sm font-medium text-foreground">{description}</span>
-      <div className="flex items-center gap-1">
-        {keys.map((key, index) => (
-          <React.Fragment key={index}>
-            <kbd className="inline-flex items-center justify-center min-w-[28px] h-7 px-2 text-[11px] font-semibold bg-background border border-border rounded-md shadow-sm text-muted-foreground">
-              {key}
-            </kbd>
-            {index < keys.length - 1 && (
-              <span className="text-xs text-muted-foreground mx-0.5">+</span>
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        {keys.map((keyCombo, comboIndex) => (
+          <React.Fragment key={comboIndex}>
+            <div className="flex items-center gap-1">
+              {(Array.isArray(keyCombo) ? keyCombo : [keyCombo]).map(
+                (key, keyIndex) => (
+                  <React.Fragment key={keyIndex}>
+                    <kbd className="inline-flex items-center justify-center min-w-[28px] h-7 px-2 text-[11px] font-semibold bg-background border border-border rounded-md shadow-sm text-muted-foreground">
+                      {key}
+                    </kbd>
+                    {keyIndex <
+                      (Array.isArray(keyCombo) ? keyCombo : [keyCombo]).length -
+                        1 && (
+                      <span className="text-xs text-muted-foreground mx-0.5">
+                        +
+                      </span>
+                    )}
+                  </React.Fragment>
+                ),
+              )}
+            </div>
+            {comboIndex < keys.length - 1 && (
+              <span className="text-xs text-muted-foreground/60">or</span>
             )}
           </React.Fragment>
         ))}
@@ -93,45 +108,71 @@ export const HotkeysDialog: React.FC<HotkeysDialogProps> = ({
     const shortcuts = shortcutRegistry.getShortcutsByCategories();
 
     // Transform shortcuts into the format expected by the UI
-    return Object.entries(shortcuts).map(([category, shortcuts]) => ({
-      title: category,
-      hotkeys: shortcuts.map((shortcut) => {
-        // Convert key combinations to display format
-        const keys = Array.isArray(shortcut.keys)
-          ? shortcut.keys
-          : shortcut.keys.split('+').map((key) => {
-              // Format key names for display
-              const keyMap: Record<string, string> = {
-                ctrl: 'Ctrl',
-                cmd: 'Cmd',
-                shift: 'Shift',
-                alt: 'Alt',
-                space: 'Space',
-                left: '←',
-                right: '→',
-                up: '↑',
-                down: '↓',
-                equal: '=',
-                minus: '-',
-                del: 'Delete',
-                backspace: 'Backspace',
-                escape: 'Esc',
-              };
-              return keyMap[key.toLowerCase()] || key.toUpperCase();
-            });
+    return Object.entries(shortcuts).map(([category, shortcuts]) => {
+      // Group shortcuts by description to combine duplicates
+      const groupedByDescription = new Map<string, Array<string | string[]>>();
 
-        return {
-          keys,
-          description: shortcut.description,
-        };
-      }),
-    }));
-  }, []);
+      shortcuts.forEach((shortcut) => {
+        const existing = groupedByDescription.get(shortcut.description) || [];
+        groupedByDescription.set(shortcut.description, [
+          ...existing,
+          shortcut.keys,
+        ]);
+      });
+
+      // Transform grouped shortcuts
+      const hotkeys = Array.from(groupedByDescription.entries()).map(
+        ([description, keyCombinations]) => {
+          // Flatten and format all key combinations
+          const allKeys = keyCombinations.flatMap((keys) => {
+            const keyArray = Array.isArray(keys) ? keys : [keys];
+            return keyArray.map((keyCombo) =>
+              keyCombo.split('+').map((key) => {
+                // Format key names for display
+                const keyMap: Record<string, string> = {
+                  ctrl: 'Ctrl',
+                  cmd: 'Cmd',
+                  shift: 'Shift',
+                  alt: 'Alt',
+                  space: 'Space',
+                  left: '←',
+                  right: '→',
+                  up: '↑',
+                  down: '↓',
+                  equal: '=',
+                  minus: '-',
+                  del: 'Delete',
+                  backspace: 'Backspace',
+                  escape: 'Esc',
+                };
+                return keyMap[key.toLowerCase()] || key.toUpperCase();
+              }),
+            );
+          });
+
+          return {
+            keys: allKeys,
+            description,
+          };
+        },
+      );
+
+      return {
+        title: category,
+        hotkeys,
+      };
+    });
+  }, [effectiveEndFrame]);
 
   // Add manual interaction shortcuts that aren't keyboard-based
   const manualInteractionShortcuts = {
     title: 'Track Interaction',
-    hotkeys: [{ keys: ['Alt', 'Click'], description: 'Multi-select Tracks' }],
+    hotkeys: [
+      {
+        keys: [['Shift', 'Click']],
+        description: 'Toggle Track Selection (Multi-select)',
+      },
+    ],
   };
 
   const hotkeyData = [...shortcutsByCategory, manualInteractionShortcuts];

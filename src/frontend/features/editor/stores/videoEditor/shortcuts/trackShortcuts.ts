@@ -7,19 +7,9 @@ import { ShortcutConfig } from './types';
  */
 export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
   {
-    id: 'track-split-playhead',
-    keys: 's',
-    description: 'Split at Playhead',
-    category: 'Track Editing',
-    scope: 'track',
-    handler: () => {
-      store.splitAtPlayhead();
-    },
-  },
-  {
-    id: 'track-split-playhead-ctrl',
-    keys: 'ctrl+k',
-    description: 'Split at Playhead',
+    id: 'track-slice-playhead-ctrl-b',
+    keys: 'ctrl+b',
+    description: 'Slice at Playhead',
     category: 'Track Editing',
     scope: 'track',
     handler: (e) => {
@@ -28,9 +18,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     },
   },
   {
-    id: 'track-split-playhead-cmd',
-    keys: 'cmd+k',
-    description: 'Split at Playhead',
+    id: 'track-slice-playhead-cmd-b',
+    keys: 'cmd+b',
+    description: 'Slice at Playhead',
     category: 'Track Editing',
     scope: 'track',
     handler: (e) => {
@@ -67,16 +57,27 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     },
   },
   {
-    id: 'track-toggle-visibility',
+    id: 'track-selection-tool',
     keys: 'v',
-    description: 'Toggle Track Visibility',
-    category: 'Track Properties',
+    description: 'Selection Tool',
+    category: 'Tools',
     scope: 'track',
-    handler: () => {
-      const selectedTracks = store.timeline.selectedTrackIds;
-      selectedTracks.forEach((trackId: string) =>
-        store.toggleTrackVisibility(trackId),
-      );
+    handler: (e) => {
+      e?.preventDefault();
+      // Exit split mode to return to selection tool
+      store.setSplitMode(false);
+    },
+  },
+  {
+    id: 'track-slice-tool',
+    keys: 'b',
+    description: 'Slice Tool Mode',
+    category: 'Tools',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      // Enter split mode for slice tool
+      store.setSplitMode(true);
     },
   },
   {

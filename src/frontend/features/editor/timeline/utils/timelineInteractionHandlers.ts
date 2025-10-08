@@ -111,12 +111,13 @@ export const handleTimelineMouseDown = (
 
     // If track is locked, only allow selection
     if (track?.locked) {
-      handlers.onSelectTrack(trackId, altKey || shiftKey || ctrlKey || metaKey);
+      handlers.onSelectTrack(trackId, shiftKey || ctrlKey || metaKey);
       return { shouldStopPropagation: true };
     }
 
     // Track click: Select the track (drag will be handled by track component)
-    handlers.onSelectTrack(trackId, altKey || shiftKey || ctrlKey || metaKey);
+    // Use Shift for multi-select (toggle), without modifier = replace selection
+    handlers.onSelectTrack(trackId, shiftKey || ctrlKey || metaKey);
     return { shouldStopPropagation: true };
   }
 
