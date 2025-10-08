@@ -850,6 +850,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
 
+        // Block all timeline interactions during track drag/resize operations
+        if (playback.isDraggingTrack) {
+          return;
+        }
+
         // Check for context menu clicks
         if (isContextMenuClick(e.target)) {
           e.stopPropagation();
@@ -953,9 +958,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           <div className="flex flex-col flex-1 relative overflow-hidden">
             {/* Timeline Ruler - Fixed at top but scrolls horizontally */}
             <div
-              className="relative overflow-hidden z-10 cursor-pointer"
+              className={cn(
+                'relative overflow-hidden z-10',
+                !playback.isDraggingTrack && 'cursor-pointer',
+              )}
               onMouseDown={handleMouseDown}
-              title="Click to seek"
+              title={playback.isDraggingTrack ? '' : 'Click to seek'}
             >
               <TimelineRuler
                 frameWidth={frameWidth}
@@ -976,13 +984,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 ref={tracksRef}
                 className={cn(
                   'relative overflow-auto transition-colors duration-200',
-                  isSplitModeActive && hoveredTrack ? 'cursor-split' : '',
-                  isSplitModeActive && !hoveredTrack
-                    ? 'cursor-split-not-allowed'
-                    : '',
-                  !isSplitModeActive ? 'cursor-pointer' : '',
+                  // Don't apply cursor styles when dragging/resizing tracks
+                  playback.isDraggingTrack
+                    ? ''
+                    : isSplitModeActive && hoveredTrack
+                      ? 'cursor-split'
+                      : isSplitModeActive && !hoveredTrack
+                        ? 'cursor-split-not-allowed'
+                        : !isSplitModeActive
+                          ? 'cursor-pointer'
+                          : '',
                 )}
-                title="Click to seek"
+                title={playback.isDraggingTrack ? '' : 'Click to seek'}
                 style={{
                   scrollBehavior:
                     autoFollowEnabled && playback.isPlaying ? 'smooth' : 'auto',

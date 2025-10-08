@@ -73,182 +73,12 @@ interface TrackItemProps {
   isSplitModeActive: boolean;
 }
 
-// CRITICAL: Memoize the TrackItem's children to prevent TrackContextMenu re-renders
-const TrackItemContent = React.memo<{
-  track: VideoTrack;
-  frameWidth: number;
-  clampedWidth: number;
-  zoomLevel: number;
-  isSelected: boolean;
-  isDragging: boolean;
-  isSplitModeActive: boolean;
-  onSelect: (e: React.MouseEvent) => void;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onContextMenu?: () => void;
-}>(
-  ({
-    track,
-    frameWidth,
-    clampedWidth,
-    zoomLevel,
-    isSelected,
-    isDragging,
-    isSplitModeActive,
-    onSelect,
-    onMouseDown,
-    onContextMenu,
-  }) => {
-    const left = track.startFrame * frameWidth;
-
-    const getTrackGradient = (type: VideoTrack['type']) => {
-      switch (type) {
-        case 'subtitle':
-          return 'linear-gradient(135deg, #1f1f1f, #2a2a2a)';
-        case 'video':
-          return 'linear-gradient(135deg, #8e44ad, #9b59b6)';
-        case 'audio':
-          return 'hsl(var(--secondary) / 0.3)';
-        case 'image':
-          return 'linear-gradient(135deg, #e67e22, #f39c12)';
-        default:
-          return 'linear-gradient(135deg, #34495e, #7f8c8d)';
-      }
-    };
-
-    return (
-      <div
-        className={`
-        absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded z-10 flex items-center overflow-hidden select-none
-        ${isSelected ? 'border-2 border-secondary' : ''}
-        ${isSplitModeActive ? 'cursor-split' : track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
-        ${track.visible ? 'opacity-100' : 'opacity-50'}
-      `}
-        style={{
-          left: `${left}px`,
-          width: `${clampedWidth}px`,
-          background:
-            track.type === 'video'
-              ? 'transparent'
-              : getTrackGradient(track.type),
-        }}
-        onClick={onSelect}
-        onMouseDown={onMouseDown}
-        onContextMenu={onContextMenu}
-      >
-        {/* Video sprite sheet strip for video tracks */}
-        {track.type === 'video' && (
-          <VideoSpriteSheetStrip
-            track={track}
-            frameWidth={frameWidth}
-            width={clampedWidth}
-            height={
-              window.innerWidth <= 640 ? 24 : window.innerWidth <= 768 ? 26 : 40
-            }
-            zoomLevel={zoomLevel}
-          />
-        )}
-
-        {/* Audio waveform for audio tracks */}
-        {track.type === 'audio' && (
-          <div
-            className={`w-full h-full ${
-              track.muted ? 'opacity-50 grayscale' : ''
-            }`}
-          >
-            <AudioWaveform
-              track={track}
-              frameWidth={frameWidth}
-              width={clampedWidth}
-              height={
-                window.innerWidth <= 640
-                  ? 24
-                  : window.innerWidth <= 768
-                    ? 26
-                    : 40
-              }
-              zoomLevel={zoomLevel}
-            />
-          </div>
-        )}
-
-        {/* Text content for non-video, non-audio tracks */}
-        {track.type !== 'video' && track.type !== 'audio' && (
-          <div
-            className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
-            style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
-          >
-            {track.type === 'subtitle' && track.subtitleText
-              ? track.subtitleText
-              : track.name}
-          </div>
-        )}
-
-        {/* Volume indicator for audio tracks */}
-        {track.type === 'audio' && track.volume !== undefined && (
-          <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
-            {Math.round(track.volume * 100)}%
-          </div>
-        )}
-
-        {/* Lock indicator */}
-        {track.locked && (
-          <div className="absolute top-0.5 right-0.5 text-[10px] text-foreground/60 z-20">
-            🔒
-          </div>
-        )}
-
-        {/* Link indicator for linked video/audio tracks */}
-        {track.isLinked && (
-          <div
-            className="absolute top-0.5 left-0.5 text-[10px] text-blue-400 z-20 animate-pulse"
-            title={`Linked to ${track.type === 'video' ? 'audio' : 'video'} track`}
-          >
-            🔗
-          </div>
-        )}
-
-        {/* Unlinked indicator for tracks that could be linked */}
-        {!track.isLinked &&
-          (track.type === 'video' || track.type === 'audio') && (
-            <div
-              className="absolute top-0.5 left-0.5 text-[10px] text-gray-400 z-20 opacity-50"
-              title="Unlinked track - can be linked"
-            >
-              ⚪
-            </div>
-          )}
-      </div>
-    );
-  },
-  (prev, next) => {
-    return (
-      prev.track.id === next.track.id &&
-      prev.track.startFrame === next.track.startFrame &&
-      prev.track.endFrame === next.track.endFrame &&
-      prev.track.visible === next.track.visible &&
-      prev.track.locked === next.track.locked &&
-      prev.track.muted === next.track.muted &&
-      prev.track.type === next.track.type &&
-      prev.track.volume === next.track.volume &&
-      prev.track.isLinked === next.track.isLinked &&
-      prev.track.subtitleText === next.track.subtitleText &&
-      prev.track.name === next.track.name &&
-      prev.frameWidth === next.frameWidth &&
-      prev.clampedWidth === next.clampedWidth &&
-      prev.zoomLevel === next.zoomLevel &&
-      prev.isSelected === next.isSelected &&
-      prev.isDragging === next.isDragging &&
-      prev.isSplitModeActive === next.isSplitModeActive &&
-      prev.onContextMenu === next.onContextMenu
-    );
-  },
-);
-
 const TrackItemWrapper: React.FC<{
   track: VideoTrack;
   frameWidth: number;
   isSelected: boolean;
   isDragging: boolean;
+  isResizing: 'left' | 'right' | false;
   isSplitModeActive: boolean;
   children: React.ReactNode;
   onClick: (e: React.MouseEvent) => void;
@@ -260,6 +90,7 @@ const TrackItemWrapper: React.FC<{
     frameWidth,
     isSelected,
     isDragging,
+    isResizing,
     isSplitModeActive,
     children,
     onClick,
@@ -284,12 +115,21 @@ const TrackItemWrapper: React.FC<{
       }
     };
 
+    // Determine cursor based on state priority
+    const getCursorClass = () => {
+      if (isResizing) return 'cursor-ew-resize';
+      if (isSplitModeActive) return 'cursor-split';
+      if (track.locked) return 'cursor-not-allowed';
+      if (isDragging) return 'cursor-grabbing';
+      return 'cursor-grab';
+    };
+
     return (
       <div
         className={`
           absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded z-10 flex items-center overflow-hidden select-none
           ${isSelected ? 'border-2 border-secondary' : ''}
-          ${isSplitModeActive ? 'cursor-split' : track.locked ? 'cursor-not-allowed' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}
+          ${getCursorClass()}
           ${track.visible ? 'opacity-100' : 'opacity-50'}
         `}
         style={{
@@ -329,6 +169,25 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       endFrame: 0,
     });
     const rafRef = useRef<number | null>(null);
+
+    // Apply global cursor override during resize/drag to prevent flickering
+    useEffect(() => {
+      if (isResizing) {
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+        return () => {
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        };
+      } else if (isDragging) {
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+        return () => {
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        };
+      }
+    }, [isResizing, isDragging]);
 
     const width = Math.max(1, (track.endFrame - track.startFrame) * frameWidth);
     const left = track.startFrame * frameWidth;
@@ -399,11 +258,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               ),
             );
             onResize(newStartFrame, undefined);
-
-            // Real-time preview update during left trim (CapCut behavior)
-            // Update playhead to show the new in-point
-            const { setCurrentFrame } = useVideoEditorStore.getState();
-            setCurrentFrame(newStartFrame);
+            // Playhead update removed - trim should not move playhead
           } else if (isResizing === 'right') {
             const newEndFrame = Math.max(
               dragStart.startFrame + 1,
@@ -411,10 +266,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             );
             onResize(undefined, newEndFrame);
 
-            // Real-time preview update during right trim (CapCut behavior)
-            // Update playhead to show the new out-point
-            const { setCurrentFrame } = useVideoEditorStore.getState();
-            setCurrentFrame(Math.max(dragStart.startFrame, newEndFrame - 1));
+            // Playhead update removed - trim should not move playhead
           } else if (isDragging) {
             const newStartFrame = Math.max(
               0,
@@ -503,6 +355,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           frameWidth={frameWidth}
           isSelected={isSelected}
           isDragging={isDragging}
+          isResizing={isResizing}
           isSplitModeActive={isSplitModeActive}
           onClick={handleClick}
           onMouseDown={handleMouseDown}
