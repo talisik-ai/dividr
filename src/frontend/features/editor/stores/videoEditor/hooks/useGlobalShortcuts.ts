@@ -59,22 +59,6 @@ export const useGlobalShortcuts = () => {
     timeline.currentFrame,
   ]);
 
-  // Navigate frame prev 10
-  useHotkeys(
-    'shift+left',
-    globalShortcuts[5].handler,
-    globalShortcuts[5].options,
-    [effectiveEndFrame, timeline.currentFrame],
-  );
-
-  // Navigate frame next 10
-  useHotkeys(
-    'shift+right',
-    globalShortcuts[6].handler,
-    globalShortcuts[6].options,
-    [effectiveEndFrame, timeline.currentFrame],
-  );
-
   return {
     shortcuts: globalShortcuts,
     effectiveEndFrame,

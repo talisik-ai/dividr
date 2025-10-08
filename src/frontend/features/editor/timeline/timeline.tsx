@@ -1067,6 +1067,41 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   />
                 ))}
 
+              {/* Magnetic Snap Indicator - shows when Shift + dragging/resizing */}
+              {playback.magneticSnapFrame !== null && tracksRef.current && (
+                <>
+                  {/* Magnetic snap line - solid center */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${playback.magneticSnapFrame * frameWidth - timeline.scrollX}px`,
+                      top: 0,
+                      bottom: 0,
+                      width: '1px',
+                      background:
+                        'color-mix(in srgb, currentColor 50%, transparent)',
+                      pointerEvents: 'none',
+                      zIndex: 10,
+                    }}
+                  />
+                  {/* Magnetic snap region - glowing area */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${playback.magneticSnapFrame * frameWidth - timeline.scrollX}px`,
+                      top: 0,
+                      bottom: 0,
+                      width: '8px',
+                      transform: 'translateX(-50%)',
+                      background:
+                        'linear-gradient(90deg, transparent, color-mix(in srgb, currentColor 15%, transparent) 50%, transparent)',
+                      pointerEvents: 'none',
+                      zIndex: 9,
+                      opacity: 0.8,
+                    }}
+                  />
+                </>
+              )}
               {/* Marquee Selection Box */}
               {marqueeSelection?.isActive && tracksRef.current && (
                 <div

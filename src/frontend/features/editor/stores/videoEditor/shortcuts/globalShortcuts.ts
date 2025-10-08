@@ -63,26 +63,4 @@ export const createGlobalShortcuts = (
       store.setCurrentFrame(Math.min(effectiveEndFrame - 1, currentFrame + 1));
     },
   },
-  {
-    id: 'navigate-frame-prev-10',
-    keys: 'shift+left',
-    description: 'Jump Back 10 Frames',
-    category: 'Navigation',
-    scope: 'global',
-    handler: () => {
-      const currentFrame = store.timeline.currentFrame;
-      store.setCurrentFrame(Math.max(0, currentFrame - 10));
-    },
-  },
-  {
-    id: 'navigate-frame-next-10',
-    keys: 'shift+right',
-    description: 'Jump Forward 10 Frames',
-    category: 'Navigation',
-    scope: 'global',
-    handler: () => {
-      const currentFrame = store.timeline.currentFrame;
-      store.setCurrentFrame(Math.min(effectiveEndFrame - 1, currentFrame + 10));
-    },
-  },
 ];

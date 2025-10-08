@@ -15,6 +15,7 @@ export interface PlaybackSlice {
   toggleLoop: () => void;
   startDraggingTrack: () => void;
   endDraggingTrack: () => void;
+  setMagneticSnapFrame: (frame: number | null) => void;
 }
 
 export const createPlaybackSlice: StateCreator<
@@ -28,6 +29,7 @@ export const createPlaybackSlice: StateCreator<
     isLooping: false,
     isDraggingTrack: false,
     wasPlayingBeforeDrag: false,
+    magneticSnapFrame: null,
     ...DEFAULT_PLAYBACK_CONFIG,
   },
 
@@ -103,7 +105,13 @@ export const createPlaybackSlice: StateCreator<
           isDraggingTrack: false,
           isPlaying: shouldResume, // Resume if was playing before
           wasPlayingBeforeDrag: false,
+          magneticSnapFrame: null, // Clear snap indicator
         },
       };
     }),
+
+  setMagneticSnapFrame: (frame) =>
+    set((state: any) => ({
+      playback: { ...state.playback, magneticSnapFrame: frame },
+    })),
 });

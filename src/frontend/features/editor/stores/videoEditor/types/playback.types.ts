@@ -6,4 +6,5 @@ export interface PlaybackState {
   muted: boolean;
   isDraggingTrack: boolean;
   wasPlayingBeforeDrag: boolean;
+  magneticSnapFrame: number | null; // For visual indicator when Shift + dragging
 }
