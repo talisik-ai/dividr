@@ -320,17 +320,27 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     );
     const trackTime = relativeFrame / timeline.fps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+
+    // Calculate the trimmed end time based on track duration
+    const trackDurationSeconds =
+      (activeVideoTrack.endFrame - activeVideoTrack.startFrame) / timeline.fps;
+    const trimmedEndTime =
+      (activeVideoTrack.sourceStartTime || 0) + trackDurationSeconds;
+
+    // Clamp to trimmed boundaries [sourceStartTime, trimmedEndTime]
     const clampedTargetTime = Math.max(
       activeVideoTrack.sourceStartTime || 0,
-      Math.min(targetTime, video.duration || 0),
+      Math.min(targetTime, Math.min(trimmedEndTime, video.duration || 0)),
     );
 
     console.log('[DirectPreview] Video loadedmetadata - seeking to:', {
       currentFrame: timeline.currentFrame,
       trackStartFrame: activeVideoTrack.startFrame,
+      trackEndFrame: activeVideoTrack.endFrame,
       relativeFrame,
       trackTime,
       sourceStartTime: activeVideoTrack.sourceStartTime || 0,
+      trimmedEndTime,
       targetTime,
       clampedTargetTime,
       videoDuration: video.duration,
@@ -371,13 +381,24 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       const trackTime = relativeFrame / timeline.fps;
       const targetTime =
         (independentAudioTrack.sourceStartTime || 0) + trackTime;
+
+      // Calculate the trimmed end time based on track duration
+      const trackDurationSeconds =
+        (independentAudioTrack.endFrame - independentAudioTrack.startFrame) /
+        timeline.fps;
+      const trimmedEndTime =
+        (independentAudioTrack.sourceStartTime || 0) + trackDurationSeconds;
+
+      // Clamp to trimmed boundaries [sourceStartTime, trimmedEndTime]
       audio.currentTime = Math.max(
         independentAudioTrack.sourceStartTime || 0,
-        Math.min(targetTime, audio.duration || 0),
+        Math.min(targetTime, Math.min(trimmedEndTime, audio.duration || 0)),
       );
       console.log(
         '[DirectPreview] Audio metadata loaded - seeking to position within range:',
         audio.currentTime,
+        'trimmedEndTime:',
+        trimmedEndTime,
       );
     } else {
       console.log(
@@ -580,9 +601,17 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     );
     const trackTime = relativeFrame / timeline.fps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+
+    // Calculate the trimmed end time based on track duration
+    const trackDurationSeconds =
+      (activeVideoTrack.endFrame - activeVideoTrack.startFrame) / timeline.fps;
+    const trimmedEndTime =
+      (activeVideoTrack.sourceStartTime || 0) + trackDurationSeconds;
+
+    // Clamp to trimmed boundaries [sourceStartTime, trimmedEndTime]
     const clampedTargetTime = Math.max(
       activeVideoTrack.sourceStartTime || 0,
-      Math.min(targetTime, video.duration || 0),
+      Math.min(targetTime, Math.min(trimmedEndTime, video.duration || 0)),
     );
 
     const diff = Math.abs(video.currentTime - clampedTargetTime);
@@ -592,9 +621,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       console.log('[DirectPreview] Seeking video - frame timing sync:', {
         currentFrame: timeline.currentFrame,
         trackStartFrame: activeVideoTrack.startFrame,
+        trackEndFrame: activeVideoTrack.endFrame,
         relativeFrame,
         trackTime,
         sourceStartTime: activeVideoTrack.sourceStartTime || 0,
+        trimmedEndTime,
         targetTime,
         clampedTargetTime,
         currentVideoTime: video.currentTime,
@@ -634,9 +665,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       timeline.currentFrame - independentAudioTrack.startFrame;
     const trackTime = relativeFrame / timeline.fps;
     const targetTime = (independentAudioTrack.sourceStartTime || 0) + trackTime;
+
+    // Calculate the trimmed end time based on track duration
+    const trackDurationSeconds =
+      (independentAudioTrack.endFrame - independentAudioTrack.startFrame) /
+      timeline.fps;
+    const trimmedEndTime =
+      (independentAudioTrack.sourceStartTime || 0) + trackDurationSeconds;
+
+    // Clamp to trimmed boundaries [sourceStartTime, trimmedEndTime]
     const clampedTargetTime = Math.max(
       independentAudioTrack.sourceStartTime || 0,
-      Math.min(targetTime, audio.duration || 0),
+      Math.min(targetTime, Math.min(trimmedEndTime, audio.duration || 0)),
     );
 
     const diff = Math.abs(audio.currentTime - clampedTargetTime);
@@ -646,9 +686,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       console.log('[DirectPreview] Seeking audio - frame timing sync:', {
         currentFrame: timeline.currentFrame,
         trackStartFrame: independentAudioTrack.startFrame,
+        trackEndFrame: independentAudioTrack.endFrame,
         relativeFrame,
         trackTime,
         sourceStartTime: independentAudioTrack.sourceStartTime || 0,
+        trimmedEndTime,
         targetTime,
         clampedTargetTime,
         currentAudioTime: audio.currentTime,
