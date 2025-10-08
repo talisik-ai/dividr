@@ -604,8 +604,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     }, [marqueeSelection]);
 
     // Marquee selection mouse event listeners
+    // Always listen for mouse events to ensure marquee can activate
     useEffect(() => {
       const handleGlobalMouseMove = (e: MouseEvent) => {
+        // Block marquee during track drag/resize or split mode
+        if (playback.isDraggingTrack || isSplitModeActive) {
+          return;
+        }
+
         // Handle active marquee movement first
         if (marqueeSelection?.isActive) {
           handleMarqueeMouseMove(e);
@@ -622,13 +628,20 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           const currentX = e.clientX - rect.left + tracksRef.current.scrollLeft;
           const currentY = e.clientY - rect.top;
 
-          // Check if mouse moved more than 5px (drag threshold)
+          // Check if mouse moved more than 3px (reduced threshold for better responsiveness)
           const deltaX = Math.abs(currentX - marqueeStartRef.current.x);
           const deltaY = Math.abs(currentY - marqueeStartRef.current.y);
 
-          if (deltaX > 5 || deltaY > 5) {
-            // User is dragging, activate marquee
+          if (deltaX > 3 || deltaY > 3) {
+            // User is dragging, activate marquee immediately
             marqueeStartRef.current.hasMoved = true;
+
+            // Clear any pending seek to prevent conflict
+            if (clickTimeoutRef.current) {
+              clearTimeout(clickTimeoutRef.current);
+              clickTimeoutRef.current = null;
+            }
+
             setMarqueeSelection({
               isActive: true,
               startX: marqueeStartRef.current.x,
@@ -641,24 +654,31 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       };
 
       const handleGlobalMouseUp = () => {
-        // Clear marquee start tracking
-        marqueeStartRef.current = null;
-
         // Handle marquee end if active
         if (marqueeSelection?.isActive) {
           handleMarqueeMouseUp();
         }
+
+        // Clear marquee start tracking
+        marqueeStartRef.current = null;
       };
 
-      if (marqueeSelection?.isActive || marqueeStartRef.current) {
-        document.addEventListener('mousemove', handleGlobalMouseMove);
-        document.addEventListener('mouseup', handleGlobalMouseUp);
-        return () => {
-          document.removeEventListener('mousemove', handleGlobalMouseMove);
-          document.removeEventListener('mouseup', handleGlobalMouseUp);
-        };
-      }
-    }, [marqueeSelection, handleMarqueeMouseMove, handleMarqueeMouseUp]);
+      // Always attach listeners when component is mounted
+      // This ensures marquee can always activate when needed
+      document.addEventListener('mousemove', handleGlobalMouseMove);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+
+      return () => {
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+      };
+    }, [
+      marqueeSelection,
+      handleMarqueeMouseMove,
+      handleMarqueeMouseUp,
+      playback.isDraggingTrack,
+      isSplitModeActive,
+    ]);
 
     // Helper functions to get track row positions
     const getTrackRowTop = useCallback((trackType: string) => {
@@ -699,11 +719,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           // Update last click time
           lastClickTimeRef.current = currentTime;
 
-          // Delay the seek to allow double-click detection (CapCut-style)
+          // Delay the seek to allow double-click detection and marquee activation
           clickTimeoutRef.current = setTimeout(() => {
             // Double-check that marquee wasn't activated in the meantime
-            if (marqueeSelection?.isActive) {
-              return; // Don't seek if marquee is active
+            // Use fresh state check instead of closure
+            if (marqueeStartRef.current?.hasMoved) {
+              return; // Don't seek if marquee was activated
             }
 
             const clampedFrame = Math.max(
@@ -720,7 +741,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               setAutoFollowEnabled(true);
               isManualScrollingRef.current = false;
             }, 200);
-          }, 250); // Increased delay for better double-click detection
+          }, 200); // Reduced delay for better responsiveness (was 250ms)
         },
         onStartMarquee: (
           startX: number,
@@ -781,6 +802,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         setCurrentFrame,
         setSelectedTracks,
         splitAtPosition,
+        marqueeSelection,
       ],
     );
 
