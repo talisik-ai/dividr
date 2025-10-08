@@ -117,7 +117,7 @@ const TrackItemWrapper: React.FC<{
 
     // Determine cursor based on state priority
     const getCursorClass = () => {
-      if (isResizing) return 'cursor-ew-resize';
+      if (isResizing) return 'cursor-trim';
       if (isSplitModeActive) return 'cursor-split';
       if (track.locked) return 'cursor-not-allowed';
       if (isDragging) return 'cursor-grabbing';
@@ -173,7 +173,11 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     // Apply global cursor override during resize/drag to prevent flickering
     useEffect(() => {
       if (isResizing) {
-        document.body.style.cursor = 'ew-resize';
+        // Apply the custom trim cursor using the same SVG from global.css
+        const isDark = document.documentElement.classList.contains('dark');
+        const svgColor = isDark ? '%23ffffff' : '%23000';
+        const fillColor = isDark ? '%23000' : '%23ffffff';
+        document.body.style.cursor = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${fillColor}" stroke="${svgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="m16 16 4-4-4-4"/><path d="m8 8-4 4 4 4"/></svg>') 12 12, ew-resize`;
         document.body.style.userSelect = 'none';
         return () => {
           document.body.style.cursor = '';
@@ -404,7 +408,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         {!track.locked && isSelected && !isSplitModeActive && (
           <>
             <div
-              className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-ew-resize z-20 lg:rounded-r flex items-center justify-center
+              className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-trim z-20 lg:rounded-r flex items-center justify-center
                 ${isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary'}`}
               style={{ left }}
               onMouseDown={(e) => handleResizeMouseDown('left', e)}
@@ -413,7 +417,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             </div>
 
             <div
-              className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-ew-resize z-20 lg:rounded-l flex items-center justify-center
+              className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-trim z-20 lg:rounded-l flex items-center justify-center
                 ${isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary'}`}
               style={{ left: left + width - 8 }}
               onMouseDown={(e) => handleResizeMouseDown('right', e)}
