@@ -644,7 +644,9 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handleTrackSelect = useCallback(
       (trackId: string, multiSelect = false) => {
-        const { tracks: allTracks } = useVideoEditorStore.getState();
+        // Always get current state fresh from the store to avoid stale closures
+        const { tracks: allTracks, timeline } = useVideoEditorStore.getState();
+        const currentSelectedTrackIds = timeline.selectedTrackIds;
         const selectedTrack = allTracks.find((t) => t.id === trackId);
 
         // Get tracks to select (include linked track if applicable)
@@ -657,19 +659,19 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         }
 
         if (multiSelect) {
-          // Handle multi-select with linked tracks
-          let newSelection = [...selectedTrackIds];
+          // Handle multi-select with linked tracks - use fresh state
+          let newSelection = [...currentSelectedTrackIds];
 
           const isCurrentlySelected = tracksToSelect.some((id) =>
-            selectedTrackIds.includes(id),
+            currentSelectedTrackIds.includes(id),
           );
           if (isCurrentlySelected) {
-            // Remove both tracks from selection
+            // Remove both tracks from selection (toggle off)
             newSelection = newSelection.filter(
               (id) => !tracksToSelect.includes(id),
             );
           } else {
-            // Add both tracks to selection
+            // Add both tracks to selection (toggle on)
             tracksToSelect.forEach((id) => {
               if (!newSelection.includes(id)) {
                 newSelection.push(id);
@@ -678,11 +680,11 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           }
           onTrackSelect(newSelection);
         } else {
-          // Single select - select both linked tracks
+          // Single select - select only these tracks, deselect all others
           onTrackSelect(tracksToSelect);
         }
       },
-      [selectedTrackIds, onTrackSelect],
+      [onTrackSelect],
     );
 
     const handleTrackMove = useCallback(

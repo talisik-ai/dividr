@@ -576,7 +576,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         if (isModifierPressed) {
           // Add to existing selection (don't toggle during drag)
-          const newSelection = [...timeline.selectedTrackIds];
+          // Get fresh state to avoid stale closure
+          const currentSelectedTrackIds =
+            useVideoEditorStore.getState().timeline.selectedTrackIds;
+          const newSelection = [...currentSelectedTrackIds];
           tracksInMarquee.forEach((id) => {
             if (!newSelection.includes(id)) {
               newSelection.push(id);
@@ -588,12 +591,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           setSelectedTracks(tracksInMarquee);
         }
       },
-      [
-        marqueeSelection,
-        findTracksInMarquee,
-        timeline.selectedTrackIds,
-        setSelectedTracks,
-      ],
+      [marqueeSelection, findTracksInMarquee, setSelectedTracks],
     );
 
     const handleMarqueeMouseUp = useCallback(() => {
