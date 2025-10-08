@@ -13,9 +13,10 @@ import {
  * CapCut-style non-destructive trimming helper
  * Clamps track resizing within the original source media boundaries
  *
- * FIXED: Prevents resize actions from converting to drag actions when
- * reaching trim boundaries by maintaining original timeline positions
- * when source boundaries are hit.
+ * FIXED: Proper trimming that maintains timeline position when trimming back and forth
+ * - Left trim: adjusts startFrame and sourceStartTime, endFrame stays fixed
+ * - Right trim: adjusts endFrame, startFrame and sourceStartTime stay fixed
+ * - Boundaries: prevents trimming beyond source media limits without shifting the clip
  */
 const resizeTrackWithTrimming = (
   track: VideoTrack,
@@ -31,105 +32,112 @@ const resizeTrackWithTrimming = (
   const sourceDurationFrames = track.sourceDuration || track.duration;
   const sourceDurationSeconds = sourceDurationFrames / fps;
 
-  // Calculate the current source end time
-  const currentSourceEndTime =
-    currentSourceStartTime + (currentEndFrame - currentStartFrame) / fps;
+  // Calculate the current source end time based on current trim state
+  const currentDurationSeconds = (currentEndFrame - currentStartFrame) / fps;
+  const currentSourceEndTime = currentSourceStartTime + currentDurationSeconds;
 
-  // Determine the new timeline positions
-  const updatedStartFrame = newStartFrame ?? currentStartFrame;
-  const updatedEndFrame = newEndFrame ?? currentEndFrame;
+  // Initialize with current values
+  let finalStartFrame = currentStartFrame;
+  let finalEndFrame = currentEndFrame;
+  let finalSourceStartTime = currentSourceStartTime;
 
-  // Calculate how much we're trimming from each side (in frames)
-  const leftTrimFrames = updatedStartFrame - currentStartFrame;
-  const rightTrimFrames = currentEndFrame - updatedEndFrame;
-
-  // Calculate new source start time (trimming from left moves in-point forward)
-  let newSourceStartTime = currentSourceStartTime;
+  // Handle LEFT trim (dragging left edge)
   if (newStartFrame !== undefined) {
-    newSourceStartTime = currentSourceStartTime + leftTrimFrames / fps;
-  }
+    // Calculate how many frames we're trimming from the left
+    const frameDelta = newStartFrame - currentStartFrame;
+    const timeDelta = frameDelta / fps;
 
-  // Calculate new source end time (trimming from right moves out-point backward)
-  let newSourceEndTime = currentSourceEndTime;
-  if (newEndFrame !== undefined) {
-    newSourceEndTime = currentSourceEndTime - rightTrimFrames / fps;
-  }
+    // Calculate new source start time (trimming right moves in-point forward)
+    const proposedSourceStartTime = currentSourceStartTime + timeDelta;
 
-  // CRITICAL: Clamp to source media boundaries (CapCut behavior)
-  // The in-point cannot go before 0
-  newSourceStartTime = Math.max(0, newSourceStartTime);
-  // The out-point cannot exceed the source duration
-  newSourceEndTime = Math.min(sourceDurationSeconds, newSourceEndTime);
+    // Clamp to source boundaries [0, sourceDuration]
+    finalSourceStartTime = Math.max(
+      0,
+      Math.min(sourceDurationSeconds, proposedSourceStartTime),
+    );
 
-  // Ensure we don't have negative or zero duration
-  if (newSourceEndTime <= newSourceStartTime) {
-    // Prevent invalid state - maintain at least 1 frame
-    newSourceEndTime = newSourceStartTime + 1 / fps;
-  }
+    // Calculate the actual frame delta after clamping
+    const clampedTimeDelta = finalSourceStartTime - currentSourceStartTime;
+    const clampedFrameDelta = Math.round(clampedTimeDelta * fps);
 
-  // Calculate the final duration in frames
-  const newDurationSeconds = newSourceEndTime - newSourceStartTime;
-  const newDurationFrames = Math.round(newDurationSeconds * fps);
+    // Apply the clamped delta to the start frame
+    finalStartFrame = currentStartFrame + clampedFrameDelta;
 
-  // Calculate final timeline positions
-  // If trimming from left, the start frame changes
-  // If trimming from right, the end frame changes
-  let finalStartFrame = updatedStartFrame;
-  let finalEndFrame = updatedEndFrame;
-
-  // Check if we hit source boundaries and need to adjust timeline positions
-  // Use a small epsilon to account for floating point precision
-  const epsilon = 0.001;
-  const hitLeftBoundary =
-    newStartFrame !== undefined && newSourceStartTime <= epsilon;
-  const hitRightBoundary =
-    newEndFrame !== undefined &&
-    Math.abs(newSourceEndTime - sourceDurationSeconds) <= epsilon;
-
-  // Only adjust timeline positions if we hit boundaries
-  if (hitLeftBoundary && newStartFrame !== undefined) {
-    // We hit the left boundary, so the start frame is clamped to the original position
-    // and we adjust the end frame to maintain the new duration
-    finalStartFrame = currentStartFrame;
-    finalEndFrame = finalStartFrame + newDurationFrames;
-  } else if (hitRightBoundary && newEndFrame !== undefined) {
-    // We hit the right boundary, so the end frame is clamped to the original position
-    // and we adjust the start frame to maintain the new duration
+    // End frame stays the same (this is key for proper left trim)
     finalEndFrame = currentEndFrame;
-    finalStartFrame = finalEndFrame - newDurationFrames;
-  } else {
-    // No boundary hit, use the normal logic
-    if (newStartFrame !== undefined) {
-      finalEndFrame = finalStartFrame + newDurationFrames;
-    } else if (newEndFrame !== undefined) {
-      finalStartFrame = finalEndFrame - newDurationFrames;
+
+    // Ensure we don't exceed the end frame (minimum 1 frame duration)
+    if (finalStartFrame >= finalEndFrame) {
+      finalStartFrame = finalEndFrame - 1;
+      finalSourceStartTime =
+        currentSourceStartTime + (finalStartFrame - currentStartFrame) / fps;
+    }
+  }
+  // Handle RIGHT trim (dragging right edge)
+  else if (newEndFrame !== undefined) {
+    // Start frame and source start time stay the same (this is key for proper right trim)
+    finalStartFrame = currentStartFrame;
+    finalSourceStartTime = currentSourceStartTime;
+
+    // Calculate how many frames we're trimming from the right
+    const frameDelta = newEndFrame - currentEndFrame;
+    const timeDelta = frameDelta / fps;
+
+    // Calculate new source end time
+    const proposedSourceEndTime = currentSourceEndTime + timeDelta;
+
+    // Clamp to source boundaries [sourceStartTime, sourceDuration]
+    const clampedSourceEndTime = Math.max(
+      finalSourceStartTime + 1 / fps, // Minimum 1 frame
+      Math.min(sourceDurationSeconds, proposedSourceEndTime),
+    );
+
+    // Calculate the new duration based on clamped source end time
+    const newDurationSeconds = clampedSourceEndTime - finalSourceStartTime;
+    const newDurationFrames = Math.round(newDurationSeconds * fps);
+
+    // Apply the new end frame
+    finalEndFrame = finalStartFrame + newDurationFrames;
+
+    // Ensure minimum 1 frame duration
+    if (finalEndFrame <= finalStartFrame) {
+      finalEndFrame = finalStartFrame + 1;
     }
   }
 
-  // Ensure minimum track length (1 frame)
-  if (finalEndFrame <= finalStartFrame) {
-    finalEndFrame = finalStartFrame + 1;
-  }
+  // Calculate final duration
+  const finalDurationFrames = finalEndFrame - finalStartFrame;
+  const finalDurationSeconds = finalDurationFrames / fps;
+  const finalSourceEndTime = finalSourceStartTime + finalDurationSeconds;
 
   console.log(`[Trim] ${track.name}:`, {
+    operation:
+      newStartFrame !== undefined
+        ? 'LEFT'
+        : newEndFrame !== undefined
+          ? 'RIGHT'
+          : 'NONE',
     timeline: {
-      old: `${currentStartFrame} → ${currentEndFrame}`,
-      new: `${finalStartFrame} → ${finalEndFrame}`,
+      old: `${currentStartFrame} → ${currentEndFrame} (${currentEndFrame - currentStartFrame} frames)`,
+      new: `${finalStartFrame} → ${finalEndFrame} (${finalDurationFrames} frames)`,
+      requested:
+        newStartFrame !== undefined
+          ? `start: ${newStartFrame}`
+          : newEndFrame !== undefined
+            ? `end: ${newEndFrame}`
+            : 'none',
     },
     source: {
       oldStart: currentSourceStartTime.toFixed(3),
-      newStart: newSourceStartTime.toFixed(3),
+      newStart: finalSourceStartTime.toFixed(3),
       oldEnd: currentSourceEndTime.toFixed(3),
-      newEnd: newSourceEndTime.toFixed(3),
+      newEnd: finalSourceEndTime.toFixed(3),
       duration: sourceDurationSeconds.toFixed(3),
     },
-    trim: {
-      leftFrames: leftTrimFrames,
-      rightFrames: rightTrimFrames,
-    },
     boundaries: {
-      hitLeft: hitLeftBoundary,
-      hitRight: hitRightBoundary,
+      hitLeftBoundary: finalSourceStartTime <= 0.001,
+      hitRightBoundary:
+        Math.abs(finalSourceEndTime - sourceDurationSeconds) <= 0.001,
     },
   });
 
@@ -137,8 +145,8 @@ const resizeTrackWithTrimming = (
     ...track,
     startFrame: finalStartFrame,
     endFrame: finalEndFrame,
-    duration: newDurationFrames,
-    sourceStartTime: newSourceStartTime,
+    duration: finalDurationFrames,
+    sourceStartTime: finalSourceStartTime,
   };
 };
 
