@@ -29,6 +29,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const progressOverlayRef = useRef<HTMLDivElement>(null);
     const [lastRenderedZoom, setLastRenderedZoom] = useState<number>(0);
+    const lastRenderedWaveformRef = useRef<string | null>(null);
 
     // Cache resampled waveforms per zoom level
     const resampledCache = useRef<Map<string, ResampledWaveform>>(new Map());
@@ -65,7 +66,10 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       if (track.type !== 'audio') return null;
 
       let sourceToCheck = track.source;
-      let fullDuration = trackMetrics.durationSeconds;
+      // CRITICAL: Use sourceDuration (original media duration) not current trimmed duration
+      let fullDuration = track.sourceDuration
+        ? track.sourceDuration / fps
+        : trackMetrics.durationSeconds;
 
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
         const originalVideo = mediaLibrary.find(
@@ -210,6 +214,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       track.previewUrl,
       track.name,
       track.sourceStartTime,
+      track.sourceDuration,
       trackMetrics.durationSeconds,
       getWaveformBySource,
       mediaLibrary,
@@ -247,7 +252,10 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       if (track.type !== 'audio' || waveformData || isLoading) return;
 
       let sourceToCheck = track.source;
-      let fullDuration = trackMetrics.durationSeconds;
+      // CRITICAL: Use sourceDuration (original media duration) not current trimmed duration
+      let fullDuration = track.sourceDuration
+        ? track.sourceDuration / fps
+        : trackMetrics.durationSeconds;
 
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
         const originalVideo = mediaLibrary.find(
@@ -434,9 +442,24 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       const { peaks } = waveformData;
       if (!peaks || peaks.length === 0) return;
 
+      // Create a unique key for the current waveform state (includes trim info)
+      const startTime =
+        'startTime' in waveformData ? waveformData.startTime : 0;
+      const endTime = 'endTime' in waveformData ? waveformData.endTime : 0;
+      const waveformKey = `${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}`;
+      const waveformChanged = lastRenderedWaveformRef.current !== waveformKey;
+
+      // Clear resampled cache when waveform data changes (trim operation)
+      if (waveformChanged) {
+        resampledCache.current.clear();
+      }
+
       const zoomChanged = Math.abs(zoomLevel - lastRenderedZoom) > 0.01;
       const shouldRedraw =
-        zoomChanged || baseCanvas.width === 0 || baseCanvas.height === 0;
+        zoomChanged ||
+        waveformChanged ||
+        baseCanvas.width === 0 ||
+        baseCanvas.height === 0;
 
       if (!shouldRedraw) return;
 
@@ -555,6 +578,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       }
 
       setLastRenderedZoom(zoomLevel);
+      lastRenderedWaveformRef.current = waveformKey;
     }, [
       waveformData,
       width,
