@@ -7,8 +7,13 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useHotkeys } from 'react-hotkeys-hook';
-import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
+import {
+  useGlobalShortcuts,
+  useTimelineShortcutsV2,
+  useTrackShortcuts,
+  useVideoEditorStore,
+  VideoTrack,
+} from '../stores/videoEditor/index';
 import { ProjectThumbnailSetter } from './projectThumbnailSetter';
 import { TimelineControls } from './timelineControls';
 import { TimelinePlayhead } from './timelinePlayhead';
@@ -72,21 +77,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     );
     const setScrollX = useVideoEditorStore((state) => state.setScrollX);
     const setZoom = useVideoEditorStore((state) => state.setZoom);
-    const togglePlayback = useVideoEditorStore((state) => state.togglePlayback);
     const pause = useVideoEditorStore((state) => state.pause);
-    const setInPoint = useVideoEditorStore((state) => state.setInPoint);
-    const setOutPoint = useVideoEditorStore((state) => state.setOutPoint);
     const setSelectedTracks = useVideoEditorStore(
       (state) => state.setSelectedTracks,
     );
     const removeSelectedTracks = useVideoEditorStore(
       (state) => state.removeSelectedTracks,
     );
-    const toggleSnap = useVideoEditorStore((state) => state.toggleSnap);
-    const toggleSplitMode = useVideoEditorStore(
-      (state) => state.toggleSplitMode,
-    );
-    const setSplitMode = useVideoEditorStore((state) => state.setSplitMode);
     const isSplitModeActive = useVideoEditorStore(
       (state) => state.timeline.isSplitModeActive,
     );
@@ -263,83 +260,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       setSplitModeUpdateKey((prev) => prev + 1);
     }, [isSplitModeActive]);
 
-    // Keyboard shortcuts
-    useHotkeys('space', (e) => {
-      e.preventDefault();
-      togglePlayback();
-    });
+    // Centralized keyboard shortcuts
+    useGlobalShortcuts();
+    useTimelineShortcutsV2();
+    useTrackShortcuts();
 
-    useHotkeys('home', () => setCurrentFrame(0));
-    useHotkeys('end', () => setCurrentFrame(effectiveEndFrame - 1));
-    useHotkeys('left', () =>
-      setCurrentFrame(Math.max(0, timeline.currentFrame - 1)),
-    );
-    useHotkeys('right', () =>
-      setCurrentFrame(
-        Math.min(effectiveEndFrame - 1, timeline.currentFrame + 1),
-      ),
-    );
-    useHotkeys('i', () => setInPoint(timeline.currentFrame));
-    useHotkeys('o', () => setOutPoint(timeline.currentFrame));
-    useHotkeys('s', () => {
-      const { splitAtPlayhead } = useVideoEditorStore.getState();
-      splitAtPlayhead();
-    });
-    useHotkeys('ctrl+k', (e) => {
-      e.preventDefault();
-      const { splitAtPlayhead } = useVideoEditorStore.getState();
-      splitAtPlayhead();
-    });
-    useHotkeys('cmd+k', (e) => {
-      e.preventDefault();
-      const { splitAtPlayhead } = useVideoEditorStore.getState();
-      splitAtPlayhead();
-    });
-    useHotkeys('ctrl+d', (e) => {
-      e.preventDefault();
-      const { duplicateTrack } = useVideoEditorStore.getState();
-      const selectedTracks = timeline.selectedTrackIds;
-      selectedTracks.forEach((trackId) => duplicateTrack(trackId));
-    });
-    useHotkeys('v', () => {
-      const { toggleTrackVisibility } = useVideoEditorStore.getState();
-      const selectedTracks = timeline.selectedTrackIds;
-      selectedTracks.forEach((trackId) => toggleTrackVisibility(trackId));
-    });
-    useHotkeys('m', () => {
-      const { toggleTrackMute } = useVideoEditorStore.getState();
-      const selectedTracks = timeline.selectedTrackIds;
-      selectedTracks.forEach((trackId) => toggleTrackMute(trackId));
-    });
-    useHotkeys('s', () => {
-      toggleSnap();
-    });
-    useHotkeys('c', (e) => {
-      e.preventDefault();
-      toggleSplitMode();
-    });
-    useHotkeys('escape', (e) => {
-      e.preventDefault();
-      setSplitMode(false);
-    });
-    useHotkeys(
-      'del',
-      (e) => {
-        e.preventDefault();
-        removeSelectedTracks();
-      },
-      { enableOnFormTags: false },
-    );
-    useHotkeys(
-      'backspace',
-      (e) => {
-        e.preventDefault();
-        removeSelectedTracks();
-      },
-      { enableOnFormTags: false },
-    );
-
-    // Global keyboard event listener as fallback
+    // Global keyboard event listener as fallback for Delete/Backspace
+    // This ensures delete works even when react-hotkeys-hook might not catch it
     useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -388,11 +315,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         document.removeEventListener('mouseup', handleGlobalMouseUp);
       };
     }, []);
-
-    // Zoom controls
-    useHotkeys('equal', () => setZoom(Math.min(timeline.zoom * 1.2, 10)));
-    useHotkeys('minus', () => setZoom(Math.max(timeline.zoom / 1.2, 0.1)));
-    useHotkeys('0', () => setZoom(1));
 
     // Handle wheel zoom
     const handleWheel = useCallback(

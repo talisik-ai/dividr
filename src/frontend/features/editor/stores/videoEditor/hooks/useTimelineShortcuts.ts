@@ -1,50 +1,73 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useVideoEditorStore } from '../';
+import { useMemo } from 'react';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { useVideoEditorStore } from '../index';
+import { createTimelineShortcuts } from '../shortcuts/timelineShortcuts';
 
-export const useTimelineShortcuts = () => {
-  const store = useVideoEditorStore();
+/**
+ * Hook for timeline-specific keyboard shortcuts
+ * These shortcuts are active when the timeline is focused
+ */
+export const useTimelineShortcutsV2 = () => {
+  const timeline = useVideoEditorStore((state) => state.timeline);
+
+  // Get the store instance for creating shortcuts
+  const store = useVideoEditorStore.getState();
+
+  // Create timeline shortcuts
+  const timelineShortcuts = useMemo(() => createTimelineShortcuts(store), []);
+
+  // Register shortcuts individually to comply with React hooks rules
+  // Set in point
+  useHotkeys('i', timelineShortcuts[0].handler, timelineShortcuts[0].options, [
+    timeline.currentFrame,
+  ]);
+
+  // Set out point
+  useHotkeys('o', timelineShortcuts[1].handler, timelineShortcuts[1].options, [
+    timeline.currentFrame,
+  ]);
+
+  // Zoom in
+  useHotkeys(
+    'equal',
+    timelineShortcuts[2].handler,
+    timelineShortcuts[2].options,
+    [timeline.zoom],
+  );
+
+  // Zoom out
+  useHotkeys(
+    'minus',
+    timelineShortcuts[3].handler,
+    timelineShortcuts[3].options,
+    [timeline.zoom],
+  );
+
+  // Zoom reset
+  useHotkeys('0', timelineShortcuts[4].handler, timelineShortcuts[4].options, [
+    timeline.zoom,
+  ]);
+
+  // Toggle snap
+  useHotkeys('s', timelineShortcuts[5].handler, timelineShortcuts[5].options, [
+    timeline.snapEnabled,
+  ]);
+
+  // Toggle split mode
+  useHotkeys('c', timelineShortcuts[6].handler, timelineShortcuts[6].options, [
+    timeline.isSplitModeActive,
+  ]);
+
+  // Exit split mode
+  useHotkeys(
+    'escape',
+    timelineShortcuts[7].handler,
+    timelineShortcuts[7].options,
+    [timeline.isSplitModeActive],
+  );
 
   return {
-    onSpace: () => store.togglePlayback(),
-
-    onHome: () => store.setCurrentFrame(0),
-
-    onEnd: () => {
-      const effectiveEndFrame =
-        store.tracks.length > 0
-          ? Math.max(
-              ...store.tracks.map((track: any) => track.endFrame),
-              store.timeline.totalFrames,
-            )
-          : store.timeline.totalFrames;
-      store.setCurrentFrame(effectiveEndFrame - 1);
-    },
-
-    onArrowLeft: () => store.setCurrentFrame(store.timeline.currentFrame - 1),
-
-    onArrowRight: () => store.setCurrentFrame(store.timeline.currentFrame + 1),
-
-    onI: () => store.setInPoint(store.timeline.currentFrame),
-
-    onO: () => store.setOutPoint(store.timeline.currentFrame),
-
-    onDelete: () => store.removeSelectedTracks(),
-
-    onS: () => store.toggleSnap(),
-
-    onD: () => {
-      const selectedIds = store.timeline.selectedTrackIds;
-      if (selectedIds.length > 0) {
-        selectedIds.forEach((id: any) => store.duplicateTrack(id));
-      }
-    },
-
-    onC: () => store.splitAtPlayhead(),
-
-    onEscape: () => store.setSelectedTracks([]),
-
-    onShiftLeft: () => store.setCurrentFrame(store.timeline.currentFrame - 10),
-
-    onShiftRight: () => store.setCurrentFrame(store.timeline.currentFrame + 10),
+    shortcuts: timelineShortcuts,
   };
 };

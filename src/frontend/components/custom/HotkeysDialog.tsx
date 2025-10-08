@@ -5,8 +5,10 @@ import {
   DialogTitle,
 } from '@/frontend/components/ui/dialog';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
+import { useVideoEditorStore } from '@/frontend/features/editor/stores/videoEditor';
+import { shortcutRegistry } from '@/frontend/features/editor/stores/videoEditor/shortcuts';
 import { Keyboard } from 'lucide-react';
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 
 interface HotkeyItemProps {
   keys: string[];
@@ -68,46 +70,71 @@ export const HotkeysDialog: React.FC<HotkeysDialogProps> = ({
   open,
   onOpenChange,
 }) => {
-  const hotkeyData = [
-    {
-      title: 'Timeline Controls',
-      hotkeys: [
-        { keys: ['Space'], description: 'Play/Pause' },
-        { keys: ['Home'], description: 'Go to Beginning' },
-        { keys: ['End'], description: 'Go to End' },
-        { keys: ['←'], description: 'Previous Frame' },
-        { keys: ['→'], description: 'Next Frame' },
-        { keys: ['I'], description: 'Set In Point' },
-        { keys: ['O'], description: 'Set Out Point' },
-      ],
-    },
-    {
-      title: 'Timeline Editing',
-      hotkeys: [
-        { keys: ['S'], description: 'Split at Playhead' },
-        { keys: ['Ctrl', 'D'], description: 'Duplicate Track' },
-        { keys: ['V'], description: 'Toggle Track Visibility' },
-        { keys: ['M'], description: 'Toggle Track Mute' },
-        { keys: ['Delete'], description: 'Delete Selected Tracks' },
-        { keys: ['Backspace'], description: 'Delete Selected Tracks' },
-      ],
-    },
-    {
-      title: 'Timeline Zoom',
-      hotkeys: [
-        { keys: ['='], description: 'Zoom In' },
-        { keys: ['-'], description: 'Zoom Out' },
-        { keys: ['0'], description: 'Reset Zoom' },
-      ],
-    },
-    {
-      title: 'Track Interaction',
-      hotkeys: [
-        { keys: ['Alt', 'Click'], description: 'Multi-select Tracks' },
-        { keys: ['Right Click'], description: 'Show Context Menu' },
-      ],
-    },
-  ];
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  const timeline = useVideoEditorStore((state) => state.timeline);
+
+  // Calculate effective end frame for initializing registry
+  const effectiveEndFrame = useMemo(() => {
+    return tracks.length > 0
+      ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
+      : timeline.totalFrames;
+  }, [tracks, timeline.totalFrames]);
+
+  // Initialize shortcut registry
+  useEffect(() => {
+    shortcutRegistry.initialize(
+      useVideoEditorStore.getState(),
+      effectiveEndFrame,
+    );
+  }, [effectiveEndFrame]);
+
+  // Get shortcuts grouped by category from the registry
+  const shortcutsByCategory = useMemo(() => {
+    const shortcuts = shortcutRegistry.getShortcutsByCategories();
+
+    // Transform shortcuts into the format expected by the UI
+    return Object.entries(shortcuts).map(([category, shortcuts]) => ({
+      title: category,
+      hotkeys: shortcuts.map((shortcut) => {
+        // Convert key combinations to display format
+        const keys = Array.isArray(shortcut.keys)
+          ? shortcut.keys
+          : shortcut.keys.split('+').map((key) => {
+              // Format key names for display
+              const keyMap: Record<string, string> = {
+                ctrl: 'Ctrl',
+                cmd: 'Cmd',
+                shift: 'Shift',
+                alt: 'Alt',
+                space: 'Space',
+                left: '←',
+                right: '→',
+                up: '↑',
+                down: '↓',
+                equal: '=',
+                minus: '-',
+                del: 'Delete',
+                backspace: 'Backspace',
+                escape: 'Esc',
+              };
+              return keyMap[key.toLowerCase()] || key.toUpperCase();
+            });
+
+        return {
+          keys,
+          description: shortcut.description,
+        };
+      }),
+    }));
+  }, []);
+
+  // Add manual interaction shortcuts that aren't keyboard-based
+  const manualInteractionShortcuts = {
+    title: 'Track Interaction',
+    hotkeys: [{ keys: ['Alt', 'Click'], description: 'Multi-select Tracks' }],
+  };
+
+  const hotkeyData = [...shortcutsByCategory, manualInteractionShortcuts];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
