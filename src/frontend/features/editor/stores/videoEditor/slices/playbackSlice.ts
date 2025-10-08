@@ -84,7 +84,6 @@ export const createPlaybackSlice: StateCreator<
   startDraggingTrack: () =>
     set((state: any) => {
       const wasPlaying = state.playback.isPlaying;
-      console.log(`🎬 [DragState] Starting drag - wasPlaying: ${wasPlaying}`);
       return {
         playback: {
           ...state.playback,
@@ -98,7 +97,6 @@ export const createPlaybackSlice: StateCreator<
   endDraggingTrack: () =>
     set((state: any) => {
       const shouldResume = state.playback.wasPlayingBeforeDrag;
-      console.log(`🎬 [DragState] Ending drag - shouldResume: ${shouldResume}`);
       return {
         playback: {
           ...state.playback,

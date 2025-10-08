@@ -288,6 +288,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
       }
     }, []);
 
@@ -295,12 +296,26 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       if (isResizing || isDragging) {
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
+        // Also listen for mouseleave on window to handle edge cases
+        window.addEventListener('blur', handleMouseUp);
         return () => {
           document.removeEventListener('mousemove', handleMouseMove);
           document.removeEventListener('mouseup', handleMouseUp);
+          window.removeEventListener('blur', handleMouseUp);
         };
       }
     }, [isResizing, isDragging, handleMouseMove, handleMouseUp]);
+
+    // Cleanup on unmount to ensure state is reset
+    useEffect(() => {
+      return () => {
+        // Always try to cleanup on unmount, check store state directly
+        const { playback, endDraggingTrack } = useVideoEditorStore.getState();
+        if (playback.isDraggingTrack) {
+          endDraggingTrack();
+        }
+      };
+    }, []);
 
     // Render appropriate content based on track type
     const trackContent = useMemo(() => {

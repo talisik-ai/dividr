@@ -370,6 +370,25 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       };
     }, []);
 
+    // Global safety net: Reset drag state if user releases mouse anywhere
+    // Use capture phase to ensure this runs AFTER child handlers
+    useEffect(() => {
+      const handleGlobalMouseUp = () => {
+        // Use setTimeout to ensure this runs after all other mouseup handlers
+        setTimeout(() => {
+          const { playback, endDraggingTrack } = useVideoEditorStore.getState();
+          if (playback.isDraggingTrack) {
+            endDraggingTrack();
+          }
+        }, 0);
+      };
+
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+      return () => {
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+      };
+    }, []);
+
     // Zoom controls
     useHotkeys('equal', () => setZoom(Math.min(timeline.zoom * 1.2, 10)));
     useHotkeys('minus', () => setZoom(Math.max(timeline.zoom / 1.2, 0.1)));
@@ -915,6 +934,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         }
       },
       [
+        playback.isDraggingTrack,
         tracksRef,
         frameWidth,
         tracks,
