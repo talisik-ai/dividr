@@ -92,7 +92,7 @@ const GPUAcceleratedSprite: React.FC<{
       prev.tile.id === next.tile.id &&
       Math.abs(prev.tile.tileStartX - next.tile.tileStartX) < 1 &&
       Math.abs(prev.tile.tileWidth - next.tile.tileWidth) < 1 &&
-      prev.viewportOffset === next.viewportOffset &&
+      Math.abs(prev.viewportOffset - next.viewportOffset) < 1 &&
       prev.height === next.height
     );
   },
