@@ -5,10 +5,9 @@ import {
   DialogTitle,
 } from '@/frontend/components/ui/dialog';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
-import { useVideoEditorStore } from '@/frontend/features/editor/stores/videoEditor';
 import { shortcutRegistry } from '@/frontend/features/editor/stores/videoEditor/shortcuts';
 import { Keyboard } from 'lucide-react';
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 
 interface HotkeyItemProps {
   keys: (string | string[])[];
@@ -85,26 +84,11 @@ export const HotkeysDialog: React.FC<HotkeysDialogProps> = ({
   open,
   onOpenChange,
 }) => {
-  const tracks = useVideoEditorStore((state) => state.tracks);
-  const timeline = useVideoEditorStore((state) => state.timeline);
-
-  // Calculate effective end frame for initializing registry
-  const effectiveEndFrame = useMemo(() => {
-    return tracks.length > 0
-      ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
-      : timeline.totalFrames;
-  }, [tracks, timeline.totalFrames]);
-
-  // Initialize shortcut registry
-  useEffect(() => {
-    shortcutRegistry.initialize(
-      useVideoEditorStore.getState,
-      effectiveEndFrame,
-    );
-  }, [effectiveEndFrame]);
-
   // Get shortcuts grouped by category from the registry
+  // Registry is initialized globally in App.tsx via useShortcutRegistryInit
   const shortcutsByCategory = useMemo(() => {
+    if (!open) return [];
+
     const shortcuts = shortcutRegistry.getShortcutsByCategories();
 
     // Transform shortcuts into the format expected by the UI
@@ -162,7 +146,7 @@ export const HotkeysDialog: React.FC<HotkeysDialogProps> = ({
         hotkeys,
       };
     });
-  }, [effectiveEndFrame]);
+  }, [open]);
 
   // Add manual interaction shortcuts that aren't keyboard-based
   const manualInteractionShortcuts = {

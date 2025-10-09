@@ -72,6 +72,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
 );
 
 export * from './hooks';
+export { useShortcutRegistryInit } from './hooks/useShortcutRegistryInit';
 export * from './types';
 export * from './utils';
 export type { VideoEditorStore };
