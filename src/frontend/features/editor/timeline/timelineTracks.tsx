@@ -169,6 +169,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       endFrame: 0,
     });
     const rafRef = useRef<number | null>(null);
+    const hasAutoSelectedRef = useRef(false);
 
     // Apply global cursor override during resize/drag to prevent flickering
     useEffect(() => {
@@ -211,12 +212,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         if (track.locked || isSplitModeActive || e.button === 2) return;
         e.stopPropagation();
 
-        // If the track is not selected, select it first before dragging
-        // This ensures magnetic snapping logic works correctly
-        if (!isSelected) {
-          // If Shift is held, add to selection; otherwise replace selection
-          onSelect(e.shiftKey);
-        }
+        // Don't call onSelect here - let handleClick handle selection
+        // We'll auto-select during actual drag movement if needed
 
         const { startDraggingTrack } = useVideoEditorStore.getState();
         startDraggingTrack();
@@ -228,14 +225,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           endFrame: track.endFrame,
         });
       },
-      [
-        track.locked,
-        track.startFrame,
-        track.endFrame,
-        isSplitModeActive,
-        isSelected,
-        onSelect,
-      ],
+      [track.locked, track.startFrame, track.endFrame, isSplitModeActive],
     );
 
     const handleResizeMouseDown = useCallback(
@@ -245,7 +235,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         e.preventDefault();
 
         // If the track is not selected, select it first before resizing
-        // This ensures magnetic snapping logic works correctly
+        // Resizing doesn't conflict with click events, so it's safe to auto-select here
         if (!isSelected) {
           // If Shift is held, add to selection; otherwise replace selection
           onSelect(e.shiftKey);
@@ -387,6 +377,17 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       (e: MouseEvent) => {
         if (!isResizing && !isDragging) return;
 
+        // Auto-select unselected track on first actual drag movement
+        if (
+          isDragging &&
+          !isSelected &&
+          !hasAutoSelectedRef.current &&
+          Math.abs(e.clientX - dragStart.x) > 3
+        ) {
+          onSelect(e.shiftKey);
+          hasAutoSelectedRef.current = true;
+        }
+
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
         rafRef.current = requestAnimationFrame(() => {
@@ -402,8 +403,12 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               ),
             );
 
-            // Apply magnetic snap for Shift + resize (left edge)
-            if (e.shiftKey) {
+            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
+            const { timeline } = useVideoEditorStore.getState();
+            const shouldSnap = e.shiftKey || timeline.snapEnabled;
+
+            if (shouldSnap) {
+              // Use unified magnetic snap logic
               const currentSnap =
                 useVideoEditorStore.getState().playback.magneticSnapFrame;
               const duration = dragStart.endFrame - dragStart.startFrame;
@@ -439,8 +444,12 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               dragStart.endFrame + deltaFrames,
             );
 
-            // Apply magnetic snap for Shift + resize (right edge)
-            if (e.shiftKey) {
+            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
+            const { timeline } = useVideoEditorStore.getState();
+            const shouldSnap = e.shiftKey || timeline.snapEnabled;
+
+            if (shouldSnap) {
+              // Use unified magnetic snap logic
               const currentSnap =
                 useVideoEditorStore.getState().playback.magneticSnapFrame;
               const duration = dragStart.endFrame - dragStart.startFrame;
@@ -475,8 +484,12 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             const duration = dragStart.endFrame - dragStart.startFrame;
             const newEndFrame = newStartFrame + duration;
 
-            // Apply magnetic snap for Shift + drag (checks both start and end edges)
-            if (e.shiftKey) {
+            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
+            const { timeline } = useVideoEditorStore.getState();
+            const shouldSnap = e.shiftKey || timeline.snapEnabled;
+
+            if (shouldSnap) {
+              // Use unified magnetic snap logic for both modes
               const currentSnap =
                 useVideoEditorStore.getState().playback.magneticSnapFrame;
               const snapResult = findMagneticSnapPoint(
@@ -501,6 +514,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
                 useVideoEditorStore.getState().setMagneticSnapFrame(null);
               }
             } else {
+              // Clear snap indicator when snapping is disabled
               useVideoEditorStore.getState().setMagneticSnapFrame(null);
             }
 
@@ -511,11 +525,14 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       [
         isResizing,
         isDragging,
+        isSelected,
         dragStart,
         frameWidth,
         onResize,
         onMove,
+        onSelect,
         findMagneticSnapPoint,
+        track.id,
       ],
     );
 
@@ -525,6 +542,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
       setIsResizing(false);
       setIsDragging(false);
+      hasAutoSelectedRef.current = false;
 
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
