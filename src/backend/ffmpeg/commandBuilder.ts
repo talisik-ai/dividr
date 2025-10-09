@@ -152,13 +152,6 @@ function isGapInput(path: string): boolean {
 }
 
 /**
- * Helper to get gap duration from trackInfo
- */
-function getGapDuration(trackInfo: TrackInfo): number {
-  return trackInfo.duration || 1;
-}
-
-/**
  * Calculates the actual duration of a track, accounting for trimming
  */
 function calculateTrackDuration(
@@ -1264,12 +1257,6 @@ export async function buildFfmpegCommand(
   const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
   
   const hwAccel = await getHardwareAccelerationForJob(job, ffmpegPath);
-
-  // NOTE: We skip hardware decoder flags because:
-  // 1. Input files may use codecs that don't support hardware decoding
-  // 2. Hardware decoding often causes compatibility issues
-  // 3. We only use hardware for ENCODING, which is where the speed benefit matters most
-  // 4. Decoding is already fast enough with software
   if (hwAccel) {
     console.log(`🎮 Hardware acceleration detected: ${hwAccel.type.toUpperCase()}`);
     console.log('ℹ️  Using hardware encoding only (software decoding for compatibility)');
