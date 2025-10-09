@@ -48,10 +48,45 @@ async function initializeFfmpegPaths() {
   console.log('📦 Is packaged:', app.isPackaged);
   console.log('🌍 Environment:', process.env.NODE_ENV || 'production');
 
-  // Method 1: Try ffbinaries first (downloads latest FFmpeg on demand - works on all platforms)
+  // Method 1: Try ffmpeg-static first (bundled, fast, reliable)
   if (!ffmpegPath) {
     try {
-      console.log('🔄 Attempting ffbinaries (downloads FFmpeg if needed)...');
+      console.log('🔄 Attempting ffmpeg-static (bundled binary)...');
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      const ffmpegStatic = require('ffmpeg-static');
+      if (ffmpegStatic) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+        const fs = require('fs');
+        if (fs.existsSync(ffmpegStatic)) {
+          ffmpegPath = ffmpegStatic;
+          console.log('✅ FFmpeg resolved via ffmpeg-static:', ffmpegPath);
+          
+          // Check version to confirm it's modern
+          try {
+            const { execSync } = require('child_process');
+            const versionOutput = execSync(`"${ffmpegStatic}" -version`, { encoding: 'utf8' });
+            const versionMatch = versionOutput.match(/ffmpeg version (\d+)\.(\d+)/);
+            if (versionMatch) {
+              console.log(`ℹ️  FFmpeg version ${versionMatch[1]}.${versionMatch[2]} (bundled)`);
+            }
+          } catch (vErr) {
+            console.log('ℹ️  (Could not detect version, but using ffmpeg-static)');
+          }
+        } else {
+          console.log('⚠️ ffmpeg-static returned invalid path:', ffmpegStatic);
+        }
+      }
+    } catch (requireError) {
+      console.log('⚠️ ffmpeg-static not available:', requireError.message);
+      console.log('ℹ️  Install with: yarn add ffmpeg-static');
+    }
+  }
+
+  // Method 2: Try ffbinaries as fallback (downloads latest FFmpeg on demand)
+  if (!ffmpegPath) {
+    try {
+      console.log('🔄 Attempting ffbinaries fallback (downloads FFmpeg if needed)...');
       
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const ffbinaries = require('ffbinaries');
@@ -102,42 +137,6 @@ async function initializeFfmpegPaths() {
     } catch (error) {
       console.log('⚠️ ffbinaries failed:', error.message);
       console.log('ℹ️  Install with: yarn add ffbinaries');
-    }
-  }
-
-  // Method 2: Try ffmpeg-static 5.2.0 as fallback (software encoding only)
-  if (!ffmpegPath && !app.isPackaged) {
-    try {
-      console.log('🔄 Attempting ffmpeg-static 5.2.0 fallback (development mode)...');
-
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-      const ffmpegStatic = require('ffmpeg-static');
-      if (ffmpegStatic) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-        const fs = require('fs');
-        if (fs.existsSync(ffmpegStatic)) {
-          ffmpegPath = ffmpegStatic;
-          console.log('✅ FFmpeg resolved via ffmpeg-static:', ffmpegPath);
-          console.log('⚠️  Note: Static builds cannot initialize VAAPI, will use software encoding');
-          
-          // Check version to confirm it's modern
-          try {
-            const { execSync } = require('child_process');
-            const versionOutput = execSync(`${ffmpegStatic} -version`, { encoding: 'utf8' });
-            const versionMatch = versionOutput.match(/ffmpeg version (\d+)\.(\d+)/);
-            if (versionMatch) {
-              console.log(`ℹ️  FFmpeg version ${versionMatch[1]}.${versionMatch[2]}`);
-            }
-          } catch (vErr) {
-            console.log('ℹ️  (Could not detect version, but using ffmpeg-static)');
-          }
-        } else {
-          console.log('⚠️ ffmpeg-static returned invalid path:', ffmpegStatic);
-        }
-      }
-    } catch (requireError) {
-      console.log('⚠️ ffmpeg-static not available:', requireError.message);
-      console.log('ℹ️  Install with: yarn add ffmpeg-static@5.2.0');
     }
   }
 
@@ -1644,7 +1643,7 @@ ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
 
 ipcMain.handle('getVideoDimensions', async (_event, filePath: string) => {
   return new Promise<{ width: number; height: number }>((resolve, reject) => {
-    const ffprobe = spawn('ffprobe', [
+    const ffprobe = spawn(ffprobePath.path, [
       '-v',
       'error',
       '-select_streams',
