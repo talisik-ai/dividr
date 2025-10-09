@@ -166,7 +166,10 @@ export interface TracksSlice {
     newStartFrame?: number,
     newEndFrame?: number,
   ) => void;
-  duplicateTrack: (trackId: string) => string;
+  duplicateTrack: (
+    trackId: string,
+    duplicateLinked?: boolean,
+  ) => string | string[];
   splitTrack: (trackId: string, frame: number) => void;
   splitAtPlayhead: () => boolean;
   splitAtPosition: (frame: number, trackId?: string) => boolean;
@@ -596,61 +599,174 @@ export const createTracksSlice: StateCreator<
     state.markUnsavedChanges?.();
   },
 
-  duplicateTrack: (trackId) => {
+  duplicateTrack: (trackId, duplicateLinked = true) => {
     const state = get() as any;
     const originalTrack = state.tracks.find(
       (t: VideoTrack) => t.id === trackId,
     );
-    if (!originalTrack) return '';
+    if (!originalTrack) {
+      console.error(`❌ Cannot duplicate: track ${trackId} not found`);
+      return '';
+    }
 
     const newId = uuidv4();
     const duration = originalTrack.endFrame - originalTrack.startFrame;
 
-    if (originalTrack.isLinked && originalTrack.linkedTrackId) {
+    // Industry-standard: Place duplicate immediately after original on timeline
+    const proposedStartFrame = originalTrack.endFrame;
+
+    // Duplicate linked pair if track is linked AND duplicateLinked is true
+    if (
+      originalTrack.isLinked &&
+      originalTrack.linkedTrackId &&
+      duplicateLinked
+    ) {
       const linkedTrack = state.tracks.find(
         (t: VideoTrack) => t.id === originalTrack.linkedTrackId,
       );
       if (linkedTrack) {
         const newLinkedId = uuidv4();
+        const linkedDuration = linkedTrack.endFrame - linkedTrack.startFrame;
 
+        // Calculate relative offset between linked tracks
+        const relativeOffset =
+          linkedTrack.startFrame - originalTrack.startFrame;
+
+        // Find non-conflicting positions for both tracks
+        const existingTracksOfSameType = state.tracks.filter(
+          (t: VideoTrack) => t.type === originalTrack.type,
+        );
+        const existingLinkedTracksOfSameType = state.tracks.filter(
+          (t: VideoTrack) => t.type === linkedTrack.type,
+        );
+
+        const finalStartFrame = findNearestAvailablePosition(
+          proposedStartFrame,
+          duration,
+          existingTracksOfSameType,
+        );
+
+        const linkedProposedStartFrame = finalStartFrame + relativeOffset;
+        const linkedFinalStartFrame = findNearestAvailablePosition(
+          linkedProposedStartFrame,
+          linkedDuration,
+          existingLinkedTracksOfSameType,
+        );
+
+        // Create duplicate with ALL metadata preserved (reference-based)
         const duplicatedTrack: VideoTrack = {
-          ...originalTrack,
+          ...originalTrack, // Preserve ALL properties including transforms, effects, etc.
           id: newId,
           name: `${originalTrack.name} Copy`,
-          startFrame: originalTrack.endFrame,
-          endFrame: originalTrack.endFrame + duration,
+          startFrame: finalStartFrame,
+          endFrame: finalStartFrame + duration,
           linkedTrackId: newLinkedId,
-          sourceDuration: originalTrack.sourceDuration, // Preserve source duration
+          // Explicitly preserve critical metadata
+          source: originalTrack.source, // Same source reference
+          sourceStartTime: originalTrack.sourceStartTime, // Same trim in-point
+          sourceDuration: originalTrack.sourceDuration, // Same source boundaries
+          previewUrl: originalTrack.previewUrl,
+          originalFile: originalTrack.originalFile,
+          tempFilePath: originalTrack.tempFilePath,
+          offsetX: originalTrack.offsetX,
+          offsetY: originalTrack.offsetY,
+          width: originalTrack.width,
+          height: originalTrack.height,
+          volume: originalTrack.volume,
         };
 
         const duplicatedLinkedTrack: VideoTrack = {
-          ...linkedTrack,
+          ...linkedTrack, // Preserve ALL properties
           id: newLinkedId,
           name: `${linkedTrack.name} Copy`,
-          startFrame: linkedTrack.endFrame,
-          endFrame: linkedTrack.endFrame + duration,
+          startFrame: linkedFinalStartFrame,
+          endFrame: linkedFinalStartFrame + linkedDuration,
           linkedTrackId: newId,
-          sourceDuration: linkedTrack.sourceDuration, // Preserve source duration
+          // Explicitly preserve critical metadata
+          source: linkedTrack.source,
+          sourceStartTime: linkedTrack.sourceStartTime,
+          sourceDuration: linkedTrack.sourceDuration,
+          previewUrl: linkedTrack.previewUrl,
+          originalFile: linkedTrack.originalFile,
+          tempFilePath: linkedTrack.tempFilePath,
+          volume: linkedTrack.volume,
         };
 
         set((state: any) => ({
           tracks: [...state.tracks, duplicatedTrack, duplicatedLinkedTrack],
         }));
-      }
-    } else {
-      const duplicatedTrack: VideoTrack = {
-        ...originalTrack,
-        id: newId,
-        name: `${originalTrack.name} Copy`,
-        startFrame: originalTrack.endFrame,
-        endFrame: originalTrack.endFrame + duration,
-        sourceDuration: originalTrack.sourceDuration, // Preserve source duration
-      };
 
-      set((state: any) => ({
-        tracks: [...state.tracks, duplicatedTrack],
-      }));
+        console.log(
+          `✨ Duplicated linked tracks: "${originalTrack.name}" (${trackId} → ${newId}) and "${linkedTrack.name}" (${originalTrack.linkedTrackId} → ${newLinkedId})`,
+        );
+        console.log(
+          `   Source reference preserved: ${originalTrack.source} (no new media input created)`,
+        );
+
+        // Trigger visual feedback for both duplicated tracks AFTER logging
+        console.log(
+          `🎨 Triggering animation for NEW tracks: ${newId}, ${newLinkedId}`,
+        );
+        state.triggerDuplicationFeedback?.(newId);
+        state.triggerDuplicationFeedback?.(newLinkedId);
+
+        state.markUnsavedChanges?.();
+        // Return both IDs for linked tracks
+        return [newId, newLinkedId];
+      }
     }
+
+    // Single track duplication (unlinked OR linked but duplicateLinked=false)
+    const existingTracksOfSameType = state.tracks.filter(
+      (t: VideoTrack) => t.type === originalTrack.type,
+    );
+
+    const finalStartFrame = findNearestAvailablePosition(
+      proposedStartFrame,
+      duration,
+      existingTracksOfSameType,
+    );
+
+    // Create duplicate with ALL metadata preserved (reference-based)
+    // If original was linked but we're only duplicating one side, break the link
+    const duplicatedTrack: VideoTrack = {
+      ...originalTrack, // Preserve ALL properties including transforms, effects, etc.
+      id: newId,
+      name: `${originalTrack.name} Copy`,
+      startFrame: finalStartFrame,
+      endFrame: finalStartFrame + duration,
+      // Explicitly preserve critical metadata
+      source: originalTrack.source, // Same source reference
+      sourceStartTime: originalTrack.sourceStartTime, // Same trim in-point
+      sourceDuration: originalTrack.sourceDuration, // Same source boundaries
+      previewUrl: originalTrack.previewUrl,
+      originalFile: originalTrack.originalFile,
+      tempFilePath: originalTrack.tempFilePath,
+      offsetX: originalTrack.offsetX,
+      offsetY: originalTrack.offsetY,
+      width: originalTrack.width,
+      height: originalTrack.height,
+      volume: originalTrack.volume,
+      subtitleText: originalTrack.subtitleText,
+      // Break link if duplicating only one side of a linked pair
+      isLinked: false,
+      linkedTrackId: undefined,
+    };
+
+    set((state: any) => ({
+      tracks: [...state.tracks, duplicatedTrack],
+    }));
+
+    console.log(
+      `✨ Duplicated track: "${originalTrack.name}" (${trackId} → ${newId})${originalTrack.isLinked && !duplicateLinked ? ' [link broken]' : ''}`,
+    );
+    console.log(
+      `   Source reference preserved: ${originalTrack.source} (no new media input created)`,
+    );
+
+    // Trigger visual feedback AFTER logging
+    console.log(`🎨 Triggering animation for NEW track: ${newId}`);
+    state.triggerDuplicationFeedback?.(newId);
 
     state.markUnsavedChanges?.();
     return newId;

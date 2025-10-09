@@ -157,3 +157,25 @@ select:focus {
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
 }
+
+/* Duplication feedback animation */
+@keyframes duplicatePulse {
+  0% {
+    outline: 3px solid rgba(59, 130, 246, 0.7);
+    outline-offset: 0px;
+  }
+  50% {
+    outline: 3px solid rgba(59, 130, 246, 0.3);
+    outline-offset: 4px;
+  }
+  100% {
+    outline: 3px solid rgba(59, 130, 246, 0);
+    outline-offset: 8px;
+  }
+}
+
+.track-duplicate-feedback {
+  animation: duplicatePulse 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  z-index: 50 !important;
+}

@@ -80,6 +80,7 @@ const TrackItemWrapper: React.FC<{
   isDragging: boolean;
   isResizing: 'left' | 'right' | false;
   isSplitModeActive: boolean;
+  isDuplicationFeedback: boolean;
   children: React.ReactNode;
   onClick: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
@@ -92,6 +93,7 @@ const TrackItemWrapper: React.FC<{
     isDragging,
     isResizing,
     isSplitModeActive,
+    isDuplicationFeedback,
     children,
     onClick,
     onMouseDown,
@@ -127,10 +129,12 @@ const TrackItemWrapper: React.FC<{
     return (
       <div
         className={`
-          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded z-10 flex items-center overflow-hidden select-none
+          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded flex items-center select-none
+          ${isDuplicationFeedback ? 'overflow-visible' : 'overflow-hidden'}
           ${isSelected ? 'border-2 border-secondary' : ''}
           ${getCursorClass()}
           ${track.visible ? 'opacity-100' : 'opacity-50'}
+          ${isDuplicationFeedback ? 'track-duplicate-feedback z-50' : 'z-10'}
         `}
         style={{
           transform: `translate3d(${left}px, 0, 0)`,
@@ -170,6 +174,11 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     });
     const rafRef = useRef<number | null>(null);
     const hasAutoSelectedRef = useRef(false);
+
+    // Subscribe to duplication feedback state
+    const isDuplicationFeedback = useVideoEditorStore((state) =>
+      state.duplicationFeedbackTrackIds.has(track.id),
+    );
 
     // Apply global cursor override during resize/drag to prevent flickering
     useEffect(() => {
@@ -630,6 +639,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           isDragging={isDragging}
           isResizing={isResizing}
           isSplitModeActive={isSplitModeActive}
+          isDuplicationFeedback={isDuplicationFeedback}
           onClick={handleClick}
           onMouseDown={handleMouseDown}
         >
