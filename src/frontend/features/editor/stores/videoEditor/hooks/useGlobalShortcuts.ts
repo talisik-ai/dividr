@@ -19,12 +19,10 @@ export const useGlobalShortcuts = () => {
       : timeline.totalFrames;
   }, [tracks, timeline.totalFrames]);
 
-  // Get the store instance for creating shortcuts
-  const store = useVideoEditorStore.getState();
-
-  // Create global shortcuts with current state
+  // Create global shortcuts with a getter function to always access fresh state
   const globalShortcuts = useMemo(
-    () => createGlobalShortcuts(store, effectiveEndFrame),
+    () =>
+      createGlobalShortcuts(useVideoEditorStore.getState, effectiveEndFrame),
     [effectiveEndFrame],
   );
 
@@ -58,6 +56,22 @@ export const useGlobalShortcuts = () => {
     effectiveEndFrame,
     timeline.currentFrame,
   ]);
+
+  // Navigate frame prev fast (Shift+Left)
+  useHotkeys(
+    'shift+left',
+    globalShortcuts[5].handler,
+    globalShortcuts[5].options,
+    [effectiveEndFrame, timeline.currentFrame, timeline.fps],
+  );
+
+  // Navigate frame next fast (Shift+Right)
+  useHotkeys(
+    'shift+right',
+    globalShortcuts[6].handler,
+    globalShortcuts[6].options,
+    [effectiveEndFrame, timeline.currentFrame, timeline.fps],
+  );
 
   return {
     shortcuts: globalShortcuts,

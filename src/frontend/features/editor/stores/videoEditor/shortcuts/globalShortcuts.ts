@@ -6,7 +6,7 @@ import { ShortcutConfig } from './types';
  * These include playback controls and navigation shortcuts
  */
 export const createGlobalShortcuts = (
-  store: any,
+  getStore: () => any,
   effectiveEndFrame: number,
 ): ShortcutConfig[] => [
   {
@@ -18,7 +18,7 @@ export const createGlobalShortcuts = (
     priority: 'high',
     handler: (e) => {
       e?.preventDefault();
-      store.togglePlayback();
+      getStore().togglePlayback();
     },
   },
   {
@@ -28,7 +28,7 @@ export const createGlobalShortcuts = (
     category: 'Navigation',
     scope: 'global',
     handler: () => {
-      store.setCurrentFrame(0);
+      getStore().setCurrentFrame(0);
     },
   },
   {
@@ -38,16 +38,19 @@ export const createGlobalShortcuts = (
     category: 'Navigation',
     scope: 'global',
     handler: () => {
-      store.setCurrentFrame(effectiveEndFrame - 1);
+      getStore().setCurrentFrame(effectiveEndFrame - 1);
     },
   },
   {
     id: 'navigate-frame-prev',
     keys: 'left',
-    description: 'Previous Frame',
+    description: 'Move Playhead Backward (1 Frame)',
     category: 'Navigation',
     scope: 'global',
-    handler: () => {
+    handler: (e) => {
+      e?.preventDefault();
+      // Always get fresh state from store
+      const store = getStore();
       const currentFrame = store.timeline.currentFrame;
       store.setCurrentFrame(Math.max(0, currentFrame - 1));
     },
@@ -55,12 +58,51 @@ export const createGlobalShortcuts = (
   {
     id: 'navigate-frame-next',
     keys: 'right',
-    description: 'Next Frame',
+    description: 'Move Playhead Forward (1 Frame)',
     category: 'Navigation',
     scope: 'global',
-    handler: () => {
+    handler: (e) => {
+      e?.preventDefault();
+      // Always get fresh state from store
+      const store = getStore();
       const currentFrame = store.timeline.currentFrame;
       store.setCurrentFrame(Math.min(effectiveEndFrame - 1, currentFrame + 1));
+    },
+  },
+  {
+    id: 'navigate-frame-prev-fast',
+    keys: 'shift+left',
+    description: 'Move Playhead Backward (5 Frames)',
+    category: 'Navigation',
+    scope: 'global',
+    handler: (e) => {
+      e?.preventDefault();
+      // Always get fresh state from store
+      const store = getStore();
+      const currentFrame = store.timeline.currentFrame;
+      const fps = store.timeline.fps || 30;
+      // Use 5 frames for most frame rates, 10 for higher frame rates (60fps+)
+      const jumpFrames = fps >= 60 ? 10 : 5;
+      store.setCurrentFrame(Math.max(0, currentFrame - jumpFrames));
+    },
+  },
+  {
+    id: 'navigate-frame-next-fast',
+    keys: 'shift+right',
+    description: 'Move Playhead Forward (5 Frames)',
+    category: 'Navigation',
+    scope: 'global',
+    handler: (e) => {
+      e?.preventDefault();
+      // Always get fresh state from store
+      const store = getStore();
+      const currentFrame = store.timeline.currentFrame;
+      const fps = store.timeline.fps || 30;
+      // Use 5 frames for most frame rates, 10 for higher frame rates (60fps+)
+      const jumpFrames = fps >= 60 ? 10 : 5;
+      store.setCurrentFrame(
+        Math.min(effectiveEndFrame - 1, currentFrame + jumpFrames),
+      );
     },
   },
 ];
