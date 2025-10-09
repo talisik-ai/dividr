@@ -105,4 +105,75 @@ export const createGlobalShortcuts = (
       );
     },
   },
+  {
+    id: 'navigate-next-edit-point',
+    keys: 'down',
+    description: 'Jump to Next Edit Point',
+    category: 'Navigation',
+    scope: 'global',
+    handler: (e) => {
+      e?.preventDefault();
+      // Get fresh state from store
+      const store = getStore();
+      const currentFrame = store.timeline.currentFrame;
+      const tracks = store.tracks || [];
+
+      // Collect all edit points (track start frames) that are after current frame
+      const editPoints = new Set<number>();
+      tracks.forEach((track: any) => {
+        if (track.startFrame > currentFrame) {
+          editPoints.add(track.startFrame);
+        }
+        // Also consider end frames as edit points
+        if (track.endFrame > currentFrame) {
+          editPoints.add(track.endFrame);
+        }
+      });
+
+      // Find the nearest edit point after current frame
+      const sortedEditPoints = Array.from(editPoints).sort((a, b) => a - b);
+      const nextEditPoint = sortedEditPoints[0];
+
+      if (nextEditPoint !== undefined) {
+        store.setCurrentFrame(nextEditPoint);
+      }
+    },
+  },
+  {
+    id: 'navigate-prev-edit-point',
+    keys: 'up',
+    description: 'Jump to Previous Edit Point',
+    category: 'Navigation',
+    scope: 'global',
+    handler: (e) => {
+      e?.preventDefault();
+      // Get fresh state from store
+      const store = getStore();
+      const currentFrame = store.timeline.currentFrame;
+      const tracks = store.tracks || [];
+
+      // Collect all edit points (track start frames) that are before current frame
+      const editPoints = new Set<number>();
+      tracks.forEach((track: any) => {
+        if (track.startFrame < currentFrame) {
+          editPoints.add(track.startFrame);
+        }
+        // Also consider end frames as edit points
+        if (track.endFrame < currentFrame) {
+          editPoints.add(track.endFrame);
+        }
+      });
+
+      // Add frame 0 as a potential edit point
+      editPoints.add(0);
+
+      // Find the nearest edit point before current frame
+      const sortedEditPoints = Array.from(editPoints).sort((a, b) => b - a);
+      const prevEditPoint = sortedEditPoints[0];
+
+      if (prevEditPoint !== undefined) {
+        store.setCurrentFrame(prevEditPoint);
+      }
+    },
+  },
 ];

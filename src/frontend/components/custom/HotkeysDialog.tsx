@@ -98,7 +98,7 @@ export const HotkeysDialog: React.FC<HotkeysDialogProps> = ({
   // Initialize shortcut registry
   useEffect(() => {
     shortcutRegistry.initialize(
-      useVideoEditorStore.getState(),
+      useVideoEditorStore.getState,
       effectiveEndFrame,
     );
   }, [effectiveEndFrame]);

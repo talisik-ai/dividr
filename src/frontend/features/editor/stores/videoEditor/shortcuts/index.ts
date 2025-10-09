@@ -14,14 +14,17 @@ export class ShortcutRegistry {
   /**
    * Initialize the registry with all shortcuts
    */
-  initialize(store: any, effectiveEndFrame: number): void {
+  initialize(getStore: () => any, effectiveEndFrame: number): void {
     this.shortcuts.clear();
 
     // Register global shortcuts
-    const globalShortcuts = createGlobalShortcuts(store, effectiveEndFrame);
+    const globalShortcuts = createGlobalShortcuts(getStore, effectiveEndFrame);
     globalShortcuts.forEach((shortcut) => {
       this.shortcuts.set(shortcut.id, shortcut);
     });
+
+    // Get store instance for other shortcuts
+    const store = getStore();
 
     // Register timeline shortcuts
     const timelineShortcuts = createTimelineShortcuts(store);

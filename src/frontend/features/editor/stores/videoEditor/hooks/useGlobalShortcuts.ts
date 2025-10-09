@@ -73,6 +73,20 @@ export const useGlobalShortcuts = () => {
     [effectiveEndFrame, timeline.currentFrame, timeline.fps],
   );
 
+  // Navigate to next edit point (Down)
+  useHotkeys('down', globalShortcuts[7].handler, globalShortcuts[7].options, [
+    effectiveEndFrame,
+    timeline.currentFrame,
+    tracks,
+  ]);
+
+  // Navigate to previous edit point (Up)
+  useHotkeys('up', globalShortcuts[8].handler, globalShortcuts[8].options, [
+    effectiveEndFrame,
+    timeline.currentFrame,
+    tracks,
+  ]);
+
   return {
     shortcuts: globalShortcuts,
     effectiveEndFrame,
