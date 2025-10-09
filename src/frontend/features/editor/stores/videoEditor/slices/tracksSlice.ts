@@ -657,9 +657,10 @@ export const createTracksSlice: StateCreator<
         const duplicatedTrack: VideoTrack = {
           ...originalTrack, // Preserve ALL properties including transforms, effects, etc.
           id: newId,
-          name: `${originalTrack.name} Copy`,
+          name: `${originalTrack.name}`,
           startFrame: finalStartFrame,
           endFrame: finalStartFrame + duration,
+          duration: duration, // Explicitly set duration to match the timeline segment
           linkedTrackId: newLinkedId,
           // Explicitly preserve critical metadata
           source: originalTrack.source, // Same source reference
@@ -678,9 +679,10 @@ export const createTracksSlice: StateCreator<
         const duplicatedLinkedTrack: VideoTrack = {
           ...linkedTrack, // Preserve ALL properties
           id: newLinkedId,
-          name: `${linkedTrack.name} Copy`,
+          name: `${linkedTrack.name}`,
           startFrame: linkedFinalStartFrame,
           endFrame: linkedFinalStartFrame + linkedDuration,
+          duration: linkedDuration, // Explicitly set duration to match the timeline segment
           linkedTrackId: newId,
           // Explicitly preserve critical metadata
           source: linkedTrack.source,
@@ -702,6 +704,22 @@ export const createTracksSlice: StateCreator<
         console.log(
           `   Source reference preserved: ${originalTrack.source} (no new media input created)`,
         );
+        console.log(`   Trim metadata preserved:`, {
+          video: {
+            sourceStartTime: duplicatedTrack.sourceStartTime,
+            sourceDuration: duplicatedTrack.sourceDuration,
+            duration: duplicatedTrack.duration,
+            startFrame: duplicatedTrack.startFrame,
+            endFrame: duplicatedTrack.endFrame,
+          },
+          audio: {
+            sourceStartTime: duplicatedLinkedTrack.sourceStartTime,
+            sourceDuration: duplicatedLinkedTrack.sourceDuration,
+            duration: duplicatedLinkedTrack.duration,
+            startFrame: duplicatedLinkedTrack.startFrame,
+            endFrame: duplicatedLinkedTrack.endFrame,
+          },
+        });
 
         // Trigger visual feedback for both duplicated tracks AFTER logging
         console.log(
@@ -732,9 +750,10 @@ export const createTracksSlice: StateCreator<
     const duplicatedTrack: VideoTrack = {
       ...originalTrack, // Preserve ALL properties including transforms, effects, etc.
       id: newId,
-      name: `${originalTrack.name} Copy`,
+      name: `${originalTrack.name}`,
       startFrame: finalStartFrame,
       endFrame: finalStartFrame + duration,
+      duration: duration, // Explicitly set duration to match the timeline segment
       // Explicitly preserve critical metadata
       source: originalTrack.source, // Same source reference
       sourceStartTime: originalTrack.sourceStartTime, // Same trim in-point
@@ -763,6 +782,15 @@ export const createTracksSlice: StateCreator<
     console.log(
       `   Source reference preserved: ${originalTrack.source} (no new media input created)`,
     );
+    console.log(`   Trim metadata preserved:`, {
+      sourceStartTime: duplicatedTrack.sourceStartTime,
+      sourceDuration: duplicatedTrack.sourceDuration,
+      duration: duplicatedTrack.duration,
+      startFrame: duplicatedTrack.startFrame,
+      endFrame: duplicatedTrack.endFrame,
+      trackDurationSeconds: duplicatedTrack.duration / state.timeline.fps,
+      trimmedSegment: `${duplicatedTrack.sourceStartTime}s to ${(duplicatedTrack.sourceStartTime || 0) + duplicatedTrack.duration / state.timeline.fps}s`,
+    });
 
     // Trigger visual feedback AFTER logging
     console.log(`🎨 Triggering animation for NEW track: ${newId}`);

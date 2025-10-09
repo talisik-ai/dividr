@@ -18,6 +18,20 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragActive, setDragActive] = useState(false);
 
+  // Track previous trim state to detect actual trim changes (not just playback progression)
+  const prevVideoTrimRef = useRef<{
+    trackId: string;
+    startFrame: number;
+    endFrame: number;
+    sourceStartTime: number;
+  } | null>(null);
+  const prevAudioTrimRef = useRef<{
+    trackId: string;
+    startFrame: number;
+    endFrame: number;
+    sourceStartTime: number;
+  } | null>(null);
+
   const { theme } = useTheme();
   const {
     tracks,
@@ -589,11 +603,29 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     setCurrentFrame,
   ]);
 
-  // Sync video element on scrubbing/seek (user interaction)
+  // Sync video element on scrubbing/seek (user interaction and track changes)
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeVideoTrack) return;
-    if (playback.isPlaying) return; // don't fight playback
+
+    // Detect if trim boundaries actually changed (not just playback progression)
+    const currentTrimState = {
+      trackId: activeVideoTrack.id,
+      startFrame: activeVideoTrack.startFrame,
+      endFrame: activeVideoTrack.endFrame,
+      sourceStartTime: activeVideoTrack.sourceStartTime || 0,
+    };
+
+    const trimChanged =
+      !prevVideoTrimRef.current ||
+      prevVideoTrimRef.current.trackId !== currentTrimState.trackId ||
+      prevVideoTrimRef.current.startFrame !== currentTrimState.startFrame ||
+      prevVideoTrimRef.current.endFrame !== currentTrimState.endFrame ||
+      prevVideoTrimRef.current.sourceStartTime !==
+        currentTrimState.sourceStartTime;
+
+    // Update the ref for next comparison
+    prevVideoTrimRef.current = currentTrimState;
 
     const relativeFrame = Math.max(
       0,
@@ -617,21 +649,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     const diff = Math.abs(video.currentTime - clampedTargetTime);
     const tolerance = 1 / timeline.fps; // One frame tolerance
 
-    if (diff > tolerance) {
-      console.log('[DirectPreview] Seeking video - frame timing sync:', {
-        currentFrame: timeline.currentFrame,
-        trackStartFrame: activeVideoTrack.startFrame,
-        trackEndFrame: activeVideoTrack.endFrame,
-        relativeFrame,
-        trackTime,
-        sourceStartTime: activeVideoTrack.sourceStartTime || 0,
-        trimmedEndTime,
-        targetTime,
+    // Seek logic:
+    // 1. If trim boundaries changed: ALWAYS seek (even during playback)
+    // 2. If NOT playing (scrubbing): Seek if position differs
+    // 3. If playing normally: Let the video play naturally (don't seek on every frame)
+    const shouldSeek = trimChanged || (!playback.isPlaying && diff > tolerance);
+
+    if (shouldSeek && diff > tolerance) {
+      console.log('[DirectPreview] Seeking video:', {
+        reason: trimChanged ? 'trim changed' : 'scrubbing',
         clampedTargetTime,
         currentVideoTime: video.currentTime,
         diff,
-        tolerance,
-        fps: timeline.fps,
       });
       video.currentTime = clampedTargetTime;
     }
@@ -642,11 +671,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     activeVideoTrack,
   ]);
 
-  // Sync independent audio element on scrubbing/seek (user interaction)
+  // Sync independent audio element on scrubbing/seek (user interaction and track changes)
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !independentAudioTrack) return;
-    if (playback.isPlaying) return; // don't fight playback
 
     // Only seek audio if timeline position is within the audio track's range
     const isWithinAudioRange =
@@ -654,12 +682,27 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       timeline.currentFrame < independentAudioTrack.endFrame;
 
     if (!isWithinAudioRange) {
-      console.log(
-        '[DirectPreview] Timeline position outside audio track range - not seeking audio',
-        `Frame: ${timeline.currentFrame}, Audio range: ${independentAudioTrack.startFrame}-${independentAudioTrack.endFrame}`,
-      );
       return; // Don't seek audio when timeline is outside its range
     }
+
+    // Detect if trim boundaries actually changed (not just playback progression)
+    const currentTrimState = {
+      trackId: independentAudioTrack.id,
+      startFrame: independentAudioTrack.startFrame,
+      endFrame: independentAudioTrack.endFrame,
+      sourceStartTime: independentAudioTrack.sourceStartTime || 0,
+    };
+
+    const trimChanged =
+      !prevAudioTrimRef.current ||
+      prevAudioTrimRef.current.trackId !== currentTrimState.trackId ||
+      prevAudioTrimRef.current.startFrame !== currentTrimState.startFrame ||
+      prevAudioTrimRef.current.endFrame !== currentTrimState.endFrame ||
+      prevAudioTrimRef.current.sourceStartTime !==
+        currentTrimState.sourceStartTime;
+
+    // Update the ref for next comparison
+    prevAudioTrimRef.current = currentTrimState;
 
     const relativeFrame =
       timeline.currentFrame - independentAudioTrack.startFrame;
@@ -682,21 +725,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     const diff = Math.abs(audio.currentTime - clampedTargetTime);
     const tolerance = 1 / timeline.fps; // One frame tolerance
 
-    if (diff > tolerance) {
-      console.log('[DirectPreview] Seeking audio - frame timing sync:', {
-        currentFrame: timeline.currentFrame,
-        trackStartFrame: independentAudioTrack.startFrame,
-        trackEndFrame: independentAudioTrack.endFrame,
-        relativeFrame,
-        trackTime,
-        sourceStartTime: independentAudioTrack.sourceStartTime || 0,
-        trimmedEndTime,
-        targetTime,
+    // Seek logic:
+    // 1. If trim boundaries changed: ALWAYS seek (even during playback)
+    // 2. If NOT playing (scrubbing): Seek if position differs
+    // 3. If playing normally: Let the audio play naturally (don't seek on every frame)
+    const shouldSeek = trimChanged || (!playback.isPlaying && diff > tolerance);
+
+    if (shouldSeek && diff > tolerance) {
+      console.log('[DirectPreview] Seeking audio:', {
+        reason: trimChanged ? 'trim changed' : 'scrubbing',
         clampedTargetTime,
         currentAudioTime: audio.currentTime,
         diff,
-        tolerance,
-        fps: timeline.fps,
       });
       audio.currentTime = clampedTargetTime;
     }
@@ -704,7 +744,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     timeline.currentFrame,
     timeline.fps,
     playback.isPlaying,
-    independentAudioTrack,
+    independentAudioTrack?.id,
+    independentAudioTrack?.startFrame,
+    independentAudioTrack?.endFrame,
+    independentAudioTrack?.sourceStartTime,
+    independentAudioTrack?.sourceDuration,
   ]);
 
   // Drag/drop
