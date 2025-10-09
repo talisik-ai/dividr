@@ -1,22 +1,32 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Button } from '@/frontend/components/ui/button';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/frontend/components/ui/dropdown-menu';
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/frontend/components/ui/select';
+import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
 import {
+  ChevronDown,
   CopyPlus,
   Link,
   Magnet,
   Maximize,
+  MousePointer2,
   Pause,
   Play,
   SkipBack,
   SkipForward,
+  Slice,
   SplitSquareHorizontal,
   Trash,
   Unlink,
@@ -350,6 +360,61 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
   );
 });
 
+// Mode Selector component for switching between Selection and Slice tools
+const ModeSelector: React.FC = React.memo(() => {
+  const isSplitModeActive = useVideoEditorStore(
+    (state) => state.timeline.isSplitModeActive,
+  );
+  const setSplitMode = useVideoEditorStore((state) => state.setSplitMode);
+
+  const currentMode = isSplitModeActive ? 'slice' : 'selection';
+
+  const handleSelectionMode = useCallback(() => {
+    setSplitMode(false);
+  }, [setSplitMode]);
+
+  const handleSliceMode = useCallback(() => {
+    setSplitMode(true);
+  }, [setSplitMode]);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="native">
+          {currentMode === 'selection' ? (
+            <>
+              <MousePointer2 className="size-4" />
+            </>
+          ) : (
+            <>
+              <Slice className="size-4" />
+            </>
+          )}
+          <ChevronDown className="size-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem
+          onClick={handleSelectionMode}
+          className="flex items-center gap-2 cursor-pointer"
+        >
+          <MousePointer2 className="size-4" />
+          <span>Selection Tool</span>
+          <span className="ml-auto text-xs text-muted-foreground pl-4">V</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={handleSliceMode}
+          className="flex items-center gap-2 cursor-pointer"
+        >
+          <Slice className="size-4" />
+          <span>Slice Tool</span>
+          <span className="ml-auto text-xs text-muted-foreground pl-4">B</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+});
+
 // Optimized zoom slider component to prevent timeline lag
 const ZoomSlider: React.FC = React.memo(() => {
   // Get current zoom level from store
@@ -437,31 +502,35 @@ export const TimelineControls: React.FC = React.memo(
     return (
       <div className="h-10 grid grid-cols-[364px_1fr] px-4 border-t border-accent">
         {/* Playback Controls */}
-        <div className="flex items-center gap-6">
-          <Button
-            variant="native"
-            onClick={() => useVideoEditorStore.getState().splitAtPlayhead()}
-            title="Split"
-          >
-            <SplitSquareHorizontal />
-          </Button>
-          <Button
-            variant="native"
-            onClick={() => useVideoEditorStore.getState().stop()}
-            title="Duplicate"
-          >
-            <CopyPlus />
-          </Button>
-          <Button
-            variant="native"
-            onClick={toggleSnap}
-            title={`Snap ${snapEnabled ? 'On' : 'Off'} (S)`}
-            className={snapEnabled ? 'text-green-500' : ''}
-          >
-            <Magnet className="w-4 h-4" />
-          </Button>
-          <LinkUnlinkButton />
-          <DeleteButton />
+        <div className="flex items-center gap-4">
+          <ModeSelector />
+          <Separator orientation="vertical" className="!h-6" />
+          <div className="flex items-center gap-6">
+            <Button
+              variant="native"
+              onClick={() => useVideoEditorStore.getState().splitAtPlayhead()}
+              title="Split"
+            >
+              <SplitSquareHorizontal />
+            </Button>
+            <Button
+              variant="native"
+              onClick={() => useVideoEditorStore.getState().stop()}
+              title="Duplicate"
+            >
+              <CopyPlus />
+            </Button>
+            <Button
+              variant="native"
+              onClick={toggleSnap}
+              title={`Snap ${snapEnabled ? 'On' : 'Off'} (S)`}
+              className={snapEnabled ? 'text-green-500' : ''}
+            >
+              <Magnet className="size-4" />
+            </Button>
+            <LinkUnlinkButton />
+            <DeleteButton />
+          </div>
         </div>
 
         <div className="flex items-center flex-1 justify-center relative">
@@ -599,4 +668,5 @@ export const TimelineControls: React.FC = React.memo(
   },
 );
 
+ModeSelector.displayName = 'ModeSelector';
 ZoomSlider.displayName = 'ZoomSlider';
