@@ -1643,7 +1643,7 @@ ipcMain.handle('ffmpeg:get-duration', async (event, filePath: string) => {
 
 ipcMain.handle('getVideoDimensions', async (_event, filePath: string) => {
   return new Promise<{ width: number; height: number }>((resolve, reject) => {
-    const ffprobe = spawn('ffprobe', [
+    const ffprobe = spawn(ffprobePath.path, [
       '-v',
       'error',
       '-select_streams',
