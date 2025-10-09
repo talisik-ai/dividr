@@ -192,6 +192,101 @@ const DeleteButton: React.FC = React.memo(() => {
   );
 });
 
+// Separate component for duplicate button that reacts to track selection
+const DuplicateButton: React.FC = React.memo(() => {
+  const selectedTrackIds = useVideoEditorStore(
+    (state) => state.timeline.selectedTrackIds,
+  );
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  const duplicateTrack = useVideoEditorStore((state) => state.duplicateTrack);
+  const setSelectedTracks = useVideoEditorStore(
+    (state) => state.setSelectedTracks,
+  );
+
+  const handleDuplicate = useCallback(() => {
+    if (selectedTrackIds.length === 0) return;
+
+    console.log('[DuplicateButton] Duplicating selected tracks:', {
+      selectedCount: selectedTrackIds.length,
+      selectedIds: selectedTrackIds,
+    });
+
+    const processedTrackIds = new Set<string>();
+    const newlyCreatedIds: string[] = [];
+
+    selectedTrackIds.forEach((trackId: string) => {
+      if (processedTrackIds.has(trackId)) {
+        console.log(
+          `[DuplicateButton] Skipping ${trackId} - already processed`,
+        );
+        return;
+      }
+
+      const track = tracks.find((t) => t.id === trackId);
+      if (!track) {
+        console.error(
+          `❌ Track ${trackId} not found in tracks array, skipping`,
+        );
+        return;
+      }
+
+      console.log(`[DuplicateButton] Processing track:`, {
+        id: trackId,
+        name: track.name,
+        type: track.type,
+        isLinked: track.isLinked,
+        linkedTrackId: track.linkedTrackId,
+      });
+
+      const bothSidesSelected =
+        track.isLinked &&
+        track.linkedTrackId &&
+        selectedTrackIds.includes(track.linkedTrackId);
+
+      processedTrackIds.add(trackId);
+
+      if (bothSidesSelected && track.linkedTrackId) {
+        processedTrackIds.add(track.linkedTrackId);
+        console.log(
+          `[DuplicateButton] Both sides selected, marking ${track.linkedTrackId} as processed`,
+        );
+      }
+
+      const result = duplicateTrack(trackId, bothSidesSelected);
+      console.log(`[DuplicateButton] Result:`, result);
+
+      if (result) {
+        if (Array.isArray(result)) {
+          newlyCreatedIds.push(...result);
+        } else {
+          newlyCreatedIds.push(result);
+        }
+      }
+    });
+
+    if (newlyCreatedIds.length > 0) {
+      setSelectedTracks(newlyCreatedIds);
+      console.log(
+        `✅ Duplicated ${processedTrackIds.size} track(s) → created ${newlyCreatedIds.length} new track(s)`,
+      );
+      console.log(`   New IDs:`, newlyCreatedIds);
+    } else {
+      console.error('❌ Duplication produced no new tracks');
+    }
+  }, [selectedTrackIds, tracks, duplicateTrack, setSelectedTracks]);
+
+  return (
+    <Button
+      variant="native"
+      onClick={handleDuplicate}
+      title={`Duplicate ${selectedTrackIds.length > 0 ? `${selectedTrackIds.length} selected track${selectedTrackIds.length > 1 ? 's' : ''}` : 'selected tracks'} (Ctrl+D)`}
+      disabled={selectedTrackIds.length === 0}
+    >
+      <CopyPlus className="size-4" />
+    </Button>
+  );
+});
+
 // Link/Unlink button component
 const LinkUnlinkButton: React.FC = React.memo(() => {
   const selectedTrackIds = useVideoEditorStore(
@@ -513,13 +608,7 @@ export const TimelineControls: React.FC = React.memo(
             >
               <SplitSquareHorizontal />
             </Button>
-            <Button
-              variant="native"
-              onClick={() => useVideoEditorStore.getState().stop()}
-              title="Duplicate"
-            >
-              <CopyPlus />
-            </Button>
+            <DuplicateButton />
             <Button
               variant="native"
               onClick={toggleSnap}
