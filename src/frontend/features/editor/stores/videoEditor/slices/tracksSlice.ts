@@ -174,6 +174,8 @@ export interface TracksSlice {
   toggleTrackMute: (trackId: string) => void;
   linkTracks: (videoTrackId: string, audioTrackId: string) => void;
   unlinkTracks: (trackId: string) => void;
+  linkSelectedTracks: () => void;
+  unlinkSelectedTracks: () => void;
   toggleLinkedAudioMute: (videoTrackId: string) => void;
 
   // State management helpers
@@ -1022,5 +1024,57 @@ export const createTracksSlice: StateCreator<
     }));
 
     state.markUnsavedChanges?.();
+  },
+
+  linkSelectedTracks: () => {
+    const state = get() as any;
+    const selectedTrackIds = state.timeline.selectedTrackIds;
+
+    if (selectedTrackIds.length < 2) {
+      // console.log('Cannot link: Need at least 2 tracks selected');
+      return;
+    }
+
+    // Get selected tracks
+    const selectedTracks = state.tracks.filter((t: VideoTrack) =>
+      selectedTrackIds.includes(t.id),
+    );
+
+    // Try to find a video and audio track pair to link
+    const videoTrack = selectedTracks.find(
+      (t: VideoTrack) => t.type === 'video' && !t.isLinked,
+    );
+    const audioTrack = selectedTracks.find(
+      (t: VideoTrack) => t.type === 'audio' && !t.isLinked,
+    );
+
+    if (videoTrack && audioTrack) {
+      (get() as any).linkTracks(videoTrack.id, audioTrack.id);
+      console.log(
+        `✅ Linked video track "${videoTrack.name}" with audio track "${audioTrack.name}"`,
+      );
+    } else {
+      console.log(
+        'Cannot link: Need to select one video and one audio track that are not already linked',
+      );
+    }
+  },
+
+  unlinkSelectedTracks: () => {
+    const state = get() as any;
+    const selectedTrackIds = state.timeline.selectedTrackIds;
+
+    if (selectedTrackIds.length === 0) {
+      console.log('Cannot unlink: No tracks selected');
+      return;
+    }
+
+    // Unlink all selected tracks that are linked
+    selectedTrackIds.forEach((trackId: string) => {
+      const track = state.tracks.find((t: VideoTrack) => t.id === trackId);
+      if (track?.isLinked) {
+        (get() as any).unlinkTracks(trackId);
+      }
+    });
   },
 });

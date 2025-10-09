@@ -55,7 +55,7 @@ const ProjectCard = ({
             <img
               src={project.thumbnail}
               alt={project.title}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover rounded-md"
             />
           ) : (
             <div className="text-zinc-400 dark:text-zinc-600">

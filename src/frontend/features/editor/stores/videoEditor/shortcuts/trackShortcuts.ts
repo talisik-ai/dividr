@@ -132,4 +132,48 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
       store.setSelectedTracks([]);
     },
   },
+  {
+    id: 'track-link-ctrl-g',
+    keys: 'ctrl+g',
+    description: 'Link Clips',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      store.linkSelectedTracks();
+    },
+  },
+  {
+    id: 'track-link-cmd-g',
+    keys: 'cmd+g',
+    description: 'Link Clips',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      store.linkSelectedTracks();
+    },
+  },
+  {
+    id: 'track-unlink-ctrl-shift-g',
+    keys: 'ctrl+shift+g',
+    description: 'Unlink Clips',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      store.unlinkSelectedTracks();
+    },
+  },
+  {
+    id: 'track-unlink-cmd-shift-g',
+    keys: 'cmd+shift+g',
+    description: 'Unlink Clips',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      store.unlinkSelectedTracks();
+    },
+  },
 ];

@@ -72,6 +72,32 @@ export const useTrackShortcuts = () => {
     timeline.selectedTrackIds,
   ]);
 
+  // Link clips (Ctrl+G)
+  useHotkeys('ctrl+g', trackShortcuts[10].handler, trackShortcuts[10].options, [
+    timeline.selectedTrackIds,
+  ]);
+
+  // Link clips (Cmd+G)
+  useHotkeys('cmd+g', trackShortcuts[11].handler, trackShortcuts[11].options, [
+    timeline.selectedTrackIds,
+  ]);
+
+  // Unlink clips (Ctrl+Shift+G)
+  useHotkeys(
+    'ctrl+shift+g',
+    trackShortcuts[12].handler,
+    trackShortcuts[12].options,
+    [timeline.selectedTrackIds],
+  );
+
+  // Unlink clips (Cmd+Shift+G)
+  useHotkeys(
+    'cmd+shift+g',
+    trackShortcuts[13].handler,
+    trackShortcuts[13].options,
+    [timeline.selectedTrackIds],
+  );
+
   return {
     shortcuts: trackShortcuts,
   };
