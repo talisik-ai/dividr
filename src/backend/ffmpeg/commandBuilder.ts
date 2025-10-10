@@ -514,6 +514,9 @@ function buildSeparateTimelines(
         timelineType: 'video',
       };
       videoSegments.push(segment);
+      console.log(
+        `📹 Video segment ${originalIndex}: ${videoCurrentTime.toFixed(2)}s-${(videoCurrentTime + duration).toFixed(2)}s (duration: ${duration.toFixed(2)}s)`,
+      );
       videoCurrentTime += duration;
 
       // If this video has a separate audio file, create an audio segment for it
@@ -533,9 +536,13 @@ function buildSeparateTimelines(
           timelineType: 'audio',
         };
         audioSegments.push(audioSegment);
-        audioCurrentTime += duration;
         console.log(
-          `🎵 Created audio timeline segment from separate audio file: ${trackInfo.audioPath} (originalIndex ${originalIndex})`,
+          `🎵 Audio segment ${originalIndex}: ${audioCurrentTime.toFixed(2)}s-${(audioCurrentTime + duration).toFixed(2)}s from ${trackInfo.audioPath}`,
+        );
+        audioCurrentTime += duration;
+      } else {
+        console.log(
+          `⚠️ Video segment ${originalIndex}: No audio created (audioPath: ${trackInfo.audioPath || 'none'}, muted: ${trackInfo.muted})`,
         );
       }
     } else if (isAudio) {

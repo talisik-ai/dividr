@@ -41,12 +41,17 @@ export const useExportJob = () => {
       const videoTracks = tracks.filter((track) => track.type === 'video');
       const audioTracks = tracks.filter((track) => track.type === 'audio');
       const imageTracks = tracks.filter((track) => track.type === 'image');
+      
+      console.log(`📊 Track counts: video=${videoTracks.length}, audio=${audioTracks.length}, image=${imageTracks.length}, subtitle=${subtitleTracks.length}`);
+      console.log(`🎥 Video tracks:`, videoTracks.map(t => ({ id: t.id, name: t.name, startFrame: t.startFrame, endFrame: t.endFrame, isLinked: t.isLinked, linkedTrackId: t.linkedTrackId })));
+      console.log(`🎵 Audio tracks:`, audioTracks.map(t => ({ id: t.id, name: t.name, source: t.source, startFrame: t.startFrame, endFrame: t.endFrame, isLinked: t.isLinked, linkedTrackId: t.linkedTrackId })));
 
       // Process linked tracks
       const { processedTracks, videoDimensions } = processLinkedTracks(
         videoTracks,
         audioTracks,
         imageTracks,
+        mediaLibrary,
       );
 
       // Sort by timeline position
@@ -112,6 +117,13 @@ function processLinkedTracks(
   videoTracks: VideoTrack[],
   audioTracks: VideoTrack[],
   imageTracks: VideoTrack[],
+  mediaLibrary: {
+    id: string;
+    type: string;
+    source: string;
+    tempFilePath?: string;
+    extractedAudio?: { audioPath: string };
+  }[],
 ) {
   const processedTracks: VideoTrack[] = [];
   const processedTrackIds = new Set<string>();
@@ -133,6 +145,9 @@ function processLinkedTracks(
         );
       }
     }
+
+    // NOTE: We no longer track usedAudioPaths since video and audio are processed independently
+    // Each video track will be video-only (muted), and audio tracks will be processed separately
 
     if (videoTrack.isLinked && videoTrack.linkedTrackId) {
       const linkedAudioTrack = audioTracks.find(
@@ -171,10 +186,17 @@ function processLinkedTracks(
     }
   }
 
-  // Add standalone audio tracks
+  // Add all unprocessed audio tracks (process independently from video)
+  console.log(`🔍 Adding unprocessed audio tracks...`);
+  console.log(`   Total audio tracks: ${audioTracks.length}`);
+  console.log(`   Processed track IDs:`, Array.from(processedTrackIds));
+  
   for (const audioTrack of audioTracks) {
     if (!processedTrackIds.has(audioTrack.id)) {
+      console.log(`   🎵 Adding audio track "${audioTrack.name}" (${audioTrack.id})`);
       processedTracks.push(audioTrack);
+    } else {
+      console.log(`   ⏭️ Skipping already processed audio track "${audioTrack.name}"`);
     }
   }
 
@@ -189,6 +211,7 @@ function processLinkedTracks(
 
 /**
  * Convert VideoTracks to FFmpeg TrackInfo format
+ * Processes video and audio as completely separate timelines
  */
 function convertTracksToFFmpegInputs(
   tracks: VideoTrack[],
@@ -206,39 +229,17 @@ function convertTracksToFFmpegInputs(
     const sourceStartTime = track.sourceStartTime || 0;
 
     console.log(
-      `🎥 Adding track "${track.name}": source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
+      `🎥 Adding track "${track.name}": type=${track.type}, source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
     );
 
-    // For video tracks that are NOT muted, check if there's extracted audio available
-    let audioPath: string | undefined = undefined;
-
-    if (track.type === 'video' && !track.muted) {
-      // Find the media library item for this video track
-      const mediaItem = mediaLibrary.find(
-        (item) =>
-          item.type === 'video' &&
-          (item.source === track.source || item.tempFilePath === track.source),
-      );
-
-      // If we found the media item and it has extracted audio, use it
-      if (mediaItem?.extractedAudio?.audioPath) {
-        audioPath = mediaItem.extractedAudio.audioPath;
-        console.log(
-          `🎵 Using extracted audio for video track "${track.name}": ${audioPath}`,
-        );
-      } else {
-        console.log(
-          `⚠️ No extracted audio found for video track "${track.name}", FFmpeg will extract from video file`,
-        );
-      }
-    }
-
+    // DON'T attach audio to video tracks - process them independently
+    // Video tracks will be video-only, audio tracks will be audio-only
     const trackInfo: TrackInfo = {
       path: track.source,
-      audioPath: audioPath, // Separate audio path if available
+      audioPath: undefined, // Always undefined - no audio attached to video
       startTime: sourceStartTime,
       duration: Math.max(0.033, trackDurationSeconds),
-      muted: track.muted || false,
+      muted: track.type === 'video' ? true : false, // Video tracks are "muted" (no audio from video file)
       trackType: track.type,
       visible: track.visible,
     };
