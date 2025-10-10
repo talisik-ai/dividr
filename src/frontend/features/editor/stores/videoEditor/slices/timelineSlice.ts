@@ -111,7 +111,8 @@ export const createTimelineSlice: StateCreator<
     set((state) => ({
       timeline: {
         ...state.timeline,
-        zoom: Math.max(0.1, Math.min(zoom, 10)),
+        // Allow zoom from 0.01 (very zoomed out for long timelines) to 10 (very zoomed in)
+        zoom: Math.max(0.01, Math.min(zoom, 10)),
       },
     })),
 

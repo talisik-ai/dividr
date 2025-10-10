@@ -324,7 +324,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
           const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-          setZoom(Math.max(0.1, Math.min(timeline.zoom * zoomFactor, 10)));
+          // Allow zoom from 0.01 (very zoomed out) to 10 (very zoomed in)
+          setZoom(Math.max(0.01, Math.min(timeline.zoom * zoomFactor, 10)));
         } else {
           // Horizontal scroll - let the native scroll handle this
           // The onScroll event will update the store

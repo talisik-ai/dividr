@@ -514,13 +514,39 @@ const ModeSelector: React.FC = React.memo(() => {
 
 // Optimized zoom slider component to prevent timeline lag
 const ZoomSlider: React.FC = React.memo(() => {
-  // Get current zoom level from store
+  // Get current zoom level and tracks from store
   const storeZoom = useVideoEditorStore((state) => state.timeline.zoom);
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  const totalFrames = useVideoEditorStore(
+    (state) => state.timeline.totalFrames,
+  );
   const setZoom = useVideoEditorStore((state) => state.setZoom);
 
   // Local state for smooth slider interaction
   const [localZoom, setLocalZoom] = useState(storeZoom);
   const isUserInteracting = useRef(false);
+
+  // Calculate dynamic zoom range based on timeline content
+  const zoomRange = useMemo(() => {
+    // Calculate effective timeline duration
+    const effectiveEndFrame =
+      tracks.length > 0
+        ? Math.max(...tracks.map((track) => track.endFrame))
+        : totalFrames;
+
+    // Calculate minimum zoom needed to fit entire timeline in viewport
+    const viewportWidth = window.innerWidth - 400; // Account for sidebars
+    const minFrameWidth = (viewportWidth * 0.9) / effectiveEndFrame;
+    const calculatedMinZoom = minFrameWidth / 2; // frameWidth = 2 * zoom
+
+    // Set dynamic minimum (never below 0.01, but allow going lower for long timelines)
+    const minZoom = Math.max(0.01, Math.min(calculatedMinZoom * 0.5, 0.2));
+
+    return {
+      min: minZoom,
+      max: 10,
+    };
+  }, [tracks, totalFrames]);
 
   // Sync local zoom with store zoom when not user-controlled
   useEffect(() => {
@@ -555,9 +581,9 @@ const ZoomSlider: React.FC = React.memo(() => {
       <Slider
         value={[localZoom]}
         onValueChange={(values) => handleZoomChange(values[0])}
-        min={0.2}
-        max={10}
-        step={0.1}
+        min={zoomRange.min}
+        max={zoomRange.max}
+        step={0.01}
         className="flex-1"
       />
       <ZoomIn className="scale-x-[-1] text-muted-foreground" size={16} />
@@ -727,20 +753,19 @@ export const TimelineControls: React.FC = React.memo(
               onClick={() => {
                 // Zoom to fit timeline content
                 const { tracks, timeline } = useVideoEditorStore.getState();
+                // When tracks exist, use only the maximum track end frame
                 const effectiveEndFrame =
                   tracks.length > 0
-                    ? Math.max(
-                        ...tracks.map((track) => track.endFrame),
-                        timeline.totalFrames,
-                      )
+                    ? Math.max(...tracks.map((track) => track.endFrame))
                     : timeline.totalFrames;
 
                 // Calculate zoom to fit content in viewport (with some padding)
                 const viewportWidth = window.innerWidth - 400; // Account for sidebars
                 const idealFrameWidth =
-                  (viewportWidth * 0.8) / effectiveEndFrame;
+                  (viewportWidth * 0.9) / effectiveEndFrame;
                 const idealZoom = idealFrameWidth / 2; // frameWidth = 2 * zoom
-                const clampedZoom = Math.max(0.2, Math.min(idealZoom, 10));
+                // Allow zoom to go as low as 0.01 for very long timelines
+                const clampedZoom = Math.max(0.01, Math.min(idealZoom, 10));
                 setZoom(clampedZoom);
               }}
               title="Zoom to fit"
