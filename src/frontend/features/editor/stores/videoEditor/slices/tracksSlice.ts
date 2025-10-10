@@ -733,7 +733,15 @@ export const createTracksSlice: StateCreator<
         const relativeOffset =
           linkedTrack.startFrame - originalTrack.startFrame;
 
-        // Find non-conflicting positions for both tracks
+        // FIX: For linked pairs, use the MAXIMUM end frame across BOTH tracks
+        // This ensures both duplicates are placed after ALL existing clips
+        // and maintain perfect alignment (matching Premiere Pro behavior)
+        const maxEndFrameInPair = Math.max(
+          originalTrack.endFrame,
+          linkedTrack.endFrame,
+        );
+
+        // Find the latest end frame across ALL tracks of each type
         const existingTracksOfSameType = state.tracks.filter(
           (t: VideoTrack) => t.type === originalTrack.type,
         );
@@ -741,18 +749,34 @@ export const createTracksSlice: StateCreator<
           (t: VideoTrack) => t.type === linkedTrack.type,
         );
 
-        const finalStartFrame = findNearestAvailablePosition(
-          proposedStartFrame,
-          duration,
-          existingTracksOfSameType,
+        // Get the maximum end frame for each track type
+        const lastVideoEnd =
+          existingTracksOfSameType.length > 0
+            ? Math.max(
+                ...existingTracksOfSameType.map((t: VideoTrack) => t.endFrame),
+              )
+            : 0;
+        const lastAudioEnd =
+          existingLinkedTracksOfSameType.length > 0
+            ? Math.max(
+                ...existingLinkedTracksOfSameType.map(
+                  (t: VideoTrack) => t.endFrame,
+                ),
+              )
+            : 0;
+
+        // Use the MAXIMUM of all end frames as the unified insertion point
+        // This ensures both tracks start at the same timeline position
+        const unifiedInsertionPoint = Math.max(
+          maxEndFrameInPair,
+          lastVideoEnd,
+          lastAudioEnd,
         );
 
-        const linkedProposedStartFrame = finalStartFrame + relativeOffset;
-        const linkedFinalStartFrame = findNearestAvailablePosition(
-          linkedProposedStartFrame,
-          linkedDuration,
-          existingLinkedTracksOfSameType,
-        );
+        // Both tracks start at the unified insertion point
+        // maintaining their original relative offset
+        const finalStartFrame = unifiedInsertionPoint;
+        const linkedFinalStartFrame = finalStartFrame + relativeOffset;
 
         // Create duplicate with ALL metadata preserved (reference-based)
         const duplicatedTrack: VideoTrack = {
