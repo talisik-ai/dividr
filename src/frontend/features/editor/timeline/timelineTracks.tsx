@@ -882,7 +882,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       prevProps.scrollX === nextProps.scrollX &&
       JSON.stringify(prevProps.selectedTrackIds) ===
         JSON.stringify(nextProps.selectedTrackIds) &&
-      prevProps.allTracksCount === nextProps.allTracksCount
+      prevProps.allTracksCount === nextProps.allTracksCount &&
+      prevProps.isSplitModeActive === nextProps.isSplitModeActive
     );
   },
 );

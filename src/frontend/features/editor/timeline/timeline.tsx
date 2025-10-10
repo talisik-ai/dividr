@@ -59,7 +59,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const [linkedTrackIndicators, setLinkedTrackIndicators] = useState<
       Array<{ trackType: string; position: number }>
     >([]);
-    const [splitModeUpdateKey, setSplitModeUpdateKey] = useState(0);
     const [marqueeSelection, setMarqueeSelection] = useState<{
       isActive: boolean;
       startX: number;
@@ -256,11 +255,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     useEffect(() => {
       lastFrameUpdateRef.current = timeline.currentFrame;
     }, [timeline.currentFrame]);
-
-    // Force re-render when split mode changes to bypass memoization
-    useEffect(() => {
-      setSplitModeUpdateKey((prev) => prev + 1);
-    }, [isSplitModeActive]);
 
     // Centralized keyboard shortcuts
     useGlobalShortcuts();
@@ -1038,7 +1032,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 }}
               >
                 <TimelineTracks
-                  key={splitModeUpdateKey}
                   tracks={tracks}
                   frameWidth={frameWidth}
                   timelineWidth={timelineWidth}
