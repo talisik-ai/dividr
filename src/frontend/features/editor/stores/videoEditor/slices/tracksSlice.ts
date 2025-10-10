@@ -591,29 +591,141 @@ export const createTracksSlice: StateCreator<
 
       if (!trackToMove) return state;
 
+      // Get linked track if exists
+      const linkedTrack =
+        trackToMove.isLinked && trackToMove.linkedTrackId
+          ? state.tracks.find(
+              (t: VideoTrack) => t.id === trackToMove.linkedTrackId,
+            )
+          : null;
+
+      // Store original position to calculate delta
+      const originalStartFrame = trackToMove.startFrame;
+      let actualMoveDelta = 0; // Will store the actual movement after collision detection
+
+      // If track is linked, we need to check collision for BOTH tracks
+      // and use the most restrictive position that works for both
+      if (linkedTrack) {
+        const duration = trackToMove.endFrame - trackToMove.startFrame;
+        const linkedDuration = linkedTrack.endFrame - linkedTrack.startFrame;
+        const relativeOffset = linkedTrack.startFrame - trackToMove.startFrame;
+
+        // Get conflicting tracks for primary track
+        const primaryConflicts = state.tracks.filter((t: VideoTrack) => {
+          if (t.id === trackId || t.id === linkedTrack.id) return false;
+          if (trackToMove.type === 'video' && t.type === 'video') return true;
+          if (trackToMove.type !== 'video' && t.type === trackToMove.type)
+            return true;
+          return false;
+        });
+
+        // Get conflicting tracks for linked track
+        const linkedConflicts = state.tracks.filter((t: VideoTrack) => {
+          if (t.id === trackId || t.id === linkedTrack.id) return false;
+          return t.type === linkedTrack.type;
+        });
+
+        // Calculate proposed positions for both tracks
+        const proposedPrimaryStart = newStartFrame;
+        const proposedLinkedStart = newStartFrame + relativeOffset;
+
+        // Find nearest available position for primary track
+        let finalPrimaryStart = findNearestAvailablePosition(
+          proposedPrimaryStart,
+          duration,
+          primaryConflicts,
+          state.timeline.currentFrame,
+        );
+
+        // Calculate where linked track would be with this position
+        let finalLinkedStart = finalPrimaryStart + relativeOffset;
+
+        // Check if linked track position causes conflicts
+        const linkedHasConflict = linkedConflicts.some((t: VideoTrack) => {
+          return (
+            finalLinkedStart < t.endFrame &&
+            finalLinkedStart + linkedDuration > t.startFrame
+          );
+        });
+
+        // If linked track has conflict, adjust BOTH tracks together
+        if (linkedHasConflict) {
+          // Find position that works for the linked track
+          const linkedSafeStart = findNearestAvailablePosition(
+            proposedLinkedStart,
+            linkedDuration,
+            linkedConflicts,
+            state.timeline.currentFrame,
+          );
+          // Calculate back to primary track position that maintains alignment
+          finalPrimaryStart = linkedSafeStart - relativeOffset;
+
+          // Ensure primary position doesn't go negative
+          if (finalPrimaryStart < 0) {
+            finalPrimaryStart = 0;
+            finalLinkedStart = relativeOffset;
+          } else {
+            finalLinkedStart = linkedSafeStart;
+          }
+        }
+
+        actualMoveDelta = finalPrimaryStart - originalStartFrame;
+
+        console.log(`🔗 Moving linked pair as unified block:`, {
+          primary: {
+            id: trackToMove.id,
+            type: trackToMove.type,
+            originalStart: originalStartFrame,
+            requestedStart: newStartFrame,
+            finalStart: finalPrimaryStart,
+          },
+          linked: {
+            id: linkedTrack.id,
+            type: linkedTrack.type,
+            originalStart: linkedTrack.startFrame,
+            finalStart: linkedTrack.startFrame + actualMoveDelta,
+          },
+          movement: {
+            delta: actualMoveDelta,
+            relativeOffset,
+            maintainsAlignment: true,
+          },
+        });
+      }
+
       return {
         tracks: state.tracks.map((track: VideoTrack) => {
           if (track.id === trackId) {
             const duration = track.endFrame - track.startFrame;
 
-            const conflictingTracks = state.tracks.filter((t: VideoTrack) => {
-              if (t.id === trackId) return false;
-              if (trackToMove?.isLinked && t.id === trackToMove.linkedTrackId)
+            // If not linked, use simple collision detection
+            if (!linkedTrack) {
+              const conflictingTracks = state.tracks.filter((t: VideoTrack) => {
+                if (t.id === trackId) return false;
+                if (track.type === 'video' && t.type === 'video') return true;
+                if (track.type !== 'video' && t.type === track.type)
+                  return true;
                 return false;
+              });
 
-              if (track.type === 'video' && t.type === 'video') return true;
-              if (track.type !== 'video' && t.type === track.type) return true;
+              const finalStartFrame = findNearestAvailablePosition(
+                newStartFrame,
+                duration,
+                conflictingTracks,
+                state.timeline.currentFrame,
+              );
 
-              return false;
-            });
+              actualMoveDelta = finalStartFrame - originalStartFrame;
 
-            const finalStartFrame = findNearestAvailablePosition(
-              newStartFrame,
-              duration,
-              conflictingTracks,
-              state.timeline.currentFrame,
-            );
+              return {
+                ...track,
+                startFrame: finalStartFrame,
+                endFrame: finalStartFrame + duration,
+              };
+            }
 
+            // For linked tracks, use pre-calculated delta
+            const finalStartFrame = originalStartFrame + actualMoveDelta;
             return {
               ...track,
               startFrame: finalStartFrame,
@@ -621,24 +733,19 @@ export const createTracksSlice: StateCreator<
             };
           }
 
+          // FIX: Move linked track by the SAME delta to maintain perfect alignment
+          // This ensures linked pairs move as one unified block
           if (trackToMove?.isLinked && track.id === trackToMove.linkedTrackId) {
             const linkedDuration = track.endFrame - track.startFrame;
-            const currentOffset = track.startFrame - trackToMove.startFrame;
-            const newLinkedStartFrame = newStartFrame + currentOffset;
 
-            const finalStartFrame = findNearestAvailablePosition(
-              newLinkedStartFrame,
-              linkedDuration,
-              state.tracks.filter((t: VideoTrack) => {
-                if (t.id === track.id || t.id === trackToMove.id) return false;
-                return t.type === track.type;
-              }),
-            );
+            // Apply the SAME movement delta that was applied to the primary track
+            // This maintains the original relative offset perfectly
+            const linkedFinalStartFrame = track.startFrame + actualMoveDelta;
 
             return {
               ...track,
-              startFrame: finalStartFrame,
-              endFrame: finalStartFrame + linkedDuration,
+              startFrame: linkedFinalStartFrame,
+              endFrame: linkedFinalStartFrame + linkedDuration,
             };
           }
           return track;
