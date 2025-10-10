@@ -280,30 +280,44 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  // Content scale
+  // Content scale - calculates the preview size to fill the container while maintaining aspect ratio
   const calculateContentScale = useCallback(() => {
-    const containerAspect = containerSize.width / containerSize.height;
-    const videoAspect = preview.canvasWidth / preview.canvasHeight;
+    // Use actual video dimensions if available, otherwise fall back to canvas dimensions
+    const videoWidth = activeVideoTrack?.width || preview.canvasWidth;
+    const videoHeight = activeVideoTrack?.height || preview.canvasHeight;
 
-    let actualWidth = preview.canvasWidth;
-    let actualHeight = preview.canvasHeight;
+    const containerAspect = containerSize.width / containerSize.height;
+    const videoAspect = videoWidth / videoHeight;
+
+    let actualWidth = videoWidth;
+    let actualHeight = videoHeight;
 
     if (containerSize.width > 0 && containerSize.height > 0) {
+      // Calculate the maximum size that fits the container while maintaining aspect ratio
       if (containerAspect > videoAspect) {
-        const scale = containerSize.height / preview.canvasHeight;
-        actualWidth = preview.canvasWidth * scale;
+        // Container is wider than video - fit to height
+        const scale = containerSize.height / videoHeight;
+        actualWidth = videoWidth * scale;
         actualHeight = containerSize.height;
       } else {
-        const scale = containerSize.width / preview.canvasWidth;
+        // Container is taller than video - fit to width
+        const scale = containerSize.width / videoWidth;
         actualWidth = containerSize.width;
-        actualHeight = preview.canvasHeight * scale;
+        actualHeight = videoHeight * scale;
       }
+
+      // Apply previewScale as a zoom multiplier on the fitted size
+      // previewScale = 1 means fill the container (default behavior)
+      // previewScale > 1 means zoom in
+      // previewScale < 1 means zoom out
       actualWidth *= preview.previewScale;
       actualHeight *= preview.previewScale;
     }
     return { actualWidth, actualHeight };
   }, [
     containerSize,
+    activeVideoTrack?.width,
+    activeVideoTrack?.height,
     preview.canvasWidth,
     preview.canvasHeight,
     preview.previewScale,
@@ -844,6 +858,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       {(() => {
         const activeSubs = getActiveSubtitleTracks();
         if (activeSubs.length === 0) return null;
+
+        // Use actual video height for subtitle sizing
+        const videoHeight = activeVideoTrack?.height || preview.canvasHeight;
+
         return (
           <div
             className="absolute inset-0 pointer-events-none"
@@ -865,7 +883,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                   className="text-white text-center absolute bottom-10 left-0 right-0 bg-secondary dark:bg-secondary-dark"
                   style={{
                     // Match FFmpeg's ASS subtitle styling with applied text styles
-                    fontSize: `${Math.max(18, preview.canvasHeight * 0.045)}px`, // Slightly larger for better visibility
+                    fontSize: `${Math.max(18, videoHeight * 0.045)}px`, // Slightly larger for better visibility
                     fontFamily: appliedStyle.fontFamily, // Apply selected font family
                     fontWeight: appliedStyle.fontWeight, // Apply selected font weight
                     fontStyle: appliedStyle.fontStyle, // Apply selected font style
