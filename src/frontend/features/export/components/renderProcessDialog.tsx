@@ -7,7 +7,7 @@ import {
   AlertDialogTitle,
 } from '@/frontend/components/ui/alert-dialog';
 import { Button } from '@/frontend/components/ui/button';
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle2, FolderOpen, Loader2, XCircle } from 'lucide-react';
 import React from 'react';
 
 export type RenderState = 'rendering' | 'completed' | 'failed' | 'cancelled';
@@ -20,6 +20,7 @@ interface RenderProcessDialogProps {
   currentTime: string;
   duration: string;
   errorMessage?: string;
+  outputFilePath?: string;
   onCancel: () => void;
   onClose: () => void;
   onRetry?: () => void;
@@ -33,6 +34,7 @@ export const RenderProcessDialog: React.FC<RenderProcessDialogProps> = ({
   currentTime,
   duration,
   errorMessage,
+  outputFilePath,
   onCancel,
   onClose,
   onRetry,
@@ -71,6 +73,24 @@ export const RenderProcessDialog: React.FC<RenderProcessDialogProps> = ({
     onClose();
   };
 
+  const handleGoToFile = async () => {
+    if (!outputFilePath) {
+      console.error('No output file path available');
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.showItemInFolder(outputFilePath);
+      if (!result.success) {
+        console.error('Failed to open file location:', result.error);
+        alert(`Failed to open file location: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error opening file location:', error);
+      alert('Failed to open file location');
+    }
+  };
+
   const renderContent = () => {
     switch (lockedState) {
       case 'rendering':
@@ -78,41 +98,33 @@ export const RenderProcessDialog: React.FC<RenderProcessDialogProps> = ({
           <>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
-                <Loader2 className="size-5 animate-spin text-blue-500" />
+                <Loader2 className="size-5 animate-spin text-secondary" />
                 Rendering Video
               </AlertDialogTitle>
               <AlertDialogDescription className="space-y-4 pt-2">
                 {/* Progress Bar */}
                 <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    {/* Status Message */}
+                    <p className="text-xs text-muted-foreground">
+                      {status || 'Preparing render...'}
+                    </p>
+                    {/* Time Display */}
+                    <div className="flex justify-end items-center gap-2 text-xs font-mono text-muted-foreground">
+                      <span>{currentTime || '00:00:00.00'}</span>
+                      <span>/</span>
+                      <span>{duration || '00:00:00.00'}</span>
+                    </div>
+                  </div>
                   <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                      className="h-full bg-secondary transition-all duration-300 ease-out"
                       style={{
                         width: `${Math.min(100, Math.max(0, progress))}%`,
                       }}
                     />
                   </div>
-
-                  {/* Time Display */}
-                  <div className="flex justify-between items-center text-xs font-mono">
-                    <span className="text-blue-500 font-semibold">
-                      {currentTime || '00:00:00.00'}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {duration || '00:00:00.00'}
-                    </span>
-                  </div>
-
-                  {/* Progress Percentage */}
-                  <div className="text-center text-sm font-medium">
-                    {progress.toFixed(1)}%
-                  </div>
                 </div>
-
-                {/* Status Message */}
-                <p className="text-xs text-muted-foreground text-center">
-                  {status || 'Preparing render...'}
-                </p>
               </AlertDialogDescription>
             </AlertDialogHeader>
 
@@ -139,10 +151,27 @@ export const RenderProcessDialog: React.FC<RenderProcessDialogProps> = ({
                 <div className="text-xs text-muted-foreground font-mono bg-muted p-2 rounded">
                   Duration: {duration || '00:00:00.00'}
                 </div>
+                {outputFilePath && (
+                  <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded break-all">
+                    <span className="font-semibold">Location: </span>
+                    {outputFilePath}
+                  </div>
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
 
-            <AlertDialogFooter>
+            <AlertDialogFooter className="gap-2">
+              {outputFilePath && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleGoToFile}
+                  className="gap-1.5"
+                >
+                  <FolderOpen className="size-4" />
+                  Go to File
+                </Button>
+              )}
               <Button variant="default" size="sm" onClick={handleClose}>
                 Close
               </Button>

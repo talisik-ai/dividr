@@ -52,6 +52,11 @@ declare global {
         error?: string;
       }>;
 
+      showItemInFolder: (filePath: string) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
       // File preview methods
       createPreviewUrl: (filePath: string) => Promise<{
         success: boolean;

@@ -579,17 +579,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
           {/* Loading overlay for sprite and waveform generation */}
           {(file.isGeneratingSprites || file.isGeneratingWaveform) && (
-            <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-              <div className="flex flex-col items-center text-white">
-                <Loader2 className="w-6 h-6 animate-spin mb-2" />
-                <p className="text-xs font-medium">
-                  {file.isGeneratingSprites && file.isGeneratingWaveform
-                    ? 'Generating Content...'
-                    : file.isGeneratingSprites
-                      ? 'Generating Sprites...'
-                      : 'Generating Waveform...'}
-                </p>
-              </div>
+            <div className="absolute bottom-0 p-2 left-0 right-0 h-8 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-end">
+              <Loader2 className="w-5 h-5 animate-spin text-white dark:text-black drop-shadow-lg" />
             </div>
           )}
 
@@ -630,11 +621,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
               </p>
               {file.isOnTimeline ? (
                 <p className="text-xs text-green-400 font-medium">
-                  ✓ On Timeline
+                  On Timeline
                 </p>
               ) : (
                 <p className="text-xs text-blue-400 font-medium">
-                  📍 Drag to Timeline
+                  Drag to Timeline
                 </p>
               )}
             </div>

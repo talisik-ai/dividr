@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import started from 'electron-squirrel-startup';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -61,17 +61,25 @@ async function initializeFfmpegPaths() {
         if (fs.existsSync(ffmpegStatic)) {
           ffmpegPath = ffmpegStatic;
           console.log('✅ FFmpeg resolved via ffmpeg-static:', ffmpegPath);
-          
+
           // Check version to confirm it's modern
           try {
             const { execSync } = require('child_process');
-            const versionOutput = execSync(`"${ffmpegStatic}" -version`, { encoding: 'utf8' });
-            const versionMatch = versionOutput.match(/ffmpeg version (\d+)\.(\d+)/);
+            const versionOutput = execSync(`"${ffmpegStatic}" -version`, {
+              encoding: 'utf8',
+            });
+            const versionMatch = versionOutput.match(
+              /ffmpeg version (\d+)\.(\d+)/,
+            );
             if (versionMatch) {
-              console.log(`ℹ️  FFmpeg version ${versionMatch[1]}.${versionMatch[2]} (bundled)`);
+              console.log(
+                `ℹ️  FFmpeg version ${versionMatch[1]}.${versionMatch[2]} (bundled)`,
+              );
             }
           } catch (vErr) {
-            console.log('ℹ️  (Could not detect version, but using ffmpeg-static)');
+            console.log(
+              'ℹ️  (Could not detect version, but using ffmpeg-static)',
+            );
           }
         } else {
           console.log('⚠️ ffmpeg-static returned invalid path:', ffmpegStatic);
@@ -86,49 +94,66 @@ async function initializeFfmpegPaths() {
   // Method 2: Try ffbinaries as fallback (downloads latest FFmpeg on demand)
   if (!ffmpegPath) {
     try {
-      console.log('🔄 Attempting ffbinaries fallback (downloads FFmpeg if needed)...');
-      
+      console.log(
+        '🔄 Attempting ffbinaries fallback (downloads FFmpeg if needed)...',
+      );
+
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const ffbinaries = require('ffbinaries');
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const path = require('path');
-      
+
       // Directory to store downloaded binaries
       const binDir = path.join(app.getPath('userData'), 'ffmpeg-bin');
-      
+
       // Check if already downloaded
       const platform = ffbinaries.detectPlatform();
-      const expectedPath = path.join(binDir, platform === 'windows-64' ? 'ffmpeg.exe' : 'ffmpeg');
-      
+      const expectedPath = path.join(
+        binDir,
+        platform === 'windows-64' ? 'ffmpeg.exe' : 'ffmpeg',
+      );
+
       if (require('fs').existsSync(expectedPath)) {
         ffmpegPath = expectedPath;
         console.log('✅ FFmpeg already downloaded via ffbinaries:', ffmpegPath);
       } else {
-        console.log('📥 Downloading FFmpeg via ffbinaries (first time setup)...');
-        
+        console.log(
+          '📥 Downloading FFmpeg via ffbinaries (first time setup)...',
+        );
+
         // Download FFmpeg (async operation)
         await new Promise((resolve, reject) => {
-          ffbinaries.downloadBinaries('ffmpeg', { destination: binDir }, (err: any) => {
-            if (err) {
-              console.error('❌ Failed to download FFmpeg:', err);
-              reject(err);
-            } else {
-              ffmpegPath = expectedPath;
-              console.log('✅ FFmpeg downloaded successfully:', ffmpegPath);
-              resolve(null);
-            }
-          });
+          ffbinaries.downloadBinaries(
+            'ffmpeg',
+            { destination: binDir },
+            (err: any) => {
+              if (err) {
+                console.error('❌ Failed to download FFmpeg:', err);
+                reject(err);
+              } else {
+                ffmpegPath = expectedPath;
+                console.log('✅ FFmpeg downloaded successfully:', ffmpegPath);
+                resolve(null);
+              }
+            },
+          );
         });
       }
-      
+
       // Check version
       if (ffmpegPath) {
         try {
           const { execSync } = require('child_process');
-          const versionOutput = execSync(`"${ffmpegPath}" -version`, { encoding: 'utf8' });
-          const versionMatch = versionOutput.match(/ffmpeg version (\d+)\.(\d+)/);
+          const versionOutput = execSync(`"${ffmpegPath}" -version`, {
+            encoding: 'utf8',
+          });
+          const versionMatch = versionOutput.match(
+            /ffmpeg version (\d+)\.(\d+)/,
+          );
           if (versionMatch) {
-            console.log(`ℹ️  FFmpeg version ${versionMatch[1]}.${versionMatch[2]} from ffbinaries`);
+            console.log(
+              `ℹ️  FFmpeg version ${versionMatch[1]}.${versionMatch[2]} from ffbinaries`,
+            );
           }
         } catch (vErr) {
           console.log('ℹ️  (Could not detect version, but FFmpeg is ready)');
@@ -202,9 +227,21 @@ async function initializeFfmpegPaths() {
           'ffmpeg',
           ffmpegBinary,
         ),
-        path.join(appPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', ffmpegBinary),
-        path.join(resourcesPath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', ffmpegBinary),
-        
+        path.join(
+          appPath,
+          'node_modules',
+          '@ffmpeg-installer',
+          'ffmpeg',
+          ffmpegBinary,
+        ),
+        path.join(
+          resourcesPath,
+          'node_modules',
+          '@ffmpeg-installer',
+          'ffmpeg',
+          ffmpegBinary,
+        ),
+
         // Fallback to ffmpeg-static - try without .exe first (common for ffmpeg-static)
         path.join(
           resourcesPath,
@@ -650,6 +687,29 @@ ipcMain.handle('get-downloads-directory', async () => {
       path: path.join(os.homedir(), 'Downloads'),
     };
   } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC Handler for showing file in folder/explorer
+ipcMain.handle('show-item-in-folder', async (event, filePath: string) => {
+  try {
+    if (!filePath) {
+      return { success: false, error: 'No file path provided' };
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' };
+    }
+
+    // Show item in folder (works cross-platform)
+    shell.showItemInFolder(filePath);
+
+    console.log('📂 Opened file location:', filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to show file in folder:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1736,7 +1796,11 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
     }
 
     // Build proper FFmpeg command
-    const baseArgs = await buildFfmpegCommand(job, absoluteLocation, ffmpegPath);
+    const baseArgs = await buildFfmpegCommand(
+      job,
+      absoluteLocation,
+      ffmpegPath,
+    );
     const args = ['-progress', 'pipe:1', '-y', ...baseArgs];
 
     console.log('🎬 COMPLETE FFMPEG COMMAND:');

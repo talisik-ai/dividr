@@ -35,12 +35,37 @@ interface ExportModalProps {
 }
 
 const videoFormats = [
-  { value: 'mp4', label: 'MP4 (H.264)', extension: '.mp4' },
-  { value: 'avi', label: 'AVI', extension: '.avi' },
-  { value: 'mov', label: 'QuickTime (MOV)', extension: '.mov' },
-  { value: 'mkv', label: 'Matroska (MKV)', extension: '.mkv' },
-  // { value: 'webm', label: 'WebM', extension: '.webm' },
-  { value: 'wmv', label: 'Windows Media Video', extension: '.wmv' },
+  {
+    value: 'mp4',
+    label: 'MP4 (H.264)',
+    extension: '.mp4',
+    description: 'Best compatibility, Widely supported',
+  },
+  {
+    value: 'avi',
+    label: 'AVI',
+    extension: '.avi',
+    description: 'Legacy format, Good for Windows systems',
+  },
+  {
+    value: 'mov',
+    label: 'QuickTime (MOV)',
+    extension: '.mov',
+    description: 'Apple ecosystem, Optimized for macOS, iOS',
+  },
+  {
+    value: 'mkv',
+    label: 'Matroska (MKV)',
+    extension: '.mkv',
+    description: 'High quality, Supports advanced features',
+  },
+  // { value: 'webm', label: 'WebM', extension: '.webm', description: 'Web optimized, Best for web browsers and online streaming' },
+  {
+    value: 'wmv',
+    label: 'Windows Media Video',
+    extension: '.wmv',
+    description: 'Windows native, Designed for Windows Media Player',
+  },
 ];
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -150,11 +175,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const selectedFormat = videoFormats.find((f) => f.value === format);
 
   return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(open) => !open && onClose()}
-      // className="text-white bg-primary z-[9999]"
-    >
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Export Video</DialogTitle>
@@ -162,41 +183,62 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         <div className="space-y-4">
           {/* Filename Input */}
-          <div className="space-y-2">
-            <Label htmlFor="filename">Filename</Label>
-            <Input
-              id="filename"
-              type="text"
-              value={filename}
-              onChange={(e) => setFilename(e.target.value)}
-              placeholder="Enter filename (without extension)"
-              className="w-full text-white"
-            />
+          <div className="space-y-1">
+            <div className="space-y-2">
+              <Label htmlFor="filename">Filename</Label>
+              <Input
+                id="filename"
+                type="text"
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+                placeholder="Enter filename (without extension)"
+                className="w-full"
+              />
+            </div>
             <p className="text-xs text-muted-foreground">
               Extension will be added automatically:{' '}
-              {filename.trim() || 'filename'}
-              {selectedFormat?.extension || '.mp4'}
+              <span className="italic">
+                {filename.trim() || 'filename'}
+                {selectedFormat?.extension || '.mp4'}
+              </span>
             </p>
           </div>
 
           {/* Format Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="format">Video Format</Label>
-            <Select value={format} onValueChange={setFormat}>
-              <SelectTrigger>
-                <span className="block truncate">
+          <div className="space-y-1">
+            <div className="space-y-2">
+              <Label htmlFor="format">Video Format</Label>
+              <Select value={format} onValueChange={setFormat}>
+                <SelectTrigger>
+                  <span className="block truncate">
+                    {selectedFormat?.label || 'Select format'}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {videoFormats.map((fmt) => (
+                    <SelectItem key={fmt.value} value={fmt.value}>
+                      {fmt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              <p>
+                Selected format:{' '}
+                <span className="italic">
                   {selectedFormat?.label || 'Select format'}
                 </span>
-              </SelectTrigger>
-              <SelectContent className="bg-primary">
-                {videoFormats.map((fmt) => (
-                  <SelectItem key={fmt.value} value={fmt.value}>
-                    {fmt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              </p>
+              {selectedFormat?.description && (
+                <p>{selectedFormat.description}</p>
+              )}
+            </div>
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            Subtitles from timeline will be automatically included
+          </p>
 
           {/* Output Folder Selection */}
           <div className="space-y-2">
@@ -210,7 +252,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 placeholder={
                   isLoadingDefaultPath ? 'Loading...' : 'Select output folder'
                 }
-                className="flex-1 text-white"
+                className="flex-1"
                 disabled={isLoadingDefaultPath}
               />
               <Button
@@ -226,40 +268,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <p className="text-xs text-muted-foreground">
               Full path:{' '}
               {outputPath
-                ? `${outputPath}/${filename.trim() || 'filename'}${selectedFormat?.extension || '.mp4'}`
+                ? `${outputPath}\\${filename.trim() || 'filename'}${selectedFormat?.extension || '.mp4'}`
                 : 'No folder selected'}
             </p>
-          </div>
-
-          {/* Subtitles are automatically included from timeline */}
-          <div className="space-y-3 border-t border-gray-700 pt-4">
-            <div className="text-sm text-gray-400">
-              <span className="text-green-400">✓</span> Subtitles from timeline
-              will be automatically included (burned-in)
-            </div>
-          </div>
-
-          {/* Format Description */}
-          <div className="text-xs text-muted-foreground bg-muted p-2 rounded text-white">
-            <strong>Selected format:</strong>{' '}
-            {selectedFormat?.label || 'MP4 (H.264)'}
-            <br />
-            {format === 'mp4' && 'Best compatibility, widely supported'}
-            {format === 'avi' && 'Uncompressed, larger file size'}
-            {format === 'mov' && 'Apple QuickTime format'}
-            {format === 'mkv' &&
-              'Open source container, supports multiple codecs'}
-            {format === 'webm' && 'Web optimized, smaller file size'}
-            {format === 'wmv' && 'Windows Media format'}
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleCancel} className="mr-2">
+          <Button variant="outline" onClick={handleCancel}>
             Cancel
           </Button>
           <Button
             onClick={handleExport}
+            variant="secondary"
             disabled={
               !filename.trim() || !outputPath.trim() || isLoadingDefaultPath
             }

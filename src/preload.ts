@@ -40,6 +40,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getDownloadsDirectory: () => ipcRenderer.invoke('get-downloads-directory'),
 
+  showItemInFolder: (filePath: string) =>
+    ipcRenderer.invoke('show-item-in-folder', filePath),
+
   // File preview methods
   createPreviewUrl: (filePath: string) =>
     ipcRenderer.invoke('create-preview-url', filePath),

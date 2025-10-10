@@ -45,6 +45,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
     isRenderDialogOpen,
     renderDialogState,
     renderError,
+    outputFilePath,
     handleCancelRender,
     handleCloseDialog,
   } = useExportHandler();
@@ -167,6 +168,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         currentTime={render.currentTime || '00:00:00.00'}
         duration={duration.formattedTime || '00:00:00.00'}
         errorMessage={renderError}
+        outputFilePath={outputFilePath}
         onCancel={handleCancelRender}
         onClose={handleCloseDialog}
         onRetry={lastExportConfig ? handleRetry : undefined}

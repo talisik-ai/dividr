@@ -29,6 +29,7 @@ export const useExportHandler = () => {
   const [renderDialogState, setRenderDialogState] =
     useState<RenderState>('rendering');
   const [renderError, setRenderError] = useState<string | undefined>();
+  const [outputFilePath, setOutputFilePath] = useState<string | undefined>();
 
   const executeExport = useCallback(
     async (job: VideoEditJob): Promise<void> => {
@@ -75,10 +76,17 @@ export const useExportHandler = () => {
 
         console.log('🚀 Starting render process...');
 
+        // Construct the full output file path (use forward slash for cross-platform compatibility)
+        const fullOutputPath = `${job.outputPath}/${job.output}`.replace(
+          /\//g,
+          '\\',
+        );
+
         // Open dialog and set to rendering state
         setRenderDialogState('rendering');
         setIsRenderDialogOpen(true);
         setRenderError(undefined);
+        setOutputFilePath(fullOutputPath);
 
         startRender({
           outputPath: job.output,
@@ -123,6 +131,7 @@ export const useExportHandler = () => {
     setIsRenderDialogOpen(false);
     setRenderDialogState('rendering');
     setRenderError(undefined);
+    setOutputFilePath(undefined);
   }, []);
 
   return {
@@ -131,6 +140,7 @@ export const useExportHandler = () => {
     isRenderDialogOpen,
     renderDialogState,
     renderError,
+    outputFilePath,
     handleCancelRender,
     handleCloseDialog,
   };

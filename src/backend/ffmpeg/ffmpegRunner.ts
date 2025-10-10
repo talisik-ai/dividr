@@ -150,7 +150,7 @@ export async function runFfmpegWithProgress(
             callbacks?.onStatus?.(
               status === 'end'
                 ? 'Processing complete'
-                : `Processing: ${status}`,
+                : `In-progress: ${status}`,
             );
           }
         }
