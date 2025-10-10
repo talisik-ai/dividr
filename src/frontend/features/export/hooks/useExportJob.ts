@@ -146,23 +146,24 @@ function processLinkedTracks(
       }
     }
 
-    // NOTE: We no longer track usedAudioPaths since video and audio are processed independently
-    // Each video track will be video-only (muted), and audio tracks will be processed separately
-
+    // Process video and audio independently - video tracks are added as video-only
+    // Audio tracks (whether linked or not) will be added separately below
+    
     if (videoTrack.isLinked && videoTrack.linkedTrackId) {
       const linkedAudioTrack = audioTracks.find(
         (t) => t.id === videoTrack.linkedTrackId,
       );
       if (linkedAudioTrack) {
+        // Add video track (will be muted in convertTracksToFFmpegInputs)
         processedTracks.push({
           ...videoTrack,
           visible: videoTrack.visible,
-          muted: linkedAudioTrack.muted,
+          // Don't use linkedAudioTrack.muted here - we'll process audio separately
         });
         processedTrackIds.add(videoTrack.id);
-        processedTrackIds.add(linkedAudioTrack.id);
+        // DON'T mark audio as processed - let it be added independently below
         console.log(
-          `🔗 Combined linked tracks: ${videoTrack.name} (visible: ${videoTrack.visible}, muted: ${linkedAudioTrack.muted})`,
+          `🔗 Processing linked video track: ${videoTrack.name} (audio will be processed separately)`,
         );
       } else {
         processedTracks.push(videoTrack);
