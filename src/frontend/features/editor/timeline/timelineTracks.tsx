@@ -901,6 +901,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
   }) => {
     const {
       moveTrack,
+      moveSelectedTracks,
       resizeTrack,
       importMediaFromFiles,
       importMediaFromDialog,
@@ -953,9 +954,19 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handleTrackMove = useCallback(
       (trackId: string, newStartFrame: number) => {
-        moveTrack(trackId, newStartFrame);
+        // Check if multiple tracks are selected
+        const { timeline } = useVideoEditorStore.getState();
+        const selectedTrackIds = timeline.selectedTrackIds;
+
+        // If the track being moved is part of a multi-selection, move all selected tracks
+        if (selectedTrackIds.length > 1 && selectedTrackIds.includes(trackId)) {
+          moveSelectedTracks(trackId, newStartFrame);
+        } else {
+          // Single track movement (or dragged track not in selection)
+          moveTrack(trackId, newStartFrame);
+        }
       },
-      [moveTrack],
+      [moveTrack, moveSelectedTracks],
     );
 
     const handleTrackResize = useCallback(

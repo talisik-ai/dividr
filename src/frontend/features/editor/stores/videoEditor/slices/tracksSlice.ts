@@ -252,6 +252,7 @@ export interface TracksSlice {
   removeSelectedTracks: () => void;
   updateTrack: (trackId: string, updates: Partial<VideoTrack>) => void;
   moveTrack: (trackId: string, newStartFrame: number) => void;
+  moveSelectedTracks: (draggedTrackId: string, newStartFrame: number) => void;
   resizeTrack: (
     trackId: string,
     newStartFrame?: number,
@@ -747,6 +748,146 @@ export const createTracksSlice: StateCreator<
               startFrame: linkedFinalStartFrame,
               endFrame: linkedFinalStartFrame + linkedDuration,
             };
+          }
+          return track;
+        }),
+      };
+    });
+
+    const state = get() as any;
+    state.markUnsavedChanges?.();
+  },
+
+  moveSelectedTracks: (draggedTrackId, newStartFrame) => {
+    set((state: any) => {
+      const draggedTrack = state.tracks.find(
+        (t: VideoTrack) => t.id === draggedTrackId,
+      );
+
+      if (!draggedTrack) return state;
+
+      // Get all selected track IDs (including linked partners)
+      const selectedTrackIds = state.timeline.selectedTrackIds || [];
+
+      // If the dragged track is not in selection, fall back to single track move
+      if (!selectedTrackIds.includes(draggedTrackId)) {
+        console.warn(
+          '⚠️ Dragged track not in selection, falling back to single move',
+        );
+        return state;
+      }
+
+      // Calculate the movement delta based on the dragged track
+      const originalDraggedStart = draggedTrack.startFrame;
+      const movementDelta = newStartFrame - originalDraggedStart;
+
+      // Build a map of all tracks that need to move (including linked partners)
+      const tracksToMove = new Set<string>();
+      selectedTrackIds.forEach((id: string) => {
+        tracksToMove.add(id);
+        const track = state.tracks.find((t: VideoTrack) => t.id === id);
+        if (track?.isLinked && track.linkedTrackId) {
+          tracksToMove.add(track.linkedTrackId);
+        }
+      });
+
+      console.log(
+        `🎯 Moving ${tracksToMove.size} tracks together (delta: ${movementDelta} frames):`,
+        {
+          draggedTrack: {
+            id: draggedTrackId,
+            originalStart: originalDraggedStart,
+            newStart: newStartFrame,
+          },
+          selectedCount: selectedTrackIds.length,
+          totalMovingCount: tracksToMove.size,
+          movementDelta,
+        },
+      );
+
+      // Group tracks by type for collision detection
+      const tracksByType = new Map<string, VideoTrack[]>();
+      state.tracks.forEach((t: VideoTrack) => {
+        if (!tracksToMove.has(t.id)) {
+          // Only consider tracks NOT being moved for collision detection
+          const key = t.type === 'video' ? 'video' : t.type;
+          if (!tracksByType.has(key)) {
+            tracksByType.set(key, []);
+          }
+          const typeGroup = tracksByType.get(key);
+          if (typeGroup) {
+            typeGroup.push(t);
+          }
+        }
+      });
+
+      // Calculate final positions for all tracks, checking for collisions
+      const finalPositions = new Map<
+        string,
+        { startFrame: number; endFrame: number }
+      >();
+      let needsAdjustment = false;
+      let minAdjustment = 0;
+
+      // First pass: calculate proposed positions
+      tracksToMove.forEach((trackId) => {
+        const track = state.tracks.find((t: VideoTrack) => t.id === trackId);
+        if (!track) return;
+
+        const duration = track.endFrame - track.startFrame;
+        const proposedStart = Math.max(0, track.startFrame + movementDelta);
+        const proposedEnd = proposedStart + duration;
+
+        finalPositions.set(trackId, {
+          startFrame: proposedStart,
+          endFrame: proposedEnd,
+        });
+
+        // Check for collisions with non-moving tracks of the same type
+        const typeKey = track.type === 'video' ? 'video' : track.type;
+        const conflicts = tracksByType.get(typeKey) || [];
+
+        conflicts.forEach((conflictTrack) => {
+          // Check if proposed position overlaps with conflict
+          if (
+            proposedStart < conflictTrack.endFrame &&
+            proposedEnd > conflictTrack.startFrame
+          ) {
+            // Calculate how much we need to adjust to avoid this conflict
+            const adjustmentNeeded = conflictTrack.endFrame - proposedStart;
+            if (adjustmentNeeded > minAdjustment) {
+              minAdjustment = adjustmentNeeded;
+              needsAdjustment = true;
+            }
+          }
+        });
+      });
+
+      // If collision detected, adjust ALL tracks by the same amount
+      if (needsAdjustment) {
+        console.log(
+          `⚠️ Collision detected, adjusting all tracks by ${minAdjustment} frames`,
+        );
+        finalPositions.forEach((pos, trackId) => {
+          finalPositions.set(trackId, {
+            startFrame: pos.startFrame + minAdjustment,
+            endFrame: pos.endFrame + minAdjustment,
+          });
+        });
+      }
+
+      // Apply the movements
+      return {
+        tracks: state.tracks.map((track: VideoTrack) => {
+          if (finalPositions.has(track.id)) {
+            const newPos = finalPositions.get(track.id);
+            if (newPos) {
+              return {
+                ...track,
+                startFrame: newPos.startFrame,
+                endFrame: newPos.endFrame,
+              };
+            }
           }
           return track;
         }),
