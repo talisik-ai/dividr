@@ -97,6 +97,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   );
   // Access store directly when needed (non-reactive)
   const [dragActive, setDragActive] = useState(false);
+  const dragCounter = useRef(0); // Track nested drag enter/leave events
   // Removed setUploadProgress as it's no longer needed
   const [draggedMediaId, setDraggedMediaId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -114,19 +115,30 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     affectedTracksCount: 0,
   });
 
-  // Handle drag events
+  // Handle drag events with counter-based tracking
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
   }, []);
 
-  const handleDragIn = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setDragActive(true);
-    }
-  }, []);
+  const handleDragIn = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Increment counter for nested elements
+      dragCounter.current++;
+
+      // Check if we have files being dragged
+      if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+        // Only set active if we're not already active
+        if (!dragActive) {
+          setDragActive(true);
+        }
+      }
+    },
+    [dragActive],
+  );
 
   const handleFiles = useCallback(
     async (files: File[]) => {
@@ -160,13 +172,23 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const handleDragOut = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragActive(false);
+
+    // Decrement counter
+    dragCounter.current--;
+
+    // Only deactivate when counter reaches 0
+    if (dragCounter.current === 0) {
+      setDragActive(false);
+    }
   }, []);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
+
+      // Reset counter and state
+      dragCounter.current = 0;
       setDragActive(false);
 
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -650,7 +672,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   // File List Component with Card Layout - not memoized to ensure fresh renders
   const fileListContent = (files: MediaItem[], tabType: string) => (
-    <div className="flex-1 overflow-auto">
+    <div
+      className="h-[273.2px] min-h-0 overflow-auto relative"
+      onDragEnter={handleDragIn}
+      onDragLeave={handleDragOut}
+      onDragOver={handleDrag}
+      onDrop={handleDrop}
+    >
       <div className="">
         <h4 className="text-xs font-semibold text-muted-foreground mb-3">
           {getTabLabel(tabType, files.length)}
@@ -661,6 +689,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           ))}
         </div>
       </div>
+
+      {/* Drag overlay - shows when dragging files over existing content */}
+      {dragActive && (
+        <div className="absolute inset-0 border-2 border-dashed flex items-center justify-center border-secondary bg-secondary/10 rounded-lg pointer-events-none z-10" />
+      )}
     </div>
   );
 
@@ -731,11 +764,21 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   const getTabContent = useCallback(
     (type: 'all' | 'videos' | 'audio' | 'images' | 'subtitles') => {
-      return getMediaItems.length > 0
-        ? fileListContent(getFilteredFiles(type), type)
+      const filteredFiles = getFilteredFiles(type);
+      return filteredFiles.length > 0
+        ? fileListContent(filteredFiles, type)
         : uploadArea;
     },
-    [getMediaItems, getFilteredFiles, uploadArea],
+    [
+      getMediaItems,
+      getFilteredFiles,
+      uploadArea,
+      dragActive,
+      handleDragIn,
+      handleDragOut,
+      handleDrag,
+      handleDrop,
+    ],
   );
 
   return (
@@ -764,7 +807,10 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
           {/* Tab Navigation and Content */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <Tabs defaultValue="all" className="flex-1 gap-4 flex flex-col">
+            <Tabs
+              defaultValue="all"
+              className="flex-1 min-h-0 gap-4 flex flex-col"
+            >
               <TabsList variant="text" className="w-full justify-start">
                 <TabsTrigger value="all" variant="text">
                   All
@@ -783,19 +829,19 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="all" className="flex-1 overflow-hidden">
+              <TabsContent value="all" className="h-full min-h-0">
                 {getTabContent('all')}
               </TabsContent>
-              <TabsContent value="videos" className="flex-1 overflow-hidden">
+              <TabsContent value="videos" className="h-full min-h-0">
                 {getTabContent('videos')}
               </TabsContent>
-              <TabsContent value="audio" className="flex-1 overflow-hidden">
+              <TabsContent value="audio" className="h-full min-h-0">
                 {getTabContent('audio')}
               </TabsContent>
-              <TabsContent value="images" className="flex-1 overflow-hidden">
+              <TabsContent value="images" className="h-full min-h-0">
                 {getTabContent('images')}
               </TabsContent>
-              <TabsContent value="subtitles" className="flex-1 overflow-hidden">
+              <TabsContent value="subtitles" className="h-full min-h-0">
                 {getTabContent('subtitles')}
               </TabsContent>
             </Tabs>
