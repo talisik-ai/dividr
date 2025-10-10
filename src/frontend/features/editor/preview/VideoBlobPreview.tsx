@@ -18,6 +18,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragActive, setDragActive] = useState(false);
 
+  // Pan/drag state
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef<{
+    x: number;
+    y: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
+
   // Track previous trim state to detect actual trim changes (not just playback progression)
   const prevVideoTrimRef = useRef<{
     trackId: string;
@@ -43,6 +52,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     importMediaFromDialog,
     importMediaToTimeline,
     setCurrentFrame,
+    setPreviewPan,
+    setPreviewScale,
   } = useVideoEditorStore();
 
   // Active video track for visual display (must be visible)
@@ -799,20 +810,110 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [importMediaToTimeline],
   );
 
+  // Pan/drag handlers for zoomed preview
+  const handlePanStart = useCallback(
+    (e: React.MouseEvent) => {
+      // Only enable panning when zoomed in (scale > 1)
+      if (preview.previewScale <= 1) return;
+
+      // Don't start panning if clicking on the placeholder
+      if (!activeVideoTrack && !activeAudioTrack) return;
+
+      setIsPanning(true);
+      panStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        panX: preview.panX,
+        panY: preview.panY,
+      };
+    },
+    [
+      preview.previewScale,
+      preview.panX,
+      preview.panY,
+      activeVideoTrack,
+      activeAudioTrack,
+    ],
+  );
+
+  const handlePanMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isPanning || !panStartRef.current) return;
+
+      const deltaX = e.clientX - panStartRef.current.x;
+      const deltaY = e.clientY - panStartRef.current.y;
+
+      const newPanX = panStartRef.current.panX + deltaX;
+      const newPanY = panStartRef.current.panY + deltaY;
+
+      setPreviewPan(newPanX, newPanY);
+    },
+    [isPanning, setPreviewPan],
+  );
+
+  const handlePanEnd = useCallback(() => {
+    setIsPanning(false);
+    panStartRef.current = null;
+  }, []);
+
+  // Wheel zoom handler
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      // Only zoom when Alt/Option key is held (common in video editors)
+      if (!e.altKey) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const delta = -e.deltaY;
+      const zoomFactor = delta > 0 ? 1.1 : 0.9;
+      const newScale = Math.max(
+        0.1,
+        Math.min(preview.previewScale * zoomFactor, 8),
+      );
+
+      setPreviewScale(newScale);
+    },
+    [preview.previewScale, setPreviewScale],
+  );
+
+  // Add global mouse up listener for panning
+  useEffect(() => {
+    if (!isPanning) return;
+
+    const handleGlobalMouseUp = () => {
+      handlePanEnd();
+    };
+
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [isPanning, handlePanEnd]);
+
   const { actualWidth, actualHeight } = calculateContentScale();
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        'relative overflow-hidden  rounded-lg',
+        'relative overflow-hidden rounded-lg',
         className,
         'bg-zinc-100 dark:bg-zinc-900',
+        // Change cursor based on zoom and panning state
+        preview.previewScale > 1 && (activeVideoTrack || activeAudioTrack)
+          ? isPanning
+            ? 'cursor-grabbing'
+            : 'cursor-grab'
+          : 'cursor-default',
       )}
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}
       onDragOver={handleDrag}
       onDrop={handleDrop}
+      onMouseDown={handlePanStart}
+      onMouseMove={handlePanMove}
+      onMouseUp={handlePanEnd}
+      onMouseLeave={handlePanEnd}
+      onWheel={handleWheel}
     >
       {/* Video */}
       {(activeVideoTrack || activeAudioTrack) && (
@@ -821,8 +922,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           style={{
             width: actualWidth,
             height: actualHeight,
-            left: '50%',
-            top: '50%',
+            left: `calc(50% + ${preview.panX}px)`,
+            top: `calc(50% + ${preview.panY}px)`,
             transform: 'translate(-50%, -50%)',
             // Hide video visually if track is not visible, but keep element for audio
             opacity: activeVideoTrack ? 1 : 0,
@@ -868,8 +969,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             style={{
               width: actualWidth,
               height: actualHeight,
-              left: '50%',
-              top: '50%',
+              left: `calc(50% + ${preview.panX}px)`,
+              top: `calc(50% + ${preview.panY}px)`,
               transform: 'translate(-50%, -50%)',
             }}
           >

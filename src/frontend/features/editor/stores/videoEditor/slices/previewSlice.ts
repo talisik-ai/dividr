@@ -7,6 +7,8 @@ export interface PreviewSlice {
   preview: PreviewState;
   setCanvasSize: (width: number, height: number) => void;
   setPreviewScale: (scale: number) => void;
+  setPreviewPan: (panX: number, panY: number) => void;
+  resetPreviewPan: () => void;
   toggleGrid: () => void;
   toggleSafeZones: () => void;
   setBackgroundColor: (color: string) => void;
@@ -39,7 +41,25 @@ export const createPreviewSlice: StateCreator<
     set((state: any) => ({
       preview: {
         ...state.preview,
-        previewScale: Math.max(0.1, Math.min(scale, 5)),
+        previewScale: Math.max(0.1, Math.min(scale, 8)),
+      },
+    })),
+
+  setPreviewPan: (panX, panY) =>
+    set((state: any) => ({
+      preview: {
+        ...state.preview,
+        panX,
+        panY,
+      },
+    })),
+
+  resetPreviewPan: () =>
+    set((state: any) => ({
+      preview: {
+        ...state.preview,
+        panX: 0,
+        panY: 0,
       },
     })),
 

@@ -2,6 +2,7 @@ import { Button } from '@/frontend/components/ui/button';
 import { Separator } from '@/frontend/components/ui/separator';
 import { cn } from '@/frontend/utils/utils';
 import { Hand, MousePointer2, Redo2, Undo2 } from 'lucide-react';
+import { useVideoEditorStore } from '../../stores/videoEditor';
 import { ZoomControls } from './zoomControls';
 
 interface VideoPlayerControlsProps {
@@ -11,9 +12,12 @@ interface VideoPlayerControlsProps {
 export const VideoPlayerControls = ({
   className,
 }: VideoPlayerControlsProps) => {
-  const handleZoomChange = (zoom: number) => {
-    console.log('Zoom changed to:', zoom);
-    // Here you would typically update the video player zoom level
+  const { preview, setPreviewScale } = useVideoEditorStore();
+
+  const handleZoomChange = (zoomPercent: number) => {
+    // Convert percentage (10-800) to scale (0.1-8)
+    const scale = zoomPercent / 100;
+    setPreviewScale(scale);
   };
 
   return (
@@ -24,7 +28,10 @@ export const VideoPlayerControls = ({
       <Button variant="ghost" size="icon">
         <Hand />
       </Button>
-      <ZoomControls onZoomChange={handleZoomChange} />
+      <ZoomControls
+        defaultZoom={preview.previewScale * 100}
+        onZoomChange={handleZoomChange}
+      />
       <Separator orientation="vertical" className="!h-3/4 mr-1" />
       <Button variant="ghost" size="icon" disabled>
         <Undo2 />

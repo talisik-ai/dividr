@@ -59,6 +59,8 @@ export const DEFAULT_PREVIEW_CONFIG = {
   canvasWidth: 800,
   canvasHeight: 540,
   previewScale: 1,
+  panX: 0,
+  panY: 0,
   backgroundColor: '#000000',
 } as const;
 

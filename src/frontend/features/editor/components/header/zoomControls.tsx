@@ -32,10 +32,17 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
   const [zoom, setZoom] = useState<number>(defaultZoom);
   const [inputValue, setInputValue] = useState<string>(defaultZoom.toString());
 
+  // Update local state when defaultZoom prop changes (from store)
+  React.useEffect(() => {
+    setZoom(defaultZoom);
+    setInputValue(defaultZoom.toString());
+  }, [defaultZoom]);
+
   const handleZoomChange = (newZoom: number) => {
-    setZoom(newZoom);
-    setInputValue(newZoom.toString());
-    onZoomChange?.(newZoom);
+    const clampedZoom = Math.max(10, Math.min(newZoom, 800));
+    setZoom(clampedZoom);
+    setInputValue(clampedZoom.toString());
+    onZoomChange?.(clampedZoom);
   };
 
   const handleSliderChange = (values: number[]) => {
@@ -48,7 +55,7 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
     setInputValue(value);
 
     const numValue = parseInt(value);
-    if (!isNaN(numValue) && numValue >= 20 && numValue <= 100) {
+    if (!isNaN(numValue) && numValue >= 10 && numValue <= 800) {
       setZoom(numValue);
       onZoomChange?.(numValue);
     }
@@ -56,7 +63,7 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
 
   const handleInputBlur = () => {
     const numValue = parseInt(inputValue);
-    if (isNaN(numValue) || numValue < 20 || numValue > 100) {
+    if (isNaN(numValue) || numValue < 10 || numValue > 800) {
       setInputValue(zoom.toString());
     }
   };
@@ -66,9 +73,8 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
   };
 
   const handleZoomToFit = () => {
-    // This would typically calculate the zoom level to fit the content
-    // For now, we'll use a reasonable default
-    handleZoomChange(75);
+    // Zoom to fit means 100% (1:1 scale)
+    handleZoomChange(100);
   };
 
   return (
@@ -84,17 +90,17 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-64" align="start">
         {/* Size Label */}
-        <DropdownMenuLabel>Size</DropdownMenuLabel>
+        <DropdownMenuLabel>Preview Zoom</DropdownMenuLabel>
 
-        <div className="flex items-center gap-2">
+        <div className="flex px-2 items-center gap-2">
           {/* Slider */}
           <div className="flex-1">
             <Slider
               value={[zoom]}
               onValueChange={handleSliderChange}
-              min={20}
-              max={100}
-              step={1}
+              min={10}
+              max={800}
+              step={10}
               className="w-full"
             />
           </div>
@@ -107,9 +113,9 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
                 value={inputValue}
                 onChange={handleInputChange}
                 onBlur={handleInputBlur}
-                min={20}
-                max={100}
-                className="h-8 text-center w-12"
+                min={10}
+                max={800}
+                className="h-8 text-center w-14"
               />
               <span className="text-sm text-muted-foreground">%</span>
             </div>
@@ -118,25 +124,30 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
 
         <DropdownMenuSeparator />
 
-        {/* Zoom Presets */}
-        <DropdownMenuItem onClick={handleZoomToFit}>
-          <span>Zoom to fit</span>
-          <DropdownMenuShortcut>⇧F</DropdownMenuShortcut>
+        <DropdownMenuItem onClick={() => handlePresetZoom(25)}>
+          <span>Zoom to 25%</span>
+          <DropdownMenuShortcut>⇧0</DropdownMenuShortcut>
         </DropdownMenuItem>
 
         <DropdownMenuItem onClick={() => handlePresetZoom(50)}>
           <span>Zoom to 50%</span>
-          <DropdownMenuShortcut>⇧0</DropdownMenuShortcut>
+          <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => handlePresetZoom(100)}>
+        {/* Zoom Presets */}
+        <DropdownMenuItem onClick={handleZoomToFit}>
           <span>Zoom to 100%</span>
-          <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
+          <DropdownMenuShortcut>⇧F</DropdownMenuShortcut>
         </DropdownMenuItem>
 
         <DropdownMenuItem onClick={() => handlePresetZoom(200)}>
           <span>Zoom to 200%</span>
           <DropdownMenuShortcut>⇧2</DropdownMenuShortcut>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem onClick={() => handlePresetZoom(400)}>
+          <span>Zoom to 400%</span>
+          <DropdownMenuShortcut>⇧3</DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
