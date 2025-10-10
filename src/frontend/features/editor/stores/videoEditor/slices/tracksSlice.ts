@@ -10,19 +10,55 @@ import {
 } from '../utils/trackHelpers';
 
 /**
- * CapCut-style non-destructive trimming helper
- * Clamps track resizing within the original source media boundaries
+ * Helper to find adjacent clips on the same track type
+ * Returns the nearest clip to the left and right of the current track
+ */
+const findAdjacentClips = (
+  currentTrack: VideoTrack,
+  allTracks: VideoTrack[],
+): { leftClip: VideoTrack | null; rightClip: VideoTrack | null } => {
+  // Filter tracks of the same type, excluding current track and its linked counterpart
+  const sameTypeTracks = allTracks.filter(
+    (t) =>
+      t.id !== currentTrack.id &&
+      t.id !== currentTrack.linkedTrackId &&
+      t.type === currentTrack.type,
+  );
+
+  // Find the closest clip to the left (highest endFrame that's <= currentTrack.startFrame)
+  const leftClip =
+    sameTypeTracks
+      .filter((t) => t.endFrame <= currentTrack.startFrame)
+      .sort((a, b) => b.endFrame - a.endFrame)[0] || null;
+
+  // Find the closest clip to the right (lowest startFrame that's >= currentTrack.endFrame)
+  const rightClip =
+    sameTypeTracks
+      .filter((t) => t.startFrame >= currentTrack.endFrame)
+      .sort((a, b) => a.startFrame - b.startFrame)[0] || null;
+
+  return { leftClip, rightClip };
+};
+
+/**
+ * CapCut-style non-destructive trimming helper with adjacent clip boundary checking
+ * Clamps track resizing within:
+ * 1. Original source media boundaries
+ * 2. Adjacent clip boundaries (prevents overlapping)
  *
  * FIXED: Proper trimming that maintains timeline position when trimming back and forth
  * - Left trim: adjusts startFrame and sourceStartTime, endFrame stays fixed
  * - Right trim: adjusts endFrame, startFrame and sourceStartTime stay fixed
- * - Boundaries: prevents trimming beyond source media limits without shifting the clip
+ * - Boundaries: prevents trimming beyond source media limits AND neighboring clips
  */
 const resizeTrackWithTrimming = (
   track: VideoTrack,
   newStartFrame: number | undefined,
   newEndFrame: number | undefined,
   fps: number,
+  allTracks: VideoTrack[],
+  snapEnabled = false,
+  snapThreshold = 5,
 ): VideoTrack => {
   const currentStartFrame = track.startFrame;
   const currentEndFrame = track.endFrame;
@@ -36,6 +72,9 @@ const resizeTrackWithTrimming = (
   const currentDurationSeconds = (currentEndFrame - currentStartFrame) / fps;
   const currentSourceEndTime = currentSourceStartTime + currentDurationSeconds;
 
+  // Find adjacent clips to enforce non-overlapping boundaries
+  const { leftClip, rightClip } = findAdjacentClips(track, allTracks);
+
   // Initialize with current values
   let finalStartFrame = currentStartFrame;
   let finalEndFrame = currentEndFrame;
@@ -43,8 +82,29 @@ const resizeTrackWithTrimming = (
 
   // Handle LEFT trim (dragging left edge)
   if (newStartFrame !== undefined) {
+    // BOUNDARY CHECK: Prevent trimming left into adjacent clip
+    let boundedNewStartFrame = newStartFrame;
+
+    if (leftClip) {
+      // Check if magnetic snapping is enabled and we're close to the boundary
+      const distanceToLeftBoundary = Math.abs(
+        newStartFrame - leftClip.endFrame,
+      );
+
+      if (snapEnabled && distanceToLeftBoundary <= snapThreshold) {
+        // Snap exactly to the left clip's end boundary
+        boundedNewStartFrame = leftClip.endFrame;
+      } else {
+        // Hard boundary: cannot trim beyond the left clip's end
+        boundedNewStartFrame = Math.max(leftClip.endFrame, newStartFrame);
+      }
+    }
+
+    // Also ensure we don't go below frame 0
+    boundedNewStartFrame = Math.max(0, boundedNewStartFrame);
+
     // Calculate how many frames we're trimming from the left
-    const frameDelta = newStartFrame - currentStartFrame;
+    const frameDelta = boundedNewStartFrame - currentStartFrame;
     const timeDelta = frameDelta / fps;
 
     // Calculate new source start time (trimming right moves in-point forward)
@@ -79,8 +139,26 @@ const resizeTrackWithTrimming = (
     finalStartFrame = currentStartFrame;
     finalSourceStartTime = currentSourceStartTime;
 
+    // BOUNDARY CHECK: Prevent trimming right into adjacent clip
+    let boundedNewEndFrame = newEndFrame;
+
+    if (rightClip) {
+      // Check if magnetic snapping is enabled and we're close to the boundary
+      const distanceToRightBoundary = Math.abs(
+        newEndFrame - rightClip.startFrame,
+      );
+
+      if (snapEnabled && distanceToRightBoundary <= snapThreshold) {
+        // Snap exactly to the right clip's start boundary
+        boundedNewEndFrame = rightClip.startFrame;
+      } else {
+        // Hard boundary: cannot trim beyond the right clip's start
+        boundedNewEndFrame = Math.min(rightClip.startFrame, newEndFrame);
+      }
+    }
+
     // Calculate how many frames we're trimming from the right
-    const frameDelta = newEndFrame - currentEndFrame;
+    const frameDelta = boundedNewEndFrame - currentEndFrame;
     const timeDelta = frameDelta / fps;
 
     // Calculate new source end time
@@ -135,9 +213,22 @@ const resizeTrackWithTrimming = (
       duration: sourceDurationSeconds.toFixed(3),
     },
     boundaries: {
-      hitLeftBoundary: finalSourceStartTime <= 0.001,
-      hitRightBoundary:
+      hitLeftSourceBoundary: finalSourceStartTime <= 0.001,
+      hitRightSourceBoundary:
         Math.abs(finalSourceEndTime - sourceDurationSeconds) <= 0.001,
+      leftClip: leftClip
+        ? `"${leftClip.name}" ends at frame ${leftClip.endFrame}`
+        : 'none',
+      rightClip: rightClip
+        ? `"${rightClip.name}" starts at frame ${rightClip.startFrame}`
+        : 'none',
+      blockedByAdjacent:
+        (newStartFrame !== undefined &&
+          leftClip &&
+          finalStartFrame === leftClip.endFrame) ||
+        (newEndFrame !== undefined &&
+          rightClip &&
+          finalEndFrame === rightClip.startFrame),
     },
   });
 
@@ -567,6 +658,10 @@ export const createTracksSlice: StateCreator<
 
       if (!trackToResize) return state;
 
+      // Get snap settings from timeline state
+      const snapEnabled = state.timeline?.snapEnabled ?? false;
+      const snapThreshold = 5; // frames - matches SNAP_THRESHOLD from timelineSlice
+
       return {
         tracks: state.tracks.map((track: VideoTrack) => {
           if (track.id === trackId) {
@@ -575,6 +670,9 @@ export const createTracksSlice: StateCreator<
               newStartFrame,
               newEndFrame,
               state.timeline.fps,
+              state.tracks,
+              snapEnabled,
+              snapThreshold,
             );
           }
 
@@ -588,6 +686,9 @@ export const createTracksSlice: StateCreator<
               newStartFrame,
               newEndFrame,
               state.timeline.fps,
+              state.tracks,
+              snapEnabled,
+              snapThreshold,
             );
           }
           return track;
