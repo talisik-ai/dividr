@@ -174,7 +174,11 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
           className="absolute top-0 h-full bg-gradient-to-r from-transparent via-transparent to-transparent"
           style={{
             left: -(timelineScrollElement?.scrollLeft ?? scrollX),
-            width: Math.max(effectiveEndFrame * frameWidth, window.innerWidth),
+            // Always span at least viewport width for consistent full-width grid
+            width: Math.max(
+              effectiveEndFrame * frameWidth,
+              (timelineScrollElement?.clientWidth ?? window.innerWidth) + 200,
+            ),
             backgroundImage:
               'repeating-linear-gradient(90deg, transparent, transparent 9px, hsl(var(--foreground) / 0.05) 9px, hsl(var(--foreground) / 0.05) 10px)',
           }}

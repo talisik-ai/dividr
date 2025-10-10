@@ -359,10 +359,29 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
     // Calculate frame width based on zoom - memoized
     const frameWidth = useMemo(() => 2 * timeline.zoom, [timeline.zoom]);
-    const timelineWidth = useMemo(
-      () => effectiveEndFrame * frameWidth,
-      [effectiveEndFrame, frameWidth],
-    );
+
+    // Track viewport width for responsive timeline grid
+    const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+
+    // Update viewport width on resize for responsive full-width grid
+    useEffect(() => {
+      const handleResize = () => {
+        setViewportWidth(window.innerWidth);
+      };
+
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Calculate timeline width - always span at least the full viewport width
+    // This ensures a professional full-width grid like Premiere Pro/DaVinci Resolve
+    const timelineWidth = useMemo(() => {
+      const contentWidth = effectiveEndFrame * frameWidth;
+      // Use the larger of content width or viewport width to ensure full grid coverage
+      // Account for sidebar width (~200px track controllers + ~200px left padding)
+      const effectiveViewportWidth = viewportWidth - 200;
+      return Math.max(contentWidth, effectiveViewportWidth);
+    }, [effectiveEndFrame, frameWidth, viewportWidth]);
 
     // Auto-follow playhead during playback
     const autoFollowPlayhead = useCallback(() => {
