@@ -220,6 +220,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               };
               newAnimate();
             });
+          } else {
+            // Not looping - stop playback when reaching end
+            pause();
           }
         } else {
           const clampedFrame = Math.max(
