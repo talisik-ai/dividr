@@ -64,12 +64,11 @@ export const createTimelineSlice: StateCreator<
 
   setCurrentFrame: (frame) =>
     set((state) => {
+      // When tracks exist, use the maximum track end frame
+      // Only use totalFrames as fallback when no tracks exist
       const effectiveEndFrame =
         state.tracks?.length > 0
-          ? Math.max(
-              ...state.tracks.map((track: any) => track.endFrame),
-              state.timeline.totalFrames,
-            )
+          ? Math.max(...state.tracks.map((track: any) => track.endFrame))
           : state.timeline.totalFrames;
 
       return {

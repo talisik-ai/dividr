@@ -16,12 +16,11 @@ export const useTimelineDuration = (): TimelineDuration => {
   // Memoize expensive calculations - only recalculates when tracks or timeline change
   return useMemo(() => {
     // Calculate effective timeline duration based on actual tracks
+    // When tracks exist, use the maximum track end frame
+    // Only use totalFrames as fallback when no tracks exist
     const effectiveEndFrame =
       tracks.length > 0
-        ? Math.max(
-            ...tracks.map((track) => track.endFrame),
-            timeline.totalFrames,
-          )
+        ? Math.max(...tracks.map((track) => track.endFrame))
         : timeline.totalFrames;
 
     const totalSeconds = effectiveEndFrame / timeline.fps;

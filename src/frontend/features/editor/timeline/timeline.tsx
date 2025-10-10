@@ -99,11 +99,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
     // Calculate effective timeline duration based on actual track content - memoized
     const effectiveEndFrame = useMemo(() => {
+      // When tracks exist, use the maximum track end frame
+      // Only use totalFrames as fallback when no tracks exist
       return tracks.length > 0
-        ? Math.max(
-            ...tracks.map((track) => track.endFrame),
-            timeline.totalFrames,
-          )
+        ? Math.max(...tracks.map((track) => track.endFrame))
         : timeline.totalFrames;
     }, [tracks, timeline.totalFrames]);
 

@@ -14,8 +14,10 @@ export const useGlobalShortcuts = () => {
 
   // Calculate effective end frame
   const effectiveEndFrame = useMemo(() => {
+    // When tracks exist, use the maximum track end frame
+    // Only use totalFrames as fallback when no tracks exist
     return tracks.length > 0
-      ? Math.max(...tracks.map((track) => track.endFrame), timeline.totalFrames)
+      ? Math.max(...tracks.map((track) => track.endFrame))
       : timeline.totalFrames;
   }, [tracks, timeline.totalFrames]);
 
