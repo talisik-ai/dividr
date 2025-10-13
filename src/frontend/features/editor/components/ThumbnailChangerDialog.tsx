@@ -287,7 +287,7 @@ const SpriteScrubbingPanel: React.FC<SpriteScrubbingPanelProps> = React.memo(
         />
 
         {/* Preview Canvas */}
-        <div className="relative bg-gray-900 rounded-lg overflow-hidden border border-border">
+        <div className="relative bg-gray-900 rounded-lg self-center mb-4 overflow-hidden border border-border w-[330px] h-[184px]">
           <canvas
             ref={canvasRef}
             width={1920}
@@ -411,6 +411,7 @@ const SpriteScrubbingPanel: React.FC<SpriteScrubbingPanelProps> = React.memo(
             Upload Image
           </Button>
           <Button
+            variant="secondary"
             onClick={handleCaptureThumbnail}
             className="flex-1"
             size="lg"
@@ -422,7 +423,7 @@ const SpriteScrubbingPanel: React.FC<SpriteScrubbingPanelProps> = React.memo(
                 Capturing...
               </>
             ) : (
-              'Set as Thumbnail'
+              'Set Cover'
             )}
           </Button>
         </div>
@@ -565,7 +566,7 @@ const UploadPanel: React.FC<UploadPanelProps> = React.memo(
         {/* Preview/Drop area */}
         <div
           className={cn(
-            'relative bg-gray-900 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden cursor-pointer transition-colors h-[410px]',
+            'relative bg-gray-900 rounded-lg self-center border-2 border-dashed flex items-center justify-center overflow-hidden cursor-pointer transition-colors h-[184px] w-[330px]',
             dragActive
               ? 'border-secondary bg-secondary/10'
               : previewImage
@@ -683,11 +684,7 @@ export const ThumbnailChangerDialog: React.FC<ThumbnailChangerDialogProps> =
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Set Project Thumbnail</DialogTitle>
-            <DialogDescription>
-              {mode === 'sprite'
-                ? 'Choose a thumbnail from your video timeline or upload a custom image'
-                : 'Upload a custom image to use as your project thumbnail'}
-            </DialogDescription>
+            <DialogDescription className="hidden" />
           </DialogHeader>
 
           <div className="mt-4">
