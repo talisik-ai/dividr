@@ -3,6 +3,7 @@ import New from '@/frontend/assets/logo/New-Light.svg';
 import { useTheme } from '@/frontend/providers/ThemeProvider';
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { usePreviewShortcuts } from '../stores/videoEditor/hooks/usePreviewShortcuts';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 
 interface VideoBlobPreviewProps {
@@ -17,6 +18,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragActive, setDragActive] = useState(false);
+  const [isPreviewFocused, setIsPreviewFocused] = useState(false);
+
+  // Initialize preview shortcuts
+  usePreviewShortcuts(isPreviewFocused);
 
   // Pan/drag state
   const [isPanning, setIsPanning] = useState(false);
@@ -25,6 +30,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     y: number;
     panX: number;
     panY: number;
+  } | null>(null);
+
+  // Pinch zoom state
+  const pinchStateRef = useRef<{
+    initialDistance: number;
+    initialScale: number;
+    centerX: number;
+    centerY: number;
   } | null>(null);
 
   // Track previous trim state to detect actual trim changes (not just playback progression)
@@ -889,26 +902,147 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     panStartRef.current = null;
   }, []);
 
-  // Wheel zoom handler
+  // Wheel zoom handler with cursor-based pivot
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
-      // Only zoom when Alt/Option key is held (common in video editors)
-      if (!e.altKey) return;
+      // Support both Ctrl+Scroll and Alt+Scroll for zooming
+      if (!e.ctrlKey && !e.altKey && !e.metaKey) return;
 
       e.preventDefault();
       e.stopPropagation();
 
+      const container = containerRef.current;
+      if (!container) return;
+
+      // Get cursor position relative to container
+      const rect = container.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+
+      // Calculate cursor position in preview space (accounting for current pan)
+      const previewCenterX = rect.width / 2;
+      const previewCenterY = rect.height / 2;
+
+      // Position relative to center, accounting for current pan
+      const relativeX = cursorX - previewCenterX - preview.panX;
+      const relativeY = cursorY - previewCenterY - preview.panY;
+
+      // Determine zoom direction and factor
       const delta = -e.deltaY;
       const zoomFactor = delta > 0 ? 1.1 : 0.9;
-      const newScale = Math.max(
-        0.1,
-        Math.min(preview.previewScale * zoomFactor, 8),
-      );
+      const oldScale = preview.previewScale;
+      const newScale = Math.max(0.1, Math.min(oldScale * zoomFactor, 8));
 
+      // If scale didn't actually change (hit limits), don't adjust pan
+      if (newScale === oldScale) return;
+
+      // Calculate new pan to keep cursor point stationary
+      // The point under the cursor should remain in the same visual position
+      const scaleDelta = newScale / oldScale - 1;
+      const newPanX = preview.panX - relativeX * scaleDelta;
+      const newPanY = preview.panY - relativeY * scaleDelta;
+
+      // Apply zoom and adjust pan
       setPreviewScale(newScale);
+      setPreviewPan(newPanX, newPanY);
     },
-    [preview.previewScale, setPreviewScale],
+    [
+      preview.previewScale,
+      preview.panX,
+      preview.panY,
+      setPreviewScale,
+      setPreviewPan,
+    ],
   );
+
+  // Pinch zoom handlers for touchpad/touchscreen
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 2) {
+        // Start pinch gesture
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+
+        const distance = Math.hypot(
+          touch2.clientX - touch1.clientX,
+          touch2.clientY - touch1.clientY,
+        );
+
+        const centerX = (touch1.clientX + touch2.clientX) / 2;
+        const centerY = (touch1.clientY + touch2.clientY) / 2;
+
+        pinchStateRef.current = {
+          initialDistance: distance,
+          initialScale: preview.previewScale,
+          centerX,
+          centerY,
+        };
+      }
+    },
+    [preview.previewScale],
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 2 && pinchStateRef.current) {
+        e.preventDefault();
+
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+
+        const distance = Math.hypot(
+          touch2.clientX - touch1.clientX,
+          touch2.clientY - touch1.clientY,
+        );
+
+        const container = containerRef.current;
+        if (!container) return;
+
+        const rect = container.getBoundingClientRect();
+        const centerX = (touch1.clientX + touch2.clientX) / 2;
+        const centerY = (touch1.clientY + touch2.clientY) / 2;
+
+        // Calculate scale change
+        const scaleChange = distance / pinchStateRef.current.initialDistance;
+        const newScale = Math.max(
+          0.1,
+          Math.min(pinchStateRef.current.initialScale * scaleChange, 8),
+        );
+
+        // Calculate cursor position relative to container
+        const cursorX = centerX - rect.left;
+        const cursorY = centerY - rect.top;
+
+        // Position relative to center
+        const previewCenterX = rect.width / 2;
+        const previewCenterY = rect.height / 2;
+        const relativeX = cursorX - previewCenterX - preview.panX;
+        const relativeY = cursorY - previewCenterY - preview.panY;
+
+        // Calculate new pan to keep pinch center stationary
+        const oldScale = preview.previewScale;
+        if (newScale !== oldScale) {
+          const scaleDelta = newScale / oldScale - 1;
+          const newPanX = preview.panX - relativeX * scaleDelta;
+          const newPanY = preview.panY - relativeY * scaleDelta;
+
+          setPreviewScale(newScale);
+          setPreviewPan(newPanX, newPanY);
+        }
+      }
+    },
+    [
+      preview.previewScale,
+      preview.panX,
+      preview.panY,
+      setPreviewScale,
+      setPreviewPan,
+    ],
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    pinchStateRef.current = null;
+  }, []);
 
   // Add global mouse up listener for panning
   useEffect(() => {
@@ -951,13 +1085,24 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onMouseDown={handlePanStart}
       onMouseMove={handlePanMove}
       onMouseUp={handlePanEnd}
-      onMouseLeave={handlePanEnd}
+      onMouseLeave={() => {
+        handlePanEnd();
+        setIsPreviewFocused(false);
+      }}
       onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      onFocus={() => setIsPreviewFocused(true)}
+      onBlur={() => setIsPreviewFocused(false)}
+      onMouseEnter={() => setIsPreviewFocused(true)}
+      tabIndex={0}
     >
       {/* Video */}
       {(activeVideoTrack || activeAudioTrack) && (
         <div
-          className="absolute inset-0 flex items-center justify-center"
+          className="absolute inset-0 flex items-center justify-center transition-[width,height,left,top] duration-150 ease-out"
           style={{
             width: actualWidth,
             height: actualHeight,
@@ -1004,7 +1149,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
         return (
           <div
-            className="absolute inset-0 pointer-events-none"
+            className="absolute inset-0 pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
             style={{
               width: actualWidth,
               height: actualHeight,

@@ -3,7 +3,7 @@
 /**
  * Keyboard shortcut scope determines when a shortcut should be active
  */
-export type ShortcutScope = 'global' | 'timeline' | 'track';
+export type ShortcutScope = 'global' | 'timeline' | 'track' | 'preview';
 
 /**
  * Shortcut priority - higher priority shortcuts take precedence
@@ -68,10 +68,12 @@ export interface ShortcutContext {
   timelineFocused: boolean;
   /** Whether a track is focused */
   trackFocused: boolean;
+  /** Whether the preview is focused */
+  previewFocused: boolean;
   /** Whether split mode is active */
   splitModeActive: boolean;
   /** Whether playback is in progress */
   isPlaying: boolean;
-  /** Whether tracks are being dragged */
+  /** Whether tracks are being dragging */
   isDragging: boolean;
 }

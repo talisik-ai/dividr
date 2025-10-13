@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createGlobalShortcuts } from './globalShortcuts';
+import { createPreviewShortcuts } from './previewShortcuts';
 import { createTimelineShortcuts } from './timelineShortcuts';
 import { createTrackShortcuts } from './trackShortcuts';
 import { ShortcutConfig, ShortcutScope } from './types';
@@ -35,6 +36,12 @@ export class ShortcutRegistry {
     // Register track shortcuts
     const trackShortcuts = createTrackShortcuts(store);
     trackShortcuts.forEach((shortcut) => {
+      this.shortcuts.set(shortcut.id, shortcut);
+    });
+
+    // Register preview shortcuts
+    const previewShortcuts = createPreviewShortcuts(() => getStore());
+    previewShortcuts.forEach((shortcut) => {
       this.shortcuts.set(shortcut.id, shortcut);
     });
   }
@@ -98,6 +105,7 @@ export const shortcutRegistry = new ShortcutRegistry();
 
 // Re-export types and shortcut creators
 export { createGlobalShortcuts } from './globalShortcuts';
+export { createPreviewShortcuts } from './previewShortcuts';
 export { createTimelineShortcuts } from './timelineShortcuts';
 export { createTrackShortcuts } from './trackShortcuts';
 export * from './types';

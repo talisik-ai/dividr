@@ -81,7 +81,7 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="native" className={cn('text-xs h-8 w-20', className)}>
-          {zoom}%
+          {Math.round(zoom)}%
           <ChevronDown size={12} />
         </Button>
       </DropdownMenuTrigger>
