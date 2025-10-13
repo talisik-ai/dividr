@@ -54,6 +54,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     setCurrentFrame,
     setPreviewPan,
     setPreviewScale,
+    setPreviewInteractionMode,
   } = useVideoEditorStore();
 
   // Active video track for visual display (must be visible)
@@ -259,6 +260,28 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       setPreviewPan(0, 0);
     }
   }, [activeVideoTrack?.id]);
+
+  // Auto-reset pan and mode when zooming out
+  useEffect(() => {
+    if (preview.previewScale <= 1) {
+      // When zooming to 100% or below, reset pan to center
+      if (preview.panX !== 0 || preview.panY !== 0) {
+        setPreviewPan(0, 0);
+      }
+
+      // Auto-switch to select mode when zooming out
+      if (preview.interactionMode === 'pan') {
+        setPreviewInteractionMode('select');
+      }
+    }
+  }, [
+    preview.previewScale,
+    preview.panX,
+    preview.panY,
+    preview.interactionMode,
+    setPreviewPan,
+    setPreviewInteractionMode,
+  ]);
 
   // Add effect to pause playback at the end of ALL tracks (not just video)
   useEffect(() => {
@@ -821,7 +844,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   // Pan/drag handlers for zoomed preview
   const handlePanStart = useCallback(
     (e: React.MouseEvent) => {
-      // Only enable panning when zoomed in (scale > 1)
+      // Only enable panning when in pan mode and zoomed in
+      if (preview.interactionMode !== 'pan') return;
       if (preview.previewScale <= 1) return;
 
       // Don't start panning if clicking on the placeholder
@@ -836,6 +860,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       };
     },
     [
+      preview.interactionMode,
       preview.previewScale,
       preview.panX,
       preview.panY,
@@ -906,12 +931,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         'relative overflow-hidden rounded-lg',
         className,
         'bg-zinc-100 dark:bg-zinc-900',
-        // Change cursor based on zoom and panning state
-        preview.previewScale > 1 && (activeVideoTrack || activeAudioTrack)
-          ? isPanning
-            ? 'cursor-grabbing'
-            : 'cursor-grab'
-          : 'cursor-default',
+        // Change cursor based on interaction mode and state
+        (() => {
+          if (!activeVideoTrack && !activeAudioTrack) return 'cursor-default';
+
+          // Pan mode cursor
+          if (preview.interactionMode === 'pan' && preview.previewScale > 1) {
+            return isPanning ? 'cursor-grabbing' : 'cursor-grab';
+          }
+
+          // Select mode or zoomed out
+          return 'cursor-default';
+        })(),
       )}
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}

@@ -9,6 +9,7 @@ export interface PreviewSlice {
   setPreviewScale: (scale: number) => void;
   setPreviewPan: (panX: number, panY: number) => void;
   resetPreviewPan: () => void;
+  setPreviewInteractionMode: (mode: 'select' | 'pan') => void;
   toggleGrid: () => void;
   toggleSafeZones: () => void;
   setBackgroundColor: (color: string) => void;
@@ -60,6 +61,14 @@ export const createPreviewSlice: StateCreator<
         ...state.preview,
         panX: 0,
         panY: 0,
+      },
+    })),
+
+  setPreviewInteractionMode: (mode) =>
+    set((state: any) => ({
+      preview: {
+        ...state.preview,
+        interactionMode: mode,
       },
     })),
 

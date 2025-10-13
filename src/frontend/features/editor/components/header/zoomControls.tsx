@@ -80,10 +80,7 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          className={cn('text-xs px-2 h-8 w-20', className)}
-        >
+        <Button variant="native" className={cn('text-xs h-8 w-20', className)}>
           {zoom}%
           <ChevronDown size={12} />
         </Button>

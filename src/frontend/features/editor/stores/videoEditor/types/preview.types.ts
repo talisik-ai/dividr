@@ -4,6 +4,7 @@ export interface PreviewState {
   previewScale: number;
   panX: number;
   panY: number;
+  interactionMode: 'select' | 'pan';
   showGrid: boolean;
   showSafeZones: boolean;
   backgroundColor: string;

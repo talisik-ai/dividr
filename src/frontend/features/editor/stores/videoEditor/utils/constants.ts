@@ -61,6 +61,7 @@ export const DEFAULT_PREVIEW_CONFIG = {
   previewScale: 1,
   panX: 0,
   panY: 0,
+  interactionMode: 'select' as const,
   backgroundColor: '#000000',
 } as const;
 

@@ -58,9 +58,10 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             canvasWidth: state.preview.canvasWidth,
             canvasHeight: state.preview.canvasHeight,
             previewScale: state.preview.previewScale,
-            // Don't persist pan values - they should reset on app restart
+            // Don't persist pan values and mode - they should reset on app restart
             panX: 0,
             panY: 0,
+            interactionMode: 'select' as const,
             showGrid: state.preview.showGrid,
             showSafeZones: state.preview.showSafeZones,
             backgroundColor: state.preview.backgroundColor,
