@@ -17,6 +17,7 @@ export interface ProjectSlice {
   syncWithProjectStore: () => void;
   exportProject: () => string;
   importProject: (data: string) => void;
+  setProjectThumbnail: (thumbnailData: string) => Promise<void>;
 
   // Cross-slice helpers accessed by other slices
   updateProjectThumbnailFromTimeline?: () => Promise<void>;
@@ -182,6 +183,45 @@ export const createProjectSlice: StateCreator<
       console.log('✅ Project imported successfully');
     } catch (error) {
       console.error('Failed to import project:', error);
+    }
+  },
+
+  setProjectThumbnail: async (thumbnailData: string) => {
+    const state = get() as any;
+    if (!state.currentProjectId) {
+      throw new Error('No project loaded');
+    }
+
+    try {
+      // Get current project
+      const currentProject = await projectService.getProject(
+        state.currentProjectId,
+      );
+      if (!currentProject) {
+        throw new Error('Current project not found');
+      }
+
+      // Update project with new thumbnail
+      const updatedProject = {
+        ...currentProject,
+        metadata: {
+          ...currentProject.metadata,
+          thumbnail: thumbnailData,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+
+      // Save to IndexedDB
+      await projectService.updateProject(updatedProject);
+
+      // Sync with ProjectStore to update the project list AND current project
+      get().syncWithProjectStore();
+
+      // Also update the current project in ProjectStore immediately
+      const projectStore = useProjectStore.getState();
+      projectStore.setCurrentProject(updatedProject);
+    } catch (error) {
+      throw error;
     }
   },
 });
