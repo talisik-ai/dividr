@@ -54,7 +54,17 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             zoom: state.timeline.zoom,
             snapEnabled: state.timeline.snapEnabled,
           },
-          preview: state.preview,
+          preview: {
+            canvasWidth: state.preview.canvasWidth,
+            canvasHeight: state.preview.canvasHeight,
+            previewScale: state.preview.previewScale,
+            // Don't persist pan values - they should reset on app restart
+            panX: 0,
+            panY: 0,
+            showGrid: state.preview.showGrid,
+            showSafeZones: state.preview.showSafeZones,
+            backgroundColor: state.preview.backgroundColor,
+          },
           playback: {
             volume: state.playback.volume,
             muted: state.playback.muted,

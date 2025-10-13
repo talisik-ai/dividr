@@ -252,6 +252,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     );
   }, [activeVideoTrack, independentAudioTrack, timeline.currentFrame]);
 
+  // Reset pan when video track changes or when there's no video
+  useEffect(() => {
+    // Reset pan to center when switching videos or when no video is present
+    if (preview.panX !== 0 || preview.panY !== 0) {
+      setPreviewPan(0, 0);
+    }
+  }, [activeVideoTrack?.id]);
+
   // Add effect to pause playback at the end of ALL tracks (not just video)
   useEffect(() => {
     if (!playback.isPlaying) return;
