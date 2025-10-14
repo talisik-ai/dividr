@@ -1042,34 +1042,18 @@ function buildSeparateTimelineFilterComplex(
     }
   });
 
-  // Build concatenation filters WITH SUBTITLE SUPPORT
+  // Build concatenation filters
   let videoConcatFilter = '';
   let audioConcatFilter = '';
 
   if (videoConcatInputs.length > 0) {
     if (videoConcatInputs.length === 1) {
-      // Single input - no concatenation needed, just rename the stream
-      if (job.operations.subtitles) {
-        const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
-        videoConcatFilter = `${videoConcatInputs[0]}subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[video]`;
-        console.log('🎬 Added subtitles to single video input');
-      } else {
-        // Use null filter to passthrough and rename the stream
-        const inputRef = videoConcatInputs[0].replace('[', '').replace(']', '');
-        videoConcatFilter = `[${inputRef}]null[video]`;
-      }
+      // Single input - no concatenation needed, just rename to temp stream
+      const inputRef = videoConcatInputs[0].replace('[', '').replace(']', '');
+      videoConcatFilter = `[${inputRef}]null[video_base]`;
     } else {
-      // Multiple inputs - use concat filter
-      if (job.operations.subtitles) {
-        // Apply subtitles after concatenation
-        videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[temp_video];`;
-
-        const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
-        videoConcatFilter += `[temp_video]subtitles='${ffmpegPath}':force_style='BorderStyle=4,BackColour=&H80000000,Outline=0,Shadow=0'[video]`;
-        console.log('🎬 Added subtitles to video concatenation');
-      } else {
-        videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[video]`;
-      }
+      // Multiple inputs - use concat filter, output to temp stream
+      videoConcatFilter = `${videoConcatInputs.join('')}concat=n=${videoConcatInputs.length}:v=1:a=0[video_base]`;
     }
   }
 
@@ -1084,10 +1068,31 @@ function buildSeparateTimelineFilterComplex(
     }
   }
 
+  // Apply subtitles to video stream if needed (must be in filter_complex)
+  let subtitleFilter = '';
+  if (job.operations.subtitles && videoConcatFilter) {
+    const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
+    const fileExtension = job.operations.subtitles.toLowerCase().split('.').pop();
+    
+    if (fileExtension === 'ass' || fileExtension === 'ssa') {
+      // Use 'ass' filter for ASS/SSA files (better performance)
+      subtitleFilter = `[video_base]ass='${ffmpegPath}'[video]`;
+      console.log('📝 Added ASS subtitle filter to filter_complex (optimized for ASS format)');
+    } else {
+      // Use 'subtitles' filter for other formats (SRT, VTT, etc.)
+      subtitleFilter = `[video_base]subtitles='${ffmpegPath}'[video]`;
+      console.log(`📝 Added subtitles filter to filter_complex (format: ${fileExtension})`);
+    }
+  } else if (videoConcatFilter) {
+    // No subtitles - just rename video_base to video
+    subtitleFilter = '[video_base]null[video]';
+  }
+
   // Combine all filters
   const allFilters = [...videoFilters, ...audioFilters];
   if (videoConcatFilter) allFilters.push(videoConcatFilter);
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
+  if (subtitleFilter) allFilters.push(subtitleFilter);
 
   const filterComplex = allFilters.join(';');
 
@@ -1402,7 +1407,7 @@ export async function buildFfmpegCommand(
   const { finalVideoTimeline, finalAudioTimeline, categorizedInputs } =
     handleTimelineProcessing(job, targetFrameRate);
 
-  // Step 3: Build and apply filter complex
+  // Step 3: Build and apply filter complex (includes subtitles)
   handleFilterComplex(
     job,
     cmd,
