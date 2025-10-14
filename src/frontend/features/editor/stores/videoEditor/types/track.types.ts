@@ -23,4 +23,7 @@ export interface VideoTrack {
   subtitleText?: string;
   linkedTrackId?: string;
   isLinked?: boolean;
+  // Precise subtitle timing from original SRT file (in seconds with millisecond precision)
+  subtitleStartTime?: number; // Original start time from SRT (seconds)
+  subtitleEndTime?: number; // Original end time from SRT (seconds)
 }

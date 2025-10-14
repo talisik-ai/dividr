@@ -138,15 +138,14 @@ export async function processSubtitleFile(
   previewUrl?: string,
 ): Promise<Omit<VideoTrack, 'id'>[]> {
   try {
-    console.log(`📖 Parsing subtitle content for: ${fileInfo.name}`);
-
     const segments = parseSubtitleContent(fileContent, fileInfo.name);
-    console.log(`🎬 Parsed ${segments.length} subtitle segments`);
 
     if (segments.length > 0) {
       const subtitleTracks = segments.map((segment, segmentIndex) => {
-        const startFrame = Math.round(segment.startTime * fps);
-        const endFrame = Math.round(segment.endTime * fps);
+        // Convert precise seconds to frames using Math.floor for start (inclusive)
+        // and Math.ceil for end (exclusive) to ensure full coverage
+        const startFrame = Math.floor(segment.startTime * fps);
+        const endFrame = Math.ceil(segment.endTime * fps);
 
         return {
           type: 'subtitle' as const,
@@ -164,12 +163,12 @@ export async function processSubtitleFile(
           locked: false,
           color: getTrackColor(currentTrackCount + segmentIndex),
           subtitleText: segment.text,
+          // Store original precise timing from SRT for reference
+          subtitleStartTime: segment.startTime,
+          subtitleEndTime: segment.endTime,
         };
       });
 
-      console.log(
-        `📋 Created ${subtitleTracks.length} subtitle tracks for ${fileInfo.name}`,
-      );
       return subtitleTracks;
     }
   } catch (error) {
@@ -177,7 +176,6 @@ export async function processSubtitleFile(
   }
 
   // Fallback: create single subtitle track if parsing fails
-  console.log(`📖 Creating fallback subtitle track for: ${fileInfo.name}`);
   return [
     {
       type: 'subtitle' as const,

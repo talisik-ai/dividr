@@ -375,10 +375,6 @@ export const createTracksSlice: StateCreator<
           mediaItem.source,
         );
         if (subtitleContent) {
-          console.log(
-            `📖 Processing subtitle from media library: ${mediaItem.name}`,
-          );
-
           // Parse subtitle content and create individual tracks
           const subtitleTracks = await processSubtitleFile(
             {
@@ -395,25 +391,13 @@ export const createTracksSlice: StateCreator<
             mediaItem.previewUrl,
           );
 
-          // Add each subtitle segment as a track at the specified start frame
+          // Add each subtitle segment as a track preserving original timing
           const addedIds: string[] = [];
-          let currentStartFrame = startFrame;
 
-          for (const [index, track] of subtitleTracks.entries()) {
-            const adjustedTrack = {
-              ...track,
-              startFrame: currentStartFrame,
-              endFrame: currentStartFrame + track.duration,
-            };
-            console.log(
-              `📝 Adding subtitle segment ${index + 1}: "${track.subtitleText?.substring(0, 50)}..." at frame ${currentStartFrame}`,
-            );
-            const trackId = await get().addTrack(adjustedTrack);
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          for (const [_index, track] of subtitleTracks.entries()) {
+            const trackId = await get().addTrack(track);
             addedIds.push(trackId);
-
-            // For the next track, use the end frame of current + small gap
-            currentStartFrame =
-              adjustedTrack.endFrame + Math.round(0.5 * state.timeline.fps); // 0.5 second gap
           }
 
           return addedIds[0] || ''; // Return first track ID for consistency

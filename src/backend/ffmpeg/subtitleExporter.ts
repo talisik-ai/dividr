@@ -41,8 +41,29 @@ export function extractSubtitleSegments(
 
   // Convert tracks to subtitle segments
   const segments: SubtitleSegment[] = subtitleTracks.map((track, index) => {
-    const startTime = track.startFrame / timeline.fps;
-    const endTime = track.endFrame / timeline.fps;
+    // Prefer original precise timing if available (from imported SRT)
+    // Otherwise calculate from frames (for user-created subtitles)
+    let startTime: number;
+    let endTime: number;
+
+    if (
+      track.subtitleStartTime !== undefined &&
+      track.subtitleEndTime !== undefined
+    ) {
+      // Use original precise timing from SRT import
+      startTime = track.subtitleStartTime;
+      endTime = track.subtitleEndTime;
+      console.log(
+        `[Export] Using original SRT timing for subtitle: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s`,
+      );
+    } else {
+      // Calculate from frame positions for user-created subtitles
+      startTime = track.startFrame / timeline.fps;
+      endTime = track.endFrame / timeline.fps;
+      console.log(
+        `[Export] Calculated timing from frames: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s`,
+      );
+    }
 
     return {
       startTime,

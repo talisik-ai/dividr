@@ -94,14 +94,29 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   // Helper function to get active subtitle tracks at current frame
   const getActiveSubtitleTracks = useCallback(() => {
     const currentFrame = timeline.currentFrame;
-    return tracks.filter(
+    const activeSubtitles = tracks.filter(
       (track) =>
         track.type === 'subtitle' &&
         track.visible &&
         currentFrame >= track.startFrame &&
-        currentFrame <= track.endFrame &&
+        currentFrame < track.endFrame && // Use < for exclusive end (standard interval logic)
         track.subtitleText,
     );
+
+    // Debug logging for subtitle timing verification
+    if (activeSubtitles.length > 0) {
+      activeSubtitles.forEach((track) => {
+        const currentTime = currentFrame / timeline.fps;
+        console.log(
+          `[Canvas Subtitle Display] Frame: ${currentFrame} (${currentTime.toFixed(3)}s) | ` +
+            `Track: [${track.startFrame}, ${track.endFrame}) | ` +
+            `Original: [${track.subtitleStartTime?.toFixed(3)}s, ${track.subtitleEndTime?.toFixed(3)}s) | ` +
+            `Text: "${track.subtitleText?.substring(0, 30)}..."`,
+        );
+      });
+    }
+
+    return activeSubtitles;
   }, [tracks, timeline.currentFrame]);
 
   // Enhanced container size management with better responsiveness

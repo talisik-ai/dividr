@@ -162,17 +162,16 @@ const processSubtitleFile = async (
   previewUrl?: string,
 ): Promise<Omit<VideoTrack, 'id'>[]> => {
   try {
-    console.log(`📖 Parsing subtitle content for: ${fileInfo.name}`);
-
     // Parse subtitle segments
     const segments = parseSubtitleContent(fileContent, fileInfo.name);
-    console.log(`🎬 Parsed ${segments.length} subtitle segments`);
 
     if (segments.length > 0) {
       // Create individual tracks for each subtitle segment
       const subtitleTracks = segments.map((segment, segmentIndex) => {
-        const startFrame = Math.round(segment.startTime * fps);
-        const endFrame = Math.round(segment.endTime * fps);
+        // Convert precise seconds to frames using Math.floor for start (inclusive)
+        // and Math.ceil for end (exclusive) to ensure full coverage
+        const startFrame = Math.floor(segment.startTime * fps);
+        const endFrame = Math.ceil(segment.endTime * fps);
 
         return {
           type: 'subtitle' as const,
@@ -190,20 +189,18 @@ const processSubtitleFile = async (
           locked: false,
           color: getTrackColor(currentTrackCount + segmentIndex),
           subtitleText: segment.text,
+          // Store original precise timing from SRT for reference
+          subtitleStartTime: segment.startTime,
+          subtitleEndTime: segment.endTime,
         };
       });
 
-      console.log(
-        `📋 Created ${subtitleTracks.length} subtitle tracks for ${fileInfo.name}`,
-      );
       return subtitleTracks;
     }
   } catch (error) {
     console.error(`❌ Error parsing subtitle file ${fileInfo.name}:`, error);
   }
 
-  // Fallback: create single subtitle track if parsing fails
-  console.log(`📖 Creating fallback subtitle track for: ${fileInfo.name}`);
   return [
     {
       type: 'subtitle' as const,
@@ -285,34 +282,16 @@ const processImportedFile = async (
   let mimeType = 'application/octet-stream';
   let trackType: 'video' | 'audio' | 'image' | 'subtitle' = fileInfo.type;
 
-  console.log(`🔍 File type detection for: ${fileInfo.name}`);
-  console.log(`   - Original fileInfo.type: ${fileInfo.type}`);
-  console.log(
-    `   - isSubtitleFile(${fileInfo.name}): ${isSubtitleFile(fileInfo.name)}`,
-  );
-
   // Check for subtitle files FIRST (override any incorrect type detection)
   if (isSubtitleFile(fileInfo.name)) {
     mimeType = `text/${fileInfo.extension}`;
     trackType = 'subtitle';
-    console.log(
-      `🎬 ✅ Detected subtitle file: ${fileInfo.name} -> type: ${trackType}`,
-    );
   } else if (fileInfo.type === 'video') {
     mimeType = `video/${fileInfo.extension}`;
-    console.log(
-      `📹 Detected video file: ${fileInfo.name} -> type: ${trackType}`,
-    );
   } else if (fileInfo.type === 'audio') {
     mimeType = `audio/${fileInfo.extension}`;
-    console.log(
-      `🎵 Detected audio file: ${fileInfo.name} -> type: ${trackType}`,
-    );
   } else if (fileInfo.type === 'image') {
     mimeType = `image/${fileInfo.extension}`;
-    console.log(
-      `🖼️ Detected image file: ${fileInfo.name} -> type: ${trackType}`,
-    );
   }
 
   // Add to media library
@@ -332,9 +311,6 @@ const processImportedFile = async (
   // Generate sprite sheets and thumbnails for video files (async, don't wait)
   if (trackType === 'video') {
     if (generateSpriteFn) {
-      console.log(
-        `🎬 Triggering sprite sheet generation for: ${fileInfo.name}`,
-      );
       // Run sprite sheet generation in background without blocking import
       generateSpriteFn(mediaId).catch((error) => {
         console.warn(
@@ -345,7 +321,6 @@ const processImportedFile = async (
     }
 
     if (generateThumbnailFn) {
-      console.log(`📸 Triggering thumbnail generation for: ${fileInfo.name}`);
       // Run thumbnail generation in background without blocking import
       generateThumbnailFn(mediaId).catch((error) => {
         console.warn(
@@ -359,25 +334,12 @@ const processImportedFile = async (
     // Use a retry mechanism to handle FFmpeg concurrency issues
     const extractAudioWithRetry = async (retries = 3, delay = 2000) => {
       for (let attempt = 1; attempt <= retries; attempt++) {
-        console.log(
-          `🎵 Triggering audio extraction for: ${fileInfo.name} (attempt ${attempt}/${retries})`,
-        );
         try {
           const result = await window.electronAPI.extractAudioFromVideo(
             fileInfo.path,
           );
 
           if (result.success && result.audioPath) {
-            console.log(
-              `✅ Audio extracted successfully for ${fileInfo.name}: ${result.audioPath}`,
-            );
-            // Store extracted audio info in media library item for future use
-            console.log('🔄 Extracted audio info ready for storage:', {
-              audioPath: result.audioPath,
-              previewUrl: result.previewUrl,
-              size: result.size,
-            });
-
             // Update the media library item with extracted audio information
             if (updateMediaLibraryFn && result.audioPath) {
               updateMediaLibraryFn(mediaId, {
@@ -388,17 +350,11 @@ const processImportedFile = async (
                   extractedAt: Date.now(),
                 },
               });
-              console.log(
-                `✅ Updated media library item ${mediaId} with extracted audio info`,
-              );
             }
             return; // Success, exit retry loop
           } else if (
             result.error?.includes('Another FFmpeg process is already running')
           ) {
-            console.log(
-              `⏳ FFmpeg busy on attempt ${attempt}/${retries}, retrying in ${delay}ms...`,
-            );
             if (attempt < retries) {
               await new Promise((resolve) => setTimeout(resolve, delay));
               continue; // Retry
@@ -438,9 +394,6 @@ const processImportedFile = async (
 
     // Generate waveform for video files (coordinated with audio extraction)
     if (generateWaveformFn) {
-      console.log(
-        `🎵 Triggering waveform generation for video: ${fileInfo.name}`,
-      );
       // Run waveform generation with smart retry logic to coordinate with audio extraction
       const generateWaveformWithRetry = async () => {
         let retries = 6; // Allow up to 6 retries (30 seconds max)
@@ -450,9 +403,6 @@ const processImportedFile = async (
           try {
             const result = await generateWaveformFn(mediaId);
             if (result) {
-              console.log(
-                `✅ Waveform generation completed for: ${fileInfo.name}`,
-              );
               return;
             }
           } catch (error) {
@@ -464,9 +414,6 @@ const processImportedFile = async (
 
           retries--;
           if (retries > 0) {
-            console.log(
-              `🔄 Retrying waveform generation for ${fileInfo.name} in ${retryDelay}ms (${retries} retries left)`,
-            );
             await new Promise((resolve) => setTimeout(resolve, retryDelay));
           }
         }
@@ -488,9 +435,6 @@ const processImportedFile = async (
 
   // Generate waveform for direct audio files (immediate start)
   if (trackType === 'audio' && generateWaveformFn) {
-    console.log(
-      `🎵 Triggering immediate waveform generation for audio: ${fileInfo.name}`,
-    );
     // Run waveform generation in background without blocking import
     // For direct audio files, we can start immediately as no extraction is needed
     generateWaveformFn(mediaId).catch((error) => {
@@ -512,7 +456,6 @@ const processImportedFile = async (
           fileInfo.path,
         );
         if (subtitleContent) {
-          console.log(`📖 Processing subtitle file: ${fileInfo.name}`);
           const subtitleTracks = await processSubtitleFile(
             fileInfo,
             subtitleContent,
@@ -521,23 +464,17 @@ const processImportedFile = async (
             previewUrl,
           );
 
-          console.log(
-            `➕ Adding ${subtitleTracks.length} subtitle tracks to timeline`,
-          );
-          for (const [index, track] of subtitleTracks.entries()) {
-            console.log(
-              `📝 Adding subtitle track ${index + 1}: "${track.subtitleText?.substring(0, 50)}..."`,
-            );
-            const trackId = await addToTimelineFn(track);
-            console.log(`✅ Added subtitle track with ID: ${trackId}`);
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          for (const [_index, track] of subtitleTracks.entries()) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            await addToTimelineFn(track);
           }
         }
       } catch (error) {
         console.error(`❌ Error processing subtitle file:`, error);
         // Add single fallback track - Use precise duration calculation
         const duration = Math.floor(actualDurationSeconds * fps);
-        console.log(`📝 Adding fallback subtitle track for: ${fileInfo.name}`);
-        const trackId = await addToTimelineFn({
+        await addToTimelineFn({
           type: 'subtitle',
           name: fileInfo.name,
           source: fileInfo.path,
@@ -550,15 +487,11 @@ const processImportedFile = async (
           color: getTrackColor(0),
           subtitleText: `Subtitle: ${fileInfo.name}`,
         });
-        console.log(`✅ Added fallback subtitle track with ID: ${trackId}`);
       }
     } else {
       // Add regular media to timeline - Use precise duration calculation
       const duration = Math.floor(actualDurationSeconds * fps);
-      console.log(
-        `📹 Adding ${trackType} track: ${fileInfo.name} (duration: ${duration} frames, precise seconds: ${actualDurationSeconds})`,
-      );
-      const trackId = await addToTimelineFn({
+      await addToTimelineFn({
         type: trackType,
         name: fileInfo.name,
         source: fileInfo.path,
@@ -570,7 +503,6 @@ const processImportedFile = async (
         locked: false,
         color: getTrackColor(0),
       });
-      console.log(`✅ Added ${trackType} track with ID: ${trackId}`);
     }
   }
 
@@ -718,11 +650,6 @@ export const createFileProcessingSlice: StateCreator<
         // For regular File objects, we'll create blob URLs for preview
         // but log a warning that this won't work with FFmpeg
         const blobUrl = URL.createObjectURL(file);
-        console.warn(
-          'Using blob URL for file:',
-          file.name,
-          'This will not work with FFmpeg. Use importMediaFromDialog instead.',
-        );
 
         const type = file.type.startsWith('video/')
           ? ('video' as const)
@@ -756,11 +683,6 @@ export const createFileProcessingSlice: StateCreator<
 
   importMediaFromDrop: async (files: File[]): Promise<ImportResult> => {
     try {
-      console.log(
-        '🎯 importMediaFromDrop called with files (library only):',
-        files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
-      );
-
       // Convert File objects to ArrayBuffers for IPC transfer
       const fileBuffers = await Promise.all(
         files.map(async (file) => {
@@ -774,8 +696,6 @@ export const createFileProcessingSlice: StateCreator<
         }),
       );
 
-      console.log('🚀 Sending files to main process for processing...');
-
       // Process files in main process to get real file paths
       const result = await window.electronAPI.processDroppedFiles(fileBuffers);
 
@@ -786,8 +706,6 @@ export const createFileProcessingSlice: StateCreator<
         );
         return { success: false, importedFiles: [] };
       }
-
-      console.log('✅ Files processed in main process:', result.files);
 
       const importedFiles: Array<{
         id: string;
@@ -815,9 +733,6 @@ export const createFileProcessingSlice: StateCreator<
         }),
       );
 
-      console.log(
-        `✅ Added ${importedFiles.length} files to media library only`,
-      );
       return { success: true, importedFiles };
     } catch (error) {
       console.error('Failed to import media from drop:', error);
@@ -827,11 +742,6 @@ export const createFileProcessingSlice: StateCreator<
 
   importMediaToTimeline: async (files: File[]): Promise<ImportResult> => {
     try {
-      console.log(
-        '🎯 importMediaToTimeline called with files:',
-        files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
-      );
-
       // Convert File objects to ArrayBuffers for IPC transfer
       const fileBuffers = await Promise.all(
         files.map(async (file) => {

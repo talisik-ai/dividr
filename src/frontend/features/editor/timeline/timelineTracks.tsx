@@ -105,7 +105,7 @@ const TrackItemWrapper: React.FC<{
     const getTrackGradient = (type: VideoTrack['type']) => {
       switch (type) {
         case 'subtitle':
-          return 'linear-gradient(135deg, #1f1f1f, #2a2a2a)';
+          return 'hsl(0, 0%, 35%)';
         case 'video':
           return 'transparent';
         case 'audio':
@@ -619,10 +619,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
       // Text content for other track types
       return (
-        <div
-          className="text-white text-[11px] font-bold whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1"
-          style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}
-        >
+        <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
             ? track.subtitleText
             : track.name}

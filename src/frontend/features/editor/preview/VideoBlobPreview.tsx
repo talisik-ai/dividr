@@ -137,10 +137,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       if (audioTrack) {
         // If audio track has its own previewUrl (extracted audio), use it directly
         if (audioTrack.previewUrl) {
-          console.log(
-            `🎵 [IndependentAudio] Using extracted audio for track: ${audioTrack.id}`,
-            `Src: ${audioTrack.previewUrl}`,
-          );
           return audioTrack;
         }
 
@@ -201,70 +197,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
   // Combined audio track reference for compatibility with existing code
   const activeAudioTrack = independentAudioTrack || videoTrackWithAudio;
-
-  // Add debug logs to segment/track detection
-  useEffect(() => {
-    if (activeVideoTrack) {
-      console.log(
-        '[DirectPreview] Timeline/frame changed. Current frame:',
-        timeline.currentFrame,
-        'Active video track:',
-        activeVideoTrack.id,
-        'Src:',
-        activeVideoTrack.previewUrl,
-        'Frames:',
-        activeVideoTrack.startFrame,
-        '-',
-        activeVideoTrack.endFrame,
-      );
-    } else {
-      console.log(
-        '[DirectPreview] Timeline/frame changed. No active video track. Current frame:',
-        timeline.currentFrame,
-      );
-    }
-
-    if (independentAudioTrack) {
-      console.log(
-        '[DirectPreview] Independent audio track:',
-        independentAudioTrack.id,
-        'Source:',
-        independentAudioTrack.source,
-        'PreviewUrl:',
-        independentAudioTrack.previewUrl,
-        'Frames:',
-        independentAudioTrack.startFrame,
-        '-',
-        independentAudioTrack.endFrame,
-        'isLinked:',
-        independentAudioTrack.isLinked,
-      );
-    }
-
-    if (videoTrackWithAudio) {
-      console.log(
-        '[DirectPreview] Video track providing audio:',
-        videoTrackWithAudio.id,
-        'Src:',
-        videoTrackWithAudio.previewUrl,
-        'Frames:',
-        videoTrackWithAudio.startFrame,
-        '-',
-        videoTrackWithAudio.endFrame,
-        'isLinked:',
-        videoTrackWithAudio.isLinked,
-        'muted:',
-        videoTrackWithAudio.muted,
-      );
-    }
-
-    console.log(
-      '[DirectPreview] Audio decision: independentAudioTrack =',
-      !!independentAudioTrack,
-      ', videoTrackWithAudio =',
-      !!videoTrackWithAudio,
-    );
-  }, [activeVideoTrack, independentAudioTrack, timeline.currentFrame]);
 
   // Reset pan when video track changes or when there's no video
   useEffect(() => {
@@ -381,14 +313,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   // Subtitle tracks
   const getActiveSubtitleTracks = useCallback(() => {
     const currentFrame = timeline.currentFrame;
-    return tracks.filter(
+    const activeSubtitles = tracks.filter(
       (track) =>
         track.type === 'subtitle' &&
         track.visible &&
         currentFrame >= track.startFrame &&
-        currentFrame <= track.endFrame &&
+        currentFrame < track.endFrame && // Use < for exclusive end (standard interval logic)
         track.subtitleText,
     );
+
+    return activeSubtitles;
   }, [tracks, timeline.currentFrame]);
 
   // Add handler for video loadedmetadata
@@ -415,19 +349,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       activeVideoTrack.sourceStartTime || 0,
       Math.min(targetTime, Math.min(trimmedEndTime, video.duration || 0)),
     );
-
-    console.log('[DirectPreview] Video loadedmetadata - seeking to:', {
-      currentFrame: timeline.currentFrame,
-      trackStartFrame: activeVideoTrack.startFrame,
-      trackEndFrame: activeVideoTrack.endFrame,
-      relativeFrame,
-      trackTime,
-      sourceStartTime: activeVideoTrack.sourceStartTime || 0,
-      trimmedEndTime,
-      targetTime,
-      clampedTargetTime,
-      videoDuration: video.duration,
-    });
 
     video.currentTime = clampedTargetTime;
 
@@ -477,12 +398,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         independentAudioTrack.sourceStartTime || 0,
         Math.min(targetTime, Math.min(trimmedEndTime, audio.duration || 0)),
       );
-      console.log(
-        '[DirectPreview] Audio metadata loaded - seeking to position within range:',
-        audio.currentTime,
-        'trimmedEndTime:',
-        trimmedEndTime,
-      );
     } else {
       console.log(
         '[DirectPreview] Audio metadata loaded - timeline outside audio range, not seeking',
@@ -530,16 +445,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     try {
       if (playback.isPlaying) {
         if (video.paused && video.readyState >= 3) {
-          console.log(
-            '[DirectPreview] Resuming video playback (playback.isPlaying && video.paused)',
-          );
           video.play().catch(console.warn);
         }
       } else {
         if (!video.paused) {
-          console.log(
-            '[DirectPreview] Pausing video playback (playback.isPlaying is false)',
-          );
           video.pause();
         }
       }
@@ -556,24 +465,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         (activeVideoTrack?.muted ?? false) ||
         (!independentAudioTrack && !videoTrackWithAudio); // Mute when no audio source
 
-      console.log('[DirectPreview] Video volume decision:', {
-        playbackMuted: playback.muted,
-        hasIndependentAudio: !!independentAudioTrack,
-        videoTrackMuted: activeVideoTrack?.muted ?? false,
-        hasVideoTrackWithAudio: !!videoTrackWithAudio,
-        noAudioAtAll: !independentAudioTrack && !videoTrackWithAudio,
-        shouldMuteVideo,
-        finalVolume: shouldMuteVideo ? 0 : Math.min(playback.volume, 1),
-      });
-
       video.volume = shouldMuteVideo ? 0 : Math.min(playback.volume, 1);
       video.playbackRate = Math.max(0.25, Math.min(playback.playbackRate, 4));
-
-      // Ensure video plays at the correct rate to match timeline
-      console.log(
-        '[DirectPreview] Video playback rate set to:',
-        video.playbackRate,
-      );
     } catch (err) {
       console.warn('Video sync error:', err);
     }
@@ -602,22 +495,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       if (playback.isPlaying) {
         // Only play audio if timeline position is within audio track's range
         if (isWithinAudioRange && audio.paused && audio.readyState >= 3) {
-          console.log(
-            '[DirectPreview] Resuming audio playback (independent audio track) - within range',
-          );
           audio.play().catch(console.warn);
         } else if (!isWithinAudioRange && !audio.paused) {
-          console.log(
-            '[DirectPreview] Pausing audio - timeline outside audio track range',
-            `Frame: ${timeline.currentFrame}, Audio range: ${independentAudioTrack.startFrame}-${independentAudioTrack.endFrame}`,
-          );
           audio.pause();
         }
       } else {
         if (!audio.paused) {
-          console.log(
-            '[DirectPreview] Pausing audio playback (independent audio track)',
-          );
           audio.pause();
         }
       }
@@ -725,12 +608,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     const shouldSeek = trimChanged || (!playback.isPlaying && diff > tolerance);
 
     if (shouldSeek && diff > tolerance) {
-      console.log('[DirectPreview] Seeking video:', {
-        reason: trimChanged ? 'trim changed' : 'scrubbing',
-        clampedTargetTime,
-        currentVideoTime: video.currentTime,
-        diff,
-      });
       video.currentTime = clampedTargetTime;
     }
   }, [
@@ -801,12 +678,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     const shouldSeek = trimChanged || (!playback.isPlaying && diff > tolerance);
 
     if (shouldSeek && diff > tolerance) {
-      console.log('[DirectPreview] Seeking audio:', {
-        reason: trimChanged ? 'trim changed' : 'scrubbing',
-        clampedTargetTime,
-        currentAudioTime: audio.currentTime,
-        diff,
-      });
       audio.currentTime = clampedTargetTime;
     }
   }, [
@@ -838,17 +709,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       setDragActive(false);
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
-        console.log(`🎯 Dropping ${files.length} files onto video preview`);
-        const result = await importMediaToTimeline(files);
-        if (result.success) {
-          console.log(
-            `✅ Successfully imported ${result.importedFiles.length} files to timeline from video preview`,
-          );
-        } else {
-          console.error(
-            '❌ Failed to import files to timeline from video preview',
-          );
-        }
+        await importMediaToTimeline(files);
       }
     },
     [importMediaToTimeline],
@@ -1165,10 +1026,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               return (
                 <div
                   key={track.id}
-                  className="text-white text-center absolute bottom-10 left-0 right-0 bg-secondary dark:bg-secondary-dark"
+                  className="text-white text-center absolute bottom-5 w-fit left-0 right-0 bg-secondary dark:bg-secondary-dark"
                   style={{
                     // Match FFmpeg's ASS subtitle styling with applied text styles
-                    fontSize: `${Math.max(18, videoHeight * 0.045)}px`, // Slightly larger for better visibility
+                    fontSize: `${Math.max(18, videoHeight * 0.02)}px`, // Slightly larger for better visibility
                     fontFamily: appliedStyle.fontFamily, // Apply selected font family
                     fontWeight: appliedStyle.fontWeight, // Apply selected font weight
                     fontStyle: appliedStyle.fontStyle, // Apply selected font style
@@ -1202,13 +1063,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               : 'border-accent hover:!border-secondary hover:bg-secondary/10',
           )}
           onClick={async () => {
-            const result = await importMediaFromDialog();
-            if (result.success && result.importedFiles.length > 0) {
-              console.log(
-                'Files imported successfully from placeholder click:',
-                result.importedFiles,
-              );
-            }
+            await importMediaFromDialog();
           }}
         >
           <img src={theme === 'dark' ? NewDark : New} alt="New Project" />
