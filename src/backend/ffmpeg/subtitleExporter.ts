@@ -153,19 +153,20 @@ ScriptType: v4.00+
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,${assStyle.italic},0,0,100,100,0,0,4,0,0,2,10,10,10,1
-Style: Semibold,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,${assStyle.italic},0,0,100,100,0,0,4,0,0,2,10,10,10,1
-Style: Bold,${assStyle.fontFamily},16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,${assStyle.italic},0,0,120,120,0,0,4,0,0,2,10,10,10,1
+Style: Default,${assStyle.fontFamily},20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,${assStyle.italic},0,0,100,100,0,0,1,2,1,2,10,10,10,1
+Style: Semibold,${assStyle.fontFamily},20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,${assStyle.italic},0,0,100,100,0,0,1,2,1,2,10,10,10,1
+Style: Bold,${assStyle.fontFamily},20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,${assStyle.italic},0,0,120,120,0,0,1,2,1,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 
   // ASS Style Parameters Explanation:
-  // - BackColour=&H80000000: Semi-transparent black background (80 = ~50% alpha)
+  // - BackColour=&H00000000: Fully transparent background (no black box)
   // - Bold=-1: Bold text enabled
-  // - BorderStyle=4: Background box style (fills bounding box behind text)
-  // - Outline=0, Shadow=0: No outline or shadow
+  // - BorderStyle=1: Outline + shadow style (traditional subtitle look)
+  // - Outline=2: Black outline for readability
+  // - Shadow=1: Subtle drop shadow
   // - Alignment=2: Bottom center alignment
   // - PrimaryColour=&H00FFFFFF: White text color
 
@@ -179,6 +180,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       if (textStyle?.textTransform) {
         text = applyTextTransform(text, textStyle.textTransform);
       }
+
+      // Convert newlines to ASS format (\N for line breaks)
+      // SRT uses \n, but ASS requires \N (capital N)
+      text = text.replace(/\n/g, '\\N');
 
       // Choose style based on font weight
       let styleName = 'Default';
