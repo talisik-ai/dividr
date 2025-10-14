@@ -1,4 +1,9 @@
 import { Button } from '@/frontend/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/frontend/components/ui/tooltip';
 import { cn } from '@/frontend/utils/utils';
 import { Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
@@ -84,38 +89,50 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
           {(rowDef.trackTypes.includes('video') ||
             rowDef.trackTypes.includes('image') ||
             rowDef.trackTypes.includes('subtitle')) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={handleToggleVisibility}
-              disabled={tracks.length === 0}
-              title={hasVisibleTracks ? 'Hide tracks' : 'Show tracks'}
-            >
-              {hasVisibleTracks ? (
-                <Eye className="h-3 w-3" />
-              ) : (
-                <EyeOff className="h-3 w-3 text-muted-foreground/50" />
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={handleToggleVisibility}
+                  disabled={tracks.length === 0}
+                >
+                  {hasVisibleTracks ? (
+                    <Eye className="h-3 w-3" />
+                  ) : (
+                    <EyeOff className="h-3 w-3 text-muted-foreground/50" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {hasVisibleTracks ? 'Hide tracks' : 'Show tracks'}
+              </TooltipContent>
+            </Tooltip>
           )}
 
           {/* Show audio control for audio tracks only */}
           {rowDef.trackTypes.includes('audio') && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={handleToggleMute}
-              disabled={tracks.length === 0}
-              title={hasAudibleTracks ? 'Mute audio' : 'Unmute audio'}
-            >
-              {hasAudibleTracks ? (
-                <Volume2 className="h-3 w-3" />
-              ) : (
-                <VolumeX className="h-3 w-3 text-muted-foreground/50" />
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={handleToggleMute}
+                  disabled={tracks.length === 0}
+                >
+                  {hasAudibleTracks ? (
+                    <Volume2 className="h-3 w-3" />
+                  ) : (
+                    <VolumeX className="h-3 w-3 text-muted-foreground/50" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {hasAudibleTracks ? 'Mute audio' : 'Unmute audio'}
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       </div>

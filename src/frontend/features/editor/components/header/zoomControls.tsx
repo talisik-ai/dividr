@@ -14,6 +14,11 @@ import {
 } from '@/frontend/components/ui/dropdown-menu';
 import { Input } from '@/frontend/components/ui/input';
 import { Slider } from '@/frontend/components/ui/slider';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/frontend/components/ui/tooltip';
 import { cn } from '@/frontend/utils/utils';
 import { ChevronDown } from 'lucide-react';
 import React, { useState } from 'react';
@@ -79,12 +84,20 @@ const ZoomControls: React.FC<ZoomControlsProps> = ({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="native" className={cn('text-xs h-8 w-20', className)}>
-          {Math.round(zoom)}%
-          <ChevronDown size={12} />
-        </Button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="native"
+              className={cn('text-xs h-8 w-20', className)}
+            >
+              {Math.round(zoom)}%
+              <ChevronDown size={12} />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Preview Zoom</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent className="w-64" align="start">
         {/* Size Label */}
         <DropdownMenuLabel>Preview Zoom</DropdownMenuLabel>

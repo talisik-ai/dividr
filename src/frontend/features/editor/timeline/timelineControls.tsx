@@ -16,6 +16,11 @@ import {
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/frontend/components/ui/tooltip';
+import {
   ChevronDown,
   CopyPlus,
   Link,
@@ -125,18 +130,18 @@ const PlayPauseButton: React.FC<{
   const isPlaying = useVideoEditorStore((state) => state.playback.isPlaying);
 
   return (
-    <Button
-      onClick={onPlayToggle}
-      title={isPlaying ? 'Pause' : 'Play'}
-      variant="native"
-      size="icon"
-    >
-      {isPlaying ? (
-        <Pause className="fill-zinc-900 dark:fill-zinc-100" />
-      ) : (
-        <Play className="fill-zinc-900 dark:fill-zinc-100" />
-      )}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button onClick={onPlayToggle} variant="native" size="icon">
+          {isPlaying ? (
+            <Pause className="fill-zinc-900 dark:fill-zinc-100" />
+          ) : (
+            <Play className="fill-zinc-900 dark:fill-zinc-100" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{isPlaying ? 'Pause' : 'Play'} (Space)</TooltipContent>
+    </Tooltip>
   );
 });
 
@@ -183,15 +188,24 @@ const DeleteButton: React.FC = React.memo(() => {
     removeSelectedTracks();
   }, [removeSelectedTracks]);
 
+  const tooltipText =
+    selectedTrackIds.length > 0
+      ? `Delete ${selectedTrackIds.length} selected track${selectedTrackIds.length > 1 ? 's' : ''} (Delete)`
+      : 'Delete selected tracks (Delete)';
+
   return (
-    <Button
-      variant="native"
-      onClick={handleDelete}
-      title={`Delete ${selectedTrackIds.length > 0 ? `${selectedTrackIds.length} selected track${selectedTrackIds.length > 1 ? 's' : ''}` : 'selected tracks'}`}
-      disabled={selectedTrackIds.length === 0}
-    >
-      <Trash />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="native"
+          onClick={handleDelete}
+          disabled={selectedTrackIds.length === 0}
+        >
+          <Trash />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltipText}</TooltipContent>
+    </Tooltip>
   );
 });
 
@@ -278,15 +292,24 @@ const DuplicateButton: React.FC = React.memo(() => {
     }
   }, [selectedTrackIds, tracks, duplicateTrack, setSelectedTracks]);
 
+  const tooltipText =
+    selectedTrackIds.length > 0
+      ? `Duplicate ${selectedTrackIds.length} selected track${selectedTrackIds.length > 1 ? 's' : ''} (Ctrl+D)`
+      : 'Duplicate selected tracks (Ctrl+D)';
+
   return (
-    <Button
-      variant="native"
-      onClick={handleDuplicate}
-      title={`Duplicate ${selectedTrackIds.length > 0 ? `${selectedTrackIds.length} selected track${selectedTrackIds.length > 1 ? 's' : ''}` : 'selected tracks'} (Ctrl+D)`}
-      disabled={selectedTrackIds.length === 0}
-    >
-      <CopyPlus className="size-4" />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="native"
+          onClick={handleDuplicate}
+          disabled={selectedTrackIds.length === 0}
+        >
+          <CopyPlus className="size-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltipText}</TooltipContent>
+    </Tooltip>
   );
 });
 
@@ -436,25 +459,29 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
   const isDisabled = !linkState.canLink && !linkState.canUnlink;
   const isUnlinkMode = linkState.canUnlink;
 
+  const tooltipText = isUnlinkMode
+    ? 'Unlink selected tracks'
+    : 'Link selected video and audio tracks';
+
   return (
-    <Button
-      variant="native"
-      onClick={handleToggleLinkState}
-      title={
-        isUnlinkMode
-          ? 'Unlink selected tracks'
-          : 'Link selected video and audio tracks'
-      }
-      disabled={isDisabled}
-    >
-      {isUnlinkMode ? (
-        <Unlink className="text-orange-500" />
-      ) : (
-        <Link
-          className={linkState.canLink ? 'text-blue-500' : 'text-gray-400'}
-        />
-      )}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="native"
+          onClick={handleToggleLinkState}
+          disabled={isDisabled}
+        >
+          {isUnlinkMode ? (
+            <Unlink className="text-orange-500" />
+          ) : (
+            <Link
+              className={linkState.canLink ? 'text-blue-500' : 'text-gray-400'}
+            />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltipText}</TooltipContent>
+    </Tooltip>
   );
 });
 
@@ -602,14 +629,16 @@ const FullscreenButton: React.FC = React.memo(() => {
   );
 
   return (
-    <Button
-      variant="native"
-      size="icon"
-      onClick={toggleFullscreen}
-      title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen (F)'}
-    >
-      {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="native" size="icon" onClick={toggleFullscreen}>
+          {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen (F)'}
+      </TooltipContent>
+    </Tooltip>
   );
 });
 
@@ -650,22 +679,34 @@ export const TimelineControls: React.FC = React.memo(
           <ModeSelector />
           <Separator orientation="vertical" className="!h-6" />
           <div className="flex items-center gap-6">
-            <Button
-              variant="native"
-              onClick={() => useVideoEditorStore.getState().splitAtPlayhead()}
-              title="Split"
-            >
-              <SplitSquareHorizontal />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="native"
+                  onClick={() =>
+                    useVideoEditorStore.getState().splitAtPlayhead()
+                  }
+                >
+                  <SplitSquareHorizontal />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Split at Playhead (Ctrl+K)</TooltipContent>
+            </Tooltip>
             <DuplicateButton />
-            <Button
-              variant="native"
-              onClick={toggleSnap}
-              title={`Snap ${snapEnabled ? 'On' : 'Off'} (S)`}
-              className={snapEnabled ? 'text-green-500' : ''}
-            >
-              <Magnet className="size-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="native"
+                  onClick={toggleSnap}
+                  className={snapEnabled ? 'text-green-500' : ''}
+                >
+                  <Magnet className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {snapEnabled ? 'Snap Enabled (S)' : 'Snap Disabled (S)'}
+              </TooltipContent>
+            </Tooltip>
             <LinkUnlinkButton />
             <DeleteButton />
           </div>
@@ -717,52 +758,46 @@ export const TimelineControls: React.FC = React.memo(
 
           {/* Time Display */}
           <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2">
-            {/* 
-        <button
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Go to start"
-        >
-          <FaFastBackward />
-        </button>
-        */}
-            <Button
-              onClick={() =>
-                useVideoEditorStore
-                  .getState()
-                  .setCurrentFrame(Math.max(0, getCurrentFrame() - 1))
-              }
-              title="Previous frame"
-              variant="native"
-              size="icon"
-            >
-              <SkipBack />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() =>
+                    useVideoEditorStore
+                      .getState()
+                      .setCurrentFrame(Math.max(0, getCurrentFrame() - 1))
+                  }
+                  variant="native"
+                  size="icon"
+                >
+                  <SkipBack />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Previous Frame (←)</TooltipContent>
+            </Tooltip>
 
             <PlayPauseButton onPlayToggle={handlePlayToggle} />
 
-            <Button
-              onClick={() =>
-                useVideoEditorStore
-                  .getState()
-                  .setCurrentFrame(
-                    Math.min(getEffectiveEndFrame() - 1, getCurrentFrame() + 1),
-                  )
-              }
-              title="Next frame"
-              variant="native"
-              size="icon"
-            >
-              <SkipForward />
-            </Button>
-            {/* 
-        <button
-          onClick={() => setCurrentFrame(timeline.totalFrames - 1)}
-          className="border-none text-toolbarIcon text-sm cursor-pointer  text-center rounded-full h-8 w-8 flex items-center justify-center bg-transparent hover:bg-gray-700"
-          title="Go to end"
-        >
-          <FaFastForward />
-        </button>
-        */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() =>
+                    useVideoEditorStore
+                      .getState()
+                      .setCurrentFrame(
+                        Math.min(
+                          getEffectiveEndFrame() - 1,
+                          getCurrentFrame() + 1,
+                        ),
+                      )
+                  }
+                  variant="native"
+                  size="icon"
+                >
+                  <SkipForward />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Next Frame (→)</TooltipContent>
+            </Tooltip>
             <TimeDisplay />
           </div>
 

@@ -10,6 +10,8 @@ function Slider({
   max = 100,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -27,8 +29,10 @@ function Slider({
       value={value}
       min={min}
       max={max}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        'relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col',
+        'relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col group',
         className,
       )}
       {...props}
@@ -50,7 +54,10 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
-          className="border-primary bg-background ring-ring/50 block size-4 shrink-0 rounded-full border shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+          className={cn(
+            'border-primary bg-background ring-ring/50 block size-4 shrink-0 rounded-full border shadow-sm transition-all duration-200 ease-in-out hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden focus-visible:opacity-100 focus-visible:scale-100 disabled:pointer-events-none disabled:opacity-50',
+            isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-75',
+          )}
         />
       ))}
     </SliderPrimitive.Root>
