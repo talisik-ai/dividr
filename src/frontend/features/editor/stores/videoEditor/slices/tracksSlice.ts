@@ -185,52 +185,6 @@ const resizeTrackWithTrimming = (
 
   // Calculate final duration
   const finalDurationFrames = finalEndFrame - finalStartFrame;
-  const finalDurationSeconds = finalDurationFrames / fps;
-  const finalSourceEndTime = finalSourceStartTime + finalDurationSeconds;
-
-  console.log(`[Trim] ${track.name}:`, {
-    operation:
-      newStartFrame !== undefined
-        ? 'LEFT'
-        : newEndFrame !== undefined
-          ? 'RIGHT'
-          : 'NONE',
-    timeline: {
-      old: `${currentStartFrame} → ${currentEndFrame} (${currentEndFrame - currentStartFrame} frames)`,
-      new: `${finalStartFrame} → ${finalEndFrame} (${finalDurationFrames} frames)`,
-      requested:
-        newStartFrame !== undefined
-          ? `start: ${newStartFrame}`
-          : newEndFrame !== undefined
-            ? `end: ${newEndFrame}`
-            : 'none',
-    },
-    source: {
-      oldStart: currentSourceStartTime.toFixed(3),
-      newStart: finalSourceStartTime.toFixed(3),
-      oldEnd: currentSourceEndTime.toFixed(3),
-      newEnd: finalSourceEndTime.toFixed(3),
-      duration: sourceDurationSeconds.toFixed(3),
-    },
-    boundaries: {
-      hitLeftSourceBoundary: finalSourceStartTime <= 0.001,
-      hitRightSourceBoundary:
-        Math.abs(finalSourceEndTime - sourceDurationSeconds) <= 0.001,
-      leftClip: leftClip
-        ? `"${leftClip.name}" ends at frame ${leftClip.endFrame}`
-        : 'none',
-      rightClip: rightClip
-        ? `"${rightClip.name}" starts at frame ${rightClip.startFrame}`
-        : 'none',
-      blockedByAdjacent:
-        (newStartFrame !== undefined &&
-          leftClip &&
-          finalStartFrame === leftClip.endFrame) ||
-        (newEndFrame !== undefined &&
-          rightClip &&
-          finalEndFrame === rightClip.startFrame),
-    },
-  });
 
   return {
     ...track,
@@ -441,10 +395,6 @@ export const createTracksSlice: StateCreator<
             mediaItem.previewUrl,
           );
 
-          console.log(
-            `➕ Adding ${subtitleTracks.length} subtitle tracks from media library`,
-          );
-
           // Add each subtitle segment as a track at the specified start frame
           const addedIds: string[] = [];
           let currentStartFrame = startFrame;
@@ -611,18 +561,72 @@ export const createTracksSlice: StateCreator<
             )
           : null;
 
-      // Store original position to calculate delta
       const originalStartFrame = trackToMove.startFrame;
-      let actualMoveDelta = 0; // Will store the actual movement after collision detection
+      const duration = trackToMove.endFrame - trackToMove.startFrame;
 
-      // If track is linked, we need to check collision for BOTH tracks
-      // and use the most restrictive position that works for both
+      // Clamp to timeline boundary (frame 0)
+      const boundedNewStartFrame = Math.max(0, newStartFrame);
+      const boundedDelta = boundedNewStartFrame - originalStartFrame;
+
+      // Helper: Find the maximum safe movement delta by checking boundaries
+      // Returns the delta that stops at the nearest obstacle (doesn't jump to gaps)
+      const findSafeMovementDelta = (
+        trackStart: number,
+        trackDuration: number,
+        movementDelta: number,
+        conflicts: VideoTrack[],
+      ): number => {
+        if (movementDelta === 0) return 0;
+
+        const proposedStart = trackStart + movementDelta;
+        const proposedEnd = proposedStart + trackDuration;
+        const originalEnd = trackStart + trackDuration;
+
+        // Check if proposed position overlaps any conflict
+        const hasOverlap = conflicts.some(
+          (conflict) =>
+            proposedStart < conflict.endFrame &&
+            proposedEnd > conflict.startFrame,
+        );
+
+        if (!hasOverlap) {
+          return movementDelta; // No collision, full movement allowed
+        }
+
+        // COLLISION: Stop at the boundary instead of jumping to gaps
+        if (movementDelta > 0) {
+          // Moving RIGHT: find the nearest obstacle and stop when we touch it
+          let safeDelta = movementDelta;
+          conflicts.forEach((conflict) => {
+            // Distance we can move before our END touches the conflict's START
+            const spaceBeforeConflict = conflict.startFrame - originalEnd;
+            if (spaceBeforeConflict >= 0 && spaceBeforeConflict < safeDelta) {
+              safeDelta = spaceBeforeConflict;
+            }
+          });
+          return safeDelta;
+        } else {
+          // Moving LEFT: find the nearest obstacle and stop when we touch it
+          let safeDelta = movementDelta; // negative value
+          conflicts.forEach((conflict) => {
+            // Distance we can move before our START touches the conflict's END
+            const spaceAfterConflict = conflict.endFrame - trackStart;
+
+            if (spaceAfterConflict <= 0 && spaceAfterConflict > safeDelta) {
+              safeDelta = spaceAfterConflict;
+            }
+          });
+          return safeDelta;
+        }
+      };
+
+      let finalMovementDelta = boundedDelta;
+
       if (linkedTrack) {
-        const duration = trackToMove.endFrame - trackToMove.startFrame;
         const linkedDuration = linkedTrack.endFrame - linkedTrack.startFrame;
-        const relativeOffset = linkedTrack.startFrame - trackToMove.startFrame;
+        const linkedOriginalStart = linkedTrack.startFrame;
 
-        // Get conflicting tracks for primary track
+        // Get conflicts for both tracks
         const primaryConflicts = state.tracks.filter((t: VideoTrack) => {
           if (t.id === trackId || t.id === linkedTrack.id) return false;
           if (trackToMove.type === 'video' && t.type === 'video') return true;
@@ -631,133 +635,69 @@ export const createTracksSlice: StateCreator<
           return false;
         });
 
-        // Get conflicting tracks for linked track
         const linkedConflicts = state.tracks.filter((t: VideoTrack) => {
           if (t.id === trackId || t.id === linkedTrack.id) return false;
           return t.type === linkedTrack.type;
         });
 
-        // Calculate proposed positions for both tracks
-        const proposedPrimaryStart = newStartFrame;
-        const proposedLinkedStart = newStartFrame + relativeOffset;
-
-        // Find nearest available position for primary track
-        let finalPrimaryStart = findNearestAvailablePosition(
-          proposedPrimaryStart,
+        // Find safe movement for BOTH tracks
+        const primarySafeDelta = findSafeMovementDelta(
+          originalStartFrame,
           duration,
+          boundedDelta,
           primaryConflicts,
-          state.timeline.currentFrame,
         );
 
-        // Calculate where linked track would be with this position
-        let finalLinkedStart = finalPrimaryStart + relativeOffset;
+        const linkedSafeDelta = findSafeMovementDelta(
+          linkedOriginalStart,
+          linkedDuration,
+          boundedDelta,
+          linkedConflicts,
+        );
 
-        // Check if linked track position causes conflicts
-        const linkedHasConflict = linkedConflicts.some((t: VideoTrack) => {
-          return (
-            finalLinkedStart < t.endFrame &&
-            finalLinkedStart + linkedDuration > t.startFrame
-          );
+        // Use the most restrictive (smallest absolute value) delta
+        finalMovementDelta =
+          Math.abs(primarySafeDelta) < Math.abs(linkedSafeDelta)
+            ? primarySafeDelta
+            : linkedSafeDelta;
+      } else {
+        // Single track: check its own conflicts
+        const conflicts = state.tracks.filter((t: VideoTrack) => {
+          if (t.id === trackId) return false;
+          if (trackToMove.type === 'video' && t.type === 'video') return true;
+          if (trackToMove.type !== 'video' && t.type === trackToMove.type)
+            return true;
+          return false;
         });
 
-        // If linked track has conflict, adjust BOTH tracks together
-        if (linkedHasConflict) {
-          // Find position that works for the linked track
-          const linkedSafeStart = findNearestAvailablePosition(
-            proposedLinkedStart,
-            linkedDuration,
-            linkedConflicts,
-            state.timeline.currentFrame,
-          );
-          // Calculate back to primary track position that maintains alignment
-          finalPrimaryStart = linkedSafeStart - relativeOffset;
-
-          // Ensure primary position doesn't go negative
-          if (finalPrimaryStart < 0) {
-            finalPrimaryStart = 0;
-            finalLinkedStart = relativeOffset;
-          } else {
-            finalLinkedStart = linkedSafeStart;
-          }
-        }
-
-        actualMoveDelta = finalPrimaryStart - originalStartFrame;
-
-        console.log(`🔗 Moving linked pair as unified block:`, {
-          primary: {
-            id: trackToMove.id,
-            type: trackToMove.type,
-            originalStart: originalStartFrame,
-            requestedStart: newStartFrame,
-            finalStart: finalPrimaryStart,
-          },
-          linked: {
-            id: linkedTrack.id,
-            type: linkedTrack.type,
-            originalStart: linkedTrack.startFrame,
-            finalStart: linkedTrack.startFrame + actualMoveDelta,
-          },
-          movement: {
-            delta: actualMoveDelta,
-            relativeOffset,
-            maintainsAlignment: true,
-          },
-        });
+        finalMovementDelta = findSafeMovementDelta(
+          originalStartFrame,
+          duration,
+          boundedDelta,
+          conflicts,
+        );
       }
 
+      // Apply the final movement
       return {
         tracks: state.tracks.map((track: VideoTrack) => {
           if (track.id === trackId) {
-            const duration = track.endFrame - track.startFrame;
-
-            // If not linked, use simple collision detection
-            if (!linkedTrack) {
-              const conflictingTracks = state.tracks.filter((t: VideoTrack) => {
-                if (t.id === trackId) return false;
-                if (track.type === 'video' && t.type === 'video') return true;
-                if (track.type !== 'video' && t.type === track.type)
-                  return true;
-                return false;
-              });
-
-              const finalStartFrame = findNearestAvailablePosition(
-                newStartFrame,
-                duration,
-                conflictingTracks,
-                state.timeline.currentFrame,
-              );
-
-              actualMoveDelta = finalStartFrame - originalStartFrame;
-
-              return {
-                ...track,
-                startFrame: finalStartFrame,
-                endFrame: finalStartFrame + duration,
-              };
-            }
-
-            // For linked tracks, use pre-calculated delta
-            const finalStartFrame = originalStartFrame + actualMoveDelta;
+            const finalStart = originalStartFrame + finalMovementDelta;
             return {
               ...track,
-              startFrame: finalStartFrame,
-              endFrame: finalStartFrame + duration,
+              startFrame: finalStart,
+              endFrame: finalStart + duration,
             };
           }
 
-          // FIX: Move linked track by the SAME delta to maintain perfect alignment
-          // This ensures linked pairs move as one unified block
+          // Move linked track by the SAME delta
           if (trackToMove?.isLinked && track.id === trackToMove.linkedTrackId) {
             const linkedDuration = track.endFrame - track.startFrame;
-
-            // Apply the SAME movement delta that was applied to the primary track
-            // This maintains the original relative offset perfectly
-            const linkedFinalStartFrame = track.startFrame + actualMoveDelta;
-
+            const linkedFinalStart = track.startFrame + finalMovementDelta;
             return {
               ...track,
-              startFrame: linkedFinalStartFrame,
-              endFrame: linkedFinalStartFrame + linkedDuration,
+              startFrame: linkedFinalStart,
+              endFrame: linkedFinalStart + linkedDuration,
             };
           }
           return track;
@@ -790,7 +730,7 @@ export const createTracksSlice: StateCreator<
 
       // Calculate the movement delta based on the dragged track
       const originalDraggedStart = draggedTrack.startFrame;
-      const movementDelta = newStartFrame - originalDraggedStart;
+      const rawMovementDelta = newStartFrame - originalDraggedStart;
 
       // Build a map of all tracks that need to move (including linked partners)
       const tracksToMove = new Set<string>();
@@ -802,25 +742,30 @@ export const createTracksSlice: StateCreator<
         }
       });
 
-      console.log(
-        `🎯 Moving ${tracksToMove.size} tracks together (delta: ${movementDelta} frames):`,
-        {
-          draggedTrack: {
-            id: draggedTrackId,
-            originalStart: originalDraggedStart,
-            newStart: newStartFrame,
-          },
-          selectedCount: selectedTrackIds.length,
-          totalMovingCount: tracksToMove.size,
-          movementDelta,
-        },
-      );
+      // CRITICAL: Enforce timeline left boundary (frame 0) BEFORE collision detection
+      // Find the leftmost track in the selection
+      let minStartFrame = Infinity;
+      tracksToMove.forEach((trackId) => {
+        const track = state.tracks.find((t: VideoTrack) => t.id === trackId);
+        if (track) {
+          minStartFrame = Math.min(minStartFrame, track.startFrame);
+        }
+      });
 
-      // Group tracks by type for collision detection
+      // Calculate what the leftmost track's new position would be
+      const proposedMinStartFrame = minStartFrame + rawMovementDelta;
+
+      // If any track would go below frame 0, clamp the entire group's movement
+      let boundedMovementDelta = rawMovementDelta;
+      if (proposedMinStartFrame < 0) {
+        // Adjust delta so the leftmost track stops exactly at frame 0
+        boundedMovementDelta = -minStartFrame;
+      }
+
+      // Group non-moving tracks by type for collision detection
       const tracksByType = new Map<string, VideoTrack[]>();
       state.tracks.forEach((t: VideoTrack) => {
         if (!tracksToMove.has(t.id)) {
-          // Only consider tracks NOT being moved for collision detection
           const key = t.type === 'video' ? 'video' : t.type;
           if (!tracksByType.has(key)) {
             tracksByType.set(key, []);
@@ -832,62 +777,83 @@ export const createTracksSlice: StateCreator<
         }
       });
 
-      // Calculate final positions for all tracks, checking for collisions
+      // Helper: Find safe movement delta for a group by checking boundaries
+      // Stops at the nearest obstacle WITHOUT jumping to gaps
+      const findGroupSafeMovementDelta = (movementDelta: number): number => {
+        if (movementDelta === 0) return 0;
+
+        let minSafeDelta = movementDelta;
+
+        // Check each moving track against its type-specific conflicts
+        tracksToMove.forEach((trackId) => {
+          const track = state.tracks.find((t: VideoTrack) => t.id === trackId);
+          if (!track) return;
+
+          const typeKey = track.type === 'video' ? 'video' : track.type;
+          const conflicts = tracksByType.get(typeKey) || [];
+
+          const trackStart = track.startFrame;
+          const trackEnd = track.endFrame;
+
+          // Check all conflicts in the direction of movement
+          // Don't use hasOverlap check - we need to find the nearest boundary regardless
+          if (movementDelta > 0) {
+            // Moving RIGHT: find nearest obstacle and stop when our END touches their START
+            conflicts.forEach((conflict) => {
+              const spaceBeforeConflict = conflict.startFrame - trackEnd;
+              // Only consider conflicts ahead of us (in our path)
+              if (
+                spaceBeforeConflict >= 0 &&
+                spaceBeforeConflict < minSafeDelta
+              ) {
+                minSafeDelta = spaceBeforeConflict;
+              }
+            });
+          } else if (movementDelta < 0) {
+            // Moving LEFT: find nearest obstacle and stop when our START touches their END
+            conflicts.forEach((conflict) => {
+              const spaceAfterConflict = conflict.endFrame - trackStart;
+              // Only consider conflicts behind us (in our path)
+              // spaceAfterConflict should be negative or zero (conflict is behind/at us)
+              // We want the one closest to zero (least negative = nearest obstacle)
+              if (
+                spaceAfterConflict <= 0 &&
+                spaceAfterConflict > minSafeDelta
+              ) {
+                minSafeDelta = spaceAfterConflict;
+              }
+            });
+          }
+        });
+
+        return minSafeDelta;
+      };
+
+      // Find the safe movement delta that works for ALL tracks in the group
+      const finalMovementDelta =
+        findGroupSafeMovementDelta(boundedMovementDelta);
+
+      // Calculate final positions preserving exact relative spacing
       const finalPositions = new Map<
         string,
         { startFrame: number; endFrame: number }
       >();
-      let needsAdjustment = false;
-      let minAdjustment = 0;
 
-      // First pass: calculate proposed positions
       tracksToMove.forEach((trackId) => {
         const track = state.tracks.find((t: VideoTrack) => t.id === trackId);
         if (!track) return;
 
         const duration = track.endFrame - track.startFrame;
-        const proposedStart = Math.max(0, track.startFrame + movementDelta);
-        const proposedEnd = proposedStart + duration;
+        const finalStart = track.startFrame + finalMovementDelta;
+        const finalEnd = finalStart + duration;
 
         finalPositions.set(trackId, {
-          startFrame: proposedStart,
-          endFrame: proposedEnd,
-        });
-
-        // Check for collisions with non-moving tracks of the same type
-        const typeKey = track.type === 'video' ? 'video' : track.type;
-        const conflicts = tracksByType.get(typeKey) || [];
-
-        conflicts.forEach((conflictTrack) => {
-          // Check if proposed position overlaps with conflict
-          if (
-            proposedStart < conflictTrack.endFrame &&
-            proposedEnd > conflictTrack.startFrame
-          ) {
-            // Calculate how much we need to adjust to avoid this conflict
-            const adjustmentNeeded = conflictTrack.endFrame - proposedStart;
-            if (adjustmentNeeded > minAdjustment) {
-              minAdjustment = adjustmentNeeded;
-              needsAdjustment = true;
-            }
-          }
+          startFrame: finalStart,
+          endFrame: finalEnd,
         });
       });
 
-      // If collision detected, adjust ALL tracks by the same amount
-      if (needsAdjustment) {
-        console.log(
-          `⚠️ Collision detected, adjusting all tracks by ${minAdjustment} frames`,
-        );
-        finalPositions.forEach((pos, trackId) => {
-          finalPositions.set(trackId, {
-            startFrame: pos.startFrame + minAdjustment,
-            endFrame: pos.endFrame + minAdjustment,
-          });
-        });
-      }
-
-      // Apply the movements
+      // Apply the movements with preserved gaps
       return {
         tracks: state.tracks.map((track: VideoTrack) => {
           if (finalPositions.has(track.id)) {
@@ -1086,33 +1052,6 @@ export const createTracksSlice: StateCreator<
           tracks: [...state.tracks, duplicatedTrack, duplicatedLinkedTrack],
         }));
 
-        console.log(
-          `✨ Duplicated linked tracks: "${originalTrack.name}" (${trackId} → ${newId}) and "${linkedTrack.name}" (${originalTrack.linkedTrackId} → ${newLinkedId})`,
-        );
-        console.log(
-          `   Source reference preserved: ${originalTrack.source} (no new media input created)`,
-        );
-        console.log(`   Trim metadata preserved:`, {
-          video: {
-            sourceStartTime: duplicatedTrack.sourceStartTime,
-            sourceDuration: duplicatedTrack.sourceDuration,
-            duration: duplicatedTrack.duration,
-            startFrame: duplicatedTrack.startFrame,
-            endFrame: duplicatedTrack.endFrame,
-          },
-          audio: {
-            sourceStartTime: duplicatedLinkedTrack.sourceStartTime,
-            sourceDuration: duplicatedLinkedTrack.sourceDuration,
-            duration: duplicatedLinkedTrack.duration,
-            startFrame: duplicatedLinkedTrack.startFrame,
-            endFrame: duplicatedLinkedTrack.endFrame,
-          },
-        });
-
-        // Trigger visual feedback for both duplicated tracks AFTER logging
-        console.log(
-          `🎨 Triggering animation for NEW tracks: ${newId}, ${newLinkedId}`,
-        );
         state.triggerDuplicationFeedback?.(newId);
         state.triggerDuplicationFeedback?.(newLinkedId);
 
@@ -1164,24 +1103,6 @@ export const createTracksSlice: StateCreator<
       tracks: [...state.tracks, duplicatedTrack],
     }));
 
-    console.log(
-      `✨ Duplicated track: "${originalTrack.name}" (${trackId} → ${newId})${originalTrack.isLinked && !duplicateLinked ? ' [link broken]' : ''}`,
-    );
-    console.log(
-      `   Source reference preserved: ${originalTrack.source} (no new media input created)`,
-    );
-    console.log(`   Trim metadata preserved:`, {
-      sourceStartTime: duplicatedTrack.sourceStartTime,
-      sourceDuration: duplicatedTrack.sourceDuration,
-      duration: duplicatedTrack.duration,
-      startFrame: duplicatedTrack.startFrame,
-      endFrame: duplicatedTrack.endFrame,
-      trackDurationSeconds: duplicatedTrack.duration / state.timeline.fps,
-      trimmedSegment: `${duplicatedTrack.sourceStartTime}s to ${(duplicatedTrack.sourceStartTime || 0) + duplicatedTrack.duration / state.timeline.fps}s`,
-    });
-
-    // Trigger visual feedback AFTER logging
-    console.log(`🎨 Triggering animation for NEW track: ${newId}`);
     state.triggerDuplicationFeedback?.(newId);
 
     state.markUnsavedChanges?.();
@@ -1598,9 +1519,6 @@ export const createTracksSlice: StateCreator<
 
     if (videoTrack && audioTrack) {
       (get() as any).linkTracks(videoTrack.id, audioTrack.id);
-      console.log(
-        `✅ Linked video track "${videoTrack.name}" with audio track "${audioTrack.name}"`,
-      );
     } else {
       console.log(
         'Cannot link: Need to select one video and one audio track that are not already linked',
@@ -1613,7 +1531,6 @@ export const createTracksSlice: StateCreator<
     const selectedTrackIds = state.timeline.selectedTrackIds;
 
     if (selectedTrackIds.length === 0) {
-      console.log('Cannot unlink: No tracks selected');
       return;
     }
 
