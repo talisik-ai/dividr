@@ -3,9 +3,11 @@ import { useEffect, useRef } from 'react';
 import { useVideoEditorStore } from '../index';
 
 /**
- * Hook to automatically record track state when drag operations START
+ * Hook to automatically record track state when drag operations complete
  * This ensures move and resize operations are captured for undo/redo
- * Recording happens BEFORE the drag so we capture the pre-change state
+ *
+ * NOTE: Recording now happens at drag END via endDraggingTrack()
+ * This hook is kept for compatibility but delegates to the store method
  */
 export const useTrackDragRecording = () => {
   const isDragging = useVideoEditorStore(
@@ -14,11 +16,9 @@ export const useTrackDragRecording = () => {
   const wasDraggingRef = useRef(false);
 
   useEffect(() => {
-    // When drag STARTS, record the current state (before any changes)
-    if (!wasDraggingRef.current && isDragging) {
-      const store = useVideoEditorStore.getState();
-      store.recordAction?.('Move/Resize Track');
-    }
+    // Recording is now handled by endDraggingTrack() with recordUndo parameter
+    // This hook remains for backward compatibility but does not duplicate recording
+    // When drag ENDS, endDraggingTrack() automatically records the action
 
     wasDraggingRef.current = isDragging;
   }, [isDragging]);

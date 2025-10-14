@@ -13,9 +13,10 @@ export interface PlaybackSlice {
   setVolume: (volume: number) => void;
   toggleMute: () => void;
   toggleLoop: () => void;
-  startDraggingTrack: () => void;
-  endDraggingTrack: () => void;
+  startDraggingTrack: (initialFrame: number) => void;
+  endDraggingTrack: (recordUndo?: boolean) => void;
   setMagneticSnapFrame: (frame: number | null) => void;
+  trackBoundaryCollision: (attemptedFrame: number, wasBlocked: boolean) => void;
 }
 
 export const createPlaybackSlice: StateCreator<
@@ -30,6 +31,9 @@ export const createPlaybackSlice: StateCreator<
     isDraggingTrack: false,
     wasPlayingBeforeDrag: false,
     magneticSnapFrame: null,
+    dragStartFrame: null,
+    boundaryCollisionCount: 0,
+    lastAttemptedFrame: null,
     ...DEFAULT_PLAYBACK_CONFIG,
   },
 
@@ -83,7 +87,7 @@ export const createPlaybackSlice: StateCreator<
       playback: { ...state.playback, isLooping: !state.playback.isLooping },
     })),
 
-  startDraggingTrack: () =>
+  startDraggingTrack: (initialFrame) =>
     set((state: any) => {
       const wasPlaying = state.playback.isPlaying;
       return {
@@ -92,13 +96,22 @@ export const createPlaybackSlice: StateCreator<
           isDraggingTrack: true,
           wasPlayingBeforeDrag: wasPlaying,
           isPlaying: false, // Pause playback during drag
+          dragStartFrame: initialFrame,
+          boundaryCollisionCount: 0,
+          lastAttemptedFrame: null,
         },
       };
     }),
 
-  endDraggingTrack: () =>
+  endDraggingTrack: (recordUndo = true) =>
     set((state: any) => {
       const shouldResume = state.playback.wasPlayingBeforeDrag;
+
+      // Record undo action if requested and drag actually occurred
+      if (recordUndo && state.playback.isDraggingTrack && state.recordAction) {
+        state.recordAction('Move Clip');
+      }
+
       return {
         playback: {
           ...state.playback,
@@ -106,6 +119,9 @@ export const createPlaybackSlice: StateCreator<
           isPlaying: shouldResume, // Resume if was playing before
           wasPlayingBeforeDrag: false,
           magneticSnapFrame: null, // Clear snap indicator
+          dragStartFrame: null,
+          boundaryCollisionCount: 0,
+          lastAttemptedFrame: null,
         },
       };
     }),
@@ -114,4 +130,27 @@ export const createPlaybackSlice: StateCreator<
     set((state: any) => ({
       playback: { ...state.playback, magneticSnapFrame: frame },
     })),
+
+  trackBoundaryCollision: (attemptedFrame, wasBlocked) =>
+    set((state: any) => {
+      const isSameDirection =
+        state.playback.lastAttemptedFrame === null ||
+        (attemptedFrame > state.playback.lastAttemptedFrame &&
+          state.playback.dragStartFrame !== null &&
+          attemptedFrame > state.playback.dragStartFrame) ||
+        (attemptedFrame < state.playback.lastAttemptedFrame &&
+          state.playback.dragStartFrame !== null &&
+          attemptedFrame < state.playback.dragStartFrame);
+
+      return {
+        playback: {
+          ...state.playback,
+          boundaryCollisionCount:
+            wasBlocked && isSameDirection
+              ? state.playback.boundaryCollisionCount + 1
+              : 0,
+          lastAttemptedFrame: attemptedFrame,
+        },
+      };
+    }),
 });

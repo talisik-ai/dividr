@@ -225,7 +225,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         // We'll auto-select during actual drag movement if needed
 
         const { startDraggingTrack } = useVideoEditorStore.getState();
-        startDraggingTrack();
+        startDraggingTrack(track.startFrame); // Pass initial frame for force drag tracking
 
         setIsDragging(true);
         setDragStart({
@@ -251,7 +251,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         }
 
         const { startDraggingTrack } = useVideoEditorStore.getState();
-        startDraggingTrack();
+        startDraggingTrack(track.startFrame); // Pass initial frame for tracking
 
         setIsResizing(side);
         setDragStart({

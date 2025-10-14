@@ -568,8 +568,14 @@ export const createTracksSlice: StateCreator<
       const boundedNewStartFrame = Math.max(0, newStartFrame);
       const boundedDelta = boundedNewStartFrame - originalStartFrame;
 
+      // Check if force drag mode is active (sustained boundary collision)
+      const FORCE_DRAG_THRESHOLD = 15; // Number of collisions before bypass activates
+      const isForceDragActive =
+        state.playback?.boundaryCollisionCount >= FORCE_DRAG_THRESHOLD;
+
       // Helper: Find the maximum safe movement delta by checking boundaries
       // Returns the delta that stops at the nearest obstacle (doesn't jump to gaps)
+      // WITH FORCE DRAG: If force mode active, allows bypass to timeline start/end
       const findSafeMovementDelta = (
         trackStart: number,
         trackDuration: number,
@@ -593,7 +599,51 @@ export const createTracksSlice: StateCreator<
           return movementDelta; // No collision, full movement allowed
         }
 
-        // COLLISION: Stop at the boundary instead of jumping to gaps
+        // COLLISION DETECTED - check if force drag should bypass
+        if (isForceDragActive) {
+          // Force mode: check if we can bypass to timeline boundaries
+          if (movementDelta < 0) {
+            // Moving LEFT with force: try to reach frame 0
+            const targetStart = 0;
+            const targetEnd = targetStart + trackDuration;
+
+            // Check if timeline start is available (no conflicts at start)
+            const canMoveToStart = !conflicts.some(
+              (conflict) =>
+                targetStart < conflict.endFrame &&
+                targetEnd > conflict.startFrame,
+            );
+
+            if (canMoveToStart) {
+              // Bypass to timeline start
+              return -trackStart; // Delta to reach frame 0
+            }
+          } else if (movementDelta > 0) {
+            // Moving RIGHT with force: try to reach end of timeline
+            // Find the rightmost clip end frame
+            const maxEndFrame =
+              conflicts.length > 0
+                ? Math.max(...conflicts.map((c) => c.endFrame))
+                : 0;
+
+            const targetStart = maxEndFrame;
+            const targetEnd = targetStart + trackDuration;
+
+            // Check if position after all clips is available
+            const canMoveToEnd = !conflicts.some(
+              (conflict) =>
+                targetStart < conflict.endFrame &&
+                targetEnd > conflict.startFrame,
+            );
+
+            if (canMoveToEnd) {
+              // Bypass to timeline end (after last clip)
+              return targetStart - trackStart;
+            }
+          }
+        }
+
+        // Standard boundary collision (no bypass or bypass not possible)
         if (movementDelta > 0) {
           // Moving RIGHT: find the nearest obstacle and stop when we touch it
           let safeDelta = movementDelta;
@@ -676,6 +726,12 @@ export const createTracksSlice: StateCreator<
           boundedDelta,
           conflicts,
         );
+      }
+
+      // Track boundary collision for force drag detection
+      const wasBlocked = Math.abs(finalMovementDelta) < Math.abs(boundedDelta);
+      if (state.playback?.isDraggingTrack && state.trackBoundaryCollision) {
+        state.trackBoundaryCollision(boundedNewStartFrame, wasBlocked);
       }
 
       // Apply the final movement
@@ -762,6 +818,11 @@ export const createTracksSlice: StateCreator<
         boundedMovementDelta = -minStartFrame;
       }
 
+      // Check if force drag mode is active (sustained boundary collision)
+      const FORCE_DRAG_THRESHOLD = 15; // Number of collisions before bypass activates
+      const isForceDragActive =
+        state.playback?.boundaryCollisionCount >= FORCE_DRAG_THRESHOLD;
+
       // Group non-moving tracks by type for collision detection
       const tracksByType = new Map<string, VideoTrack[]>();
       state.tracks.forEach((t: VideoTrack) => {
@@ -779,10 +840,12 @@ export const createTracksSlice: StateCreator<
 
       // Helper: Find safe movement delta for a group by checking boundaries
       // Stops at the nearest obstacle WITHOUT jumping to gaps
+      // WITH FORCE DRAG: If force mode active, allows bypass to timeline start/end
       const findGroupSafeMovementDelta = (movementDelta: number): number => {
         if (movementDelta === 0) return 0;
 
         let minSafeDelta = movementDelta;
+        let hasAnyCollision = false;
 
         // Check each moving track against its type-specific conflicts
         tracksToMove.forEach((trackId) => {
@@ -807,6 +870,7 @@ export const createTracksSlice: StateCreator<
                 spaceBeforeConflict < minSafeDelta
               ) {
                 minSafeDelta = spaceBeforeConflict;
+                hasAnyCollision = true;
               }
             });
           } else if (movementDelta < 0) {
@@ -821,10 +885,98 @@ export const createTracksSlice: StateCreator<
                 spaceAfterConflict > minSafeDelta
               ) {
                 minSafeDelta = spaceAfterConflict;
+                hasAnyCollision = true;
               }
             });
           }
         });
+
+        // FORCE DRAG BYPASS: If collision detected and force mode active
+        if (hasAnyCollision && isForceDragActive) {
+          if (movementDelta < 0) {
+            // Moving LEFT with force: try to move entire group to frame 0
+            // Check if all tracks in group can fit at timeline start
+            let canMoveToStart = true;
+            const groupStartOffset = minStartFrame; // How far left group starts from 0
+
+            tracksToMove.forEach((trackId) => {
+              const track = state.tracks.find(
+                (t: VideoTrack) => t.id === trackId,
+              );
+              if (!track) return;
+
+              const typeKey = track.type === 'video' ? 'video' : track.type;
+              const conflicts = tracksByType.get(typeKey) || [];
+
+              // Calculate where this track would be if group moves to start
+              const trackRelativeOffset = track.startFrame - minStartFrame;
+              const targetStart = 0 + trackRelativeOffset;
+              const targetEnd = track.endFrame - track.startFrame + targetStart;
+
+              // Check if this position conflicts with any existing clip
+              const hasConflict = conflicts.some(
+                (conflict) =>
+                  targetStart < conflict.endFrame &&
+                  targetEnd > conflict.startFrame,
+              );
+
+              if (hasConflict) {
+                canMoveToStart = false;
+              }
+            });
+
+            if (canMoveToStart) {
+              // Bypass to timeline start
+              return -groupStartOffset;
+            }
+          } else if (movementDelta > 0) {
+            // Moving RIGHT with force: try to move entire group to end of timeline
+            // Find rightmost clip end frame across all types
+            let maxEndFrame = 0;
+            tracksByType.forEach((typeConflicts) => {
+              if (typeConflicts.length > 0) {
+                const typeMax = Math.max(
+                  ...typeConflicts.map((c) => c.endFrame),
+                );
+                maxEndFrame = Math.max(maxEndFrame, typeMax);
+              }
+            });
+
+            // Check if all tracks in group can fit at timeline end
+            let canMoveToEnd = true;
+
+            tracksToMove.forEach((trackId) => {
+              const track = state.tracks.find(
+                (t: VideoTrack) => t.id === trackId,
+              );
+              if (!track) return;
+
+              const typeKey = track.type === 'video' ? 'video' : track.type;
+              const conflicts = tracksByType.get(typeKey) || [];
+
+              // Calculate where this track would be if group moves to end
+              const trackRelativeOffset = track.startFrame - minStartFrame;
+              const targetStart = maxEndFrame + trackRelativeOffset;
+              const targetEnd = track.endFrame - track.startFrame + targetStart;
+
+              // Check if this position conflicts with any existing clip
+              const hasConflict = conflicts.some(
+                (conflict) =>
+                  targetStart < conflict.endFrame &&
+                  targetEnd > conflict.startFrame,
+              );
+
+              if (hasConflict) {
+                canMoveToEnd = false;
+              }
+            });
+
+            if (canMoveToEnd) {
+              // Bypass to timeline end
+              return maxEndFrame - minStartFrame;
+            }
+          }
+        }
 
         return minSafeDelta;
       };
@@ -832,6 +984,15 @@ export const createTracksSlice: StateCreator<
       // Find the safe movement delta that works for ALL tracks in the group
       const finalMovementDelta =
         findGroupSafeMovementDelta(boundedMovementDelta);
+
+      // Track boundary collision for force drag detection
+      const wasBlocked =
+        Math.abs(finalMovementDelta) < Math.abs(boundedMovementDelta);
+      const proposedStartForDraggedTrack =
+        originalDraggedStart + boundedMovementDelta;
+      if (state.playback?.isDraggingTrack && state.trackBoundaryCollision) {
+        state.trackBoundaryCollision(proposedStartForDraggedTrack, wasBlocked);
+      }
 
       // Calculate final positions preserving exact relative spacing
       const finalPositions = new Map<
