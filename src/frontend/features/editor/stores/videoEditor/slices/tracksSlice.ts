@@ -289,6 +289,10 @@ export const createTracksSlice: StateCreator<
   addTrack: async (trackData) => {
     const id = uuidv4();
 
+    // Record action for undo/redo BEFORE state change
+    const state = get() as any;
+    state.recordAction?.('Add Track');
+
     if (trackData.type === 'video') {
       const audioId = uuidv4();
       const duration = trackData.endFrame - trackData.startFrame;
@@ -504,6 +508,10 @@ export const createTracksSlice: StateCreator<
 
   removeTrack: (trackId) => {
     const state = get() as any;
+
+    // Record action for undo/redo
+    state.recordAction?.('Delete Track');
+
     const trackToRemove = state.tracks.find(
       (t: VideoTrack) => t.id === trackId,
     );
@@ -543,6 +551,9 @@ export const createTracksSlice: StateCreator<
     const selectedTrackIds = state.timeline.selectedTrackIds;
 
     if (selectedTrackIds.length === 0) return;
+
+    // Record action for undo/redo
+    state.recordAction?.('Delete Selected Tracks');
 
     const tracksToRemove = state.tracks.filter((track: VideoTrack) =>
       selectedTrackIds.includes(track.id),
@@ -950,6 +961,10 @@ export const createTracksSlice: StateCreator<
 
   duplicateTrack: (trackId, duplicateLinked = true) => {
     const state = get() as any;
+
+    // Record action for undo/redo
+    state.recordAction?.('Duplicate Track');
+
     const originalTrack = state.tracks.find(
       (t: VideoTrack) => t.id === trackId,
     );
@@ -1265,6 +1280,10 @@ export const createTracksSlice: StateCreator<
 
   splitAtPlayhead: () => {
     const state = get() as any;
+
+    // Record action for undo/redo BEFORE checking tracks
+    state.recordAction?.('Split at Playhead');
+
     const currentFrame = state.timeline.currentFrame;
     const selectedTrackIds = state.timeline.selectedTrackIds;
 
@@ -1348,6 +1367,9 @@ export const createTracksSlice: StateCreator<
 
   splitAtPosition: (frame, trackId) => {
     const state = get() as any;
+
+    // Record action for undo/redo BEFORE checking tracks
+    state.recordAction?.('Split at Position');
 
     let tracksToSplit: VideoTrack[] = [];
 
@@ -1465,6 +1487,10 @@ export const createTracksSlice: StateCreator<
   },
 
   linkTracks: (videoTrackId, audioTrackId) => {
+    // Record action for undo/redo BEFORE state change
+    const state = get() as any;
+    state.recordAction?.('Link Tracks');
+
     set((state: any) => {
       const videoTrack = state.tracks.find(
         (t: VideoTrack) => t.id === videoTrackId,
@@ -1492,12 +1518,16 @@ export const createTracksSlice: StateCreator<
       };
     });
 
-    const state = get() as any;
-    state.markUnsavedChanges?.();
+    const currentState = get() as any;
+    currentState.markUnsavedChanges?.();
   },
 
   unlinkTracks: (trackId) => {
     const state = get() as any;
+
+    // Record action for undo/redo BEFORE state change
+    state.recordAction?.('Unlink Tracks');
+
     const trackToUnlink = state.tracks.find(
       (t: VideoTrack) => t.id === trackId,
     );
@@ -1516,7 +1546,8 @@ export const createTracksSlice: StateCreator<
       }),
     }));
 
-    state.markUnsavedChanges?.();
+    const currentState = get() as any;
+    currentState.markUnsavedChanges?.();
   },
 
   toggleLinkedAudioMute: (videoTrackId) => {

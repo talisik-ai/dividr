@@ -580,7 +580,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           {/* Loading overlay for sprite and waveform generation */}
           {(file.isGeneratingSprites || file.isGeneratingWaveform) && (
             <div className="absolute bottom-0 p-2 left-0 right-0 h-8 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-end">
-              <Loader2 className="w-5 h-5 animate-spin text-white dark:text-black drop-shadow-lg" />
+              <Loader2 className="w-5 h-5 animate-spin text-white drop-shadow-lg" />
             </div>
           )}
 

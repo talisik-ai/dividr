@@ -4,6 +4,7 @@ import { createPreviewShortcuts } from './previewShortcuts';
 import { createTimelineShortcuts } from './timelineShortcuts';
 import { createTrackShortcuts } from './trackShortcuts';
 import { ShortcutConfig, ShortcutScope } from './types';
+import { createUndoRedoShortcuts } from './undoRedoShortcuts';
 
 /**
  * Central shortcut registry
@@ -42,6 +43,12 @@ export class ShortcutRegistry {
     // Register preview shortcuts
     const previewShortcuts = createPreviewShortcuts(() => getStore());
     previewShortcuts.forEach((shortcut) => {
+      this.shortcuts.set(shortcut.id, shortcut);
+    });
+
+    // Register undo/redo shortcuts
+    const undoRedoShortcuts = createUndoRedoShortcuts(() => getStore());
+    undoRedoShortcuts.forEach((shortcut) => {
       this.shortcuts.set(shortcut.id, shortcut);
     });
   }

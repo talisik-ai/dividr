@@ -13,8 +13,15 @@ interface VideoPlayerControlsProps {
 export const VideoPlayerControls = ({
   className,
 }: VideoPlayerControlsProps) => {
-  const { preview, setPreviewScale, setPreviewInteractionMode } =
-    useVideoEditorStore();
+  const {
+    preview,
+    setPreviewScale,
+    setPreviewInteractionMode,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useVideoEditorStore();
 
   const handleZoomChange = (zoomPercent: number) => {
     // Convert percentage (10-800) to scale (0.1-8)
@@ -36,6 +43,18 @@ export const VideoPlayerControls = ({
   const isSelectActive = preview.interactionMode === 'select';
   const isPanActive = preview.interactionMode === 'pan';
   const isPanDisabled = preview.previewScale <= 1;
+
+  const handleUndo = useCallback(() => {
+    if (canUndo()) {
+      undo();
+    }
+  }, [undo, canUndo]);
+
+  const handleRedo = useCallback(() => {
+    if (canRedo()) {
+      redo();
+    }
+  }, [redo, canRedo]);
 
   return (
     <div className={cn('flex items-center h-full gap-6', className)}>
@@ -76,10 +95,24 @@ export const VideoPlayerControls = ({
         onZoomChange={handleZoomChange}
       />
       <Separator orientation="vertical" className="!h-3/4" />
-      <Button variant="native" size="icon" disabled>
+      <Button
+        variant="native"
+        size="icon"
+        onClick={handleUndo}
+        disabled={!canUndo()}
+        title="Undo (Ctrl+Z)"
+        className={cn('transition-colors', !canUndo() && 'opacity-40')}
+      >
         <Undo2 />
       </Button>
-      <Button variant="native" size="icon" disabled>
+      <Button
+        variant="native"
+        size="icon"
+        onClick={handleRedo}
+        disabled={!canRedo()}
+        title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+        className={cn('transition-colors', !canRedo() && 'opacity-40')}
+      >
         <Redo2 />
       </Button>
     </div>

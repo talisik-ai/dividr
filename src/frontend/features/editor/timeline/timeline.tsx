@@ -7,6 +7,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useTrackDragRecording } from '../stores/videoEditor/hooks/useTrackDragRecording';
+import { useUndoRedoShortcuts } from '../stores/videoEditor/hooks/useUndoRedoShortcuts';
 import {
   useGlobalShortcuts,
   useTimelineShortcutsV2,
@@ -260,6 +262,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     useGlobalShortcuts();
     useTimelineShortcutsV2();
     useTrackShortcuts();
+    useUndoRedoShortcuts();
+
+    // Record state when track drag operations complete
+    useTrackDragRecording();
 
     // Global keyboard event listener as fallback for Delete/Backspace
     // This ensures delete works even when react-hotkeys-hook might not catch it

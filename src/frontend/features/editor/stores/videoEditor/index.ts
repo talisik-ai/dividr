@@ -15,6 +15,7 @@ import { createRenderSlice, RenderSlice } from './slices/renderSlice';
 import { createTextStyleSlice, TextStyleSlice } from './slices/textStyleSlice';
 import { createTimelineSlice, TimelineSlice } from './slices/timelineSlice';
 import { createTracksSlice, TracksSlice } from './slices/tracksSlice';
+import { createUndoRedoSlice, UndoRedoSlice } from './slices/undoRedoSlice';
 import { createUtilitySlice, UtilitySlice } from './slices/utilitySlice';
 
 // Compose all slices into the complete store type
@@ -27,7 +28,8 @@ type VideoEditorStore = TimelineSlice &
   ProjectSlice &
   UtilitySlice &
   FileProcessingSlice &
-  TextStyleSlice;
+  TextStyleSlice &
+  UndoRedoSlice;
 
 // Create the unified store
 export const useVideoEditorStore = create<VideoEditorStore>()(
@@ -44,6 +46,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         ...createUtilitySlice(...a),
         ...createFileProcessingSlice(...a),
         ...createTextStyleSlice(...a),
+        ...createUndoRedoSlice(...a),
       })),
       {
         name: 'video-editor-store',
@@ -72,6 +75,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             isLooping: state.playback.isLooping,
           },
           isAutoSaveEnabled: state.isAutoSaveEnabled,
+          // Don't persist undo/redo history - it should reset on app restart
+          // undoStack: [],
+          // redoStack: [],
         }),
       },
     ),
