@@ -7,28 +7,6 @@ import { ShortcutConfig } from './types';
  */
 export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
   {
-    id: 'timeline-set-in-point',
-    keys: 'i',
-    description: 'Set In Point',
-    category: 'Timeline Markers',
-    scope: 'timeline',
-    handler: () => {
-      const currentFrame = store.timeline.currentFrame;
-      store.setInPoint(currentFrame);
-    },
-  },
-  {
-    id: 'timeline-set-out-point',
-    keys: 'o',
-    description: 'Set Out Point',
-    category: 'Timeline Markers',
-    scope: 'timeline',
-    handler: () => {
-      const currentFrame = store.timeline.currentFrame;
-      store.setOutPoint(currentFrame);
-    },
-  },
-  {
     id: 'timeline-zoom-in',
     keys: 'equal',
     description: 'Zoom In',
@@ -71,8 +49,19 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     },
   },
   {
-    id: 'timeline-toggle-split-mode',
+    id: 'timeline-toggle-split-mode-c',
     keys: 'c',
+    description: 'Toggle Split Mode',
+    category: 'Timeline Tools',
+    scope: 'timeline',
+    handler: (e) => {
+      e?.preventDefault();
+      store.toggleSplitMode();
+    },
+  },
+  {
+    id: 'timeline-toggle-split-mode-b',
+    keys: 'b',
     description: 'Toggle Split Mode',
     category: 'Timeline Tools',
     scope: 'timeline',

@@ -22,26 +22,6 @@ export const createGlobalShortcuts = (
     },
   },
   {
-    id: 'navigate-home',
-    keys: 'home',
-    description: 'Go to Beginning',
-    category: 'Navigation',
-    scope: 'global',
-    handler: () => {
-      getStore().setCurrentFrame(0);
-    },
-  },
-  {
-    id: 'navigate-end',
-    keys: 'end',
-    description: 'Go to End',
-    category: 'Navigation',
-    scope: 'global',
-    handler: () => {
-      getStore().setCurrentFrame(effectiveEndFrame - 1);
-    },
-  },
-  {
     id: 'navigate-frame-prev',
     keys: 'left',
     description: 'Move Playhead Backward (1 Frame)',

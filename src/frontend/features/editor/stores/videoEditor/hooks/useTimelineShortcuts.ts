@@ -18,52 +18,47 @@ export const useTimelineShortcutsV2 = () => {
   const timelineShortcuts = useMemo(() => createTimelineShortcuts(store), []);
 
   // Register shortcuts individually to comply with React hooks rules
-  // Set in point
-  useHotkeys('i', timelineShortcuts[0].handler, timelineShortcuts[0].options, [
-    timeline.currentFrame,
-  ]);
-
-  // Set out point
-  useHotkeys('o', timelineShortcuts[1].handler, timelineShortcuts[1].options, [
-    timeline.currentFrame,
-  ]);
-
   // Zoom in
   useHotkeys(
     'equal',
-    timelineShortcuts[2].handler,
-    timelineShortcuts[2].options,
+    timelineShortcuts[0].handler,
+    timelineShortcuts[0].options,
     [timeline.zoom],
   );
 
   // Zoom out
   useHotkeys(
     'minus',
-    timelineShortcuts[3].handler,
-    timelineShortcuts[3].options,
+    timelineShortcuts[1].handler,
+    timelineShortcuts[1].options,
     [timeline.zoom],
   );
 
   // Zoom reset
-  useHotkeys('0', timelineShortcuts[4].handler, timelineShortcuts[4].options, [
+  useHotkeys('0', timelineShortcuts[2].handler, timelineShortcuts[2].options, [
     timeline.zoom,
   ]);
 
   // Toggle snap
-  useHotkeys('s', timelineShortcuts[5].handler, timelineShortcuts[5].options, [
+  useHotkeys('s', timelineShortcuts[3].handler, timelineShortcuts[3].options, [
     timeline.snapEnabled,
   ]);
 
-  // Toggle split mode
-  useHotkeys('c', timelineShortcuts[6].handler, timelineShortcuts[6].options, [
+  // Toggle split mode (C key)
+  useHotkeys('c', timelineShortcuts[4].handler, timelineShortcuts[4].options, [
+    timeline.isSplitModeActive,
+  ]);
+
+  // Toggle split mode (B key)
+  useHotkeys('b', timelineShortcuts[5].handler, timelineShortcuts[5].options, [
     timeline.isSplitModeActive,
   ]);
 
   // Exit split mode
   useHotkeys(
     'escape',
-    timelineShortcuts[7].handler,
-    timelineShortcuts[7].options,
+    timelineShortcuts[6].handler,
+    timelineShortcuts[6].options,
     [timeline.isSplitModeActive],
   );
 

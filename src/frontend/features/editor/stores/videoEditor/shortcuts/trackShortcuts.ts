@@ -254,15 +254,25 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     },
   },
   {
-    id: 'track-slice-tool',
+    id: 'track-slice-tool-b',
     keys: 'b',
-    description: 'Slice Tool Mode',
+    description: 'Toggle Split Mode',
     category: 'Tools',
     scope: 'track',
     handler: (e) => {
       e?.preventDefault();
-      // Enter split mode for slice tool
-      store.setSplitMode(true);
+      store.toggleSplitMode();
+    },
+  },
+  {
+    id: 'track-slice-tool-c',
+    keys: 'c',
+    description: 'Toggle Split Mode',
+    category: 'Tools',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      store.toggleSplitMode();
     },
   },
   {

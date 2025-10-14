@@ -35,26 +35,14 @@ export const useGlobalShortcuts = () => {
     timeline.currentFrame,
   ]);
 
-  // Navigate home
-  useHotkeys('home', globalShortcuts[1].handler, globalShortcuts[1].options, [
-    effectiveEndFrame,
-    timeline.currentFrame,
-  ]);
-
-  // Navigate end
-  useHotkeys('end', globalShortcuts[2].handler, globalShortcuts[2].options, [
-    effectiveEndFrame,
-    timeline.currentFrame,
-  ]);
-
   // Navigate frame prev
-  useHotkeys('left', globalShortcuts[3].handler, globalShortcuts[3].options, [
+  useHotkeys('left', globalShortcuts[1].handler, globalShortcuts[1].options, [
     effectiveEndFrame,
     timeline.currentFrame,
   ]);
 
   // Navigate frame next
-  useHotkeys('right', globalShortcuts[4].handler, globalShortcuts[4].options, [
+  useHotkeys('right', globalShortcuts[2].handler, globalShortcuts[2].options, [
     effectiveEndFrame,
     timeline.currentFrame,
   ]);
@@ -62,28 +50,28 @@ export const useGlobalShortcuts = () => {
   // Navigate frame prev fast (Shift+Left)
   useHotkeys(
     'shift+left',
-    globalShortcuts[5].handler,
-    globalShortcuts[5].options,
+    globalShortcuts[3].handler,
+    globalShortcuts[3].options,
     [effectiveEndFrame, timeline.currentFrame, timeline.fps],
   );
 
   // Navigate frame next fast (Shift+Right)
   useHotkeys(
     'shift+right',
-    globalShortcuts[6].handler,
-    globalShortcuts[6].options,
+    globalShortcuts[4].handler,
+    globalShortcuts[4].options,
     [effectiveEndFrame, timeline.currentFrame, timeline.fps],
   );
 
   // Navigate to next edit point (Down)
-  useHotkeys('down', globalShortcuts[7].handler, globalShortcuts[7].options, [
+  useHotkeys('down', globalShortcuts[5].handler, globalShortcuts[5].options, [
     effectiveEndFrame,
     timeline.currentFrame,
     tracks,
   ]);
 
   // Navigate to previous edit point (Up)
-  useHotkeys('up', globalShortcuts[8].handler, globalShortcuts[8].options, [
+  useHotkeys('up', globalShortcuts[6].handler, globalShortcuts[6].options, [
     effectiveEndFrame,
     timeline.currentFrame,
     tracks,

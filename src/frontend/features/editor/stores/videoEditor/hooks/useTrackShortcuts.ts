@@ -44,57 +44,62 @@ export const useTrackShortcuts = () => {
     timeline.isSplitModeActive,
   ]);
 
-  // Slice tool mode (B key)
+  // Toggle split mode (B key)
   useHotkeys('b', trackShortcuts[5].handler, trackShortcuts[5].options, [
     timeline.isSplitModeActive,
   ]);
 
+  // Toggle split mode (C key)
+  useHotkeys('c', trackShortcuts[6].handler, trackShortcuts[6].options, [
+    timeline.isSplitModeActive,
+  ]);
+
   // Toggle mute
-  useHotkeys('m', trackShortcuts[6].handler, trackShortcuts[6].options, [
+  useHotkeys('m', trackShortcuts[7].handler, trackShortcuts[7].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Delete track (Del)
-  useHotkeys('del', trackShortcuts[7].handler, trackShortcuts[7].options, [
+  useHotkeys('del', trackShortcuts[8].handler, trackShortcuts[8].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Delete track (Backspace)
   useHotkeys(
     'backspace',
-    trackShortcuts[8].handler,
-    trackShortcuts[8].options,
+    trackShortcuts[9].handler,
+    trackShortcuts[9].options,
     [timeline.selectedTrackIds],
   );
 
   // Deselect all
-  useHotkeys('escape', trackShortcuts[9].handler, trackShortcuts[9].options, [
+  useHotkeys('escape', trackShortcuts[10].handler, trackShortcuts[10].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Link clips (Ctrl+G)
-  useHotkeys('ctrl+g', trackShortcuts[10].handler, trackShortcuts[10].options, [
+  useHotkeys('ctrl+g', trackShortcuts[11].handler, trackShortcuts[11].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Link clips (Cmd+G)
-  useHotkeys('cmd+g', trackShortcuts[11].handler, trackShortcuts[11].options, [
+  useHotkeys('cmd+g', trackShortcuts[12].handler, trackShortcuts[12].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Unlink clips (Ctrl+Shift+G)
   useHotkeys(
     'ctrl+shift+g',
-    trackShortcuts[12].handler,
-    trackShortcuts[12].options,
+    trackShortcuts[13].handler,
+    trackShortcuts[13].options,
     [timeline.selectedTrackIds],
   );
 
   // Unlink clips (Cmd+Shift+G)
   useHotkeys(
     'cmd+shift+g',
-    trackShortcuts[13].handler,
-    trackShortcuts[13].options,
+    trackShortcuts[14].handler,
+    trackShortcuts[14].options,
     [timeline.selectedTrackIds],
   );
 
