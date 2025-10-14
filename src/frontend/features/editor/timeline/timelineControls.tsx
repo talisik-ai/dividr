@@ -21,6 +21,7 @@ import {
   Link,
   Magnet,
   Maximize,
+  Minimize,
   MousePointer2,
   Pause,
   Play,
@@ -591,10 +592,30 @@ const ZoomSlider: React.FC = React.memo(() => {
   );
 });
 
+// Separate component for fullscreen button
+const FullscreenButton: React.FC = React.memo(() => {
+  const isFullscreen = useVideoEditorStore(
+    (state) => state.preview.isFullscreen,
+  );
+  const toggleFullscreen = useVideoEditorStore(
+    (state) => state.toggleFullscreen,
+  );
+
+  return (
+    <Button
+      variant="native"
+      size="icon"
+      onClick={toggleFullscreen}
+      title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen (F)'}
+    >
+      {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+    </Button>
+  );
+});
+
 export const TimelineControls: React.FC = React.memo(
   () => {
     // Remove reactive zoom subscription to prevent unnecessary re-renders
-    const setZoom = useVideoEditorStore((state) => state.setZoom);
     const snapEnabled = useVideoEditorStore(
       (state) => state.timeline.snapEnabled,
     );
@@ -747,31 +768,7 @@ export const TimelineControls: React.FC = React.memo(
 
           <div className="flex justify-end items-center gap-4 w-full">
             <ZoomSlider />
-            <Button
-              variant="native"
-              size="icon"
-              onClick={() => {
-                // Zoom to fit timeline content
-                const { tracks, timeline } = useVideoEditorStore.getState();
-                // When tracks exist, use only the maximum track end frame
-                const effectiveEndFrame =
-                  tracks.length > 0
-                    ? Math.max(...tracks.map((track) => track.endFrame))
-                    : timeline.totalFrames;
-
-                // Calculate zoom to fit content in viewport (with some padding)
-                const viewportWidth = window.innerWidth - 400; // Account for sidebars
-                const idealFrameWidth =
-                  (viewportWidth * 0.9) / effectiveEndFrame;
-                const idealZoom = idealFrameWidth / 2; // frameWidth = 2 * zoom
-                // Allow zoom to go as low as 0.01 for very long timelines
-                const clampedZoom = Math.max(0.01, Math.min(idealZoom, 10));
-                setZoom(clampedZoom);
-              }}
-              title="Zoom to fit"
-            >
-              <Maximize className="translate scale-x-[-1]" size={16} />
-            </Button>
+            <FullscreenButton />
           </div>
         </div>
       </div>
@@ -786,3 +783,4 @@ export const TimelineControls: React.FC = React.memo(
 
 ModeSelector.displayName = 'ModeSelector';
 ZoomSlider.displayName = 'ZoomSlider';
+FullscreenButton.displayName = 'FullscreenButton';

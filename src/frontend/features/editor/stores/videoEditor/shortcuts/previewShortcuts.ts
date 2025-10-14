@@ -3,7 +3,7 @@ import { ShortcutConfig } from './types';
 
 /**
  * Preview shortcuts - active when focus is on the video preview area
- * These include preview interaction mode shortcuts (Select, Hand)
+ * These include preview interaction mode shortcuts (Select, Hand, Fullscreen)
  */
 export const createPreviewShortcuts = (
   getStore: () => any,
@@ -34,6 +34,18 @@ export const createPreviewShortcuts = (
       if (store.preview.previewScale > 1) {
         store.setPreviewInteractionMode('pan');
       }
+    },
+  },
+  {
+    id: 'preview-toggle-fullscreen',
+    keys: 'f',
+    description: 'Toggle Fullscreen',
+    category: 'Preview Tools',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      getStore().toggleFullscreen();
     },
   },
 ];

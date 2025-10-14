@@ -912,7 +912,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       <div
         ref={timelineRef}
         className={cn(
-          'timeline-container flex flex-col flex-1 overflow-hidden',
+          'timeline-container flex flex-col flex-1 overflow-hidden outline-none focus:outline-none focus:ring-0',
           isSplitModeActive && hoveredTrack ? 'cursor-split' : '',
           isSplitModeActive && !hoveredTrack ? 'cursor-split-not-allowed' : '',
           className,

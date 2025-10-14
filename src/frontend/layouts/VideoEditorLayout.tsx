@@ -1,6 +1,7 @@
 import { AppMenuBar } from '@/frontend/components/custom/AppMenuBar';
 import { ProjectGuard } from '@/frontend/features/editor/components/projectGuard';
 import { VideoEditorHeader } from '@/frontend/features/editor/components/videoEditorHeader';
+import { FullscreenPreview } from '@/frontend/features/editor/preview/FullscreenPreview';
 import { ToolsPanel } from '@/frontend/features/editor/preview/ToolsPanel';
 import { useIsPanelVisible } from '@/frontend/features/editor/stores/PanelStore';
 import { Outlet } from 'react-router-dom';
@@ -48,6 +49,9 @@ const VideoEditorLayout = () => {
             <Timeline />
           </div>
         </div>
+
+        {/* Fullscreen Preview Overlay */}
+        <FullscreenPreview />
       </div>
     </ProjectGuard>
   );

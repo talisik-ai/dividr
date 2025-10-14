@@ -8,4 +8,5 @@ export interface PreviewState {
   showGrid: boolean;
   showSafeZones: boolean;
   backgroundColor: string;
+  isFullscreen: boolean;
 }

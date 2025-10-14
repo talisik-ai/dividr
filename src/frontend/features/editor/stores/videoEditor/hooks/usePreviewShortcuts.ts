@@ -10,7 +10,7 @@ import { createPreviewShortcuts } from '../shortcuts/previewShortcuts';
  *
  * @param enabled - Whether the shortcuts should be active (preview is focused)
  */
-export const usePreviewShortcuts = (enabled: boolean = true) => {
+export const usePreviewShortcuts = (enabled = true) => {
   const preview = useVideoEditorStore((state) => state.preview);
 
   // Create preview shortcuts with a getter function to always access fresh state
@@ -43,6 +43,19 @@ export const usePreviewShortcuts = (enabled: boolean = true) => {
       preventDefault: true,
     },
     [preview.interactionMode, preview.previewScale, enabled],
+  );
+
+  // F - Toggle Fullscreen
+  useHotkeys(
+    'f',
+    previewShortcuts[2].handler,
+    {
+      ...previewShortcuts[2].options,
+      enabled,
+      enableOnFormTags: false,
+      preventDefault: true,
+    },
+    [preview.isFullscreen, enabled],
   );
 
   return {

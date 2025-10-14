@@ -34,4 +34,3 @@ export interface FileProcessingSlice {
   importMediaFromDrop: (files: File[]) => Promise<ImportResult>;
   importMediaToTimeline: (files: File[]) => Promise<ImportResult>;
 }
-

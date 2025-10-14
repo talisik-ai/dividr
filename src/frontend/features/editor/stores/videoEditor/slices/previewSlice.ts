@@ -13,6 +13,8 @@ export interface PreviewSlice {
   toggleGrid: () => void;
   toggleSafeZones: () => void;
   setBackgroundColor: (color: string) => void;
+  toggleFullscreen: () => void;
+  setFullscreen: (isFullscreen: boolean) => void;
 
   // State management helpers
   markUnsavedChanges?: () => void;
@@ -28,6 +30,7 @@ export const createPreviewSlice: StateCreator<
     ...DEFAULT_PREVIEW_CONFIG,
     showGrid: false,
     showSafeZones: false,
+    isFullscreen: false,
   },
 
   setCanvasSize: (width, height) => {
@@ -88,5 +91,15 @@ export const createPreviewSlice: StateCreator<
   setBackgroundColor: (color) =>
     set((state: any) => ({
       preview: { ...state.preview, backgroundColor: color },
+    })),
+
+  toggleFullscreen: () =>
+    set((state: any) => ({
+      preview: { ...state.preview, isFullscreen: !state.preview.isFullscreen },
+    })),
+
+  setFullscreen: (isFullscreen) =>
+    set((state: any) => ({
+      preview: { ...state.preview, isFullscreen },
     })),
 });

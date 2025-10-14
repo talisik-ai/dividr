@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React from 'react';
+import { useVideoEditorStore } from '../stores/videoEditor/index';
 import { VideoBlobPreview } from './VideoBlobPreview';
 import { VideoPreview } from './VideoPreview';
 
@@ -17,6 +18,11 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
   className,
   useDirectOptimization = true, // Default to direct video for better performance
 }) => {
+  // Check if fullscreen mode is active - if so, don't render the normal preview
+  const isFullscreen = useVideoEditorStore(
+    (state) => state.preview.isFullscreen,
+  );
+
   // You can control this via environment variables, user settings, or feature flags
   const envDisabled =
     (import.meta as any).env?.VITE_USE_DIRECT_PREVIEW === 'false';
@@ -56,6 +62,11 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
     envEnabled,
     envDisabled,
   ]);
+
+  // Don't render normal preview when in fullscreen mode to avoid duplicate video elements
+  if (isFullscreen) {
+    return null;
+  }
 
   if (shouldUseDirectPreview && !directError) {
     try {
