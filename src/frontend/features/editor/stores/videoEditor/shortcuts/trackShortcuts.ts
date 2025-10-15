@@ -295,8 +295,18 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     category: 'Track Editing',
     scope: 'track',
     handler: (e) => {
-      e?.preventDefault();
-      store.removeSelectedTracks();
+      // Check if user is editing text
+      const target = e?.target as HTMLElement;
+      const isEditingText =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable ||
+        target?.closest('[contenteditable="true"]');
+
+      if (!isEditingText) {
+        e?.preventDefault();
+        store.removeSelectedTracks();
+      }
     },
     options: {
       enableOnFormTags: false,
@@ -309,8 +319,18 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     category: 'Track Editing',
     scope: 'track',
     handler: (e) => {
-      e?.preventDefault();
-      store.removeSelectedTracks();
+      // Check if user is editing text
+      const target = e?.target as HTMLElement;
+      const isEditingText =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable ||
+        target?.closest('[contenteditable="true"]');
+
+      if (!isEditingText) {
+        e?.preventDefault();
+        store.removeSelectedTracks();
+      }
     },
     options: {
       enableOnFormTags: false,

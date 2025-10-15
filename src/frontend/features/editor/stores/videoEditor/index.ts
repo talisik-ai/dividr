@@ -74,6 +74,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             muted: state.playback.muted,
             isLooping: state.playback.isLooping,
           },
+          textStyle: state.textStyle,
           isAutoSaveEnabled: state.isAutoSaveEnabled,
           // Don't persist undo/redo history - it should reset on app restart
           // undoStack: [],

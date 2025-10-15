@@ -271,7 +271,16 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // This ensures delete works even when react-hotkeys-hook might not catch it
     useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Check if user is editing text in an input, textarea, or contenteditable element
+        const target = e.target as HTMLElement;
+        const isEditingText =
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest('[contenteditable="true"]');
+
+        // Only trigger delete if not editing text
+        if (!isEditingText && (e.key === 'Delete' || e.key === 'Backspace')) {
           e.preventDefault();
           removeSelectedTracks();
         }
