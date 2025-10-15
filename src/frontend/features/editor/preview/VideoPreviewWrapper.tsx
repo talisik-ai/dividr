@@ -36,33 +36,6 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
   // Add error boundary for direct preview
   const [directError, setDirectError] = React.useState<boolean>(false);
 
-  // Log the mode being used
-  React.useEffect(() => {
-    const mode =
-      shouldUseDirectPreview && !directError
-        ? 'Direct Video (Optimized)'
-        : 'Canvas Rendering (Fallback)';
-    console.log(`🎬 Video Preview Mode: ${mode}`);
-
-    if (!shouldUseDirectPreview) {
-      console.log(
-        `🎬 Direct preview disabled. useDirectOptimization: ${useDirectOptimization}, envEnabled: ${envEnabled}, envDisabled: ${envDisabled}`,
-      );
-    }
-
-    if (directError) {
-      console.log(
-        `🎬 Direct preview failed with error, falling back to canvas (which may use blobs)`,
-      );
-    }
-  }, [
-    shouldUseDirectPreview,
-    directError,
-    useDirectOptimization,
-    envEnabled,
-    envDisabled,
-  ]);
-
   // Don't render normal preview when in fullscreen mode to avoid duplicate video elements
   if (isFullscreen) {
     return null;

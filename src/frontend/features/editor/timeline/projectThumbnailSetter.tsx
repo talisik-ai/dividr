@@ -3,7 +3,7 @@ import { useProjectStore } from '@/frontend/features/projects/store/projectStore
 import { cn } from '@/frontend/utils/utils';
 import { ImageUp, PenLine } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ThumbnailChangerDialog } from '../components/ThumbnailChangerDialog';
+import { ThumbnailChangerDialog } from '../components/thumbnailChangerDialog';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
 
 interface ProjectThumbnailSetterProps {

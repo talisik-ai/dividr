@@ -35,7 +35,7 @@ const VideoEditorLayout = () => {
           {/* Main content area */}
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className="flex flex-row flex-1 overflow-hidden">
-              <main className="flex-1 overflow-auto">
+              <main className="flex-1 flex overflow-auto">
                 {/* Based on Video Editor component*/}
                 <Outlet />
               </main>
