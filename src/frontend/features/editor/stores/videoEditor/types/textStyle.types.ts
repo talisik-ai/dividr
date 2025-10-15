@@ -22,6 +22,8 @@ export interface TextStyleState {
     hasShadow: boolean;
     letterSpacing: number;
     lineSpacing: number;
+    hasGlow: boolean;
+    opacity: number;
   };
 }
 
@@ -47,5 +49,7 @@ export interface TextStyleSlice {
   toggleShadow: () => void;
   setLetterSpacing: (spacing: number) => void;
   setLineSpacing: (spacing: number) => void;
+  toggleGlow: () => void;
+  setOpacity: (opacity: number) => void;
   resetTextStyles: () => void;
 }

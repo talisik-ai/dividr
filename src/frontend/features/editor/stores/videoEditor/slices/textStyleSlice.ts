@@ -14,6 +14,8 @@ const DEFAULT_GLOBAL_CONTROLS = {
   hasShadow: false,
   letterSpacing: 0,
   lineSpacing: 1.2,
+  hasGlow: false,
+  opacity: 100,
 };
 
 export const createTextStyleSlice: StateCreator<
@@ -225,6 +227,28 @@ export const createTextStyleSlice: StateCreator<
         globalControls: {
           ...state.textStyle.globalControls,
           lineSpacing: spacing,
+        },
+      },
+    })),
+
+  toggleGlow: () =>
+    set((state) => ({
+      textStyle: {
+        ...state.textStyle,
+        globalControls: {
+          ...state.textStyle.globalControls,
+          hasGlow: !state.textStyle.globalControls.hasGlow,
+        },
+      },
+    })),
+
+  setOpacity: (opacity: number) =>
+    set((state) => ({
+      textStyle: {
+        ...state.textStyle,
+        globalControls: {
+          ...state.textStyle.globalControls,
+          opacity: Math.max(0, Math.min(100, opacity)),
         },
       },
     })),

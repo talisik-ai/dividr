@@ -1,6 +1,6 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback } from 'react';
-import { PropertiesPanel } from './components/propertiesPanel';
+import { PropertiesPanel } from '../properties-panel';
 import { VideoPreviewWrapper } from './preview/VideoPreviewWrapper';
 import { useVideoEditorStore } from './stores/videoEditor/index';
 
@@ -9,7 +9,7 @@ interface VideoEditorProps {
 }
 
 const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
-  const { importMediaFromFiles, tracks, timeline } = useVideoEditorStore();
+  const { importMediaFromFiles, timeline } = useVideoEditorStore();
 
   // Legacy file import for drag & drop (will show warning)
   const handleFileImport = useCallback(
@@ -34,11 +34,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
     e.preventDefault();
   }, []);
 
-  // Check if any subtitle tracks are selected
-  const hasSelectedSubtitles = tracks.some(
-    (track) =>
-      track.type === 'subtitle' && timeline.selectedTrackIds.includes(track.id),
-  );
+  // Check if any tracks are selected
+  const hasSelectedTracks = timeline.selectedTrackIds.length > 0;
 
   return (
     <div className="flex flex-1">
@@ -55,8 +52,8 @@ const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
           />
         </div>
       </div>
-      {/* Properties Panel - Only visible when subtitle tracks are selected */}
-      {hasSelectedSubtitles && <PropertiesPanel className="" />}
+      {/* Properties Panel - Dynamically renders based on selected track type */}
+      {hasSelectedTracks && <PropertiesPanel className="" />}
     </div>
   );
 };
