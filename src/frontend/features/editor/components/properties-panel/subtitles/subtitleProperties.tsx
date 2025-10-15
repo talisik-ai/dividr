@@ -498,7 +498,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                           textStyle.globalControls.lineSpacing !== 1.2) && (
                           <Badge
                             variant="secondary"
-                            className="ml-1 h-4 px-1 text-xs"
+                            className="absolute -right-3 -top-1 h-3 px-1 text-[8px]"
                           >
                             {textStyle.globalControls.letterSpacing === -1 &&
                             textStyle.globalControls.lineSpacing === 1
