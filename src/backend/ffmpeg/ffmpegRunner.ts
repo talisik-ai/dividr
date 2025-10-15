@@ -118,7 +118,7 @@ export function parseFfmpegProgress(
 export async function runFfmpegWithProgress(
   job: VideoEditJob,
   callbacks?: FfmpegCallbacks,
-): Promise<{ command: string; logs: string }> {
+): Promise<{ command: string; logs: string; cancelled?: boolean; message?: string }> {
   console.log('🔍 runFfmpegWithProgress called with job:', job);
 
   if (!isElectron()) {
@@ -171,7 +171,12 @@ export async function runFfmpegWithProgress(
         console.log('✅ FFmpeg process completed successfully:', result);
         // Clean up listener
         window.electronAPI.removeListener('ffmpeg:progress', handleProgress);
-        resolve({ command: 'ffmpeg-via-ipc', logs: result.logs });
+        resolve({ 
+          command: 'ffmpeg-via-ipc', 
+          logs: result.logs,
+          cancelled: result.cancelled,
+          message: result.message
+        });
       })
       .catch((error: any) => {
         console.error('❌ FFmpeg process failed:', error);

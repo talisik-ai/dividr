@@ -90,6 +90,14 @@ export const useExportHandler = () => {
         const result = await runFfmpegWithProgress(job, callbacks);
         console.log('✅ runFfmpegWithProgress completed:', result);
 
+        // Check if export was cancelled
+        if (result.cancelled) {
+          console.log('🛑 Export was cancelled by user');
+          cancelRender();
+          setRenderDialogState('cancelled');
+          return;
+        }
+
         finishRender();
 
         // Update dialog to completed state
@@ -114,9 +122,22 @@ export const useExportHandler = () => {
     ],
   );
 
-  const handleCancelRender = useCallback(() => {
-    cancelRender();
-    setRenderDialogState('cancelled');
+  const handleCancelRender = useCallback(async () => {
+    try {
+      // Call IPC to kill FFmpeg process
+      console.log('🛑 Calling ffmpeg:cancel IPC...');
+      const result = await window.electronAPI.invoke('ffmpeg:cancel');
+      console.log('🛑 FFmpeg cancel result:', result);
+      
+      // Update UI state
+      cancelRender();
+      setRenderDialogState('cancelled');
+    } catch (error) {
+      console.error('❌ Failed to cancel FFmpeg process:', error);
+      // Still update UI even if IPC fails
+      cancelRender();
+      setRenderDialogState('cancelled');
+    }
   }, [cancelRender]);
 
   const handleCloseDialog = useCallback(() => {

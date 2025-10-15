@@ -1781,9 +1781,8 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
         event.sender.send('ffmpeg:progress', { type: 'stderr', data: text });
       });
 
-      ffmpeg.on('close', (code) => {
+      ffmpeg.on('close', (code, signal) => {
         currentFfmpegProcess = null;
-        console.log(`🏁 FFmpeg process finished with code: ${code}`);
 
         // Always cleanup temporary subtitle file after FFmpeg completes
         if (tempSubtitlePath && fs.existsSync(tempSubtitlePath)) {
@@ -1799,6 +1798,38 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
             );
           }
         }
+
+        // Check if this was a user cancellation:
+        // 1. Signal is SIGTERM/SIGKILL (direct signal kill)
+        // 2. Code 255 AND logs contain "received signal 15" (FFmpeg caught signal)
+        const wasCancelled = 
+          signal === 'SIGTERM' || 
+          signal === 'SIGKILL' || 
+          (code === 255 && (logs.includes('received signal 15') || logs.includes('Exiting normally, received signal')));
+
+        if (wasCancelled) {
+          console.log('🛑 FFmpeg process was cancelled by user');
+          
+          // Delete the incomplete output file
+          const outputFilePath = path.join(absoluteLocation, job.output);
+          console.log('🔍 Checking for incomplete output file at:', outputFilePath);
+          
+          if (fs.existsSync(outputFilePath)) {
+            try {
+              fs.unlinkSync(outputFilePath);
+              console.log('🗑️ Deleted incomplete output file:', outputFilePath);
+            } catch (deleteError) {
+              console.warn('⚠️ Failed to delete incomplete output file:', deleteError);
+            }
+          } else {
+            console.log('ℹ️ No output file found to delete (may not have been created yet)');
+          }
+          
+          resolve({ success: true, cancelled: true, logs, message: 'Export cancelled by user' });
+          return;
+        }
+
+        console.log(`🏁 FFmpeg process finished with code: ${code}, signal: ${signal}`);
 
         if (code === 0) {
           resolve({ success: true, logs });
@@ -1849,11 +1880,25 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
 });
 
 ipcMain.handle('ffmpeg:cancel', async () => {
-  if (currentFfmpegProcess) {
+  if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
+    console.log('🛑 Cancelling FFmpeg process...');
+    
+    // Send SIGTERM for graceful termination
     currentFfmpegProcess.kill('SIGTERM');
-    return true;
+    
+    // Force kill after 2 seconds if still running
+    setTimeout(() => {
+      if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
+        console.log('⚠️ Force killing FFmpeg process...');
+        currentFfmpegProcess.kill('SIGKILL');
+      }
+    }, 2000);
+    
+    currentFfmpegProcess = null;
+    return { success: true, message: 'Export cancelled' };
   }
-  return false;
+  
+  return { success: false, message: 'No export running' };
 });
 
 // Diagnostic handler to check FFmpeg status
