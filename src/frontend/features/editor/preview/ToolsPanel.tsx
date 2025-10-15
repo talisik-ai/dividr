@@ -1,10 +1,10 @@
-import { initializePanelRegistry } from '@/frontend/features/editor/preview/panels/registerPanels';
+import { initializePanelRegistry } from '@/frontend/features/editor/components/panels/registerPanels';
 import { useActivePanelType } from '@/frontend/features/editor/stores/PanelStore';
 import React from 'react';
 import {
   getCustomPanelComponent,
   hasCustomPanelComponent,
-} from './panels/panelRegistry';
+} from '../components/panels/panelRegistry';
 
 interface ToolsPanelProps {
   className?: string;

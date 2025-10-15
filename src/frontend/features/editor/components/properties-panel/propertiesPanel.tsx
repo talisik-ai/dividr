@@ -1,6 +1,6 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useMemo } from 'react';
-import { useVideoEditorStore } from '../editor/stores/videoEditor/index';
+import { useVideoEditorStore } from '../../stores/videoEditor/index';
 import { SubtitleProperties } from './subtitles/subtitleProperties';
 
 interface PropertiesPanelProps {

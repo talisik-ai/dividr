@@ -1,6 +1,6 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback } from 'react';
-import { PropertiesPanel } from '../properties-panel';
+import { PropertiesPanel } from './components/properties-panel';
 import { VideoPreviewWrapper } from './preview/VideoPreviewWrapper';
 import { useVideoEditorStore } from './stores/videoEditor/index';
 

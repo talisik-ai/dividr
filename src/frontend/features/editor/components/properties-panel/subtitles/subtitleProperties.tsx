@@ -38,7 +38,7 @@ import {
   Underline,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useVideoEditorStore } from '../../editor/stores/videoEditor/index';
+import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
 
 interface SubtitlePropertiesProps {

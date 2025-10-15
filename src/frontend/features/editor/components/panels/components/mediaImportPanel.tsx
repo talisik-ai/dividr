@@ -30,9 +30,9 @@ import {
   X,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { BasePanel } from '../../../components/panels/basePanel';
+import { CustomPanelProps } from '../../../components/panels/panelRegistry';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
-import { BasePanel } from '../basePanel';
-import { CustomPanelProps } from '../panelRegistry';
 
 // Keeping for potential future use
 // interface FilePreview {

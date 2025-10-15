@@ -1,6 +1,6 @@
 import React from 'react';
-import { BasePanel } from '../basePanel';
-import { CustomPanelProps } from '../panelRegistry';
+import { BasePanel } from '../../../components/panels/basePanel';
+import { CustomPanelProps } from '../../../components/panels/panelRegistry';
 
 export const ImageToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   return (

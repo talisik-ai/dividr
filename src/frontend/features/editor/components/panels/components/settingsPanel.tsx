@@ -1,7 +1,7 @@
 import React from 'react';
+import { BasePanel } from '../../../components/panels/basePanel';
+import { CustomPanelProps } from '../../../components/panels/panelRegistry';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
-import { BasePanel } from '../basePanel';
-import { CustomPanelProps } from '../panelRegistry';
 
 export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const { preview } = useVideoEditorStore();
