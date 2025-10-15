@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import NewDark from '@/frontend/assets/logo/New-Dark.svg';
 import New from '@/frontend/assets/logo/New-Light.svg';
 import { useTheme } from '@/frontend/providers/ThemeProvider';
@@ -1008,6 +1009,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         // Use actual video height for subtitle sizing
         const videoHeight = activeVideoTrack?.height || preview.canvasHeight;
 
+        // Get applied style for container alignment
+        const appliedStyle = getTextStyleForSubtitle(textStyle.activeStyle);
+
         return (
           <div
             className="absolute inset-0 pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
@@ -1017,32 +1021,51 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               left: `calc(50% + ${preview.panX}px)`,
               top: `calc(50% + ${preview.panY}px)`,
               transform: 'translate(-50%, -50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems:
+                appliedStyle.textAlign === 'left'
+                  ? 'flex-start'
+                  : appliedStyle.textAlign === 'right'
+                    ? 'flex-end'
+                    : 'center',
+              justifyContent: 'flex-end',
+              paddingBottom: '20px',
+              paddingLeft: '5%',
+              paddingRight: '5%',
             }}
           >
             {activeSubs.map((track) => {
-              const appliedStyle = getTextStyleForSubtitle(
-                textStyle.activeStyle,
-              );
+              // Build glow filter if enabled - subtle glow effect
+              const glowStyle = (appliedStyle as any).hasGlow
+                ? {
+                    filter: `drop-shadow(0 0 5px ${appliedStyle.color}) drop-shadow(0 0 10px ${appliedStyle.color})`,
+                  }
+                : {};
+
               return (
                 <div
                   key={track.id}
-                  className="text-white text-center absolute bottom-5 w-fit left-0 right-0 bg-secondary dark:bg-secondary-dark"
                   style={{
-                    // Match FFmpeg's ASS subtitle styling with applied text styles
-                    fontSize: `${Math.max(18, videoHeight * 0.02)}px`, // Slightly larger for better visibility
-                    fontFamily: appliedStyle.fontFamily, // Apply selected font family
-                    fontWeight: appliedStyle.fontWeight, // Apply selected font weight
-                    fontStyle: appliedStyle.fontStyle, // Apply selected font style
-                    textTransform: appliedStyle.textTransform, // Apply text transform
-                    lineHeight: '1.2', // Slightly more line height for readability
-                    textShadow: 'none', // No outline to match FFmpeg output
-                    wordWrap: 'break-word',
-                    whiteSpace: 'pre-wrap', // Preserve line breaks exactly like FFmpeg
-                    color: '#FFFFFF', // Pure white, FFmpeg default
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                    padding: '2px 0',
-                    margin: '0 auto',
+                    // Apply all text styles from getTextStyleForSubtitle
+                    fontSize: `${Math.max(18, videoHeight * 0.02)}px`,
+                    fontFamily: appliedStyle.fontFamily,
+                    fontWeight: appliedStyle.fontWeight,
+                    fontStyle: appliedStyle.fontStyle,
+                    textTransform: appliedStyle.textTransform as any,
+                    textDecoration: appliedStyle.textDecoration,
+                    textAlign: appliedStyle.textAlign as any,
+                    lineHeight: appliedStyle.lineHeight,
+                    letterSpacing: appliedStyle.letterSpacing,
+                    textShadow: appliedStyle.textShadow,
+                    wordWrap: 'break-word' as any,
+                    whiteSpace: 'pre-wrap',
+                    color: appliedStyle.color,
+                    backgroundColor: appliedStyle.backgroundColor,
+                    opacity: appliedStyle.opacity,
+                    padding: '2px 8px',
                     maxWidth: '90%',
+                    ...glowStyle,
                   }}
                 >
                   {track.subtitleText}

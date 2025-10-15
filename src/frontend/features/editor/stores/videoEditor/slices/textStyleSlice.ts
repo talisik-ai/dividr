@@ -78,6 +78,27 @@ export const createTextStyleSlice: StateCreator<
       fontStyle = 'italic';
     }
 
+    // Build text shadow for stroke outline (professional video editor style)
+    const strokeShadows: string[] = [];
+    const strokeColor = controls.strokeColor;
+    const strokeWidth = 2; // Standard outline width
+
+    // Create 8-direction outline for smooth stroke effect
+    for (let angle = 0; angle < 360; angle += 45) {
+      const radian = (angle * Math.PI) / 180;
+      const x = Math.cos(radian) * strokeWidth;
+      const y = Math.sin(radian) * strokeWidth;
+      strokeShadows.push(
+        `${x.toFixed(1)}px ${y.toFixed(1)}px 0 ${strokeColor}`,
+      );
+    }
+
+    // Add shadow if enabled
+    const shadowEffects: string[] = [...strokeShadows];
+    if (controls.hasShadow) {
+      shadowEffects.push(`2px 2px 4px rgba(0, 0, 0, 0.8)`);
+    }
+
     return {
       fontFamily: style.fontFamily || '"Arial", sans-serif',
       fontWeight,
@@ -88,11 +109,11 @@ export const createTextStyleSlice: StateCreator<
       color: controls.fillColor,
       backgroundColor: controls.backgroundColor,
       textDecoration: controls.isUnderline ? 'underline' : 'none',
-      textShadow: controls.hasShadow
-        ? `2px 2px 4px ${controls.strokeColor}`
-        : 'none',
+      textShadow: shadowEffects.join(', '),
       letterSpacing: `${controls.letterSpacing}px`,
       lineHeight: controls.lineSpacing,
+      opacity: controls.opacity / 100, // Convert percentage to decimal
+      hasGlow: controls.hasGlow, // Pass glow state separately for custom rendering
     };
   },
 

@@ -757,26 +757,29 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
                 return (
                   <div
                     key={track.id}
-                    className="text-white text-center absolute bottom-5 left-0 right-0"
+                    className="absolute bottom-5 left-0 right-0"
                     style={{
-                      // Match FFmpeg's ASS subtitle styling with applied text styles
-                      fontSize: `${Math.max(18, preview.canvasHeight * 0.045)}px`, // Slightly larger for better visibility
-                      fontFamily: appliedStyle.fontFamily, // Apply selected font family
-                      fontWeight: appliedStyle.fontWeight, // Apply selected font weight
-                      fontStyle: appliedStyle.fontStyle, // Apply selected font style
-                      textTransform: appliedStyle.textTransform, // Apply text transform
-                      lineHeight: '1.2', // Slightly more line height for readability
-                      textShadow: 'none', // No outline to match FFmpeg output
+                      // Apply all subtitle style properties from state
+                      fontSize: `${Math.max(18, preview.canvasHeight * 0.045)}px`,
+                      fontFamily: appliedStyle.fontFamily,
+                      fontWeight: appliedStyle.fontWeight,
+                      fontStyle: appliedStyle.fontStyle,
+                      textTransform: appliedStyle.textTransform as React.CSSProperties['textTransform'],
+                      textDecoration: appliedStyle.textDecoration,
+                      textAlign: appliedStyle.textAlign as React.CSSProperties['textAlign'],
+                      lineHeight: appliedStyle.lineHeight,
+                      letterSpacing: appliedStyle.letterSpacing,
+                      color: appliedStyle.color,
+                      backgroundColor: appliedStyle.backgroundColor,
+                      textShadow: appliedStyle.textShadow,
+                      opacity: appliedStyle.opacity,
                       wordWrap: 'break-word',
-                      whiteSpace: 'pre-wrap', // Preserve line breaks exactly like FFmpeg
-                      color: '#FFFFFF', // Pure white, FFmpeg default
-                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      whiteSpace: 'pre-wrap',
                       padding: '2px 0',
-                      margin: '0 auto', // Center horizontally
-                      textAlign: 'center', // Center alignment matching Alignment=2
+                      margin: '0 auto',
                       position: 'relative',
-                      display: 'inline-block', // Make background fit text width
-                      maxWidth: '90%', // Prevent overflow
+                      display: 'inline-block',
+                      maxWidth: '90%',
                     }}
                   >
                     {track.subtitleText}

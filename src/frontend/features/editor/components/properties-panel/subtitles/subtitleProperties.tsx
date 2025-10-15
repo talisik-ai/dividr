@@ -11,7 +11,6 @@ import {
 } from '@/frontend/components/ui/select';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
-import { Switch } from '@/frontend/components/ui/switch';
 import { Textarea } from '@/frontend/components/ui/textarea';
 import {
   ToggleGroup,
@@ -72,6 +71,11 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const toggleShadow = useVideoEditorStore((state) => state.toggleShadow);
   const toggleGlow = useVideoEditorStore((state) => state.toggleGlow);
   const setOpacity = useVideoEditorStore((state) => state.setOpacity);
+  const setTextAlign = useVideoEditorStore((state) => state.setTextAlign);
+  const setLetterSpacing = useVideoEditorStore(
+    (state) => state.setLetterSpacing,
+  );
+  const setLineSpacing = useVideoEditorStore((state) => state.setLineSpacing);
   const resetTextStyles = useVideoEditorStore((state) => state.resetTextStyles);
   const addRecentColor = useVideoEditorStore((state) => state.addRecentColor);
 
@@ -83,12 +87,6 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   // Local state for text editing
   const [editedText, setEditedText] = useState('');
   const [isEditingText, setIsEditingText] = useState(false);
-
-  // Local state for spacing
-  const [spacing, setSpacing] = useState('normal');
-
-  // Check if in development mode
-  const isDev = process.env.NODE_ENV === 'development';
 
   // Check if any styles have changed from default
   const hasStylesChanged = useMemo(() => {
@@ -336,7 +334,6 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               value="underline"
               aria-label="Toggle underline"
               size="sm"
-              disabled
             >
               <Underline className="size-4" />
             </ToggleGroupItem>
@@ -406,7 +403,14 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex-1">
-                  <Select disabled>
+                  <Select
+                    value={textStyle.globalControls.textAlign}
+                    onValueChange={(value) =>
+                      setTextAlign(
+                        value as 'left' | 'center' | 'right' | 'justify',
+                      )
+                    }
+                  >
                     <SelectTrigger
                       size="sm"
                       className="w-auto px-2 gap-1"
@@ -414,35 +418,74 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                       chevronSize={3}
                     >
                       <div className="relative">
-                        <AlignCenter className="size-5" />
+                        {textStyle.globalControls.textAlign === 'left' && (
+                          <AlignLeft className="size-5" />
+                        )}
+                        {textStyle.globalControls.textAlign === 'center' && (
+                          <AlignCenter className="size-5" />
+                        )}
+                        {textStyle.globalControls.textAlign === 'right' && (
+                          <AlignRight className="size-5" />
+                        )}
                       </div>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="left">
-                        <AlignLeft className="size-4 mr-2" />
-                        Left
+                        <div className="flex items-center">
+                          <AlignLeft className="size-4 mr-2" />
+                          Left
+                        </div>
                       </SelectItem>
                       <SelectItem value="center">
-                        <AlignCenter className="size-4 mr-2" />
-                        Center
+                        <div className="flex items-center">
+                          <AlignCenter className="size-4 mr-2" />
+                          Center
+                        </div>
                       </SelectItem>
                       <SelectItem value="right">
-                        <AlignRight className="size-4 mr-2" />
-                        Right
+                        <div className="flex items-center">
+                          <AlignRight className="size-4 mr-2" />
+                          Right
+                        </div>
                       </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Text alignment (coming soon)</p>
+                <p>Text alignment</p>
               </TooltipContent>
             </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex-1">
-                  <Select value={spacing} onValueChange={setSpacing} disabled>
+                  <Select
+                    value={
+                      textStyle.globalControls.letterSpacing === 0 &&
+                      textStyle.globalControls.lineSpacing === 1.2
+                        ? 'normal'
+                        : textStyle.globalControls.letterSpacing === -1 &&
+                            textStyle.globalControls.lineSpacing === 1
+                          ? 'tight'
+                          : textStyle.globalControls.letterSpacing === 1 &&
+                              textStyle.globalControls.lineSpacing === 1.5
+                            ? 'loose'
+                            : 'custom'
+                    }
+                    onValueChange={(value) => {
+                      if (value === 'normal') {
+                        setLetterSpacing(0);
+                        setLineSpacing(1.2);
+                      } else if (value === 'tight') {
+                        setLetterSpacing(-1);
+                        setLineSpacing(1);
+                      } else if (value === 'loose') {
+                        setLetterSpacing(1);
+                        setLineSpacing(1.5);
+                      }
+                    }}
+                  >
                     <SelectTrigger
                       size="sm"
                       className="w-auto px-2 gap-1"
@@ -451,16 +494,19 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                     >
                       <div className="relative flex items-center">
                         <ListChevronsUpDown className="size-5 scale-x-[-1]" />
-                        {spacing !== 'normal' && (
+                        {(textStyle.globalControls.letterSpacing !== 0 ||
+                          textStyle.globalControls.lineSpacing !== 1.2) && (
                           <Badge
                             variant="secondary"
                             className="ml-1 h-4 px-1 text-xs"
                           >
-                            {spacing === 'tight'
+                            {textStyle.globalControls.letterSpacing === -1 &&
+                            textStyle.globalControls.lineSpacing === 1
                               ? 'T'
-                              : spacing === 'loose'
+                              : textStyle.globalControls.letterSpacing === 1 &&
+                                  textStyle.globalControls.lineSpacing === 1.5
                                 ? 'L'
-                                : spacing}
+                                : 'C'}
                           </Badge>
                         )}
                       </div>
@@ -474,7 +520,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Letter/line spacing (coming soon)</p>
+                <p>Letter/line spacing</p>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -530,7 +576,6 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                 onChange={setFillColor}
                 onChangeComplete={addRecentColor}
                 recentColors={colorHistory.recentColors}
-                disabled={!isDev}
               />
               <div className="h-7 w-7"></div>
             </div>
@@ -545,7 +590,6 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                 onChange={setStrokeColor}
                 onChangeComplete={addRecentColor}
                 recentColors={colorHistory.recentColors}
-                disabled={!isDev}
                 showDiagonal
               />
               <Tooltip>
@@ -575,7 +619,6 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                 onChange={setBackgroundColor}
                 onChangeComplete={addRecentColor}
                 recentColors={colorHistory.recentColors}
-                disabled={!isDev}
                 showDiagonal
               />
               <Tooltip>
@@ -607,7 +650,6 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                 size="sm"
                 onClick={toggleShadow}
                 className="h-7 w-14 text-xs"
-                disabled={!isDev}
               >
                 {textStyle.globalControls.hasShadow ? 'On' : 'Off'}
               </Button>
@@ -631,23 +673,21 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
         </div>
       </div>
 
-      {/* Glow Section - Developer Mode Only */}
-      {isDev && (
-        <>
-          <Separator />
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-semibold text-foreground">
-                Glow
-              </label>
-              <Switch
-                checked={textStyle.globalControls.hasGlow}
-                onCheckedChange={toggleGlow}
-              />
-            </div>
-          </div>
-        </>
-      )}
+      {/* Glow Section */}
+      <Separator />
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-semibold text-foreground">Glow</label>
+          <Button
+            variant={textStyle.globalControls.hasGlow ? 'default' : 'outline'}
+            size="sm"
+            onClick={toggleGlow}
+            className="h-7 w-14 text-xs"
+          >
+            {textStyle.globalControls.hasGlow ? 'On' : 'Off'}
+          </Button>
+        </div>
+      </div>
 
       {/* Opacity Section */}
       <Separator />
