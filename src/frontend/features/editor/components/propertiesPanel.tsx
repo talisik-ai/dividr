@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Badge } from '@/frontend/components/ui/badge';
 import { Button } from '@/frontend/components/ui/button';
 import { Input } from '@/frontend/components/ui/input';
@@ -30,11 +31,13 @@ import {
   Info,
   Italic,
   ListChevronsUpDown,
+  MoreHorizontal,
   RotateCcw,
   Underline,
 } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
+import { ColorPickerPopover } from './ColorPickerPopover';
 
 interface PropertiesPanelProps {
   className?: string;
@@ -47,6 +50,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     tracks,
     timeline,
     textStyle,
+    colorHistory,
     updateTrack,
     setActiveTextStyle,
     toggleBold,
@@ -58,6 +62,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     setBackgroundColor,
     toggleShadow,
     resetTextStyles,
+    addRecentColor,
   } = useVideoEditorStore();
 
   // Get selected subtitle tracks
@@ -72,6 +77,45 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   // Local state for spacing
   const [spacing, setSpacing] = useState('normal');
+
+  // Check if in development mode
+  const isDev = process.env.NODE_ENV === 'development';
+
+  // Check if any styles have changed from default
+  const hasStylesChanged = useMemo(() => {
+    const defaults = {
+      isBold: false,
+      isItalic: false,
+      isUnderline: false,
+      textTransform: 'none',
+      textAlign: 'center',
+      fontSize: 18,
+      fillColor: '#FFFFFF',
+      strokeColor: '#000000',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      hasShadow: false,
+      letterSpacing: 0,
+      lineSpacing: 1.2,
+    };
+
+    const current = textStyle.globalControls;
+
+    return (
+      current.isBold !== defaults.isBold ||
+      current.isItalic !== defaults.isItalic ||
+      current.isUnderline !== defaults.isUnderline ||
+      current.textTransform !== defaults.textTransform ||
+      current.textAlign !== defaults.textAlign ||
+      current.fontSize !== defaults.fontSize ||
+      current.fillColor !== defaults.fillColor ||
+      current.strokeColor !== defaults.strokeColor ||
+      current.backgroundColor !== defaults.backgroundColor ||
+      current.hasShadow !== defaults.hasShadow ||
+      current.letterSpacing !== defaults.letterSpacing ||
+      current.lineSpacing !== defaults.lineSpacing ||
+      textStyle.activeStyle !== 'default'
+    );
+  }, [textStyle]);
 
   // Don't render if no subtitle tracks are selected
   if (selectedSubtitleTracks.length === 0) {
@@ -120,10 +164,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       )}
     >
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 space-y-4">
         {/* Subtitle Text Editing */}
         <div className="space-y-2">
-          <h4 className="text-sm font-semibold text-foreground">Text</h4>
+          <h4 className="text-sm font-semibold text-foreground">Basic</h4>
           <div className="relative">
             {isMultipleSelected ? (
               <p className="text-xs text-muted-foreground text-center">
@@ -136,12 +180,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 onKeyDown={handleTextKeyDown}
                 onBlur={handleTextEdit}
                 autoFocus
-                className="text-sm focus:text-sm placeholder:text-sm"
                 placeholder="Enter subtitle text..."
               />
             ) : (
               <div
-                className="p-3 bg-muted/50 border border-border rounded-lg cursor-text hover:bg-muted/70 transition-colors"
+                className="px-3 py-2 bg-muted/50 border border-border rounded-lg cursor-text hover:bg-muted/70 transition-colors"
                 onClick={() => setIsEditingText(true)}
                 role="button"
                 tabIndex={0}
@@ -150,7 +193,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 }}
                 aria-label="Click to edit text"
               >
-                <p className="text-xs text-foreground whitespace-pre-wrap">
+                <p className="text-sm text-foreground whitespace-pre-wrap">
                   {selectedTrack.subtitleText || 'Click to edit text...'}
                 </p>
               </div>
@@ -412,103 +455,131 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   size="sm"
                   onClick={handleReset}
                   className="h-7 w-7 p-0"
+                  disabled={!hasStylesChanged}
                 >
                   <RotateCcw className="size-3.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Reset all styles</p>
+                <p>
+                  {hasStylesChanged
+                    ? 'Reset all styles'
+                    : 'No changes to reset'}
+                </p>
               </TooltipContent>
             </Tooltip>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs text-muted-foreground">Fill</label>
-                  <Input
-                    type="color"
-                    value={textStyle.globalControls.fillColor}
-                    onChange={(e) => setFillColor(e.target.value)}
-                    className="h-9 p-1 cursor-pointer"
-                    disabled
-                    title="Coming soon"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Fill color (coming soon)</p>
-              </TooltipContent>
-            </Tooltip>
+          <div className="space-y-2">
+            {/* Fill */}
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">Fill</label>
+              <div className="flex items-center gap-1">
+                <ColorPickerPopover
+                  value={textStyle.globalControls.fillColor}
+                  onChange={setFillColor}
+                  onChangeComplete={addRecentColor}
+                  recentColors={colorHistory.recentColors}
+                  disabled={!isDev}
+                />
+                <div className="h-7 w-7"></div>
+              </div>
+            </div>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs text-muted-foreground">
-                    Stroke
-                  </label>
-                  <Input
-                    type="color"
-                    value={textStyle.globalControls.strokeColor}
-                    onChange={(e) => setStrokeColor(e.target.value)}
-                    className="h-9 p-1 cursor-pointer"
-                    disabled
-                    title="Coming soon"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Stroke color (coming soon)</p>
-              </TooltipContent>
-            </Tooltip>
+            {/* Stroke */}
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">Stroke</label>
+              <div className="flex items-center gap-1">
+                <ColorPickerPopover
+                  value={textStyle.globalControls.strokeColor}
+                  onChange={setStrokeColor}
+                  onChangeComplete={addRecentColor}
+                  recentColors={colorHistory.recentColors}
+                  disabled={!isDev}
+                  showDiagonal
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      disabled
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Stroke options (coming soon)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs text-muted-foreground">
-                    Background
-                  </label>
-                  <Input
-                    type="color"
-                    value={textStyle.globalControls.backgroundColor}
-                    onChange={(e) => setBackgroundColor(e.target.value)}
-                    className="h-9 p-1 cursor-pointer"
-                    disabled
-                    title="Coming soon"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Background color (coming soon)</p>
-              </TooltipContent>
-            </Tooltip>
+            {/* Background */}
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">
+                Background
+              </label>
+              <div className="flex items-center gap-1">
+                <ColorPickerPopover
+                  value={textStyle.globalControls.backgroundColor}
+                  onChange={setBackgroundColor}
+                  onChangeComplete={addRecentColor}
+                  recentColors={colorHistory.recentColors}
+                  disabled={!isDev}
+                  showDiagonal
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      disabled
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Background options (coming soon)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs text-muted-foreground">
-                    Shadow
-                  </label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleShadow}
-                    className={cn(
-                      'h-9',
-                      textStyle.globalControls.hasShadow &&
-                        'bg-accent text-accent-foreground',
-                    )}
-                    disabled
-                  >
-                    {textStyle.globalControls.hasShadow ? 'On' : 'Off'}
-                  </Button>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Shadow (coming soon)</p>
-              </TooltipContent>
-            </Tooltip>
+            {/* Shadow */}
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">Shadow</label>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant={
+                    textStyle.globalControls.hasShadow ? 'default' : 'outline'
+                  }
+                  size="sm"
+                  onClick={toggleShadow}
+                  className="h-7 w-14 text-xs"
+                  disabled={!isDev}
+                >
+                  {textStyle.globalControls.hasShadow ? 'On' : 'Off'}
+                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      disabled
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Shadow options (coming soon)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
           </div>
         </div>
       </div>

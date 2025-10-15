@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { devtools, persist, subscribeWithSelector } from 'zustand/middleware';
 import {
+  ColorHistorySlice,
+  createColorHistorySlice,
+} from './slices/colorHistorySlice';
+import {
   createFileProcessingSlice,
   FileProcessingSlice,
 } from './slices/fileProcessingSlice';
@@ -29,6 +33,7 @@ type VideoEditorStore = TimelineSlice &
   UtilitySlice &
   FileProcessingSlice &
   TextStyleSlice &
+  ColorHistorySlice &
   UndoRedoSlice;
 
 // Create the unified store
@@ -46,6 +51,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         ...createUtilitySlice(...a),
         ...createFileProcessingSlice(...a),
         ...createTextStyleSlice(...a),
+        ...createColorHistorySlice(...a),
         ...createUndoRedoSlice(...a),
       })),
       {
@@ -75,6 +81,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             isLooping: state.playback.isLooping,
           },
           textStyle: state.textStyle,
+          colorHistory: state.colorHistory,
           isAutoSaveEnabled: state.isAutoSaveEnabled,
           // Don't persist undo/redo history - it should reset on app restart
           // undoStack: [],
