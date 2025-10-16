@@ -1012,6 +1012,20 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         // Get applied style for container alignment
         const appliedStyle = getTextStyleForSubtitle(textStyle.activeStyle);
 
+        // Calculate responsive font size based on zoom level
+        // Base size scales with video height, then multiply by preview scale for zoom responsiveness
+        const baseFontSize = Math.max(18, videoHeight * 0.02);
+        const responsiveFontSize = baseFontSize * preview.previewScale;
+
+        // Scale padding and effects with zoom level
+        const scaledPaddingVertical = 2 * preview.previewScale;
+        const scaledPaddingHorizontal = 8 * preview.previewScale;
+
+        // Calculate responsive horizontal padding based on actual width (5% of actual width)
+        const videoWidth = activeVideoTrack?.width || preview.canvasWidth;
+        const scaledHorizontalPadding =
+          videoWidth * 0.01 * preview.previewScale;
+
         return (
           <div
             className="absolute inset-0 pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
@@ -1030,25 +1044,39 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                     ? 'flex-end'
                     : 'center',
               justifyContent: 'flex-end',
-              paddingBottom: '20px',
-              paddingLeft: '5%',
-              paddingRight: '5%',
+              paddingBottom: `${20 * preview.previewScale}px`,
+              paddingLeft: `${scaledHorizontalPadding}px`,
+              paddingRight: `${scaledHorizontalPadding}px`,
             }}
           >
             {activeSubs.map((track) => {
-              // Build glow filter if enabled - subtle glow effect
+              // Build glow filter if enabled - scale glow with zoom level
+              const glowRadius1 = 5 * preview.previewScale;
+              const glowRadius2 = 10 * preview.previewScale;
               const glowStyle = (appliedStyle as any).hasGlow
                 ? {
-                    filter: `drop-shadow(0 0 5px ${appliedStyle.color}) drop-shadow(0 0 10px ${appliedStyle.color})`,
+                    filter: `drop-shadow(0 0 ${glowRadius1}px ${appliedStyle.color}) drop-shadow(0 0 ${glowRadius2}px ${appliedStyle.color})`,
                   }
                 : {};
+
+              // Scale text shadow with zoom level if present
+              let scaledTextShadow = appliedStyle.textShadow;
+              if (scaledTextShadow && preview.previewScale !== 1) {
+                // Parse and scale text shadow values
+                scaledTextShadow = scaledTextShadow.replace(
+                  /(\d+\.?\d*)px/g,
+                  (match: string, value: string) => {
+                    return `${parseFloat(value) * preview.previewScale}px`;
+                  },
+                );
+              }
 
               return (
                 <div
                   key={track.id}
                   style={{
-                    // Apply all text styles from getTextStyleForSubtitle
-                    fontSize: `${Math.max(18, videoHeight * 0.02)}px`,
+                    // Apply all text styles from getTextStyleForSubtitle with zoom responsiveness
+                    fontSize: `${responsiveFontSize}px`,
                     fontFamily: appliedStyle.fontFamily,
                     fontWeight: appliedStyle.fontWeight,
                     fontStyle: appliedStyle.fontStyle,
@@ -1056,15 +1084,17 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                     textDecoration: appliedStyle.textDecoration,
                     textAlign: appliedStyle.textAlign as any,
                     lineHeight: appliedStyle.lineHeight,
-                    letterSpacing: appliedStyle.letterSpacing,
-                    textShadow: appliedStyle.textShadow,
-                    wordWrap: 'break-word' as any,
-                    whiteSpace: 'pre-wrap',
+                    letterSpacing: appliedStyle.letterSpacing
+                      ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
+                      : appliedStyle.letterSpacing,
+                    textShadow: scaledTextShadow,
+                    whiteSpace: 'pre-line', // Always preserve original line breaks from subtitle text
+                    wordBreak: 'keep-all', // Prevent breaking words unnecessarily
+                    overflowWrap: 'normal', // Don't force wrapping
                     color: appliedStyle.color,
                     backgroundColor: appliedStyle.backgroundColor,
                     opacity: appliedStyle.opacity,
-                    padding: '2px 8px',
-                    maxWidth: '90%',
+                    padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
                     ...glowStyle,
                   }}
                 >
