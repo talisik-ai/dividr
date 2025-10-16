@@ -59,7 +59,9 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'timeline',
     handler: (e) => {
       e?.preventDefault();
-      store.toggleSplitMode();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.toggleSplitMode();
     },
   },
   {
@@ -70,7 +72,9 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'timeline',
     handler: (e) => {
       e?.preventDefault();
-      store.toggleSplitMode();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.toggleSplitMode();
     },
   },
   {
@@ -81,7 +85,9 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'timeline',
     handler: (e) => {
       e?.preventDefault();
-      store.setSplitMode(false);
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.setSplitMode(false);
     },
   },
   {

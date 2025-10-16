@@ -70,19 +70,40 @@ export const useTrackShortcuts = () => {
   ]);
 
   // Selection tool (V key)
-  useHotkeys('v', trackShortcuts[10].handler, trackShortcuts[10].options, [
-    timeline.isSplitModeActive,
-  ]);
+  useHotkeys(
+    'v',
+    trackShortcuts[10].handler,
+    {
+      preventDefault: true,
+      enableOnFormTags: false,
+      ...trackShortcuts[10].options,
+    },
+    [timeline.isSplitModeActive],
+  );
 
   // Toggle split mode (B key)
-  useHotkeys('b', trackShortcuts[11].handler, trackShortcuts[11].options, [
-    timeline.isSplitModeActive,
-  ]);
+  useHotkeys(
+    'b',
+    trackShortcuts[11].handler,
+    {
+      preventDefault: true,
+      enableOnFormTags: false,
+      ...trackShortcuts[11].options,
+    },
+    [timeline.isSplitModeActive],
+  );
 
   // Toggle split mode (C key)
-  useHotkeys('c', trackShortcuts[12].handler, trackShortcuts[12].options, [
-    timeline.isSplitModeActive,
-  ]);
+  useHotkeys(
+    'c',
+    trackShortcuts[12].handler,
+    {
+      preventDefault: true,
+      enableOnFormTags: false,
+      ...trackShortcuts[12].options,
+    },
+    [timeline.isSplitModeActive],
+  );
 
   // Toggle mute
   useHotkeys('m', trackShortcuts[13].handler, trackShortcuts[13].options, [

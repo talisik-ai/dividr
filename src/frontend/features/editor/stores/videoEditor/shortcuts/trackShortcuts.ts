@@ -398,7 +398,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     handler: (e) => {
       e?.preventDefault();
       // Exit split mode to return to selection tool
-      store.setSplitMode(false);
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.setSplitMode(false);
     },
   },
   {
@@ -409,7 +411,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'track',
     handler: (e) => {
       e?.preventDefault();
-      store.toggleSplitMode();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.toggleSplitMode();
     },
   },
   {
@@ -420,7 +424,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'track',
     handler: (e) => {
       e?.preventDefault();
-      store.toggleSplitMode();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.toggleSplitMode();
     },
   },
   {

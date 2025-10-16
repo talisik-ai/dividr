@@ -518,6 +518,8 @@ const ModeSelector: React.FC = React.memo(() => {
           <span>Slice Tool</span>
           <DropdownMenuShortcut>
             <Kbd>B</Kbd>
+            <span className="text-muted-foreground mx-1">/</span>
+            <Kbd>C</Kbd>
           </DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuContent>
