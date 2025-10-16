@@ -39,67 +39,97 @@ export const useTrackShortcuts = () => {
     timeline.selectedTrackIds,
   ]);
 
+  // Copy track (Ctrl+C)
+  useHotkeys('ctrl+c', trackShortcuts[4].handler, trackShortcuts[4].options, [
+    timeline.selectedTrackIds,
+  ]);
+
+  // Copy track (Cmd+C)
+  useHotkeys('cmd+c', trackShortcuts[5].handler, trackShortcuts[5].options, [
+    timeline.selectedTrackIds,
+  ]);
+
+  // Cut track (Ctrl+X)
+  useHotkeys('ctrl+x', trackShortcuts[6].handler, trackShortcuts[6].options, [
+    timeline.selectedTrackIds,
+  ]);
+
+  // Cut track (Cmd+X)
+  useHotkeys('cmd+x', trackShortcuts[7].handler, trackShortcuts[7].options, [
+    timeline.selectedTrackIds,
+  ]);
+
+  // Paste track (Ctrl+V)
+  useHotkeys('ctrl+v', trackShortcuts[8].handler, trackShortcuts[8].options, [
+    timeline.selectedTrackIds,
+  ]);
+
+  // Paste track (Cmd+V)
+  useHotkeys('cmd+v', trackShortcuts[9].handler, trackShortcuts[9].options, [
+    timeline.selectedTrackIds,
+  ]);
+
   // Selection tool (V key)
-  useHotkeys('v', trackShortcuts[4].handler, trackShortcuts[4].options, [
+  useHotkeys('v', trackShortcuts[10].handler, trackShortcuts[10].options, [
     timeline.isSplitModeActive,
   ]);
 
   // Toggle split mode (B key)
-  useHotkeys('b', trackShortcuts[5].handler, trackShortcuts[5].options, [
+  useHotkeys('b', trackShortcuts[11].handler, trackShortcuts[11].options, [
     timeline.isSplitModeActive,
   ]);
 
   // Toggle split mode (C key)
-  useHotkeys('c', trackShortcuts[6].handler, trackShortcuts[6].options, [
+  useHotkeys('c', trackShortcuts[12].handler, trackShortcuts[12].options, [
     timeline.isSplitModeActive,
   ]);
 
   // Toggle mute
-  useHotkeys('m', trackShortcuts[7].handler, trackShortcuts[7].options, [
+  useHotkeys('m', trackShortcuts[13].handler, trackShortcuts[13].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Delete track (Del)
-  useHotkeys('del', trackShortcuts[8].handler, trackShortcuts[8].options, [
+  useHotkeys('del', trackShortcuts[14].handler, trackShortcuts[14].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Delete track (Backspace)
   useHotkeys(
     'backspace',
-    trackShortcuts[9].handler,
-    trackShortcuts[9].options,
+    trackShortcuts[15].handler,
+    trackShortcuts[15].options,
     [timeline.selectedTrackIds],
   );
 
   // Deselect all
-  useHotkeys('escape', trackShortcuts[10].handler, trackShortcuts[10].options, [
+  useHotkeys('escape', trackShortcuts[16].handler, trackShortcuts[16].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Link clips (Ctrl+G)
-  useHotkeys('ctrl+g', trackShortcuts[11].handler, trackShortcuts[11].options, [
+  useHotkeys('ctrl+g', trackShortcuts[17].handler, trackShortcuts[17].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Link clips (Cmd+G)
-  useHotkeys('cmd+g', trackShortcuts[12].handler, trackShortcuts[12].options, [
+  useHotkeys('cmd+g', trackShortcuts[18].handler, trackShortcuts[18].options, [
     timeline.selectedTrackIds,
   ]);
 
   // Unlink clips (Ctrl+Shift+G)
   useHotkeys(
     'ctrl+shift+g',
-    trackShortcuts[13].handler,
-    trackShortcuts[13].options,
+    trackShortcuts[19].handler,
+    trackShortcuts[19].options,
     [timeline.selectedTrackIds],
   );
 
   // Unlink clips (Cmd+Shift+G)
   useHotkeys(
     'cmd+shift+g',
-    trackShortcuts[14].handler,
-    trackShortcuts[14].options,
+    trackShortcuts[20].handler,
+    trackShortcuts[20].options,
     [timeline.selectedTrackIds],
   );
 

@@ -242,6 +242,154 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     },
   },
   {
+    id: 'track-copy-ctrl',
+    keys: 'ctrl+c',
+    description: 'Copy Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+      const selectedTracks = freshState.timeline?.selectedTrackIds || [];
+
+      if (selectedTracks.length === 0) {
+        console.warn('[Copy] No tracks selected');
+        return;
+      }
+
+      freshState.copyTracks(selectedTracks);
+      console.log(`[Copy] Copied ${selectedTracks.length} track(s)`);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-copy-cmd',
+    keys: 'cmd+c',
+    description: 'Copy Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+      const selectedTracks = freshState.timeline?.selectedTrackIds || [];
+
+      if (selectedTracks.length === 0) {
+        console.warn('[Copy] No tracks selected');
+        return;
+      }
+
+      freshState.copyTracks(selectedTracks);
+      console.log(`[Copy] Copied ${selectedTracks.length} track(s)`);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-cut-ctrl',
+    keys: 'ctrl+x',
+    description: 'Cut Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+      const selectedTracks = freshState.timeline?.selectedTrackIds || [];
+
+      if (selectedTracks.length === 0) {
+        console.warn('[Cut] No tracks selected');
+        return;
+      }
+
+      freshState.cutTracks(selectedTracks);
+      console.log(`[Cut] Cut ${selectedTracks.length} track(s)`);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-cut-cmd',
+    keys: 'cmd+x',
+    description: 'Cut Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+      const selectedTracks = freshState.timeline?.selectedTrackIds || [];
+
+      if (selectedTracks.length === 0) {
+        console.warn('[Cut] No tracks selected');
+        return;
+      }
+
+      freshState.cutTracks(selectedTracks);
+      console.log(`[Cut] Cut ${selectedTracks.length} track(s)`);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-paste-ctrl',
+    keys: 'ctrl+v',
+    description: 'Paste Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+
+      if (!freshState.hasClipboardData()) {
+        console.warn('[Paste] No clipboard data to paste');
+        return;
+      }
+
+      freshState.pasteTracks();
+      console.log('[Paste] Pasted tracks from clipboard');
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-paste-cmd',
+    keys: 'cmd+v',
+    description: 'Paste Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+
+      if (!freshState.hasClipboardData()) {
+        console.warn('[Paste] No clipboard data to paste');
+        return;
+      }
+
+      freshState.pasteTracks();
+      console.log('[Paste] Pasted tracks from clipboard');
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
     id: 'track-selection-tool',
     keys: 'v',
     description: 'Selection Tool',

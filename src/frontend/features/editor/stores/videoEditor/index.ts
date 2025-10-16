@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist, subscribeWithSelector } from 'zustand/middleware';
+import { ClipboardSlice, createClipboardSlice } from './slices/clipboardSlice';
 import {
   ColorHistorySlice,
   createColorHistorySlice,
@@ -34,6 +35,7 @@ type VideoEditorStore = TimelineSlice &
   FileProcessingSlice &
   TextStyleSlice &
   ColorHistorySlice &
+  ClipboardSlice &
   UndoRedoSlice;
 
 // Create the unified store
@@ -52,6 +54,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         ...createFileProcessingSlice(...a),
         ...createTextStyleSlice(...a),
         ...createColorHistorySlice(...a),
+        ...createClipboardSlice(...a),
         ...createUndoRedoSlice(...a),
       })),
       {

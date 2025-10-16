@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ShortcutConfig } from './types';
 
+// Import the store directly to avoid stale closures
+import { useVideoEditorStore } from '../index';
+
 /**
  * Timeline shortcuts - active when timeline is focused
  * These include zoom, in/out points, snapping, and split mode
@@ -89,8 +92,10 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'timeline',
     handler: (e) => {
       e?.preventDefault();
-      const allTrackIds = store.tracks.map((track: any) => track.id);
-      store.setSelectedTracks(allTrackIds);
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      const allTrackIds = freshState.tracks.map((track: any) => track.id);
+      freshState.setSelectedTracks(allTrackIds);
     },
     options: {
       preventDefault: true,
@@ -105,8 +110,10 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'timeline',
     handler: (e) => {
       e?.preventDefault();
-      const allTrackIds = store.tracks.map((track: any) => track.id);
-      store.setSelectedTracks(allTrackIds);
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      const allTrackIds = freshState.tracks.map((track: any) => track.id);
+      freshState.setSelectedTracks(allTrackIds);
     },
     options: {
       preventDefault: true,

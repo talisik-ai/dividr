@@ -17,11 +17,15 @@ import {
 import { useVideoEditorStore } from '@/frontend/features/editor/stores/videoEditor/index';
 import {
   closeProjectAction,
+  copyTracksAction,
+  cutTracksAction,
   deselectAllTracksAction,
+  duplicateTracksAction,
   exportVideoAction,
   importMediaAction,
   newProjectAction,
   openProjectAction,
+  pasteTracksAction,
   redoAction,
   saveProjectAction,
   saveProjectAsAction,
@@ -56,6 +60,15 @@ export const AppMenuBar = () => {
   const selectedTrackIds = useVideoEditorStore(
     (state) => state.timeline.selectedTrackIds,
   );
+
+  // Clipboard state
+  const copyTracks = useVideoEditorStore((state) => state.copyTracks);
+  const cutTracks = useVideoEditorStore((state) => state.cutTracks);
+  const pasteTracks = useVideoEditorStore((state) => state.pasteTracks);
+  const hasClipboardData = useVideoEditorStore(
+    (state) => state.hasClipboardData,
+  );
+  const duplicateTrack = useVideoEditorStore((state) => state.duplicateTrack);
 
   // Project save state
   const { lastSavedAt, isSaving, currentProject } = useProjectStore();
@@ -118,6 +131,28 @@ export const AppMenuBar = () => {
 
   const handleDeselectAll = () => {
     deselectAllTracksAction(setSelectedTracks, selectedTrackIds);
+  };
+
+  // Clipboard action handlers
+  const handleCopy = () => {
+    copyTracksAction(selectedTrackIds, copyTracks);
+  };
+
+  const handleCut = () => {
+    cutTracksAction(selectedTrackIds, cutTracks);
+  };
+
+  const handlePaste = () => {
+    pasteTracksAction(hasClipboardData, pasteTracks);
+  };
+
+  const handleDuplicate = () => {
+    duplicateTracksAction(
+      selectedTrackIds,
+      tracks,
+      duplicateTrack,
+      setSelectedTracks,
+    );
   };
 
   return (
@@ -235,7 +270,10 @@ export const AppMenuBar = () => {
               </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem disabled>
+            <MenubarItem
+              onClick={handleCut}
+              disabled={selectedTrackIds.length === 0}
+            >
               Cut{' '}
               <MenubarShortcut>
                 <KbdGroup>
@@ -244,7 +282,10 @@ export const AppMenuBar = () => {
                 </KbdGroup>
               </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
+            <MenubarItem
+              onClick={handleCopy}
+              disabled={selectedTrackIds.length === 0}
+            >
               Copy{' '}
               <MenubarShortcut>
                 <KbdGroup>
@@ -253,12 +294,24 @@ export const AppMenuBar = () => {
                 </KbdGroup>
               </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
+            <MenubarItem onClick={handlePaste} disabled={!hasClipboardData()}>
               Paste{' '}
               <MenubarShortcut>
                 <KbdGroup>
                   <Kbd>Ctrl</Kbd>
                   <Kbd>V</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem
+              onClick={handleDuplicate}
+              disabled={selectedTrackIds.length === 0}
+            >
+              Duplicate{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>D</Kbd>
                 </KbdGroup>
               </MenubarShortcut>
             </MenubarItem>
