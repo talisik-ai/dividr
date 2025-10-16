@@ -4,10 +4,12 @@ import { ShortcutConfig } from './types';
 /**
  * Preview shortcuts - active when focus is on the video preview area
  * These include preview interaction mode shortcuts (Select, Hand, Fullscreen)
+ * and preview zoom shortcuts
  */
 export const createPreviewShortcuts = (
   getStore: () => any,
 ): ShortcutConfig[] => [
+  // Preview Tools
   {
     id: 'preview-select-tool',
     keys: 'v',
@@ -46,6 +48,110 @@ export const createPreviewShortcuts = (
     handler: (e) => {
       e?.preventDefault();
       getStore().toggleFullscreen();
+    },
+  },
+
+  // Preview Zoom Shortcuts
+  {
+    id: 'preview-zoom-25',
+    keys: 'shift+0',
+    description: 'Zoom to 25%',
+    category: 'Preview Zoom',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      getStore().setPreviewScale(0.25);
+    },
+  },
+  {
+    id: 'preview-zoom-50',
+    keys: 'shift+1',
+    description: 'Zoom to 50%',
+    category: 'Preview Zoom',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      getStore().setPreviewScale(0.5);
+    },
+  },
+  {
+    id: 'preview-zoom-fit',
+    keys: 'shift+f',
+    description: 'Zoom to Fit (100%)',
+    category: 'Preview Zoom',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      getStore().setPreviewScale(1);
+      getStore().resetPreviewPan();
+    },
+  },
+  {
+    id: 'preview-zoom-200',
+    keys: 'shift+2',
+    description: 'Zoom to 200%',
+    category: 'Preview Zoom',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      getStore().setPreviewScale(2);
+    },
+  },
+  {
+    id: 'preview-zoom-400',
+    keys: 'shift+3',
+    description: 'Zoom to 400%',
+    category: 'Preview Zoom',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      getStore().setPreviewScale(4);
+    },
+  },
+  {
+    id: 'preview-zoom-in',
+    keys: 'ctrl+equal',
+    description: 'Zoom In (Preview)',
+    category: 'Preview Zoom',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      const store = getStore();
+      const currentScale = store.preview.previewScale;
+      store.setPreviewScale(Math.min(currentScale * 1.2, 8));
+    },
+  },
+  {
+    id: 'preview-zoom-out',
+    keys: 'ctrl+minus',
+    description: 'Zoom Out (Preview)',
+    category: 'Preview Zoom',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      const store = getStore();
+      const currentScale = store.preview.previewScale;
+      store.setPreviewScale(Math.max(currentScale / 1.2, 0.1));
+    },
+  },
+  {
+    id: 'preview-zoom-reset',
+    keys: 'ctrl+0',
+    description: 'Reset Zoom (100%)',
+    category: 'Preview Zoom',
+    scope: 'preview',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      getStore().setPreviewScale(1);
+      getStore().resetPreviewPan();
     },
   },
 ];
