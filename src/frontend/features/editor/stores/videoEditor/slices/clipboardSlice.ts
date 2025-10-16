@@ -2,7 +2,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
 import { VideoTrack } from '../types/track.types';
-import { findNearestAvailablePosition } from '../utils/trackHelpers';
 
 /**
  * ClipboardData - Represents copied/cut track data
@@ -211,6 +210,27 @@ export const createClipboardSlice: StateCreator<
       linkedPairs.set(track.id, newId);
     });
 
+    // Calculate the minimum start frame of ALL clipboard tracks (for maintaining relative positions)
+    const minStartFrame = Math.min(
+      ...clipboardData.tracks.map((track) => track.startFrame),
+    );
+
+    // Find the unified insertion point (end of timeline across all track types)
+    const allTrackTypes = [...new Set(clipboardData.tracks.map((t) => t.type))];
+    let maxInsertionPoint = 0;
+
+    allTrackTypes.forEach((trackType) => {
+      const existingTracksOfType = state.tracks.filter(
+        (t: VideoTrack) => t.type === trackType,
+      );
+      if (existingTracksOfType.length > 0) {
+        const maxEnd = Math.max(
+          ...existingTracksOfType.map((t: VideoTrack) => t.endFrame),
+        );
+        maxInsertionPoint = Math.max(maxInsertionPoint, maxEnd);
+      }
+    });
+
     // Group tracks by whether they are linked pairs or singles
     const processedIds = new Set<string>();
 
@@ -227,6 +247,9 @@ export const createClipboardSlice: StateCreator<
 
       const duration = track.endFrame - track.startFrame;
 
+      // Calculate relative offset from the minimum start frame (preserve spacing)
+      const relativeOffset = track.startFrame - minStartFrame;
+
       // Check if this track is part of a linked pair in the clipboard
       const isPartOfLinkedPair =
         track.isLinked &&
@@ -234,7 +257,7 @@ export const createClipboardSlice: StateCreator<
         clipboardData.tracks.some((t) => t.id === track.linkedTrackId);
 
       if (isPartOfLinkedPair && track.linkedTrackId) {
-        // Handle linked pair - replicate duplicate logic for linked tracks
+        // Handle linked pair
         const linkedTrack = clipboardData.tracks.find(
           (t) => t.id === track.linkedTrackId,
         );
@@ -252,43 +275,12 @@ export const createClipboardSlice: StateCreator<
           }
 
           const linkedDuration = linkedTrack.endFrame - linkedTrack.startFrame;
+          const linkedRelativeOffset = linkedTrack.startFrame - minStartFrame;
 
-          // Calculate relative offset between linked tracks (preserve spacing)
-          const relativeOffset = linkedTrack.startFrame - track.startFrame;
-
-          // Find the latest end frame across ALL tracks of each type in the current timeline
-          const existingTracksOfSameType = state.tracks.filter(
-            (t: VideoTrack) => t.type === track.type,
-          );
-          const existingLinkedTracksOfSameType = state.tracks.filter(
-            (t: VideoTrack) => t.type === linkedTrack.type,
-          );
-
-          // Get the maximum end frame for each track type from CURRENT timeline
-          const lastVideoEnd =
-            existingTracksOfSameType.length > 0
-              ? Math.max(
-                  ...existingTracksOfSameType.map(
-                    (t: VideoTrack) => t.endFrame,
-                  ),
-                )
-              : 0;
-          const lastAudioEnd =
-            existingLinkedTracksOfSameType.length > 0
-              ? Math.max(
-                  ...existingLinkedTracksOfSameType.map(
-                    (t: VideoTrack) => t.endFrame,
-                  ),
-                )
-              : 0;
-
-          // Use the MAXIMUM of current timeline end frames as the unified insertion point
-          // This ensures Cut+Paste places tracks at the end of the current timeline, not old positions
-          const unifiedInsertionPoint = Math.max(lastVideoEnd, lastAudioEnd);
-
-          // Both tracks start at the unified insertion point maintaining relative offset
-          const finalStartFrame = unifiedInsertionPoint;
-          const linkedFinalStartFrame = finalStartFrame + relativeOffset;
+          // Both tracks maintain their relative positions from the group
+          const finalStartFrame = maxInsertionPoint + relativeOffset;
+          const linkedFinalStartFrame =
+            maxInsertionPoint + linkedRelativeOffset;
 
           // Create pasted tracks with ALL metadata preserved
           const pastedTrack: VideoTrack = {
@@ -319,29 +311,11 @@ export const createClipboardSlice: StateCreator<
           );
         }
       } else {
-        // Handle single track (unlinked or only one side copied)
+        // Handle single/unlinked track
         processedIds.add(track.id);
 
-        // Find existing tracks of the same type
-        const existingTracksOfSameType = state.tracks.filter(
-          (t: VideoTrack) => t.type === track.type,
-        );
-
-        // Proposed start: place at the end of the timeline for this track type
-        // This ensures Cut+Paste behaves like Copy+Paste and Duplicate
-        const proposedStartFrame =
-          existingTracksOfSameType.length > 0
-            ? Math.max(
-                ...existingTracksOfSameType.map((t: VideoTrack) => t.endFrame),
-              )
-            : 0;
-
-        // Use the smart positioning function to find the best spot
-        const finalStartFrame = findNearestAvailablePosition(
-          proposedStartFrame,
-          duration,
-          existingTracksOfSameType,
-        );
+        // Maintain relative position from the group
+        const finalStartFrame = maxInsertionPoint + relativeOffset;
 
         // Create pasted track with ALL metadata preserved
         const pastedTrack: VideoTrack = {
@@ -378,7 +352,7 @@ export const createClipboardSlice: StateCreator<
     state.markUnsavedChanges?.();
 
     console.log(
-      `[Clipboard] Pasted ${newTrackIds.length} track(s) with preserved relationships`,
+      `[Clipboard] Pasted ${newTrackIds.length} track(s) with preserved relationships and spacing`,
     );
   },
 

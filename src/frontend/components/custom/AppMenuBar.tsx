@@ -69,6 +69,9 @@ export const AppMenuBar = () => {
     (state) => state.hasClipboardData,
   );
   const duplicateTrack = useVideoEditorStore((state) => state.duplicateTrack);
+  const removeSelectedTracks = useVideoEditorStore(
+    (state) => state.removeSelectedTracks,
+  );
 
   // Project save state
   const { lastSavedAt, isSaving, currentProject } = useProjectStore();
@@ -153,6 +156,13 @@ export const AppMenuBar = () => {
       duplicateTrack,
       setSelectedTracks,
     );
+  };
+
+  const handleDelete = () => {
+    if (selectedTrackIds.length === 0) {
+      return;
+    }
+    removeSelectedTracks();
   };
 
   return (
@@ -315,7 +325,11 @@ export const AppMenuBar = () => {
                 </KbdGroup>
               </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
+            <MenubarSeparator />
+            <MenubarItem
+              onClick={handleDelete}
+              disabled={selectedTrackIds.length === 0}
+            >
               Delete{' '}
               <MenubarShortcut>
                 <KbdGroup>
