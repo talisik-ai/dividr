@@ -832,7 +832,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         </div>
 
         {/* Drop hint */}
-        {allTracksCount === 0 && rowDef.id === 'subtitle' && (
+        {allTracksCount === 0 && rowDef.id === 'video' && (
           <div
             className={`absolute inset-0 flex items-center px-8 cursor-pointer transition-all duration-200 rounded-lg border-2 border-dashed
             ${
