@@ -31,7 +31,7 @@ export const closeProjectAction = async (
       onConfirm: async () => {
         try {
           // Get the video editor store
-          const { useVideoEditorStore } = await import('../../index');
+          const { useVideoEditorStore } = await import('../../../index');
           const videoEditorStore = useVideoEditorStore.getState();
 
           // Clear current project

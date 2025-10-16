@@ -17,12 +17,16 @@ import {
 import { useVideoEditorStore } from '@/frontend/features/editor/stores/videoEditor/index';
 import {
   closeProjectAction,
+  deselectAllTracksAction,
   exportVideoAction,
   importMediaAction,
   newProjectAction,
   openProjectAction,
+  redoAction,
   saveProjectAction,
   saveProjectAsAction,
+  selectAllTracksAction,
+  undoAction,
 } from '@/frontend/features/editor/stores/videoEditor/shortcuts/actions';
 import { useProjectShortcutDialog } from '@/frontend/features/editor/stores/videoEditor/shortcuts/hooks/useProjectShortcutDialog';
 import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
@@ -38,6 +42,20 @@ export const AppMenuBar = () => {
     (state) => state.importMediaFromDialog,
   );
   const tracks = useVideoEditorStore((state) => state.tracks);
+
+  // Undo/Redo state
+  const undo = useVideoEditorStore((state) => state.undo);
+  const redo = useVideoEditorStore((state) => state.redo);
+  const canUndo = useVideoEditorStore((state) => state.canUndo);
+  const canRedo = useVideoEditorStore((state) => state.canRedo);
+
+  // Track selection state
+  const setSelectedTracks = useVideoEditorStore(
+    (state) => state.setSelectedTracks,
+  );
+  const selectedTrackIds = useVideoEditorStore(
+    (state) => state.timeline.selectedTrackIds,
+  );
 
   // Project save state
   const { lastSavedAt, isSaving, currentProject } = useProjectStore();
@@ -83,6 +101,23 @@ export const AppMenuBar = () => {
 
   const handleCloseProject = () => {
     closeProjectAction(navigate, showConfirmation).catch(console.error);
+  };
+
+  // Edit action handlers
+  const handleUndo = () => {
+    undoAction(undo, canUndo);
+  };
+
+  const handleRedo = () => {
+    redoAction(redo, canRedo);
+  };
+
+  const handleSelectAll = () => {
+    selectAllTracksAction(tracks, setSelectedTracks);
+  };
+
+  const handleDeselectAll = () => {
+    deselectAllTracksAction(setSelectedTracks, selectedTrackIds);
   };
 
   return (
@@ -180,7 +215,7 @@ export const AppMenuBar = () => {
         <MenubarMenu>
           <MenubarTrigger>Edit</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem disabled>
+            <MenubarItem onClick={handleUndo} disabled={!canUndo()}>
               Undo{' '}
               <MenubarShortcut>
                 <KbdGroup>
@@ -189,7 +224,7 @@ export const AppMenuBar = () => {
                 </KbdGroup>
               </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
+            <MenubarItem onClick={handleRedo} disabled={!canRedo()}>
               Redo{' '}
               <MenubarShortcut>
                 <KbdGroup>
@@ -236,7 +271,10 @@ export const AppMenuBar = () => {
               </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem disabled>
+            <MenubarItem
+              onClick={handleSelectAll}
+              disabled={tracks.length === 0}
+            >
               Select All{' '}
               <MenubarShortcut>
                 <KbdGroup>
@@ -245,7 +283,12 @@ export const AppMenuBar = () => {
                 </KbdGroup>
               </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>Deselect All</MenubarItem>
+            <MenubarItem
+              onClick={handleDeselectAll}
+              disabled={selectedTrackIds.length === 0}
+            >
+              Deselect All
+            </MenubarItem>
             <MenubarSeparator />
             <MenubarSub>
               <MenubarSubTrigger disabled>Timeline</MenubarSubTrigger>
