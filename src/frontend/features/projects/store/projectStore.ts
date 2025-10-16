@@ -21,6 +21,10 @@ interface ProjectStore {
   isLoading: boolean;
   isInitialized: boolean;
 
+  // Save state tracking
+  lastSavedAt: string | null;
+  isSaving: boolean;
+
   // Actions for current project
   setCurrentProject: (project: ProjectData | null) => void;
   updateCurrentProjectMetadata: (
@@ -56,6 +60,8 @@ export const useProjectStore = create<ProjectStore>()(
     projects: [] as ProjectSummary[],
     isLoading: false,
     isInitialized: false,
+    lastSavedAt: null as string | null,
+    isSaving: false,
 
     // Current project actions
     setCurrentProject: (project) => set({ currentProject: project }),
@@ -158,8 +164,11 @@ export const useProjectStore = create<ProjectStore>()(
         // Mark as opened
         await projectService.markProjectOpened(id);
 
-        // Set as current project
-        set({ currentProject: project });
+        // Set as current project and mark as saved (just opened)
+        set({
+          currentProject: project,
+          lastSavedAt: new Date().toISOString(),
+        });
 
         const videoEditorStore = useVideoEditorStore.getState();
         await videoEditorStore.loadProjectData(id);
@@ -180,16 +189,19 @@ export const useProjectStore = create<ProjectStore>()(
         throw new Error('No current project to save');
       }
 
-      set({ isLoading: true });
+      set({ isSaving: true });
 
       try {
         await projectService.updateProject(state.currentProject);
         await get().loadProjects();
+
+        // Update last saved timestamp
+        set({ lastSavedAt: new Date().toISOString() });
       } catch (error) {
         console.error('Failed to save project:', error);
         throw error;
       } finally {
-        set({ isLoading: false });
+        set({ isSaving: false });
       }
     },
 
@@ -398,6 +410,8 @@ export const useProjectStore = create<ProjectStore>()(
         projects: [],
         isLoading: false,
         isInitialized: false,
+        lastSavedAt: null,
+        isSaving: false,
       });
 
       // Also reset VideoEditorStore

@@ -259,7 +259,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     }, [timeline.currentFrame]);
 
     // Centralized keyboard shortcuts
-    useGlobalShortcuts();
+    const { ConfirmationDialog } = useGlobalShortcuts();
     useTimelineShortcutsV2();
     useTrackShortcuts();
     useUndoRedoShortcuts();
@@ -1147,6 +1147,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             </div>
           </div>
         </div>
+
+        {/* Project Shortcut Confirmation Dialog */}
+        <ConfirmationDialog />
       </div>
     );
   },

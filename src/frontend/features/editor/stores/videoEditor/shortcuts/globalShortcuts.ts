@@ -1,14 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import {
+  createProjectShortcuts,
+  type ProjectShortcutHandlers,
+} from './projectShortcuts';
 import { ShortcutConfig } from './types';
 
 /**
  * Global shortcuts - active everywhere in the video editor
- * These include playback controls and navigation shortcuts
+ * These include playback controls, navigation shortcuts, and project-level actions
  */
 export const createGlobalShortcuts = (
   getStore: () => any,
   effectiveEndFrame: number,
+  projectHandlers: ProjectShortcutHandlers,
 ): ShortcutConfig[] => [
+  // Project-level shortcuts (New, Open, Save, Import, Export, Close)
+  ...createProjectShortcuts(getStore, projectHandlers),
   {
     id: 'playback-toggle',
     keys: 'space',

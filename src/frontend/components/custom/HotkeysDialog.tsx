@@ -90,6 +90,9 @@ export const HotkeysDialog: React.FC<HotkeysDialogProps> = ({
 }) => {
   // Define professional category order and grouping like CapCut/Premiere Pro
   const categoryOrder = [
+    // Project Management
+    'Project',
+
     // Core Operations
     'Edit',
     'Playback',
@@ -202,6 +205,10 @@ export const HotkeysDialog: React.FC<HotkeysDialogProps> = ({
   // Create structured groups with visual separators
   const createGroupedData = () => {
     const groups = [
+      {
+        name: 'PROJECT',
+        categories: ['Project'],
+      },
       {
         name: 'ESSENTIALS',
         categories: ['Edit', 'Playback'],
