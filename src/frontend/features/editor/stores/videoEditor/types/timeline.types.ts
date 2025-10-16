@@ -10,6 +10,7 @@ export interface TimelineState {
   playheadVisible: boolean;
   snapEnabled: boolean;
   isSplitModeActive: boolean;
+  visibleTrackRows: string[]; // Track row IDs that are visible (e.g., ['video', 'audio', 'subtitle', 'logo'])
 }
 
 export interface SnapPoint {

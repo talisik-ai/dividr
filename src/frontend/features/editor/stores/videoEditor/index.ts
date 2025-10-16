@@ -65,6 +65,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             fps: state.timeline.fps,
             zoom: state.timeline.zoom,
             snapEnabled: state.timeline.snapEnabled,
+            visibleTrackRows: state.timeline.visibleTrackRows,
           },
           preview: {
             canvasWidth: state.preview.canvasWidth,
@@ -89,6 +90,35 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
           // Don't persist undo/redo history - it should reset on app restart
           // undoStack: [],
           // redoStack: [],
+        }),
+        // Merge persisted state with default state to ensure all fields exist
+        merge: (
+          persistedState: Partial<VideoEditorStore> | undefined,
+          currentState: VideoEditorStore,
+        ) => ({
+          ...currentState,
+          timeline: {
+            ...currentState.timeline,
+            ...(persistedState?.timeline || {}),
+            // Ensure visibleTrackRows has a fallback
+            visibleTrackRows: persistedState?.timeline?.visibleTrackRows || [
+              'video',
+              'audio',
+            ],
+          },
+          preview: {
+            ...currentState.preview,
+            ...(persistedState?.preview || {}),
+          },
+          playback: {
+            ...currentState.playback,
+            ...(persistedState?.playback || {}),
+          },
+          textStyle: persistedState?.textStyle || currentState.textStyle,
+          colorHistory:
+            persistedState?.colorHistory || currentState.colorHistory,
+          isAutoSaveEnabled:
+            persistedState?.isAutoSaveEnabled ?? currentState.isAutoSaveEnabled,
         }),
       },
     ),

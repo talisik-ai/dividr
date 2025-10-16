@@ -904,6 +904,11 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       importMediaFromDialog,
     } = useVideoEditorStore();
 
+    // Subscribe to visible track rows from timeline state with fallback
+    const visibleTrackRows = useVideoEditorStore(
+      (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
+    );
+
     const handleTrackSelect = useCallback(
       (trackId: string, multiSelect = false) => {
         // Always get current state fresh from the store to avoid stale closures
@@ -1055,6 +1060,11 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       ],
     );
 
+    // Filter track rows to only show visible ones
+    const visibleRows = TRACK_ROWS.filter((row) =>
+      visibleTrackRows.includes(row.id),
+    );
+
     return (
       <div
         className="relative min-h-full overflow-visible"
@@ -1063,8 +1073,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           minWidth: timelineWidth,
         }}
       >
-        {/* Render each track row */}
-        {TRACK_ROWS.map((rowDef) => (
+        {/* Render only visible track rows */}
+        {visibleRows.map((rowDef) => (
           <TrackRow
             key={rowDef.id}
             rowDef={rowDef}

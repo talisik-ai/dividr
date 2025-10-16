@@ -345,6 +345,22 @@ export const createTracksSlice: StateCreator<
         tracks: [...state.tracks, track],
       }));
 
+      // Auto-create track row for subtitle and image types
+      // Use setTimeout to avoid synchronous state updates that can cause loops
+      if (trackData.type === 'subtitle') {
+        setTimeout(() => {
+          const currentState = get() as any;
+          currentState.ensureTrackRowVisible?.('subtitle');
+          console.log('📝 Auto-created Subtitle track row');
+        }, 0);
+      } else if (trackData.type === 'image') {
+        setTimeout(() => {
+          const currentState = get() as any;
+          currentState.ensureTrackRowVisible?.('logo');
+          console.log('🖼️ Auto-created Image/Overlay track row');
+        }, 0);
+      }
+
       state.markUnsavedChanges?.();
       return id;
     }

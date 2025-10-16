@@ -21,6 +21,11 @@ export interface TimelineSlice {
   toggleSplitMode: () => void;
   setSplitMode: (active: boolean) => void;
 
+  // Track row visibility management
+  addTrackRow: (rowId: string) => void;
+  removeTrackRow: (rowId: string) => void;
+  ensureTrackRowVisible: (rowId: string) => void;
+
   // Snap functionality
   findSnapPoints: (
     currentFrame: number,
@@ -59,6 +64,7 @@ export const createTimelineSlice: StateCreator<
     playheadVisible: true,
     snapEnabled: true,
     isSplitModeActive: false,
+    visibleTrackRows: ['video', 'audio'], // Default: only Media and Audio tracks visible
   },
   duplicationFeedbackTrackIds: new Set(),
 
@@ -159,6 +165,58 @@ export const createTimelineSlice: StateCreator<
         isSplitModeActive: active,
       },
     })),
+
+  // Track row visibility management
+  addTrackRow: (rowId: string) =>
+    set((state) => {
+      if (state.timeline.visibleTrackRows.includes(rowId)) {
+        return state; // Already visible, no change
+      }
+
+      // Define the order: video, logo, subtitle, audio
+      const order = ['video', 'logo', 'subtitle', 'audio'];
+      const newRows = [...state.timeline.visibleTrackRows, rowId];
+
+      // Sort according to the defined order
+      newRows.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+
+      console.log(`✅ Added track row: ${rowId}. Visible rows:`, newRows);
+      return {
+        timeline: {
+          ...state.timeline,
+          visibleTrackRows: newRows,
+        },
+      };
+    }),
+
+  removeTrackRow: (rowId: string) =>
+    set((state) => {
+      // Don't allow removing video or audio rows (they're essential)
+      if (rowId === 'video' || rowId === 'audio') {
+        console.warn(`⚠️ Cannot remove essential track row: ${rowId}`);
+        return state;
+      }
+
+      const newRows = state.timeline.visibleTrackRows.filter(
+        (id) => id !== rowId,
+      );
+      console.log(`🗑️ Removed track row: ${rowId}. Visible rows:`, newRows);
+
+      return {
+        timeline: {
+          ...state.timeline,
+          visibleTrackRows: newRows,
+        },
+      };
+    }),
+
+  ensureTrackRowVisible: (rowId: string) => {
+    const state = get();
+    const visibleRows = state.timeline.visibleTrackRows || ['video', 'audio'];
+    if (!visibleRows.includes(rowId)) {
+      state.addTrackRow(rowId);
+    }
+  },
 
   // Snap functionality
   findSnapPoints: (currentFrame, excludeTrackId) => {

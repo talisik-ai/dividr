@@ -31,6 +31,7 @@ export const createUtilitySlice: StateCreator<
         isSplitModeActive: false,
         inPoint: undefined,
         outPoint: undefined,
+        visibleTrackRows: ['video', 'audio'], // Reset to default visible tracks
       },
       playback: {
         isPlaying: false,
