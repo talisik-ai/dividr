@@ -4,6 +4,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/frontend/components/ui/dialog';
+import { Kbd } from '@/frontend/components/ui/kbd';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
 import { shortcutRegistry } from '@/frontend/features/editor/stores/videoEditor/shortcuts';
 import { Keyboard } from 'lucide-react';
@@ -26,9 +27,9 @@ const HotkeyItem: React.FC<HotkeyItemProps> = ({ keys, description }) => {
               {(Array.isArray(keyCombo) ? keyCombo : [keyCombo]).map(
                 (key, keyIndex) => (
                   <React.Fragment key={keyIndex}>
-                    <kbd className="inline-flex items-center justify-center min-w-[28px] h-7 px-2 text-[11px] font-semibold bg-background border border-border rounded-md shadow-sm text-muted-foreground">
+                    <Kbd className="min-w-[28px] h-7 px-2 text-[11px]">
                       {key}
-                    </kbd>
+                    </Kbd>
                     {keyIndex <
                       (Array.isArray(keyCombo) ? keyCombo : [keyCombo]).length -
                         1 && (

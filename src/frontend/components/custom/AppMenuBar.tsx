@@ -1,3 +1,4 @@
+import { Kbd, KbdGroup } from '@/frontend/components/ui/kbd';
 import {
   Menubar,
   MenubarCheckboxItem,
@@ -30,10 +31,22 @@ export const AppMenuBar = () => {
           <MenubarTrigger>Home</MenubarTrigger>
           <MenubarContent>
             <MenubarItem disabled>
-              Dashboard <MenubarShortcut>⌘D</MenubarShortcut>
+              Dashboard{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>D</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>
-              Recent Projects <MenubarShortcut>⌘R</MenubarShortcut>
+              Recent Projects{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>R</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
             <MenubarItem disabled>Welcome Screen</MenubarItem>
@@ -44,16 +57,41 @@ export const AppMenuBar = () => {
           <MenubarTrigger>File</MenubarTrigger>
           <MenubarContent>
             <MenubarItem disabled>
-              New Project <MenubarShortcut>⌘N</MenubarShortcut>
+              New Project{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>N</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>
-              Open Project <MenubarShortcut>⌘O</MenubarShortcut>
+              Open Project{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>O</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>
-              Save Project <MenubarShortcut>⌘S</MenubarShortcut>
+              Save Project{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>S</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>
-              Save As... <MenubarShortcut>⇧⌘S</MenubarShortcut>
+              Save As...{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Shift</Kbd>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>S</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
             <MenubarSub>
@@ -74,7 +112,13 @@ export const AppMenuBar = () => {
             </MenubarSub>
             <MenubarSeparator />
             <MenubarItem disabled>
-              Close Project <MenubarShortcut>⌘W</MenubarShortcut>
+              Close Project{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>W</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
@@ -82,27 +126,69 @@ export const AppMenuBar = () => {
           <MenubarTrigger>Edit</MenubarTrigger>
           <MenubarContent>
             <MenubarItem disabled>
-              Undo <MenubarShortcut>⌘Z</MenubarShortcut>
+              Undo{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>Z</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>
-              Redo <MenubarShortcut>⇧⌘Z</MenubarShortcut>
+              Redo{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Shift</Kbd>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>Z</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
             <MenubarItem disabled>
-              Cut <MenubarShortcut>⌘X</MenubarShortcut>
+              Cut{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>X</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>
-              Copy <MenubarShortcut>⌘C</MenubarShortcut>
+              Copy{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>C</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>
-              Paste <MenubarShortcut>⌘V</MenubarShortcut>
+              Paste{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>V</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>
-              Delete <MenubarShortcut>⌫</MenubarShortcut>
+              Delete{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Delete</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
             <MenubarItem disabled>
-              Select All <MenubarShortcut>⌘A</MenubarShortcut>
+              Select All{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>A</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarItem disabled>Deselect All</MenubarItem>
             <MenubarSeparator />

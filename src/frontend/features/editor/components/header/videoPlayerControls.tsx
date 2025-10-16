@@ -1,4 +1,5 @@
 import { Button } from '@/frontend/components/ui/button';
+import { Kbd, KbdGroup } from '@/frontend/components/ui/kbd';
 import { Separator } from '@/frontend/components/ui/separator';
 import {
   Tooltip,
@@ -102,7 +103,9 @@ export const VideoPlayerControls = React.memo(
               <MousePointer2 />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Selection Tool (V)</TooltipContent>
+          <TooltipContent>
+            Selection Tool (<Kbd>V</Kbd>)
+          </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -123,9 +126,13 @@ export const VideoPlayerControls = React.memo(
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {isPanDisabled
-              ? 'Hand Tool (Zoom in to enable)'
-              : 'Hand Tool (H) - Pan around zoomed preview'}
+            {isPanDisabled ? (
+              'Hand Tool (Zoom in to enable)'
+            ) : (
+              <>
+                Hand Tool (<Kbd>H</Kbd>) - Pan around zoomed preview
+              </>
+            )}
           </TooltipContent>
         </Tooltip>
         <ZoomControls
@@ -148,7 +155,14 @@ export const VideoPlayerControls = React.memo(
               <Undo2 />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Undo (Ctrl+Z)</TooltipContent>
+          <TooltipContent>
+            Undo (
+            <KbdGroup>
+              <Kbd>Ctrl</Kbd>
+              <Kbd>Z</Kbd>
+            </KbdGroup>
+            )
+          </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -165,7 +179,20 @@ export const VideoPlayerControls = React.memo(
               <Redo2 />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Redo (Ctrl+Shift+Z or Ctrl+Y)</TooltipContent>
+          <TooltipContent>
+            Redo (
+            <KbdGroup>
+              <Kbd>Ctrl</Kbd>
+              <Kbd>Shift</Kbd>
+              <Kbd>Z</Kbd>
+            </KbdGroup>{' '}
+            or{' '}
+            <KbdGroup>
+              <Kbd>Ctrl</Kbd>
+              <Kbd>Y</Kbd>
+            </KbdGroup>
+            )
+          </TooltipContent>
         </Tooltip>
       </div>
     );

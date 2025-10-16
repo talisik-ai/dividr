@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@/frontend/components/ui/dropdown-menu';
 import { Input } from '@/frontend/components/ui/input';
+import { Kbd, KbdGroup } from '@/frontend/components/ui/kbd';
 import { Slider } from '@/frontend/components/ui/slider';
 import {
   Tooltip,
@@ -127,15 +128,19 @@ const ZoomControls: React.FC<ZoomControlsProps> = React.memo(
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <TooltipContent>Preview Zoom (Ctrl+Scroll)</TooltipContent>
+          <TooltipContent>
+            Preview Zoom (
+            <KbdGroup>
+              <Kbd>Ctrl</Kbd>
+              <Kbd>Scroll</Kbd>
+            </KbdGroup>
+            )
+          </TooltipContent>
         </Tooltip>
         <DropdownMenuContent className="w-72" align="start">
           {/* Header */}
           <DropdownMenuLabel className="flex items-center justify-between">
             <span>Preview Zoom</span>
-            <span className="text-xs text-muted-foreground font-normal">
-              {Math.round(zoom)}%
-            </span>
           </DropdownMenuLabel>
 
           {/* Zoom Slider with Controls */}
@@ -185,6 +190,11 @@ const ZoomControls: React.FC<ZoomControlsProps> = React.memo(
                   min={10}
                   max={800}
                   className="h-7 text-center w-14 text-xs"
+                  style={
+                    {
+                      'field-sizing': 'content',
+                    } as React.CSSProperties
+                  }
                 />
                 <span className="text-xs text-muted-foreground">%</span>
               </div>
@@ -195,54 +205,57 @@ const ZoomControls: React.FC<ZoomControlsProps> = React.memo(
 
           {/* Zoom Presets */}
           <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-            Preset Zoom Levels
+            Zoom Levels
           </DropdownMenuLabel>
 
           <DropdownMenuItem onClick={() => handlePresetZoom(25)}>
-            <span>25% (Zoom Out)</span>
-            <DropdownMenuShortcut>⇧0</DropdownMenuShortcut>
+            <span>Zoom to 25%</span>
+            <DropdownMenuShortcut>
+              <KbdGroup>
+                <Kbd>Shift</Kbd>
+                <Kbd>0</Kbd>
+              </KbdGroup>
+            </DropdownMenuShortcut>
           </DropdownMenuItem>
 
           <DropdownMenuItem onClick={() => handlePresetZoom(50)}>
-            <span>50%</span>
-            <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
+            <span>Zoom to 50%</span>
+            <DropdownMenuShortcut>
+              <KbdGroup>
+                <Kbd>Shift</Kbd>
+                <Kbd>1</Kbd>
+              </KbdGroup>
+            </DropdownMenuShortcut>
           </DropdownMenuItem>
 
           <DropdownMenuItem onClick={handleZoomToFit} className="font-medium">
-            <span>Zoom to Fit (100%)</span>
-            <DropdownMenuShortcut>⇧F</DropdownMenuShortcut>
+            <span>Zoom to Fit</span>
+            <DropdownMenuShortcut>
+              <KbdGroup>
+                <Kbd>Shift</Kbd>
+                <Kbd>F</Kbd>
+              </KbdGroup>
+            </DropdownMenuShortcut>
           </DropdownMenuItem>
 
           <DropdownMenuItem onClick={() => handlePresetZoom(200)}>
-            <span>200% (Zoom In)</span>
-            <DropdownMenuShortcut>⇧2</DropdownMenuShortcut>
+            <span>Zoom to 200%</span>
+            <DropdownMenuShortcut>
+              <KbdGroup>
+                <Kbd>Shift</Kbd>
+                <Kbd>2</Kbd>
+              </KbdGroup>
+            </DropdownMenuShortcut>
           </DropdownMenuItem>
 
           <DropdownMenuItem onClick={() => handlePresetZoom(400)}>
-            <span>400% (Max Detail)</span>
-            <DropdownMenuShortcut>⇧3</DropdownMenuShortcut>
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-
-          {/* Quick Actions */}
-          <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-            Quick Actions
-          </DropdownMenuLabel>
-
-          <DropdownMenuItem onClick={handleZoomIn}>
-            <span>Zoom In</span>
-            <DropdownMenuShortcut>Ctrl + +</DropdownMenuShortcut>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={handleZoomOut}>
-            <span>Zoom Out</span>
-            <DropdownMenuShortcut>Ctrl + −</DropdownMenuShortcut>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={handleZoomToFit}>
-            <span>Reset Zoom</span>
-            <DropdownMenuShortcut>Ctrl+0</DropdownMenuShortcut>
+            <span>Zoom to 400%</span>
+            <DropdownMenuShortcut>
+              <KbdGroup>
+                <Kbd>Shift</Kbd>
+                <Kbd>3</Kbd>
+              </KbdGroup>
+            </DropdownMenuShortcut>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
