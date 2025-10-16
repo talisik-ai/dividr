@@ -33,6 +33,12 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
     return null;
   }
 
+  // Don't render if none of the selected tracks have implemented properties
+  // Currently only subtitle tracks have properties implemented
+  if (!hasSubtitleSelection) {
+    return null;
+  }
+
   return (
     <div
       className={cn(
