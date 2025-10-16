@@ -15,6 +15,7 @@ import {
   MenubarTrigger,
 } from '@/frontend/components/ui/menubar';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { HotkeysDialog } from './HotkeysDialog';
 
 export const AppMenuBar = () => {
@@ -28,30 +29,9 @@ export const AppMenuBar = () => {
     <div className="flex items-center my-1">
       <Menubar variant="minimal">
         <MenubarMenu>
-          <MenubarTrigger>Home</MenubarTrigger>
-          <MenubarContent>
-            <MenubarItem disabled>
-              Dashboard{' '}
-              <MenubarShortcut>
-                <KbdGroup>
-                  <Kbd>Ctrl</Kbd>
-                  <Kbd>D</Kbd>
-                </KbdGroup>
-              </MenubarShortcut>
-            </MenubarItem>
-            <MenubarItem disabled>
-              Recent Projects{' '}
-              <MenubarShortcut>
-                <KbdGroup>
-                  <Kbd>Ctrl</Kbd>
-                  <Kbd>R</Kbd>
-                </KbdGroup>
-              </MenubarShortcut>
-            </MenubarItem>
-            <MenubarSeparator />
-            <MenubarItem disabled>Welcome Screen</MenubarItem>
-            <MenubarItem disabled>Getting Started</MenubarItem>
-          </MenubarContent>
+          <Link to="/">
+            <MenubarTrigger>Home</MenubarTrigger>
+          </Link>
         </MenubarMenu>
         <MenubarMenu>
           <MenubarTrigger>File</MenubarTrigger>

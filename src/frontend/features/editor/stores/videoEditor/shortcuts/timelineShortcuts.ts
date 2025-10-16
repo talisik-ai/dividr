@@ -81,4 +81,36 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
       store.setSplitMode(false);
     },
   },
+  {
+    id: 'timeline-select-all-ctrl',
+    keys: 'ctrl+a',
+    description: 'Select All Tracks',
+    category: 'Timeline Selection',
+    scope: 'timeline',
+    handler: (e) => {
+      e?.preventDefault();
+      const allTrackIds = store.tracks.map((track: any) => track.id);
+      store.setSelectedTracks(allTrackIds);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'timeline-select-all-cmd',
+    keys: 'cmd+a',
+    description: 'Select All Tracks',
+    category: 'Timeline Selection',
+    scope: 'timeline',
+    handler: (e) => {
+      e?.preventDefault();
+      const allTrackIds = store.tracks.map((track: any) => track.id);
+      store.setSelectedTracks(allTrackIds);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
 ];

@@ -10,6 +10,7 @@ import { createTimelineShortcuts } from '../shortcuts/timelineShortcuts';
  */
 export const useTimelineShortcutsV2 = () => {
   const timeline = useVideoEditorStore((state) => state.timeline);
+  const tracks = useVideoEditorStore((state) => state.tracks);
 
   // Get the store instance for creating shortcuts
   const store = useVideoEditorStore.getState();
@@ -60,6 +61,14 @@ export const useTimelineShortcutsV2 = () => {
     timelineShortcuts[6].handler,
     timelineShortcuts[6].options,
     [timeline.isSplitModeActive],
+  );
+
+  // Select All (Ctrl+A / Cmd+A)
+  useHotkeys(
+    ['ctrl+a', 'meta+a'],
+    timelineShortcuts[7].handler,
+    { preventDefault: true, enableOnFormTags: false },
+    [tracks.length, timeline.selectedTrackIds],
   );
 
   return {
