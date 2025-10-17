@@ -112,8 +112,10 @@ export const createTextStyleSlice: StateCreator<
       textShadow: shadowEffects.join(', '),
       letterSpacing: `${controls.letterSpacing}px`,
       lineHeight: controls.lineSpacing,
-      opacity: controls.opacity / 100, // Convert percentage to decimal
-      hasGlow: controls.hasGlow, // Pass glow state separately for custom rendering
+      opacity: controls.opacity / 100, 
+      hasGlow: controls.hasGlow, 
+      strokeColor: controls.strokeColor, 
+      hasShadow: controls.hasShadow, 
     };
   },
 

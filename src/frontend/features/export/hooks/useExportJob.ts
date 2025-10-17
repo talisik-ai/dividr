@@ -81,6 +81,7 @@ export const useExportJob = () => {
         subtitleTracks,
         textStyle,
         getTextStyleForSubtitle,
+        videoDimensions,
       );
 
       return {
