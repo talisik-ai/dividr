@@ -128,14 +128,7 @@ const ZoomControls: React.FC<ZoomControlsProps> = React.memo(
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <TooltipContent>
-            Preview Zoom (
-            <KbdGroup>
-              <Kbd>Ctrl</Kbd>
-              <Kbd>Scroll</Kbd>
-            </KbdGroup>
-            )
-          </TooltipContent>
+          <TooltipContent>Preview Zoom ( Ctrl+Scroll )</TooltipContent>
         </Tooltip>
         <DropdownMenuContent className="w-72" align="start">
           {/* Header */}

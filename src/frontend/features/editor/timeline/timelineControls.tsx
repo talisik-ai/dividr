@@ -7,7 +7,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/frontend/components/ui/dropdown-menu';
-import { Kbd, KbdGroup } from '@/frontend/components/ui/kbd';
+import { Kbd } from '@/frontend/components/ui/kbd';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
 import {
@@ -135,9 +135,7 @@ const PlayPauseButton: React.FC<{
           )}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>
-        {isPlaying ? 'Pause' : 'Play'} (<Kbd>Space</Kbd>)
-      </TooltipContent>
+      <TooltipContent>{isPlaying ? 'Pause' : 'Play'} (Space)</TooltipContent>
     </Tooltip>
   );
 });
@@ -677,14 +675,7 @@ export const TimelineControls: React.FC = React.memo(
                   <SplitSquareHorizontal />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                Split at Playhead (
-                <KbdGroup>
-                  <Kbd>Ctrl</Kbd>
-                  <Kbd>K</Kbd>
-                </KbdGroup>
-                )
-              </TooltipContent>
+              <TooltipContent>Split at Playhead Ctrl+K</TooltipContent>
             </Tooltip>
             <DuplicateButton />
             <DeleteButton />
@@ -699,7 +690,7 @@ export const TimelineControls: React.FC = React.memo(
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {snapEnabled ? 'Snap Enabled' : 'Snap Disabled'} (<Kbd>S</Kbd>)
+                {snapEnabled ? 'Snap Enabled' : 'Snap Disabled'} (S)
               </TooltipContent>
             </Tooltip>
             <LinkUnlinkButton />
@@ -726,9 +717,7 @@ export const TimelineControls: React.FC = React.memo(
                   <SkipBack />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                Previous Frame (<Kbd>←</Kbd>)
-              </TooltipContent>
+              <TooltipContent>Previous Frame (←)</TooltipContent>
             </Tooltip>
 
             <PlayPauseButton onPlayToggle={handlePlayToggle} />
@@ -752,9 +741,7 @@ export const TimelineControls: React.FC = React.memo(
                   <SkipForward />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                Next Frame (<Kbd>→</Kbd>)
-              </TooltipContent>
+              <TooltipContent>Next Frame (→)</TooltipContent>
             </Tooltip>
             <TimeDisplay />
           </div>

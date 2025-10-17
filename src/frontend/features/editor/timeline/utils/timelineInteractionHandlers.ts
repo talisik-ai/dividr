@@ -14,6 +14,8 @@
  * - Split mode click: Split track at position
  */
 
+import { getVisibleRowsInOrder } from './trackRowPositions';
+
 import { VideoTrack } from '../../stores/videoEditor/types';
 
 export type ClickTarget =
@@ -78,7 +80,7 @@ export const handleTimelineMouseDown = (
   timelineState: TimelineState,
   handlers: TimelineInteractionHandlers,
 ): { shouldStopPropagation: boolean } => {
-  const { target, button, shiftKey, ctrlKey, altKey, metaKey, frame, trackId } =
+  const { target, button, shiftKey, ctrlKey, metaKey, frame, trackId } =
     clickInfo;
   const { isSplitModeActive, tracks } = timelineState;
 
@@ -207,6 +209,7 @@ export const findTrackAtPosition = (
   tracksElement: HTMLElement | null,
   frameWidth: number,
   tracks: VideoTrack[],
+  visibleTrackRows?: string[],
 ): VideoTrack | null => {
   if (!tracksElement) return null;
 
@@ -219,9 +222,10 @@ export const findTrackAtPosition = (
   const trackRowHeight = 48; // Height of each track row
   const rowIndex = Math.floor(y / trackRowHeight);
 
-  // Map row index to track type based on the TRACK_ROWS order
-  const trackTypes = ['subtitle', 'image', 'video', 'audio'];
-  const trackType = trackTypes[rowIndex] as VideoTrack['type'];
+  // Map row index to track type based on visible track rows (dynamic)
+  const visibleRows = visibleTrackRows || ['video', 'audio'];
+  const visibleRowsInOrder = getVisibleRowsInOrder(visibleRows);
+  const trackType = visibleRowsInOrder[rowIndex] as VideoTrack['type'];
 
   if (!trackType) return null;
 

@@ -1,5 +1,4 @@
 import { Button } from '@/frontend/components/ui/button';
-import { Kbd, KbdGroup } from '@/frontend/components/ui/kbd';
 import { Separator } from '@/frontend/components/ui/separator';
 import {
   Tooltip,
@@ -103,9 +102,7 @@ export const VideoPlayerControls = React.memo(
               <MousePointer2 />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            Selection Tool (<Kbd>V</Kbd>)
-          </TooltipContent>
+          <TooltipContent>Selection Tool (V)</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -129,9 +126,7 @@ export const VideoPlayerControls = React.memo(
             {isPanDisabled ? (
               'Hand Tool (Zoom in to enable)'
             ) : (
-              <>
-                Hand Tool (<Kbd>H</Kbd>) - Pan around zoomed preview
-              </>
+              <>Hand Tool (H) - Pan around zoomed preview</>
             )}
           </TooltipContent>
         </Tooltip>
@@ -155,14 +150,7 @@ export const VideoPlayerControls = React.memo(
               <Undo2 />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            Undo (
-            <KbdGroup>
-              <Kbd>Ctrl</Kbd>
-              <Kbd>Z</Kbd>
-            </KbdGroup>
-            )
-          </TooltipContent>
+          <TooltipContent>Undo ( Ctrl+Z )</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -179,20 +167,7 @@ export const VideoPlayerControls = React.memo(
               <Redo2 />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            Redo (
-            <KbdGroup>
-              <Kbd>Ctrl</Kbd>
-              <Kbd>Shift</Kbd>
-              <Kbd>Z</Kbd>
-            </KbdGroup>{' '}
-            or{' '}
-            <KbdGroup>
-              <Kbd>Ctrl</Kbd>
-              <Kbd>Y</Kbd>
-            </KbdGroup>
-            )
-          </TooltipContent>
+          <TooltipContent>Redo ( Ctrl+Y or Ctrl+Shift+Z )</TooltipContent>
         </Tooltip>
       </div>
     );

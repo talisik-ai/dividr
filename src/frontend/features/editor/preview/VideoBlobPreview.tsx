@@ -1014,7 +1014,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
         // Calculate responsive font size based on zoom level
         // Base size scales with video height, then multiply by preview scale for zoom responsiveness
-        const baseFontSize = Math.max(18, videoHeight * 0.02);
+        const baseFontSize = Math.max(24, videoHeight * 0.02);
         const responsiveFontSize = baseFontSize * preview.previewScale;
 
         // Scale padding and effects with zoom level
