@@ -64,6 +64,11 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
         return;
       }
 
+      // Begin grouped transaction for batch duplicate
+      freshState.beginGroup?.(
+        `Duplicate ${selectedTracks.length} Track${selectedTracks.length > 1 ? 's' : ''}`,
+      );
+
       // Batch duplicate: collect all new IDs and process linked tracks only once
       const processedTrackIds = new Set<string>();
       const newlyCreatedIds: string[] = [];
@@ -111,7 +116,12 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
         }
 
         // Duplicate the track - returns single ID or array of IDs [primary, linked]
-        const result = freshState.duplicateTrack(trackId, bothSidesSelected);
+        // Use skipGrouping=true since we're managing the group at batch level
+        const result = freshState.duplicateTrack(
+          trackId,
+          bothSidesSelected,
+          true,
+        );
         console.log(`[Duplicate] Result:`, result);
 
         if (result) {
@@ -123,6 +133,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
           }
         }
       });
+
+      // End grouped transaction
+      freshState.endGroup?.();
 
       // Update selection to the newly duplicated tracks
       if (newlyCreatedIds.length > 0) {
@@ -169,6 +182,11 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
         return;
       }
 
+      // Begin grouped transaction for batch duplicate
+      freshState.beginGroup?.(
+        `Duplicate ${selectedTracks.length} Track${selectedTracks.length > 1 ? 's' : ''}`,
+      );
+
       // Batch duplicate: collect all new IDs and process linked tracks only once
       const processedTrackIds = new Set<string>();
       const newlyCreatedIds: string[] = [];
@@ -216,7 +234,12 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
         }
 
         // Duplicate the track - returns single ID or array of IDs [primary, linked]
-        const result = freshState.duplicateTrack(trackId, bothSidesSelected);
+        // Use skipGrouping=true since we're managing the group at batch level
+        const result = freshState.duplicateTrack(
+          trackId,
+          bothSidesSelected,
+          true,
+        );
         console.log(`[Duplicate] Result:`, result);
 
         if (result) {
@@ -228,6 +251,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
           }
         }
       });
+
+      // End grouped transaction
+      freshState.endGroup?.();
 
       // Update selection to the newly duplicated tracks
       if (newlyCreatedIds.length > 0) {

@@ -173,8 +173,10 @@ export const createClipboardSlice: StateCreator<
 
     console.log(`[Clipboard] Cut ${clonedTracks.length} track(s) to clipboard`);
 
-    // Record action for undo/redo before removing tracks
-    state.recordAction?.('Cut Track');
+    // Begin grouped transaction for atomic undo of all cut operations
+    state.beginGroup?.(
+      `Cut ${clonedTracks.length} Track${clonedTracks.length > 1 ? 's' : ''}`,
+    );
 
     // Remove the cut tracks from timeline
     tracksToRemove.forEach((trackId) => {
@@ -186,6 +188,9 @@ export const createClipboardSlice: StateCreator<
 
     // Mark unsaved changes
     state.markUnsavedChanges?.();
+
+    // End grouped transaction
+    state.endGroup?.();
   },
 
   pasteTracks: () => {
@@ -197,8 +202,9 @@ export const createClipboardSlice: StateCreator<
       return;
     }
 
-    // Record action for undo/redo
-    state.recordAction?.('Paste Track');
+    // Begin grouped transaction for atomic undo of all pasted tracks
+    const trackCount = clipboardData.tracks.length;
+    state.beginGroup?.(`Paste ${trackCount} Track${trackCount > 1 ? 's' : ''}`);
 
     const newTrackIds: string[] = [];
     const newTracks: VideoTrack[] = [];
@@ -350,6 +356,9 @@ export const createClipboardSlice: StateCreator<
 
     // Mark unsaved changes
     state.markUnsavedChanges?.();
+
+    // End grouped transaction for all pasted tracks
+    state.endGroup?.();
 
     console.log(
       `[Clipboard] Pasted ${newTrackIds.length} track(s) with preserved relationships and spacing`,

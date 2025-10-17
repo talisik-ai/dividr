@@ -215,6 +215,9 @@ const DuplicateButton: React.FC = React.memo(() => {
     (state) => state.setSelectedTracks,
   );
 
+  const beginGroup = useVideoEditorStore((state) => state.beginGroup);
+  const endGroup = useVideoEditorStore((state) => state.endGroup);
+
   const handleDuplicate = useCallback(() => {
     if (selectedTrackIds.length === 0) return;
 
@@ -222,6 +225,11 @@ const DuplicateButton: React.FC = React.memo(() => {
       selectedCount: selectedTrackIds.length,
       selectedIds: selectedTrackIds,
     });
+
+    // Begin grouped transaction for batch duplicate
+    beginGroup?.(
+      `Duplicate ${selectedTrackIds.length} Track${selectedTrackIds.length > 1 ? 's' : ''}`,
+    );
 
     const processedTrackIds = new Set<string>();
     const newlyCreatedIds: string[] = [];
@@ -253,7 +261,8 @@ const DuplicateButton: React.FC = React.memo(() => {
         processedTrackIds.add(track.linkedTrackId);
       }
 
-      const result = duplicateTrack(trackId, bothSidesSelected);
+      // Use skipGrouping=true since we're managing the group at batch level
+      const result = duplicateTrack(trackId, bothSidesSelected, true);
 
       if (result) {
         if (Array.isArray(result)) {
@@ -264,12 +273,22 @@ const DuplicateButton: React.FC = React.memo(() => {
       }
     });
 
+    // End grouped transaction
+    endGroup?.();
+
     if (newlyCreatedIds.length > 0) {
       setSelectedTracks(newlyCreatedIds);
     } else {
       console.error('❌ Duplication produced no new tracks');
     }
-  }, [selectedTrackIds, tracks, duplicateTrack, setSelectedTracks]);
+  }, [
+    selectedTrackIds,
+    tracks,
+    duplicateTrack,
+    setSelectedTracks,
+    beginGroup,
+    endGroup,
+  ]);
 
   const tooltipText =
     selectedTrackIds.length > 0

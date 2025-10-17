@@ -11,13 +11,21 @@ export const duplicateTracksAction = (
   duplicateTrack: (
     trackId: string,
     duplicateLinked: boolean,
+    skipGrouping?: boolean,
   ) => string | string[],
   setSelectedTracks: (trackIds: string[]) => void,
+  beginGroup?: (actionName: string) => void,
+  endGroup?: () => void,
 ) => {
   if (selectedTrackIds.length === 0) {
     toast.info('No tracks selected to duplicate');
     return;
   }
+
+  // Begin grouped transaction for batch duplicate
+  beginGroup?.(
+    `Duplicate ${selectedTrackIds.length} Track${selectedTrackIds.length > 1 ? 's' : ''}`,
+  );
 
   const processedTrackIds = new Set<string>();
   const newlyCreatedIds: string[] = [];
@@ -44,7 +52,8 @@ export const duplicateTracksAction = (
       processedTrackIds.add(track.linkedTrackId);
     }
 
-    const result = duplicateTrack(trackId, bothSidesSelected);
+    // Use skipGrouping=true since we're managing the group at batch level
+    const result = duplicateTrack(trackId, bothSidesSelected, true);
 
     if (result) {
       if (Array.isArray(result)) {
@@ -54,6 +63,9 @@ export const duplicateTracksAction = (
       }
     }
   });
+
+  // End grouped transaction
+  endGroup?.();
 
   if (newlyCreatedIds.length > 0) {
     setSelectedTracks(newlyCreatedIds);
