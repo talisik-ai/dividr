@@ -248,6 +248,16 @@ export function generateASSContent(
   let outlineColor = '&H00000000'; // Default: black
   if (hasOutline && effectiveStrokeColor) {
     outlineColor = convertColorToASS(effectiveStrokeColor);
+    
+    // Apply opacity to outline color if specified
+    if (textStyle?.opacity !== undefined && textStyle.opacity < 1) {
+      const colorMatch = outlineColor.match(/&H([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})/i);
+      if (colorMatch) {
+        const [, currentAlpha, b, g, r] = colorMatch;
+        const newAlpha = Math.round((1 - textStyle.opacity) * 255);
+        outlineColor = `&H${newAlpha.toString(16).padStart(2, '0').toUpperCase()}${b}${g}${r}`;
+      }
+    }
   }
 
   const shadowDistance = textStyle?.hasShadow ? 2 : 0;
@@ -291,12 +301,20 @@ export function generateASSContent(
   if (hasBackgroundColor) {
     let convertedColor = convertColorToASS(textStyle.backgroundColor);
     
-    // Ensure the background is fully opaque by setting alpha to 00
+    // Apply opacity to background or ensure fully opaque
     // ASS format: &HAABBGGRR where AA=00 means fully opaque
     const colorMatch = convertedColor.match(/&H([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})/i);
     if (colorMatch) {
       const [, alpha, b, g, r] = colorMatch;
-      convertedBackgroundColor = `&H00${b}${g}${r}`; // Force alpha to 00 (fully opaque)
+      
+      // Apply opacity if specified, otherwise force fully opaque
+      let finalAlpha = '00'; // Default: fully opaque
+      if (textStyle?.opacity !== undefined && textStyle.opacity < 1) {
+        const newAlpha = Math.round((1 - textStyle.opacity) * 255);
+        finalAlpha = newAlpha.toString(16).padStart(2, '0').toUpperCase();
+      }
+      
+      convertedBackgroundColor = `&H${finalAlpha}${b}${g}${r}`;
       backColor = convertedBackgroundColor;
       borderStyle = 3; // Use BorderStyle 3 for opaque background box
       
@@ -309,7 +327,8 @@ export function generateASSContent(
         convertedOutput: convertedColor,
         finalOutput: backColor,
         originalAlpha: alpha,
-        forcedAlpha: '00',
+        appliedAlpha: finalAlpha,
+        opacity: textStyle?.opacity,
         borderStyle: borderStyle,
         outlineColorOverride: finalOutlineColor,
       });
@@ -448,7 +467,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         const glowColorASS = convertColorToASS(glowColor);
         
         // Layer 0: Blurred glow/shadow layer (furthest back)
-        const glowBlurAmount = (textStyle.glowIntensity || 2) + 6;
+        const glowBlurAmount = (textStyle.glowIntensity || 2) + 9;
         const glowOverrides: string[] = [];
         glowOverrides.push(`\\blur${glowBlurAmount}`); // Heavy blur for glow
         glowOverrides.push(`\\bord${outlineWidth * 2}`); // Larger outline for glow spread
