@@ -6,6 +6,7 @@ import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePreviewShortcuts } from '../stores/videoEditor/hooks/usePreviewShortcuts';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
+import { TextTransformBoundary } from './components/TextTransformBoundary';
 
 interface VideoBlobPreviewProps {
   className?: string;
@@ -69,6 +70,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     setPreviewPan,
     setPreviewScale,
     setPreviewInteractionMode,
+    updateTrack,
+    setSelectedTracks,
   } = useVideoEditorStore();
 
   // Active video track for visual display (must be visible)
@@ -394,6 +397,67 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       hasGlow: style.hasGlow || false,
     };
   }, []);
+
+  // Handle text transform updates
+  const handleTextTransformUpdate = useCallback(
+    (
+      trackId: string,
+      transform: { x?: number; y?: number; scale?: number; rotation?: number },
+    ) => {
+      const track = tracks.find((t) => t.id === trackId);
+      if (!track || track.type !== 'text') return;
+
+      const currentTransform = track.textTransform || {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+      };
+
+      updateTrack(trackId, {
+        textTransform: {
+          ...currentTransform,
+          ...transform,
+        },
+      });
+    },
+    [tracks, updateTrack],
+  );
+
+  // Handle text selection
+  const handleTextSelect = useCallback(
+    (trackId: string) => {
+      setSelectedTracks([trackId]);
+    },
+    [setSelectedTracks],
+  );
+
+  // Handle click outside to deselect
+  const handlePreviewClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Only deselect if clicking directly on the container background
+      // Don't deselect if clicking on video or other elements
+      const target = e.target as HTMLElement;
+
+      // Check if we clicked on the background or video area (not text elements)
+      if (
+        target === containerRef.current ||
+        target.classList.contains('preview-background') ||
+        target.tagName === 'VIDEO'
+      ) {
+        // Only deselect if we have text tracks selected
+        const hasTextSelected = timeline.selectedTrackIds.some((id) => {
+          const track = tracks.find((t) => t.id === id);
+          return track?.type === 'text';
+        });
+
+        if (hasTextSelected) {
+          setSelectedTracks([]);
+        }
+      }
+    },
+    [setSelectedTracks, timeline.selectedTrackIds, tracks],
+  );
 
   // Add handler for video loadedmetadata
   const handleLoadedMetadata = useCallback(() => {
@@ -993,7 +1057,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     <div
       ref={containerRef}
       className={cn(
-        'relative overflow-hidden rounded-lg',
+        'relative overflow-hidden rounded-lg preview-background',
         className,
         'bg-zinc-100 dark:bg-zinc-900',
         // Change cursor based on interaction mode and state
@@ -1013,7 +1077,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onDragLeave={handleDrag}
       onDragOver={handleDrag}
       onDrop={handleDrop}
-      onMouseDown={handlePanStart}
+      onMouseDown={(e) => {
+        // Handle pan mode first
+        if (preview.interactionMode === 'pan' && preview.previewScale > 1) {
+          handlePanStart(e);
+        } else {
+          // In select mode, handle text deselection
+          handlePreviewClick(e);
+        }
+      }}
       onMouseMove={handlePanMove}
       onMouseUp={handlePanEnd}
       onMouseLeave={() => {
@@ -1175,32 +1247,39 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         );
       })()}
 
-      {/* Text Clips (Heading and Body) */}
+      {/* Text Clips (Heading and Body) with Transform Controls */}
       {(() => {
         const activeTexts = getActiveTextTracks();
         if (activeTexts.length === 0) return null;
 
-        // Use actual video height for text sizing
-        const videoHeight = activeVideoTrack?.height || preview.canvasHeight;
-        const videoWidth = activeVideoTrack?.width || preview.canvasWidth;
+        // Use ORIGINAL video dimensions (not scaled) for coordinate normalization
+        // This ensures normalized coordinates remain consistent regardless of zoom level
+        const baseVideoHeight =
+          activeVideoTrack?.height || preview.canvasHeight;
+        const baseVideoWidth = activeVideoTrack?.width || preview.canvasWidth;
 
         return (
-          <>
+          <div
+            className="absolute inset-0 pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
+            style={{
+              width: actualWidth,
+              height: actualHeight,
+              left: `calc(50% + ${preview.panX}px)`,
+              top: `calc(50% + ${preview.panY}px)`,
+              transform: 'translate(-50%, -50%)',
+            }}
+          >
             {activeTexts.map((track) => {
               const appliedStyle = getTextStyleForTextClip(track);
+              const isSelected = timeline.selectedTrackIds.includes(track.id);
 
               // Calculate responsive font size based on zoom level
-              // Base size scales with video height, then multiply by preview scale
-              const baseFontSize = Math.max(24, videoHeight * 0.02);
+              const baseFontSize = Math.max(24, baseVideoHeight * 0.02);
               const responsiveFontSize = baseFontSize * preview.previewScale;
 
               // Scale padding and effects with zoom level
               const scaledPaddingVertical = 2 * preview.previewScale;
               const scaledPaddingHorizontal = 8 * preview.previewScale;
-
-              // Calculate responsive horizontal padding (5% of actual width)
-              const scaledHorizontalPadding =
-                videoWidth * 0.01 * preview.previewScale;
 
               // Build glow filter if enabled
               const glowRadius1 = 5 * preview.previewScale;
@@ -1222,38 +1301,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 );
               }
 
-              // Determine vertical position based on text type
-              // Headings appear at top, body text appears in middle
-              const isHeading = track.textType === 'heading';
-
               return (
-                <div
+                <TextTransformBoundary
                   key={track.id}
-                  className="absolute pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
-                  style={{
-                    width: actualWidth,
-                    height: actualHeight,
-                    left: `calc(50% + ${preview.panX}px)`,
-                    top: `calc(50% + ${preview.panY}px)`,
-                    transform: 'translate(-50%, -50%)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems:
-                      appliedStyle.textAlign === 'left'
-                        ? 'flex-start'
-                        : appliedStyle.textAlign === 'right'
-                          ? 'flex-end'
-                          : 'center',
-                    justifyContent: isHeading ? 'flex-start' : 'center',
-                    paddingTop: isHeading
-                      ? `${20 * preview.previewScale}px`
-                      : '0',
-                    paddingBottom: isHeading
-                      ? '0'
-                      : `${20 * preview.previewScale}px`,
-                    paddingLeft: `${scaledHorizontalPadding}px`,
-                    paddingRight: `${scaledHorizontalPadding}px`,
-                  }}
+                  track={track}
+                  isSelected={isSelected}
+                  previewScale={preview.previewScale}
+                  videoWidth={baseVideoWidth}
+                  videoHeight={baseVideoHeight}
+                  onTransformUpdate={handleTextTransformUpdate}
+                  onSelect={handleTextSelect}
                 >
                   <div
                     style={{
@@ -1281,10 +1338,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                   >
                     {track.textContent}
                   </div>
-                </div>
+                </TextTransformBoundary>
               );
             })}
-          </>
+          </div>
         );
       })()}
 

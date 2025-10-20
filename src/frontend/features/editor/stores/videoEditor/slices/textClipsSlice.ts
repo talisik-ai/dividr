@@ -58,7 +58,7 @@ export const createTextClipsSlice: StateCreator<
     // Default duration: 5 seconds
     const defaultDuration = fps * 5;
 
-    // Create a new text track with per-clip styling
+    // Create a new text track with per-clip styling and transform
     const textTrack: Omit<VideoTrack, 'id'> = {
       type: 'text',
       name: textType === 'heading' ? 'Text Heading' : 'Text Body',
@@ -72,6 +72,12 @@ export const createTextClipsSlice: StateCreator<
       textContent: textType === 'heading' ? 'Heading Text' : 'Body Text',
       textType,
       textStyle: { ...DEFAULT_TEXT_STYLE },
+      textTransform: {
+        x: 0, // Centered horizontally (normalized: 0 = center)
+        y: textType === 'heading' ? -0.3 : 0, // Heading slightly above center, body at center (normalized: -1 to 1)
+        scale: 1, // 100% scale
+        rotation: 0, // No rotation
+      },
     };
 
     // Use the existing addTrack function from tracksSlice

@@ -49,4 +49,11 @@ export interface VideoTrack {
     hasGlow?: boolean;
     opacity?: number;
   };
+  // Transform properties for text clips (position, scale, rotation)
+  textTransform?: {
+    x: number; // X position normalized (-1 to 1, relative to video center, 0 = center)
+    y: number; // Y position normalized (-1 to 1, relative to video center, 0 = center)
+    scale: number; // Scale factor (1 = 100%)
+    rotation: number; // Rotation in degrees
+  };
 }
