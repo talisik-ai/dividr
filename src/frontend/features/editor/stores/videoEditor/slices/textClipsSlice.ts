@@ -55,6 +55,11 @@ export const createTextClipsSlice: StateCreator<
     const state = get() as any;
     const fps = state.timeline?.fps || 30;
 
+    // Ensure the text track row is visible before adding the clip
+    if (state.ensureTrackRowVisible) {
+      state.ensureTrackRowVisible('text');
+    }
+
     // Default duration: 5 seconds
     const defaultDuration = fps * 5;
 
