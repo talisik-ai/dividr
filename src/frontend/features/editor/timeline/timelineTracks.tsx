@@ -33,6 +33,13 @@ export interface TrackRowDefinition {
 
 export const TRACK_ROWS: TrackRowDefinition[] = [
   {
+    id: 'text',
+    name: 'Text',
+    trackTypes: ['text'],
+    color: '#3498db',
+    icon: '🔤',
+  },
+  {
     id: 'subtitle',
     name: 'Subtitles',
     trackTypes: ['subtitle'],
@@ -104,6 +111,8 @@ const TrackItemWrapper: React.FC<{
 
     const getTrackGradient = (type: VideoTrack['type']) => {
       switch (type) {
+        case 'text':
+          return 'hsl(0, 0%, 35%)';
         case 'subtitle':
           return 'hsl(0, 0%, 35%)';
         case 'video':

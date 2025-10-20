@@ -1,6 +1,6 @@
 export interface VideoTrack {
   id: string;
-  type: 'video' | 'audio' | 'image' | 'subtitle';
+  type: 'video' | 'audio' | 'image' | 'subtitle' | 'text';
   name: string;
   source: string;
   previewUrl?: string;

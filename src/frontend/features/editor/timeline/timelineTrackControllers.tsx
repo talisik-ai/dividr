@@ -101,7 +101,8 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
           {/* Show visibility toggle for video, image, and subtitle tracks only */}
           {(rowDef.trackTypes.includes('video') ||
             rowDef.trackTypes.includes('image') ||
-            rowDef.trackTypes.includes('subtitle')) && (
+            rowDef.trackTypes.includes('subtitle') ||
+            rowDef.trackTypes.includes('text')) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

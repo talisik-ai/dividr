@@ -3,7 +3,13 @@
  * based on visible track rows in the timeline
  */
 
-export const TRACK_ROW_ORDER = ['subtitle', 'logo', 'video', 'audio'] as const;
+export const TRACK_ROW_ORDER = [
+  'text',
+  'subtitle',
+  'logo',
+  'video',
+  'audio',
+] as const;
 
 /**
  * Get the visual index of a track type based on which rows are currently visible
