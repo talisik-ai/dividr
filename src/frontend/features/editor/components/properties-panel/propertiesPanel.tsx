@@ -2,6 +2,7 @@ import { cn } from '@/frontend/utils/utils';
 import React, { useMemo } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditor/index';
 import { SubtitleProperties } from './subtitles/subtitleProperties';
+import { TextProperties } from './text/textProperties';
 
 interface PropertiesPanelProps {
   className?: string;
@@ -28,14 +29,18 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
     [selectedTracks],
   );
 
+  const hasTextSelection = useMemo(
+    () => selectedTracks.some((track) => track.type === 'text'),
+    [selectedTracks],
+  );
+
   // Don't render if no tracks are selected
   if (selectedTracks.length === 0) {
     return null;
   }
 
   // Don't render if none of the selected tracks have implemented properties
-  // Currently only subtitle tracks have properties implemented
-  if (!hasSubtitleSelection) {
+  if (!hasSubtitleSelection && !hasTextSelection) {
     return null;
   }
 
@@ -47,7 +52,11 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
       )}
     >
       {/* Dynamic Properties Rendering based on track type */}
-      {hasSubtitleSelection && (
+      {hasTextSelection && (
+        <TextProperties selectedTrackIds={selectedTrackIds} />
+      )}
+
+      {hasSubtitleSelection && !hasTextSelection && (
         <SubtitleProperties selectedTrackIds={selectedTrackIds} />
       )}
 

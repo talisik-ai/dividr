@@ -25,6 +25,26 @@ const getTrackColor = (index: number): string => {
   return colors[index % colors.length];
 };
 
+const DEFAULT_TEXT_STYLE = {
+  fontFamily: '"Arial", sans-serif',
+  fontWeight: '400',
+  fontStyle: 'normal',
+  isBold: false,
+  isItalic: false,
+  isUnderline: false,
+  textTransform: 'none' as const,
+  textAlign: 'center' as const,
+  fontSize: 18,
+  fillColor: '#FFFFFF',
+  strokeColor: '#000000',
+  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  hasShadow: false,
+  letterSpacing: 0,
+  lineSpacing: 1.2,
+  hasGlow: false,
+  opacity: 100,
+};
+
 export const createTextClipsSlice: StateCreator<
   TextClipsSlice,
   [],
@@ -38,7 +58,7 @@ export const createTextClipsSlice: StateCreator<
     // Default duration: 5 seconds
     const defaultDuration = fps * 5;
 
-    // Create a new text track
+    // Create a new text track with per-clip styling
     const textTrack: Omit<VideoTrack, 'id'> = {
       type: 'text',
       name: textType === 'heading' ? 'Text Heading' : 'Text Body',
@@ -51,6 +71,7 @@ export const createTextClipsSlice: StateCreator<
       color: getTrackColor(state.tracks?.length || 0),
       textContent: textType === 'heading' ? 'Heading Text' : 'Body Text',
       textType,
+      textStyle: { ...DEFAULT_TEXT_STYLE },
     };
 
     // Use the existing addTrack function from tracksSlice

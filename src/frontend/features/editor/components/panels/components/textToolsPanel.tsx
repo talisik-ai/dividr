@@ -38,7 +38,7 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
       <div className="space-y-3">
         <Button
           onClick={handleAddHeading}
-          className="w-full gap-2 bg-accent font-bold h-fit text-base text-accent-foreground"
+          className="w-full gap-2 bg-accent font-bold h-fit text-base text-accent-foreground hover:bg-accent/80"
         >
           <Heading className="size-5" />
           Add heading
@@ -46,7 +46,7 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
         <Button
           onClick={handleAddBody}
-          className="w-full gap-2 bg-accent text-xs h-fit font-bold text-accent-foreground"
+          className="w-full gap-2 bg-accent text-xs h-fit font-bold text-accent-foreground hover:bg-accent/80"
         >
           <Type className="size-3.5" />
           Add body text

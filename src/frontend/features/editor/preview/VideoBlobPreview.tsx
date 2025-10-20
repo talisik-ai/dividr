@@ -326,6 +326,75 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     return activeSubtitles;
   }, [tracks, timeline.currentFrame]);
 
+  // Text tracks (heading and body)
+  const getActiveTextTracks = useCallback(() => {
+    const currentFrame = timeline.currentFrame;
+    const activeTexts = tracks.filter(
+      (track) =>
+        track.type === 'text' &&
+        track.visible &&
+        currentFrame >= track.startFrame &&
+        currentFrame < track.endFrame &&
+        track.textContent,
+    );
+
+    return activeTexts;
+  }, [tracks, timeline.currentFrame]);
+
+  // Helper function to convert text track style to CSS
+  const getTextStyleForTextClip = useCallback((track: VideoTrack) => {
+    const style = track.textStyle || {};
+
+    // Build text shadow for stroke outline
+    const strokeShadows: string[] = [];
+    const strokeColor = style.strokeColor || '#000000';
+    const strokeWidth = 2;
+
+    // Create 8-direction outline for smooth stroke effect
+    for (let angle = 0; angle < 360; angle += 45) {
+      const radian = (angle * Math.PI) / 180;
+      const x = Math.cos(radian) * strokeWidth;
+      const y = Math.sin(radian) * strokeWidth;
+      strokeShadows.push(
+        `${x.toFixed(1)}px ${y.toFixed(1)}px 0 ${strokeColor}`,
+      );
+    }
+
+    // Add shadow if enabled
+    const shadowEffects: string[] = [...strokeShadows];
+    if (style.hasShadow) {
+      shadowEffects.push(`2px 2px 4px rgba(0, 0, 0, 0.8)`);
+    }
+
+    // Apply bold/italic overrides
+    let fontWeight = style.fontWeight || '400';
+    let fontStyle = style.fontStyle || 'normal';
+
+    if (style.isBold) {
+      fontWeight = '700';
+    }
+    if (style.isItalic) {
+      fontStyle = 'italic';
+    }
+
+    return {
+      fontFamily: style.fontFamily || '"Arial", sans-serif',
+      fontWeight,
+      fontStyle,
+      textTransform: style.textTransform || 'none',
+      textAlign: style.textAlign || 'center',
+      fontSize: `${style.fontSize || 18}px`,
+      color: style.fillColor || '#FFFFFF',
+      backgroundColor: style.backgroundColor || 'rgba(0, 0, 0, 0.5)',
+      textDecoration: style.isUnderline ? 'underline' : 'none',
+      textShadow: shadowEffects.join(', '),
+      letterSpacing: `${style.letterSpacing || 0}px`,
+      lineHeight: style.lineSpacing || 1.2,
+      opacity: (style.opacity || 100) / 100,
+      hasGlow: style.hasGlow || false,
+    };
+  }, []);
+
   // Add handler for video loadedmetadata
   const handleLoadedMetadata = useCallback(() => {
     const video = videoRef.current;
@@ -1103,6 +1172,119 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               );
             })}
           </div>
+        );
+      })()}
+
+      {/* Text Clips (Heading and Body) */}
+      {(() => {
+        const activeTexts = getActiveTextTracks();
+        if (activeTexts.length === 0) return null;
+
+        // Use actual video height for text sizing
+        const videoHeight = activeVideoTrack?.height || preview.canvasHeight;
+        const videoWidth = activeVideoTrack?.width || preview.canvasWidth;
+
+        return (
+          <>
+            {activeTexts.map((track) => {
+              const appliedStyle = getTextStyleForTextClip(track);
+
+              // Calculate responsive font size based on zoom level
+              // Base size scales with video height, then multiply by preview scale
+              const baseFontSize = Math.max(24, videoHeight * 0.02);
+              const responsiveFontSize = baseFontSize * preview.previewScale;
+
+              // Scale padding and effects with zoom level
+              const scaledPaddingVertical = 2 * preview.previewScale;
+              const scaledPaddingHorizontal = 8 * preview.previewScale;
+
+              // Calculate responsive horizontal padding (5% of actual width)
+              const scaledHorizontalPadding =
+                videoWidth * 0.01 * preview.previewScale;
+
+              // Build glow filter if enabled
+              const glowRadius1 = 5 * preview.previewScale;
+              const glowRadius2 = 10 * preview.previewScale;
+              const glowStyle = appliedStyle.hasGlow
+                ? {
+                    filter: `drop-shadow(0 0 ${glowRadius1}px ${appliedStyle.color}) drop-shadow(0 0 ${glowRadius2}px ${appliedStyle.color})`,
+                  }
+                : {};
+
+              // Scale text shadow with zoom level
+              let scaledTextShadow = appliedStyle.textShadow;
+              if (scaledTextShadow && preview.previewScale !== 1) {
+                scaledTextShadow = scaledTextShadow.replace(
+                  /(\d+\.?\d*)px/g,
+                  (match: string, value: string) => {
+                    return `${parseFloat(value) * preview.previewScale}px`;
+                  },
+                );
+              }
+
+              // Determine vertical position based on text type
+              // Headings appear at top, body text appears in middle
+              const isHeading = track.textType === 'heading';
+
+              return (
+                <div
+                  key={track.id}
+                  className="absolute pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
+                  style={{
+                    width: actualWidth,
+                    height: actualHeight,
+                    left: `calc(50% + ${preview.panX}px)`,
+                    top: `calc(50% + ${preview.panY}px)`,
+                    transform: 'translate(-50%, -50%)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems:
+                      appliedStyle.textAlign === 'left'
+                        ? 'flex-start'
+                        : appliedStyle.textAlign === 'right'
+                          ? 'flex-end'
+                          : 'center',
+                    justifyContent: isHeading ? 'flex-start' : 'center',
+                    paddingTop: isHeading
+                      ? `${20 * preview.previewScale}px`
+                      : '0',
+                    paddingBottom: isHeading
+                      ? '0'
+                      : `${20 * preview.previewScale}px`,
+                    paddingLeft: `${scaledHorizontalPadding}px`,
+                    paddingRight: `${scaledHorizontalPadding}px`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: `${responsiveFontSize}px`,
+                      fontFamily: appliedStyle.fontFamily,
+                      fontWeight: appliedStyle.fontWeight,
+                      fontStyle: appliedStyle.fontStyle,
+                      textTransform: appliedStyle.textTransform as any,
+                      textDecoration: appliedStyle.textDecoration,
+                      textAlign: appliedStyle.textAlign as any,
+                      lineHeight: appliedStyle.lineHeight,
+                      letterSpacing: appliedStyle.letterSpacing
+                        ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
+                        : appliedStyle.letterSpacing,
+                      textShadow: scaledTextShadow,
+                      whiteSpace: 'pre-line',
+                      wordBreak: 'keep-all',
+                      overflowWrap: 'normal',
+                      color: appliedStyle.color,
+                      backgroundColor: appliedStyle.backgroundColor,
+                      opacity: appliedStyle.opacity,
+                      padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+                      ...glowStyle,
+                    }}
+                  >
+                    {track.textContent}
+                  </div>
+                </div>
+              );
+            })}
+          </>
         );
       })()}
 
