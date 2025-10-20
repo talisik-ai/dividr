@@ -631,7 +631,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
             ? track.subtitleText
-            : track.name}
+            : track.type === 'text' && track.textContent
+              ? track.textContent
+              : track.name}
         </div>
       );
     }, [track, frameWidth, width, zoomLevel]);

@@ -17,6 +17,7 @@ import { createPlaybackSlice, PlaybackSlice } from './slices/playbackSlice';
 import { createPreviewSlice, PreviewSlice } from './slices/previewSlice';
 import { createProjectSlice, ProjectSlice } from './slices/projectSlice';
 import { createRenderSlice, RenderSlice } from './slices/renderSlice';
+import { createTextClipsSlice, TextClipsSlice } from './slices/textClipsSlice';
 import { createTextStyleSlice, TextStyleSlice } from './slices/textStyleSlice';
 import { createTimelineSlice, TimelineSlice } from './slices/timelineSlice';
 import { createTracksSlice, TracksSlice } from './slices/tracksSlice';
@@ -34,6 +35,7 @@ type VideoEditorStore = TimelineSlice &
   UtilitySlice &
   FileProcessingSlice &
   TextStyleSlice &
+  TextClipsSlice &
   ColorHistorySlice &
   ClipboardSlice &
   UndoRedoSlice;
@@ -53,6 +55,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         ...createUtilitySlice(...a),
         ...createFileProcessingSlice(...a),
         ...createTextStyleSlice(...a),
+        ...createTextClipsSlice(...a),
         ...createColorHistorySlice(...a),
         ...createClipboardSlice(...a),
         ...createUndoRedoSlice(...a),

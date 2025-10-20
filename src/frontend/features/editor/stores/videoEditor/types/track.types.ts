@@ -26,4 +26,7 @@ export interface VideoTrack {
   // Precise subtitle timing from original SRT file (in seconds with millisecond precision)
   subtitleStartTime?: number; // Original start time from SRT (seconds)
   subtitleEndTime?: number; // Original end time from SRT (seconds)
+  // Text clip properties (for type === 'text')
+  textContent?: string; // The actual text content for text clips
+  textType?: 'heading' | 'body'; // Type of text clip
 }
