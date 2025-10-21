@@ -41,6 +41,11 @@ export interface UndoRedoSlice {
   maxHistorySize: number;
   isRecording: boolean; // Flag to prevent recording during undo/redo
 
+  // Batch transaction grouping
+  isGrouping: boolean; // Flag to indicate we're in a grouped transaction
+  groupStartState: UndoableState | null; // State at the start of a group
+  groupActionName: string | null; // Name of the grouped action
+
   // Actions
   undo: () => void;
   redo: () => void;
@@ -49,6 +54,10 @@ export interface UndoRedoSlice {
   canRedo: () => boolean;
   clearHistory: () => void;
   setMaxHistorySize: (size: number) => void;
+
+  // Batch transaction grouping
+  beginGroup: (actionName: string) => void;
+  endGroup: () => void;
 
   // Internal helpers
   captureUndoableState: () => UndoableState;
@@ -65,6 +74,9 @@ export const createUndoRedoSlice: StateCreator<
   redoStack: [],
   maxHistorySize: 50,
   isRecording: true,
+  isGrouping: false,
+  groupStartState: null,
+  groupActionName: null,
 
   canUndo: () => {
     const state = get() as any;
@@ -127,6 +139,12 @@ export const createUndoRedoSlice: StateCreator<
       return;
     }
 
+    // Don't record individual actions if we're in a grouped transaction
+    // The group will be recorded when endGroup() is called
+    if (state.isGrouping) {
+      return;
+    }
+
     const currentState = state.captureUndoableState();
     const newEntry: HistoryEntry = {
       state: currentState,
@@ -147,6 +165,84 @@ export const createUndoRedoSlice: StateCreator<
         redoStack: [], // Clear redo stack when new action is recorded
       };
     });
+  },
+
+  beginGroup: (actionName: string) => {
+    const state = get() as any;
+
+    // Don't start a group if we're already in one or not recording
+    if (state.isGrouping || !state.isRecording) {
+      console.warn('⚠️ Cannot begin group: already grouping or not recording');
+      return;
+    }
+
+    // Capture the state at the start of the group
+    const startState = state.captureUndoableState();
+
+    set({
+      isGrouping: true,
+      groupStartState: startState,
+      groupActionName: actionName,
+    });
+
+    console.log(`🔗 Begin group: ${actionName}`);
+  },
+
+  endGroup: () => {
+    const state = get() as any;
+
+    // Don't end a group if we're not in one
+    if (!state.isGrouping) {
+      console.warn('⚠️ Cannot end group: not currently grouping');
+      return;
+    }
+
+    // Capture the final state after all operations in the group
+    const finalState = state.captureUndoableState();
+
+    // Only record if the state actually changed
+    const stateChanged =
+      JSON.stringify(state.groupStartState) !== JSON.stringify(finalState);
+
+    if (stateChanged && state.groupStartState) {
+      const newEntry: HistoryEntry = {
+        state: state.groupStartState,
+        timestamp: Date.now(),
+        actionName: state.groupActionName || 'Grouped Action',
+      };
+
+      set((state: any) => {
+        const newUndoStack = [...state.undoStack, newEntry];
+
+        // Limit history size
+        if (newUndoStack.length > state.maxHistorySize) {
+          newUndoStack.shift(); // Remove oldest entry
+        }
+
+        return {
+          undoStack: newUndoStack,
+          redoStack: [], // Clear redo stack when new action is recorded
+          isGrouping: false,
+          groupStartState: null,
+          groupActionName: null,
+        };
+      });
+
+      console.log(
+        `✅ End group: ${state.groupActionName} (state changed, recorded)`,
+      );
+    } else {
+      // State didn't change, just reset the grouping flags
+      set({
+        isGrouping: false,
+        groupStartState: null,
+        groupActionName: null,
+      });
+
+      console.log(
+        `⏭️ End group: ${state.groupActionName} (no state change, not recorded)`,
+      );
+    }
   },
 
   undo: () => {

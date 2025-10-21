@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ShortcutConfig } from './types';
 
+// Import the store directly to avoid stale closures
+import { useVideoEditorStore } from '../index';
+
 /**
  * Timeline shortcuts - active when timeline is focused
  * These include zoom, in/out points, snapping, and split mode
@@ -56,7 +59,9 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'timeline',
     handler: (e) => {
       e?.preventDefault();
-      store.toggleSplitMode();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.toggleSplitMode();
     },
   },
   {
@@ -67,7 +72,9 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'timeline',
     handler: (e) => {
       e?.preventDefault();
-      store.toggleSplitMode();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.toggleSplitMode();
     },
   },
   {
@@ -78,7 +85,45 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'timeline',
     handler: (e) => {
       e?.preventDefault();
-      store.setSplitMode(false);
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.setSplitMode(false);
+    },
+  },
+  {
+    id: 'timeline-select-all-ctrl',
+    keys: 'ctrl+a',
+    description: 'Select All Tracks',
+    category: 'Timeline Selection',
+    scope: 'timeline',
+    handler: (e) => {
+      e?.preventDefault();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      const allTrackIds = freshState.tracks.map((track: any) => track.id);
+      freshState.setSelectedTracks(allTrackIds);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'timeline-select-all-cmd',
+    keys: 'cmd+a',
+    description: 'Select All Tracks',
+    category: 'Timeline Selection',
+    scope: 'timeline',
+    handler: (e) => {
+      e?.preventDefault();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      const allTrackIds = freshState.tracks.map((track: any) => track.id);
+      freshState.setSelectedTracks(allTrackIds);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
     },
   },
 ];

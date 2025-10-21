@@ -33,6 +33,13 @@ export interface TrackRowDefinition {
 
 export const TRACK_ROWS: TrackRowDefinition[] = [
   {
+    id: 'text',
+    name: 'Text',
+    trackTypes: ['text'],
+    color: '#3498db',
+    icon: '🔤',
+  },
+  {
     id: 'subtitle',
     name: 'Subtitles',
     trackTypes: ['subtitle'],
@@ -104,6 +111,8 @@ const TrackItemWrapper: React.FC<{
 
     const getTrackGradient = (type: VideoTrack['type']) => {
       switch (type) {
+        case 'text':
+          return 'hsl(0, 0%, 35%)';
         case 'subtitle':
           return 'hsl(0, 0%, 35%)';
         case 'video':
@@ -622,7 +631,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
             ? track.subtitleText
-            : track.name}
+            : track.type === 'text' && track.textContent
+              ? track.textContent
+              : track.name}
         </div>
       );
     }, [track, frameWidth, width, zoomLevel]);
@@ -832,7 +843,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         </div>
 
         {/* Drop hint */}
-        {allTracksCount === 0 && rowDef.id === 'subtitle' && (
+        {allTracksCount === 0 && rowDef.id === 'video' && (
           <div
             className={`absolute inset-0 flex items-center px-8 cursor-pointer transition-all duration-200 rounded-lg border-2 border-dashed
             ${
@@ -903,6 +914,11 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       importMediaFromFiles,
       importMediaFromDialog,
     } = useVideoEditorStore();
+
+    // Subscribe to visible track rows from timeline state with fallback
+    const visibleTrackRows = useVideoEditorStore(
+      (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
+    );
 
     const handleTrackSelect = useCallback(
       (trackId: string, multiSelect = false) => {
@@ -1055,6 +1071,11 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       ],
     );
 
+    // Filter track rows to only show visible ones
+    const visibleRows = TRACK_ROWS.filter((row) =>
+      visibleTrackRows.includes(row.id),
+    );
+
     return (
       <div
         className="relative min-h-full overflow-visible"
@@ -1063,8 +1084,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           minWidth: timelineWidth,
         }}
       >
-        {/* Render each track row */}
-        {TRACK_ROWS.map((rowDef) => (
+        {/* Render only visible track rows */}
+        {visibleRows.map((rowDef) => (
           <TrackRow
             key={rowDef.id}
             rowDef={rowDef}

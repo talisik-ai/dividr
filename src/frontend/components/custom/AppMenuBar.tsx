@@ -1,3 +1,4 @@
+import { Kbd, KbdGroup } from '@/frontend/components/ui/kbd';
 import {
   Menubar,
   MenubarCheckboxItem,
@@ -13,98 +14,348 @@ import {
   MenubarSubTrigger,
   MenubarTrigger,
 } from '@/frontend/components/ui/menubar';
-import { useState } from 'react';
+import { useVideoEditorStore } from '@/frontend/features/editor/stores/videoEditor/index';
+import {
+  closeProjectAction,
+  copyTracksAction,
+  cutTracksAction,
+  deselectAllTracksAction,
+  duplicateTracksAction,
+  exportVideoAction,
+  importMediaAction,
+  newProjectAction,
+  openProjectAction,
+  pasteTracksAction,
+  redoAction,
+  saveProjectAction,
+  saveProjectAsAction,
+  selectAllTracksAction,
+  undoAction,
+} from '@/frontend/features/editor/stores/videoEditor/shortcuts/actions';
+import { useProjectShortcutDialog } from '@/frontend/features/editor/stores/videoEditor/shortcuts/hooks/useProjectShortcutDialog';
+import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
+import { Check } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { HotkeysDialog } from './HotkeysDialog';
 
 export const AppMenuBar = () => {
   const [showHotkeys, setShowHotkeys] = useState(false);
+  const navigate = useNavigate();
+  const importMediaFromDialog = useVideoEditorStore(
+    (state) => state.importMediaFromDialog,
+  );
+  const tracks = useVideoEditorStore((state) => state.tracks);
+
+  // Undo/Redo state
+  const undo = useVideoEditorStore((state) => state.undo);
+  const redo = useVideoEditorStore((state) => state.redo);
+  const canUndo = useVideoEditorStore((state) => state.canUndo);
+  const canRedo = useVideoEditorStore((state) => state.canRedo);
+
+  // Track selection state
+  const setSelectedTracks = useVideoEditorStore(
+    (state) => state.setSelectedTracks,
+  );
+  const selectedTrackIds = useVideoEditorStore(
+    (state) => state.timeline.selectedTrackIds,
+  );
+
+  // Clipboard state
+  const copyTracks = useVideoEditorStore((state) => state.copyTracks);
+  const cutTracks = useVideoEditorStore((state) => state.cutTracks);
+  const pasteTracks = useVideoEditorStore((state) => state.pasteTracks);
+  const hasClipboardData = useVideoEditorStore(
+    (state) => state.hasClipboardData,
+  );
+  const duplicateTrack = useVideoEditorStore((state) => state.duplicateTrack);
+  const removeSelectedTracks = useVideoEditorStore(
+    (state) => state.removeSelectedTracks,
+  );
+
+  // Project save state
+  const { lastSavedAt, isSaving, currentProject } = useProjectStore();
+
+  // Check if project is saved (saved within last 5 seconds means "just saved")
+  const isProjectSaved = useMemo(() => {
+    if (!lastSavedAt || !currentProject) return false;
+    const timeSinceLastSave = Date.now() - new Date(lastSavedAt).getTime();
+    return timeSinceLastSave < 5000; // Consider "saved" if within 5 seconds
+  }, [lastSavedAt, currentProject]);
+
+  // Setup confirmation dialog for close project
+  const { showConfirmation, ConfirmationDialog } = useProjectShortcutDialog();
 
   const handleOpenHotkeys = () => {
     setShowHotkeys(true);
+  };
+
+  // Project action handlers
+  const handleNewProject = () => {
+    newProjectAction(navigate).catch(console.error);
+  };
+
+  const handleOpenProject = () => {
+    openProjectAction(navigate).catch(console.error);
+  };
+
+  const handleSaveProject = () => {
+    saveProjectAction().catch(console.error);
+  };
+
+  const handleSaveProjectAs = () => {
+    saveProjectAsAction().catch(console.error);
+  };
+
+  const handleImportMedia = () => {
+    importMediaAction(importMediaFromDialog).catch(console.error);
+  };
+
+  const handleExportVideo = () => {
+    exportVideoAction(tracks.length);
+  };
+
+  const handleCloseProject = () => {
+    closeProjectAction(navigate, showConfirmation).catch(console.error);
+  };
+
+  // Edit action handlers
+  const handleUndo = () => {
+    undoAction(undo, canUndo);
+  };
+
+  const handleRedo = () => {
+    redoAction(redo, canRedo);
+  };
+
+  const handleSelectAll = () => {
+    selectAllTracksAction(tracks, setSelectedTracks);
+  };
+
+  const handleDeselectAll = () => {
+    deselectAllTracksAction(setSelectedTracks, selectedTrackIds);
+  };
+
+  // Clipboard action handlers
+  const handleCopy = () => {
+    copyTracksAction(selectedTrackIds, copyTracks);
+  };
+
+  const handleCut = () => {
+    cutTracksAction(selectedTrackIds, cutTracks);
+  };
+
+  const handlePaste = () => {
+    pasteTracksAction(hasClipboardData, pasteTracks);
+  };
+
+  const handleDuplicate = () => {
+    duplicateTracksAction(
+      selectedTrackIds,
+      tracks,
+      duplicateTrack,
+      setSelectedTracks,
+    );
+  };
+
+  const handleDelete = () => {
+    if (selectedTrackIds.length === 0) {
+      return;
+    }
+    removeSelectedTracks();
   };
 
   return (
     <div className="flex items-center my-1">
       <Menubar variant="minimal">
         <MenubarMenu>
-          <MenubarTrigger>Home</MenubarTrigger>
-          <MenubarContent>
-            <MenubarItem disabled>
-              Dashboard <MenubarShortcut>⌘D</MenubarShortcut>
-            </MenubarItem>
-            <MenubarItem disabled>
-              Recent Projects <MenubarShortcut>⌘R</MenubarShortcut>
-            </MenubarItem>
-            <MenubarSeparator />
-            <MenubarItem disabled>Welcome Screen</MenubarItem>
-            <MenubarItem disabled>Getting Started</MenubarItem>
-          </MenubarContent>
+          <Link to="/">
+            <MenubarTrigger>Home</MenubarTrigger>
+          </Link>
         </MenubarMenu>
         <MenubarMenu>
           <MenubarTrigger>File</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem disabled>
-              New Project <MenubarShortcut>⌘N</MenubarShortcut>
+            <MenubarItem onClick={handleNewProject}>
+              New Project{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>N</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
-              Open Project <MenubarShortcut>⌘O</MenubarShortcut>
+            <MenubarItem onClick={handleOpenProject}>
+              Open Project{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>O</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
-              Save Project <MenubarShortcut>⌘S</MenubarShortcut>
+            <MenubarItem
+              onClick={handleSaveProject}
+              disabled={isProjectSaved || isSaving || !currentProject}
+            >
+              <span className="flex items-center gap-2 flex-1">
+                Save Project
+                {isProjectSaved && (
+                  <Check className="size-3.5 text-green-500" />
+                )}
+                {isSaving && (
+                  <span className="text-xs text-muted-foreground">
+                    Saving...
+                  </span>
+                )}
+              </span>
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>S</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
-              Save As... <MenubarShortcut>⇧⌘S</MenubarShortcut>
+            <MenubarItem onClick={handleSaveProjectAs}>
+              Save As...{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Shift</Kbd>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>S</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarSub>
-              <MenubarSubTrigger disabled>Import</MenubarSubTrigger>
-              <MenubarSubContent>
-                <MenubarItem disabled>Import Video</MenubarItem>
-                <MenubarItem disabled>Import Audio</MenubarItem>
-                <MenubarItem disabled>Import Images</MenubarItem>
-              </MenubarSubContent>
-            </MenubarSub>
-            <MenubarSub>
-              <MenubarSubTrigger disabled>Export</MenubarSubTrigger>
-              <MenubarSubContent>
-                <MenubarItem disabled>Export Video</MenubarItem>
-                <MenubarItem disabled>Export Audio</MenubarItem>
-                <MenubarItem disabled>Export Project</MenubarItem>
-              </MenubarSubContent>
-            </MenubarSub>
+            <MenubarItem onClick={handleImportMedia}>
+              Import Media{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>I</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem onClick={handleExportVideo}>
+              Export Video{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>E</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
+            </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem disabled>
-              Close Project <MenubarShortcut>⌘W</MenubarShortcut>
+            <MenubarItem onClick={handleCloseProject}>
+              Close Project{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>W</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
         <MenubarMenu>
           <MenubarTrigger>Edit</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem disabled>
-              Undo <MenubarShortcut>⌘Z</MenubarShortcut>
+            <MenubarItem onClick={handleUndo} disabled={!canUndo()}>
+              Undo{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>Z</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
-              Redo <MenubarShortcut>⇧⌘Z</MenubarShortcut>
+            <MenubarItem onClick={handleRedo} disabled={!canRedo()}>
+              Redo{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Shift</Kbd>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>Z</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem disabled>
-              Cut <MenubarShortcut>⌘X</MenubarShortcut>
+            <MenubarItem
+              onClick={handleCut}
+              disabled={selectedTrackIds.length === 0}
+            >
+              Cut{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>X</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
-              Copy <MenubarShortcut>⌘C</MenubarShortcut>
+            <MenubarItem
+              onClick={handleCopy}
+              disabled={selectedTrackIds.length === 0}
+            >
+              Copy{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>C</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
-              Paste <MenubarShortcut>⌘V</MenubarShortcut>
+            <MenubarItem onClick={handlePaste} disabled={!hasClipboardData()}>
+              Paste{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>V</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>
-              Delete <MenubarShortcut>⌫</MenubarShortcut>
+            <MenubarItem
+              onClick={handleDuplicate}
+              disabled={selectedTrackIds.length === 0}
+            >
+              Duplicate{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>D</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem disabled>
-              Select All <MenubarShortcut>⌘A</MenubarShortcut>
+            <MenubarItem
+              onClick={handleDelete}
+              disabled={selectedTrackIds.length === 0}
+            >
+              Delete{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Delete</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
             </MenubarItem>
-            <MenubarItem disabled>Deselect All</MenubarItem>
+            <MenubarSeparator />
+            <MenubarItem
+              onClick={handleSelectAll}
+              disabled={tracks.length === 0}
+            >
+              Select All{' '}
+              <MenubarShortcut>
+                <KbdGroup>
+                  <Kbd>Ctrl</Kbd>
+                  <Kbd>A</Kbd>
+                </KbdGroup>
+              </MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem
+              onClick={handleDeselectAll}
+              disabled={selectedTrackIds.length === 0}
+            >
+              Deselect All
+            </MenubarItem>
             <MenubarSeparator />
             <MenubarSub>
               <MenubarSubTrigger disabled>Timeline</MenubarSubTrigger>
@@ -171,6 +422,7 @@ export const AppMenuBar = () => {
       </Menubar>
 
       <HotkeysDialog open={showHotkeys} onOpenChange={setShowHotkeys} />
+      <ConfirmationDialog />
     </div>
   );
 };

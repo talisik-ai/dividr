@@ -11,7 +11,7 @@ import {
   type PanelType,
 } from '@/frontend/features/editor/stores/PanelStore';
 import { cn } from '@/frontend/utils/utils';
-import { Cog, FolderDown, Music, Type } from 'lucide-react';
+import { Music, Settings, Type, Upload } from 'lucide-react';
 import { useCallback, useRef } from 'react';
 import { Button } from '../../components/ui/button';
 
@@ -49,9 +49,14 @@ interface ToolbarConfig {
 const toolbarConfig: ToolbarConfig[] = [
   {
     panelType: 'media-import',
-    icon: <FolderDown size={16} />,
+    icon: <Upload size={16} />,
     title: 'Import media files',
     isSpecial: true,
+  },
+  {
+    panelType: 'settings',
+    icon: <Settings size={16} />,
+    title: 'Project settings',
   },
   {
     panelType: 'text-tools',
@@ -74,11 +79,6 @@ const toolbarConfig: ToolbarConfig[] = [
     panelType: 'audio-tools',
     icon: <Music size={16} />,
     title: 'Audio tools',
-  },
-  {
-    panelType: 'settings',
-    icon: <Cog size={16} />,
-    title: 'Project settings',
   },
 ];
 

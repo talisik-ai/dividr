@@ -215,6 +215,7 @@ export interface TracksSlice {
   duplicateTrack: (
     trackId: string,
     duplicateLinked?: boolean,
+    skipGrouping?: boolean,
   ) => string | string[];
   splitTrack: (trackId: string, frame: number) => void;
   splitAtPlayhead: () => boolean;
@@ -242,16 +243,14 @@ export const createTracksSlice: StateCreator<
 
   addTrack: async (trackData) => {
     const id = uuidv4();
+    let state = get() as any;
 
-    // Record action for undo/redo BEFORE state change
-    const state = get() as any;
-    state.recordAction?.('Add Track');
-
+    // For video tracks (which create video+audio pairs), use grouped transaction
     if (trackData.type === 'video') {
+      // Begin grouped transaction for atomic undo of video+audio pair
+      state.beginGroup?.('Add Video Track');
       const audioId = uuidv4();
       const duration = trackData.endFrame - trackData.startFrame;
-
-      const state = get() as any;
       const existingVideoTracks = state.tracks.filter(
         (t: VideoTrack) => t.type === 'video',
       );
@@ -313,12 +312,18 @@ export const createTracksSlice: StateCreator<
         tracks: [...state.tracks, videoTrack, audioTrack],
       }));
 
+      // Refresh state reference after set
+      state = get() as any;
       state.markUnsavedChanges?.();
       state.updateProjectThumbnailFromTimeline?.();
 
+      // End grouped transaction for video+audio pair
+      state.endGroup?.();
+
       return id;
     } else {
-      const state = get() as any;
+      // For non-video tracks, use single action recording
+      state.recordAction?.('Add Track');
       const existingTracks = state.tracks.filter(
         (t: VideoTrack) => t.type === trackData.type,
       );
@@ -345,6 +350,24 @@ export const createTracksSlice: StateCreator<
         tracks: [...state.tracks, track],
       }));
 
+      // Auto-create track row for subtitle and image types
+      // Use setTimeout to avoid synchronous state updates that can cause loops
+      if (trackData.type === 'subtitle') {
+        setTimeout(() => {
+          const currentState = get() as any;
+          currentState.ensureTrackRowVisible?.('subtitle');
+          console.log('📝 Auto-created Subtitle track row');
+        }, 0);
+      } else if (trackData.type === 'image') {
+        setTimeout(() => {
+          const currentState = get() as any;
+          currentState.ensureTrackRowVisible?.('logo');
+          console.log('🖼️ Auto-created Image/Overlay track row');
+        }, 0);
+      }
+
+      // Refresh state reference after set
+      state = get() as any;
       state.markUnsavedChanges?.();
       return id;
     }
@@ -391,6 +414,9 @@ export const createTracksSlice: StateCreator<
             mediaItem.previewUrl,
           );
 
+          // Begin grouped transaction for all subtitle segments
+          state.beginGroup?.(`Import Subtitle File: ${mediaItem.name}`);
+
           // Add each subtitle segment as a track preserving original timing
           const addedIds: string[] = [];
 
@@ -399,6 +425,13 @@ export const createTracksSlice: StateCreator<
             const trackId = await get().addTrack(track);
             addedIds.push(trackId);
           }
+
+          // End grouped transaction - all subtitle segments as one atomic action
+          state.endGroup?.();
+
+          console.log(
+            `✅ Imported ${subtitleTracks.length} subtitle segments as grouped transaction`,
+          );
 
           return addedIds[0] || ''; // Return first track ID for consistency
         }
@@ -1070,17 +1103,22 @@ export const createTracksSlice: StateCreator<
     state.markUnsavedChanges?.();
   },
 
-  duplicateTrack: (trackId, duplicateLinked = true) => {
+  duplicateTrack: (trackId, duplicateLinked = true, skipGrouping = false) => {
     const state = get() as any;
 
-    // Record action for undo/redo
-    state.recordAction?.('Duplicate Track');
+    // Begin grouped transaction for atomic undo (unless we're in a batch operation)
+    if (!skipGrouping) {
+      state.beginGroup?.('Duplicate Track');
+    }
 
     const originalTrack = state.tracks.find(
       (t: VideoTrack) => t.id === trackId,
     );
     if (!originalTrack) {
       console.error(`❌ Cannot duplicate: track ${trackId} not found`);
+      if (!skipGrouping) {
+        state.endGroup?.(); // End group even on error
+      }
       return '';
     }
 
@@ -1201,6 +1239,12 @@ export const createTracksSlice: StateCreator<
         state.triggerDuplicationFeedback?.(newLinkedId);
 
         state.markUnsavedChanges?.();
+
+        // End grouped transaction (unless we're in a batch operation)
+        if (!skipGrouping) {
+          state.endGroup?.();
+        }
+
         // Return both IDs for linked tracks
         return [newId, newLinkedId];
       }
@@ -1251,6 +1295,12 @@ export const createTracksSlice: StateCreator<
     state.triggerDuplicationFeedback?.(newId);
 
     state.markUnsavedChanges?.();
+
+    // End grouped transaction (unless we're in a batch operation)
+    if (!skipGrouping) {
+      state.endGroup?.();
+    }
+
     return newId;
   },
 

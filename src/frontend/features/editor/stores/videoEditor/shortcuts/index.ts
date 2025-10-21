@@ -16,14 +16,24 @@ export class ShortcutRegistry {
   /**
    * Initialize the registry with all shortcuts
    */
-  initialize(getStore: () => any, effectiveEndFrame: number): void {
+  initialize(
+    getStore: () => any,
+    effectiveEndFrame: number,
+    projectHandlers?: any,
+  ): void {
     this.shortcuts.clear();
 
-    // Register global shortcuts
-    const globalShortcuts = createGlobalShortcuts(getStore, effectiveEndFrame);
-    globalShortcuts.forEach((shortcut) => {
-      this.shortcuts.set(shortcut.id, shortcut);
-    });
+    // Register global shortcuts (only if projectHandlers are provided)
+    if (projectHandlers) {
+      const globalShortcuts = createGlobalShortcuts(
+        getStore,
+        effectiveEndFrame,
+        projectHandlers,
+      );
+      globalShortcuts.forEach((shortcut) => {
+        this.shortcuts.set(shortcut.id, shortcut);
+      });
+    }
 
     // Get store instance for other shortcuts
     const store = getStore();

@@ -764,9 +764,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
                       fontFamily: appliedStyle.fontFamily,
                       fontWeight: appliedStyle.fontWeight,
                       fontStyle: appliedStyle.fontStyle,
-                      textTransform: appliedStyle.textTransform as React.CSSProperties['textTransform'],
+                      textTransform:
+                        appliedStyle.textTransform as React.CSSProperties['textTransform'],
                       textDecoration: appliedStyle.textDecoration,
-                      textAlign: appliedStyle.textAlign as React.CSSProperties['textAlign'],
+                      textAlign:
+                        appliedStyle.textAlign as React.CSSProperties['textAlign'],
                       lineHeight: appliedStyle.lineHeight,
                       letterSpacing: appliedStyle.letterSpacing,
                       color: appliedStyle.color,

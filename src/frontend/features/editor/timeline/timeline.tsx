@@ -30,6 +30,11 @@ import {
   isContextMenuClick,
   TimelineInteractionHandlers,
 } from './utils/timelineInteractionHandlers';
+import {
+  getTrackRowHeight,
+  getTrackRowTop,
+  getVisibleRowIndex,
+} from './utils/trackRowPositions';
 
 interface TimelineProps {
   className?: string;
@@ -73,6 +78,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const timeline = useVideoEditorStore((state) => state.timeline);
     const tracks = useVideoEditorStore((state) => state.tracks);
     const playback = useVideoEditorStore((state) => state.playback);
+    const visibleTrackRows = useVideoEditorStore(
+      (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
+    );
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
     );
@@ -259,7 +267,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     }, [timeline.currentFrame]);
 
     // Centralized keyboard shortcuts
-    useGlobalShortcuts();
+    const { ConfirmationDialog } = useGlobalShortcuts();
     useTimelineShortcutsV2();
     useTrackShortcuts();
     useUndoRedoShortcuts();
@@ -466,13 +474,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const findTracksInMarquee = useCallback(
       (rect: { left: number; top: number; right: number; bottom: number }) => {
         const selectedIds: string[] = [];
-        const trackRowHeight = 48;
+        const trackRowHeight = getTrackRowHeight();
 
         tracks.forEach((track) => {
           const trackLeft = track.startFrame * frameWidth;
           const trackRight = track.endFrame * frameWidth;
-          const trackTypes = ['subtitle', 'image', 'video', 'audio'];
-          const rowIndex = trackTypes.indexOf(track.type);
+
+          // Use dynamic row index based on visible tracks
+          const rowIndex = getVisibleRowIndex(track.type, visibleTrackRows);
+
+          // Skip if track type is not visible
+          if (rowIndex === -1) return;
+
           const trackTop = rowIndex * trackRowHeight;
           const trackBottom = trackTop + trackRowHeight;
 
@@ -494,7 +507,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         return [...new Set(selectedIds)]; // Remove duplicates
       },
-      [tracks, frameWidth],
+      [tracks, frameWidth, visibleTrackRows],
     );
 
     // Split mode handlers
@@ -514,6 +527,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           tracksRef.current,
           frameWidth,
           tracks,
+          visibleTrackRows,
         );
 
         if (hoveredTrackAtPosition) {
@@ -711,16 +725,16 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       isSplitModeActive,
     ]);
 
-    // Helper functions to get track row positions
-    const getTrackRowTop = useCallback((trackType: string) => {
-      const trackRowHeight = 48; // Height of each track row
-      const trackTypes = ['subtitle', 'image', 'video', 'audio'];
-      const rowIndex = trackTypes.indexOf(trackType);
-      return rowIndex >= 0 ? rowIndex * trackRowHeight : 0;
-    }, []);
+    // Helper functions to get track row positions (using dynamic utilities)
+    const getTrackRowTopPosition = useCallback(
+      (trackType: string) => {
+        return getTrackRowTop(trackType, visibleTrackRows);
+      },
+      [visibleTrackRows],
+    );
 
-    const getTrackRowHeight = useCallback(() => {
-      return 48; // Standard track row height
+    const getTrackRowHeightValue = useCallback(() => {
+      return getTrackRowHeight();
     }, []);
 
     // Centralized interaction handlers
@@ -865,6 +879,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           tracksRef.current,
           frameWidth,
           tracks,
+          visibleTrackRows,
         );
         const frame = calculateFrameFromPosition(
           e.clientX,
@@ -1077,8 +1092,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     className="split-indicator"
                     style={{
                       left: `${splitIndicatorPosition}px`,
-                      top: `${getTrackRowTop(hoveredTrackRow)}px`,
-                      height: `${getTrackRowHeight()}px`,
+                      top: `${getTrackRowTopPosition(hoveredTrackRow)}px`,
+                      height: `${getTrackRowHeightValue()}px`,
                     }}
                   />
                 )}
@@ -1091,8 +1106,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     className="split-indicator"
                     style={{
                       left: `${indicator.position}px`,
-                      top: `${getTrackRowTop(indicator.trackType)}px`,
-                      height: `${getTrackRowHeight()}px`,
+                      top: `${getTrackRowTopPosition(indicator.trackType)}px`,
+                      height: `${getTrackRowHeightValue()}px`,
                     }}
                   />
                 ))}
@@ -1147,6 +1162,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             </div>
           </div>
         </div>
+
+        {/* Project Shortcut Confirmation Dialog */}
+        <ConfirmationDialog />
       </div>
     );
   },

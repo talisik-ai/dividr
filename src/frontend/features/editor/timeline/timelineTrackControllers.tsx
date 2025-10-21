@@ -5,9 +5,10 @@ import {
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
 import { cn } from '@/frontend/utils/utils';
-import { Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
+import { Eye, EyeOff, Volume2, VolumeX, X } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
+import { AddTrackButton } from './addTrackButton';
 import { TRACK_ROWS, TrackRowDefinition } from './timelineTracks';
 
 interface TrackControllerRowProps {
@@ -24,6 +25,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const toggleTrackMute = useVideoEditorStore(
       (state) => state.toggleTrackMute,
     );
+    const removeTrackRow = useVideoEditorStore((state) => state.removeTrackRow);
 
     // Check if any non-audio tracks in this row are visible
     const hasVisibleTracks = tracks.some(
@@ -66,6 +68,17 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       });
     }, [tracks, toggleTrackMute]);
 
+    const handleRemoveRow = useCallback(() => {
+      // Only allow removing rows that have no tracks
+      if (tracks.length === 0) {
+        removeTrackRow(rowDef.id);
+      }
+    }, [tracks.length, removeTrackRow, rowDef.id]);
+
+    // Can only remove non-essential rows (not video or audio) and only if they have no tracks
+    const canRemoveRow =
+      rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
+
     return (
       <div className="flex items-center justify-between px-2 mb-2 sm:h-6 md:h-8 lg:h-12 border-b border-border/20">
         {/* Track type info */}
@@ -88,7 +101,8 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
           {/* Show visibility toggle for video, image, and subtitle tracks only */}
           {(rowDef.trackTypes.includes('video') ||
             rowDef.trackTypes.includes('image') ||
-            rowDef.trackTypes.includes('subtitle')) && (
+            rowDef.trackTypes.includes('subtitle') ||
+            rowDef.trackTypes.includes('text')) && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -134,6 +148,23 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               </TooltipContent>
             </Tooltip>
           )}
+
+          {/* Show remove button for non-essential rows when empty */}
+          {canRemoveRow && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 hover:text-destructive"
+                  onClick={handleRemoveRow}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remove empty track row</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
     );
@@ -164,6 +195,11 @@ interface TimelineTrackControllersProps {
 export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
   React.memo(
     ({ tracks, className }) => {
+      // Subscribe to visible track rows from timeline state with fallback
+      const visibleTrackRows = useVideoEditorStore(
+        (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
+      );
+
       // Group tracks by their designated rows
       const tracksByRow = useMemo(() => {
         const grouped: Record<string, VideoTrack[]> = {};
@@ -177,16 +213,22 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
         return grouped;
       }, [tracks]);
 
+      // Filter track rows to only show visible ones
+      const visibleRows = useMemo(
+        () => TRACK_ROWS.filter((row) => visibleTrackRows.includes(row.id)),
+        [visibleTrackRows],
+      );
+
       return (
         <div className={cn('', className)}>
-          {/* Header spacer to align with timeline ruler */}
-          <div className="h-8 border-b border-border/20 flex items-center px-2">
-            <span className="text-xs font-medium text-muted-foreground"></span>
+          {/* Header with Add Track button */}
+          <div className="h-8 border-b border-border/20 flex items-center justify-center px-2">
+            <AddTrackButton />
           </div>
 
-          {/* Track controller rows */}
+          {/* Track controller rows - only visible ones */}
           <div className="flex flex-col items-center">
-            {TRACK_ROWS.map((rowDef) => (
+            {visibleRows.map((rowDef) => (
               <TrackControllerRow
                 key={rowDef.id}
                 rowDef={rowDef}

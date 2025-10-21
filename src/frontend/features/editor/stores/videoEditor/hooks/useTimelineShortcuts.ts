@@ -10,12 +10,13 @@ import { createTimelineShortcuts } from '../shortcuts/timelineShortcuts';
  */
 export const useTimelineShortcutsV2 = () => {
   const timeline = useVideoEditorStore((state) => state.timeline);
+  const tracks = useVideoEditorStore((state) => state.tracks);
 
-  // Get the store instance for creating shortcuts
-  const store = useVideoEditorStore.getState();
-
-  // Create timeline shortcuts
-  const timelineShortcuts = useMemo(() => createTimelineShortcuts(store), []);
+  // Create timeline shortcuts - pass getState so handlers always get fresh state
+  const timelineShortcuts = useMemo(
+    () => createTimelineShortcuts(useVideoEditorStore.getState()),
+    [],
+  );
 
   // Register shortcuts individually to comply with React hooks rules
   // Zoom in
@@ -44,22 +45,15 @@ export const useTimelineShortcutsV2 = () => {
     timeline.snapEnabled,
   ]);
 
-  // Toggle split mode (C key)
-  useHotkeys('c', timelineShortcuts[4].handler, timelineShortcuts[4].options, [
-    timeline.isSplitModeActive,
-  ]);
+  // Note: B, C, V tool switching shortcuts are registered in useTrackShortcuts to avoid conflicts
+  // Exit split mode is handled there as well via Escape key
 
-  // Toggle split mode (B key)
-  useHotkeys('b', timelineShortcuts[5].handler, timelineShortcuts[5].options, [
-    timeline.isSplitModeActive,
-  ]);
-
-  // Exit split mode
+  // Select All (Ctrl+A / Cmd+A)
   useHotkeys(
-    'escape',
-    timelineShortcuts[6].handler,
-    timelineShortcuts[6].options,
-    [timeline.isSplitModeActive],
+    ['ctrl+a', 'meta+a'],
+    timelineShortcuts[7].handler,
+    { preventDefault: true, enableOnFormTags: false },
+    [tracks.length, timeline.selectedTrackIds],
   );
 
   return {

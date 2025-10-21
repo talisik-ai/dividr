@@ -7,7 +7,7 @@ export interface TrackInfo {
   endTime?: number; // in seconds
   startFrame?: number;
   muted?: boolean; // Whether this track's audio should be muted
-  trackType?: 'video' | 'audio' | 'image' | 'subtitle' | 'both'; // Type of the track
+  trackType?: 'video' | 'audio' | 'image' | 'subtitle' | 'text' | 'both'; // Type of the track
   visible?: boolean; // Whether this track's video should be visible (if false, show black)
   gapType?: 'video' | 'audio' | 'both';
   width?: number;
@@ -19,6 +19,44 @@ export interface TextStyleConfig {
   fontStyle?: string;
   fontFamily?: string;
   textTransform?: string;
+}
+
+export interface TextClipTransform {
+  x: number; // Normalized position (-1 to 1)
+  y: number; // Normalized position (-1 to 1)
+  scale: number; // Scale factor
+  rotation: number; // Rotation in degrees
+}
+
+export interface TextClipStyle {
+  fontFamily?: string;
+  fontWeight?: string;
+  fontStyle?: string;
+  isBold?: boolean;
+  isItalic?: boolean;
+  isUnderline?: boolean;
+  textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  fontSize?: number;
+  fillColor?: string;
+  strokeColor?: string;
+  backgroundColor?: string;
+  hasShadow?: boolean;
+  letterSpacing?: number;
+  lineSpacing?: number;
+  hasGlow?: boolean;
+  opacity?: number;
+}
+
+export interface TextClipData {
+  id: string;
+  content: string;
+  type: 'heading' | 'body';
+  startFrame: number;
+  endFrame: number;
+  duration: number;
+  style: TextClipStyle;
+  transform: TextClipTransform;
 }
 
 export interface Gap {
@@ -75,6 +113,8 @@ export interface VideoEditJob {
   subtitleContent?: string; // SRT content to be written to a temporary file
   subtitleFormat?: 'srt' | 'vtt' | 'ass'; // Subtitle format for export
   videoDimensions?: { width: number; height: number };
+  textClips?: TextClipData[]; // Text clips for rendering (heading/body)
+  textClipsContent?: string; // Generated ASS content for text clips
 }
 
 export interface CommandParts {

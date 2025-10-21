@@ -64,6 +64,11 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
         return;
       }
 
+      // Begin grouped transaction for batch duplicate
+      freshState.beginGroup?.(
+        `Duplicate ${selectedTracks.length} Track${selectedTracks.length > 1 ? 's' : ''}`,
+      );
+
       // Batch duplicate: collect all new IDs and process linked tracks only once
       const processedTrackIds = new Set<string>();
       const newlyCreatedIds: string[] = [];
@@ -111,7 +116,12 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
         }
 
         // Duplicate the track - returns single ID or array of IDs [primary, linked]
-        const result = freshState.duplicateTrack(trackId, bothSidesSelected);
+        // Use skipGrouping=true since we're managing the group at batch level
+        const result = freshState.duplicateTrack(
+          trackId,
+          bothSidesSelected,
+          true,
+        );
         console.log(`[Duplicate] Result:`, result);
 
         if (result) {
@@ -123,6 +133,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
           }
         }
       });
+
+      // End grouped transaction
+      freshState.endGroup?.();
 
       // Update selection to the newly duplicated tracks
       if (newlyCreatedIds.length > 0) {
@@ -169,6 +182,11 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
         return;
       }
 
+      // Begin grouped transaction for batch duplicate
+      freshState.beginGroup?.(
+        `Duplicate ${selectedTracks.length} Track${selectedTracks.length > 1 ? 's' : ''}`,
+      );
+
       // Batch duplicate: collect all new IDs and process linked tracks only once
       const processedTrackIds = new Set<string>();
       const newlyCreatedIds: string[] = [];
@@ -216,7 +234,12 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
         }
 
         // Duplicate the track - returns single ID or array of IDs [primary, linked]
-        const result = freshState.duplicateTrack(trackId, bothSidesSelected);
+        // Use skipGrouping=true since we're managing the group at batch level
+        const result = freshState.duplicateTrack(
+          trackId,
+          bothSidesSelected,
+          true,
+        );
         console.log(`[Duplicate] Result:`, result);
 
         if (result) {
@@ -228,6 +251,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
           }
         }
       });
+
+      // End grouped transaction
+      freshState.endGroup?.();
 
       // Update selection to the newly duplicated tracks
       if (newlyCreatedIds.length > 0) {
@@ -242,6 +268,154 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     },
   },
   {
+    id: 'track-copy-ctrl',
+    keys: 'ctrl+c',
+    description: 'Copy Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+      const selectedTracks = freshState.timeline?.selectedTrackIds || [];
+
+      if (selectedTracks.length === 0) {
+        console.warn('[Copy] No tracks selected');
+        return;
+      }
+
+      freshState.copyTracks(selectedTracks);
+      console.log(`[Copy] Copied ${selectedTracks.length} track(s)`);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-copy-cmd',
+    keys: 'cmd+c',
+    description: 'Copy Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+      const selectedTracks = freshState.timeline?.selectedTrackIds || [];
+
+      if (selectedTracks.length === 0) {
+        console.warn('[Copy] No tracks selected');
+        return;
+      }
+
+      freshState.copyTracks(selectedTracks);
+      console.log(`[Copy] Copied ${selectedTracks.length} track(s)`);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-cut-ctrl',
+    keys: 'ctrl+x',
+    description: 'Cut Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+      const selectedTracks = freshState.timeline?.selectedTrackIds || [];
+
+      if (selectedTracks.length === 0) {
+        console.warn('[Cut] No tracks selected');
+        return;
+      }
+
+      freshState.cutTracks(selectedTracks);
+      console.log(`[Cut] Cut ${selectedTracks.length} track(s)`);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-cut-cmd',
+    keys: 'cmd+x',
+    description: 'Cut Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+      const selectedTracks = freshState.timeline?.selectedTrackIds || [];
+
+      if (selectedTracks.length === 0) {
+        console.warn('[Cut] No tracks selected');
+        return;
+      }
+
+      freshState.cutTracks(selectedTracks);
+      console.log(`[Cut] Cut ${selectedTracks.length} track(s)`);
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-paste-ctrl',
+    keys: 'ctrl+v',
+    description: 'Paste Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+
+      if (!freshState.hasClipboardData()) {
+        console.warn('[Paste] No clipboard data to paste');
+        return;
+      }
+
+      freshState.pasteTracks();
+      console.log('[Paste] Pasted tracks from clipboard');
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-paste-cmd',
+    keys: 'cmd+v',
+    description: 'Paste Track(s)',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+
+      const freshState = useVideoEditorStore.getState();
+
+      if (!freshState.hasClipboardData()) {
+        console.warn('[Paste] No clipboard data to paste');
+        return;
+      }
+
+      freshState.pasteTracks();
+      console.log('[Paste] Pasted tracks from clipboard');
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
     id: 'track-selection-tool',
     keys: 'v',
     description: 'Selection Tool',
@@ -250,7 +424,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     handler: (e) => {
       e?.preventDefault();
       // Exit split mode to return to selection tool
-      store.setSplitMode(false);
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.setSplitMode(false);
     },
   },
   {
@@ -261,7 +437,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'track',
     handler: (e) => {
       e?.preventDefault();
-      store.toggleSplitMode();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.toggleSplitMode();
     },
   },
   {
@@ -272,7 +450,9 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     scope: 'track',
     handler: (e) => {
       e?.preventDefault();
-      store.toggleSplitMode();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.toggleSplitMode();
     },
   },
   {

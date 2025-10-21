@@ -4,15 +4,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/frontend/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/frontend/components/ui/select';
+import { Kbd } from '@/frontend/components/ui/kbd';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
 import {
@@ -146,34 +141,34 @@ const PlayPauseButton: React.FC<{
 });
 
 // Separate component for playback rate selector
-const PlaybackRateSelector: React.FC = React.memo(() => {
-  const playbackRate = useVideoEditorStore(
-    (state) => state.playback.playbackRate,
-  );
-  const setPlaybackRate = useVideoEditorStore((state) => state.setPlaybackRate);
+// const PlaybackRateSelector: React.FC = React.memo(() => {
+//   const playbackRate = useVideoEditorStore(
+//     (state) => state.playback.playbackRate,
+//   );
+//   const setPlaybackRate = useVideoEditorStore((state) => state.setPlaybackRate);
 
-  return (
-    <div className="flex items-center justify-center gap-2">
-      <label className="text-xs">Speed:</label>
-      <Select
-        value={playbackRate.toString()}
-        onValueChange={(value) => setPlaybackRate(Number(value))}
-      >
-        <SelectTrigger variant="underline" className="text-xs w-[50px]">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="0.25">0.25x</SelectItem>
-          <SelectItem value="0.5">0.5x</SelectItem>
-          <SelectItem value="1">1x</SelectItem>
-          <SelectItem value="1.5">1.5x</SelectItem>
-          <SelectItem value="2">2x</SelectItem>
-          <SelectItem value="4">4x</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-  );
-});
+//   return (
+//     <div className="flex items-center justify-center gap-2">
+//       <label className="text-xs">Speed:</label>
+//       <Select
+//         value={playbackRate.toString()}
+//         onValueChange={(value) => setPlaybackRate(Number(value))}
+//       >
+//         <SelectTrigger variant="ghost" className="text-xs w-[50px]">
+//           <SelectValue />
+//         </SelectTrigger>
+//         <SelectContent>
+//           <SelectItem value="0.25">0.25x</SelectItem>
+//           <SelectItem value="0.5">0.5x</SelectItem>
+//           <SelectItem value="1">1x</SelectItem>
+//           <SelectItem value="1.5">1.5x</SelectItem>
+//           <SelectItem value="2">2x</SelectItem>
+//           <SelectItem value="4">4x</SelectItem>
+//         </SelectContent>
+//       </Select>
+//     </div>
+//   );
+// });
 
 // Separate component for delete button that reacts to track selection
 const DeleteButton: React.FC = React.memo(() => {
@@ -220,6 +215,9 @@ const DuplicateButton: React.FC = React.memo(() => {
     (state) => state.setSelectedTracks,
   );
 
+  const beginGroup = useVideoEditorStore((state) => state.beginGroup);
+  const endGroup = useVideoEditorStore((state) => state.endGroup);
+
   const handleDuplicate = useCallback(() => {
     if (selectedTrackIds.length === 0) return;
 
@@ -227,6 +225,11 @@ const DuplicateButton: React.FC = React.memo(() => {
       selectedCount: selectedTrackIds.length,
       selectedIds: selectedTrackIds,
     });
+
+    // Begin grouped transaction for batch duplicate
+    beginGroup?.(
+      `Duplicate ${selectedTrackIds.length} Track${selectedTrackIds.length > 1 ? 's' : ''}`,
+    );
 
     const processedTrackIds = new Set<string>();
     const newlyCreatedIds: string[] = [];
@@ -247,14 +250,6 @@ const DuplicateButton: React.FC = React.memo(() => {
         return;
       }
 
-      console.log(`[DuplicateButton] Processing track:`, {
-        id: trackId,
-        name: track.name,
-        type: track.type,
-        isLinked: track.isLinked,
-        linkedTrackId: track.linkedTrackId,
-      });
-
       const bothSidesSelected =
         track.isLinked &&
         track.linkedTrackId &&
@@ -264,13 +259,10 @@ const DuplicateButton: React.FC = React.memo(() => {
 
       if (bothSidesSelected && track.linkedTrackId) {
         processedTrackIds.add(track.linkedTrackId);
-        console.log(
-          `[DuplicateButton] Both sides selected, marking ${track.linkedTrackId} as processed`,
-        );
       }
 
-      const result = duplicateTrack(trackId, bothSidesSelected);
-      console.log(`[DuplicateButton] Result:`, result);
+      // Use skipGrouping=true since we're managing the group at batch level
+      const result = duplicateTrack(trackId, bothSidesSelected, true);
 
       if (result) {
         if (Array.isArray(result)) {
@@ -281,16 +273,22 @@ const DuplicateButton: React.FC = React.memo(() => {
       }
     });
 
+    // End grouped transaction
+    endGroup?.();
+
     if (newlyCreatedIds.length > 0) {
       setSelectedTracks(newlyCreatedIds);
-      console.log(
-        `✅ Duplicated ${processedTrackIds.size} track(s) → created ${newlyCreatedIds.length} new track(s)`,
-      );
-      console.log(`   New IDs:`, newlyCreatedIds);
     } else {
       console.error('❌ Duplication produced no new tracks');
     }
-  }, [selectedTrackIds, tracks, duplicateTrack, setSelectedTracks]);
+  }, [
+    selectedTrackIds,
+    tracks,
+    duplicateTrack,
+    setSelectedTracks,
+    beginGroup,
+    endGroup,
+  ]);
 
   const tooltipText =
     selectedTrackIds.length > 0
@@ -525,7 +523,9 @@ const ModeSelector: React.FC = React.memo(() => {
         >
           <MousePointer2 className="size-4" />
           <span>Selection Tool</span>
-          <span className="ml-auto text-xs text-muted-foreground pl-4">V</span>
+          <DropdownMenuShortcut>
+            <Kbd>V</Kbd>
+          </DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={handleSliceMode}
@@ -533,7 +533,11 @@ const ModeSelector: React.FC = React.memo(() => {
         >
           <Slice className="size-4" />
           <span>Slice Tool</span>
-          <span className="ml-auto text-xs text-muted-foreground pl-4">B</span>
+          <DropdownMenuShortcut>
+            <Kbd>B</Kbd>
+            <span className="text-muted-foreground mx-1">/</span>
+            <Kbd>C</Kbd>
+          </DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -690,9 +694,10 @@ export const TimelineControls: React.FC = React.memo(
                   <SplitSquareHorizontal />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Split at Playhead (Ctrl+K)</TooltipContent>
+              <TooltipContent>Split at Playhead Ctrl+K</TooltipContent>
             </Tooltip>
             <DuplicateButton />
+            <DeleteButton />
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -704,57 +709,16 @@ export const TimelineControls: React.FC = React.memo(
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {snapEnabled ? 'Snap Enabled (S)' : 'Snap Disabled (S)'}
+                {snapEnabled ? 'Snap Enabled' : 'Snap Disabled'} (S)
               </TooltipContent>
             </Tooltip>
             <LinkUnlinkButton />
-            <DeleteButton />
           </div>
         </div>
 
         <div className="flex items-center flex-1 justify-center relative">
           {/* Additional Controls */}
-          <div className="flex justify-start gap-2 w-full">
-            {/* Loop Toggle 
-        <button
-          onClick={toggleLoop}
-          
-          title="Toggle loop"
-        >
-          🔁
-        </button>
-        */}
-            {/* Playback Rate */}
-            <PlaybackRateSelector />
-
-            {/* Volume Control 
-        <div 
-        className='flex items-center justify-center gap-2 border-none focus-none'>
-          <button
-            onClick={toggleMute}
-            className='text-sm cursor-pointer'
-            title="Toggle mute"
-          >
-            {playback.muted ? <FaVolumeMute /> : <FaVolumeDown />}
-          </button>
-          
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={playback.volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-            style={{ width: '60px' }}
-            disabled={playback.muted}
-          />
-          
-          <span style={{ fontSize: '10px', color: '#888', minWidth: '25px' }}>
-            {Math.round(playback.volume * 100)}%
-          </span>
-        </div>
-        */}
-          </div>
+          <div className="flex justify-start gap-2 w-full"></div>
 
           {/* Time Display */}
           <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2">

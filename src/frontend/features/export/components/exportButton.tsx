@@ -146,6 +146,7 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         disabled={isButtonDisabled}
         className={className}
         size="sm"
+        data-export-button
       >
         {render.isRendering ? 'Exporting...' : 'Export'}
         <Upload className="size-3.5" />
