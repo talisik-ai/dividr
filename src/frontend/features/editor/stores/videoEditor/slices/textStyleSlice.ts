@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import { TextStyleSlice } from '../types';
 
 const DEFAULT_GLOBAL_CONTROLS = {
+  fontFamily: 'Inter',
   isBold: false,
   isItalic: false,
   isUnderline: false,
@@ -100,7 +101,8 @@ export const createTextStyleSlice: StateCreator<
     }
 
     return {
-      fontFamily: style.fontFamily || '"Arial", sans-serif',
+      fontFamily:
+        controls.fontFamily || style.fontFamily || '"Arial", sans-serif',
       fontWeight,
       fontStyle,
       textTransform: controls.textTransform,
@@ -173,6 +175,17 @@ export const createTextStyleSlice: StateCreator<
         globalControls: {
           ...state.textStyle.globalControls,
           textAlign: align,
+        },
+      },
+    })),
+
+  setFontFamily: (fontFamily: string) =>
+    set((state) => ({
+      textStyle: {
+        ...state.textStyle,
+        globalControls: {
+          ...state.textStyle.globalControls,
+          fontFamily,
         },
       },
     })),

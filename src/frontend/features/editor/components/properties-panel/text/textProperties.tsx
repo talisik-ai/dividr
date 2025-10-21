@@ -39,6 +39,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
+import { FontSelector } from '../shared/fontSelector';
 
 interface TextPropertiesProps {
   selectedTrackIds: string[];
@@ -88,10 +89,12 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
   // Selective subscriptions to avoid re-renders during playback
   const tracks = useVideoEditorStore((state) => state.tracks);
   const colorHistory = useVideoEditorStore((state) => state.colorHistory);
+  const recentFonts = useVideoEditorStore((state) => state.recentFonts);
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
   const addRecentColor = useVideoEditorStore((state) => state.addRecentColor);
+  const addRecentFont = useVideoEditorStore((state) => state.addRecentFont);
 
   // Get selected text tracks
   const selectedTextTracks = tracks.filter(
@@ -266,20 +269,17 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
       <div className="space-y-4">
         {/* Font Family & Size Row */}
         <div className="flex gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex-1">
-                <Select disabled>
-                  <SelectTrigger size="sm">
-                    <SelectValue placeholder="Arial" />
-                  </SelectTrigger>
-                </Select>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Font family (coming soon)</p>
-            </TooltipContent>
-          </Tooltip>
+          <FontSelector
+            value={selectedTextTracks[0]?.textStyle?.fontFamily || 'Inter'}
+            onValueChange={(value) => {
+              updateTextStyle({ fontFamily: value });
+            }}
+            onFontUsed={addRecentFont}
+            recentFonts={recentFonts}
+            disabled={isMultipleSelected}
+            size="sm"
+            className="flex-1"
+          />
 
           <Tooltip>
             <TooltipTrigger asChild>

@@ -10,6 +10,7 @@ export interface TextStyleState {
   };
   // Global style controls (affect all subtitles)
   globalControls: {
+    fontFamily: string;
     isBold: boolean;
     isItalic: boolean;
     isUnderline: boolean;
@@ -35,6 +36,7 @@ export interface TextStyleSlice {
   getTextStyleForSubtitle: (styleId: string) => React.CSSProperties;
 
   // Global style controls
+  setFontFamily: (fontFamily: string) => void;
   toggleBold: () => void;
   toggleItalic: () => void;
   toggleUnderline: () => void;

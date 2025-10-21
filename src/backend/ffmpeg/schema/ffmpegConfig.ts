@@ -57,6 +57,7 @@ export interface TextClipData {
   duration: number;
   style: TextClipStyle;
   transform: TextClipTransform;
+  fontFile: string; // Font family name from frontend (backend resolves to absolute path)
 }
 
 export interface Gap {

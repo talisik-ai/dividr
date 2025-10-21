@@ -432,6 +432,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [setSelectedTracks],
   );
 
+  // Handle text content updates
+  const handleTextUpdate = useCallback(
+    (trackId: string, newText: string) => {
+      updateTrack(trackId, { textContent: newText });
+    },
+    [updateTrack],
+  );
+
   // Handle click outside to deselect
   const handlePreviewClick = useCallback(
     (e: React.MouseEvent) => {
@@ -1301,6 +1309,30 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 );
               }
 
+              // Create the complete style object for both display and editing
+              const completeStyle: React.CSSProperties = {
+                fontSize: `${responsiveFontSize}px`,
+                fontFamily: appliedStyle.fontFamily,
+                fontWeight: appliedStyle.fontWeight,
+                fontStyle: appliedStyle.fontStyle,
+                textTransform: appliedStyle.textTransform as any,
+                textDecoration: appliedStyle.textDecoration,
+                textAlign: appliedStyle.textAlign as any,
+                lineHeight: appliedStyle.lineHeight,
+                letterSpacing: appliedStyle.letterSpacing
+                  ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
+                  : appliedStyle.letterSpacing,
+                textShadow: scaledTextShadow,
+                whiteSpace: 'pre-line',
+                wordBreak: 'keep-all',
+                overflowWrap: 'normal',
+                color: appliedStyle.color,
+                backgroundColor: appliedStyle.backgroundColor,
+                opacity: appliedStyle.opacity,
+                padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+                ...glowStyle,
+              };
+
               return (
                 <TextTransformBoundary
                   key={track.id}
@@ -1311,33 +1343,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                   videoHeight={baseVideoHeight}
                   onTransformUpdate={handleTextTransformUpdate}
                   onSelect={handleTextSelect}
+                  onTextUpdate={handleTextUpdate}
+                  appliedStyle={completeStyle}
                 >
-                  <div
-                    style={{
-                      fontSize: `${responsiveFontSize}px`,
-                      fontFamily: appliedStyle.fontFamily,
-                      fontWeight: appliedStyle.fontWeight,
-                      fontStyle: appliedStyle.fontStyle,
-                      textTransform: appliedStyle.textTransform as any,
-                      textDecoration: appliedStyle.textDecoration,
-                      textAlign: appliedStyle.textAlign as any,
-                      lineHeight: appliedStyle.lineHeight,
-                      letterSpacing: appliedStyle.letterSpacing
-                        ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
-                        : appliedStyle.letterSpacing,
-                      textShadow: scaledTextShadow,
-                      whiteSpace: 'pre-line',
-                      wordBreak: 'keep-all',
-                      overflowWrap: 'normal',
-                      color: appliedStyle.color,
-                      backgroundColor: appliedStyle.backgroundColor,
-                      opacity: appliedStyle.opacity,
-                      padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-                      ...glowStyle,
-                    }}
-                  >
-                    {track.textContent}
-                  </div>
+                  <div style={completeStyle}>{track.textContent}</div>
                 </TextTransformBoundary>
               );
             })}

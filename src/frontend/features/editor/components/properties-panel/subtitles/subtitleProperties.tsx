@@ -39,6 +39,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
+import { FontSelector } from '../shared/fontSelector';
 
 interface SubtitlePropertiesProps {
   selectedTrackIds: string[];
@@ -54,9 +55,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
-  const setActiveTextStyle = useVideoEditorStore(
-    (state) => state.setActiveTextStyle,
-  );
+  const setFontFamily = useVideoEditorStore((state) => state.setFontFamily);
   const toggleBold = useVideoEditorStore((state) => state.toggleBold);
   const toggleItalic = useVideoEditorStore((state) => state.toggleItalic);
   const toggleUnderline = useVideoEditorStore((state) => state.toggleUnderline);
@@ -255,27 +254,12 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       <div className="space-y-4">
         {/* Font Family & Size Row */}
         <div className="flex gap-2">
-          <Select
-            value={textStyle.activeStyle}
-            onValueChange={setActiveTextStyle}
-          >
-            <SelectTrigger className="flex-1" size="sm">
-              <SelectValue placeholder="Select font" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">
-                <span style={{ fontWeight: '400' }}>Default</span>
-              </SelectItem>
-              <SelectItem value="semibold">
-                <span style={{ fontWeight: '600' }}>Semibold</span>
-              </SelectItem>
-              <SelectItem value="script">
-                <span style={{ fontFamily: '"Segoe Script", cursive' }}>
-                  Script
-                </span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <FontSelector
+            value={textStyle.globalControls.fontFamily || 'Inter'}
+            onValueChange={setFontFamily}
+            size="sm"
+            className="flex-1"
+          />
 
           <Tooltip>
             <TooltipTrigger asChild>

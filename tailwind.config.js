@@ -34,6 +34,15 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ['Inter', ...defaultTheme.fontFamily.sans],
+        cormorant: ['Cormorant', 'serif'],
+        inter: ['Inter', 'sans-serif'],
+        lato: ['Lato', 'sans-serif'],
+        'libre-baskerville': ['Libre Baskerville', 'serif'],
+        lora: ['Lora', 'serif'],
+        montserrat: ['Montserrat', 'sans-serif'],
+        'playfair-display': ['Playfair Display', 'serif'],
+        poppins: ['Poppins', 'sans-serif'],
+        roboto: ['Roboto', 'sans-serif'],
       },
       keyframes: {
         'accordion-down': {
