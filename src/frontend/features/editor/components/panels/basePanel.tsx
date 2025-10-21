@@ -46,7 +46,7 @@ export const BasePanel: React.FC<BasePanelProps> = React.memo(
         </div>
 
         {/* Content with consistent padding */}
-        <div className="flex-1 overflow-hidden p-4">{children}</div>
+        <div className="flex-1 overflow-y-auto min-h-0 p-4">{children}</div>
       </div>
     );
   },

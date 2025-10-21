@@ -52,6 +52,10 @@ export function extractTextClips(
     // Calculate duration in frames
     const duration = track.endFrame - track.startFrame;
 
+    // Note: fontFile will be resolved by the backend during export
+    // We just pass the font family name here
+    const fontFile = style.fontFamily; // Backend will resolve to actual path
+
     return {
       id: track.id,
       content: track.textContent || '',
@@ -61,6 +65,7 @@ export function extractTextClips(
       duration,
       style,
       transform,
+      fontFile, // Font family name (backend resolves to path)
     };
   });
 

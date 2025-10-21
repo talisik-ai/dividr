@@ -3,6 +3,10 @@ import { StateCreator } from 'zustand';
 import { VideoTrack } from '../types';
 
 export interface TextClipsSlice {
+  // Recent fonts tracking (for text clips only)
+  recentFonts: string[];
+  addRecentFont: (fontFamily: string) => void;
+
   // Actions for text clips
   addTextClip: (
     textType: 'heading' | 'body',
@@ -50,7 +54,22 @@ export const createTextClipsSlice: StateCreator<
   [],
   [],
   TextClipsSlice
-> = (_set, get) => ({
+> = (set, get) => ({
+  // Recent fonts state
+  recentFonts: [],
+
+  // Add a font to recent fonts (max 10, most recent first)
+  addRecentFont: (fontFamily: string) => {
+    set((state: any) => {
+      const currentRecent = state.recentFonts || [];
+      // Remove if already exists
+      const filtered = currentRecent.filter((f: string) => f !== fontFamily);
+      // Add to front, limit to 10
+      const newRecent = [fontFamily, ...filtered].slice(0, 10);
+      return { recentFonts: newRecent };
+    });
+  },
+
   addTextClip: async (textType: 'heading' | 'body', startFrame = 0) => {
     const state = get() as any;
     const fps = state.timeline?.fps || 30;
