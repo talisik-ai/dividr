@@ -9,6 +9,7 @@ import {
   VideoTrack,
 } from '../../editor/stores/videoEditor/index';
 import { generateSubtitleContent } from '../utils/subtitleUtils';
+import { generateTextClipContent } from '../utils/textClipUtils';
 
 export const useExportJob = () => {
   const tracks = useVideoEditorStore((state) => state.tracks);
@@ -38,13 +39,47 @@ export const useExportJob = () => {
       const subtitleTracks = tracks.filter(
         (track) => track.type === 'subtitle',
       );
+      const textTracks = tracks.filter((track) => track.type === 'text');
       const videoTracks = tracks.filter((track) => track.type === 'video');
       const audioTracks = tracks.filter((track) => track.type === 'audio');
       const imageTracks = tracks.filter((track) => track.type === 'image');
-      
-      console.log(`📊 Track counts: video=${videoTracks.length}, audio=${audioTracks.length}, image=${imageTracks.length}, subtitle=${subtitleTracks.length}`);
-      console.log(`🎥 Video tracks:`, videoTracks.map(t => ({ id: t.id, name: t.name, startFrame: t.startFrame, endFrame: t.endFrame, isLinked: t.isLinked, linkedTrackId: t.linkedTrackId })));
-      console.log(`🎵 Audio tracks:`, audioTracks.map(t => ({ id: t.id, name: t.name, source: t.source, startFrame: t.startFrame, endFrame: t.endFrame, isLinked: t.isLinked, linkedTrackId: t.linkedTrackId })));
+
+      console.log(
+        `📊 Track counts: video=${videoTracks.length}, audio=${audioTracks.length}, image=${imageTracks.length}, subtitle=${subtitleTracks.length}, text=${textTracks.length}`,
+      );
+      console.log(
+        `🎥 Video tracks:`,
+        videoTracks.map((t) => ({
+          id: t.id,
+          name: t.name,
+          startFrame: t.startFrame,
+          endFrame: t.endFrame,
+          isLinked: t.isLinked,
+          linkedTrackId: t.linkedTrackId,
+        })),
+      );
+      console.log(
+        `🎵 Audio tracks:`,
+        audioTracks.map((t) => ({
+          id: t.id,
+          name: t.name,
+          source: t.source,
+          startFrame: t.startFrame,
+          endFrame: t.endFrame,
+          isLinked: t.isLinked,
+          linkedTrackId: t.linkedTrackId,
+        })),
+      );
+      console.log(
+        `🔤 Text tracks:`,
+        textTracks.map((t) => ({
+          id: t.id,
+          type: t.textType,
+          content: t.textContent,
+          startFrame: t.startFrame,
+          endFrame: t.endFrame,
+        })),
+      );
 
       // Process linked tracks
       const { processedTracks, videoDimensions } = processLinkedTracks(
@@ -83,6 +118,13 @@ export const useExportJob = () => {
         getTextStyleForSubtitle,
       );
 
+      // Generate text clip data for export
+      const { textClips, textClipsContent } = generateTextClipContent(
+        textTracks,
+        timelineFps,
+        videoDimensions,
+      );
+
       return {
         inputs: trackInfos,
         output: outputFilename,
@@ -102,6 +144,8 @@ export const useExportJob = () => {
         subtitleContent,
         subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
         videoDimensions,
+        textClips: textClips.length > 0 ? textClips : undefined,
+        textClipsContent,
       };
     },
     [tracks, mediaLibrary, timelineFps, textStyle, getTextStyleForSubtitle],
@@ -117,6 +161,7 @@ function processLinkedTracks(
   videoTracks: VideoTrack[],
   audioTracks: VideoTrack[],
   imageTracks: VideoTrack[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   mediaLibrary: {
     id: string;
     type: string;
@@ -148,7 +193,7 @@ function processLinkedTracks(
 
     // Process video and audio independently - video tracks are added as video-only
     // Audio tracks (whether linked or not) will be added separately below
-    
+
     if (videoTrack.isLinked && videoTrack.linkedTrackId) {
       const linkedAudioTrack = audioTracks.find(
         (t) => t.id === videoTrack.linkedTrackId,
@@ -191,13 +236,17 @@ function processLinkedTracks(
   console.log(`🔍 Adding unprocessed audio tracks...`);
   console.log(`   Total audio tracks: ${audioTracks.length}`);
   console.log(`   Processed track IDs:`, Array.from(processedTrackIds));
-  
+
   for (const audioTrack of audioTracks) {
     if (!processedTrackIds.has(audioTrack.id)) {
-      console.log(`   🎵 Adding audio track "${audioTrack.name}" (${audioTrack.id})`);
+      console.log(
+        `   🎵 Adding audio track "${audioTrack.name}" (${audioTrack.id})`,
+      );
       processedTracks.push(audioTrack);
     } else {
-      console.log(`   ⏭️ Skipping already processed audio track "${audioTrack.name}"`);
+      console.log(
+        `   ⏭️ Skipping already processed audio track "${audioTrack.name}"`,
+      );
     }
   }
 
@@ -217,6 +266,7 @@ function processLinkedTracks(
 function convertTracksToFFmpegInputs(
   tracks: VideoTrack[],
   timelineFps: number,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   mediaLibrary: {
     id: string;
     type: string;
