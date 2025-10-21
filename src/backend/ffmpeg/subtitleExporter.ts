@@ -276,11 +276,13 @@ export function generateASSContent(
       // Calculate new alpha: convert opacity (0-1) to alpha (0-255), then invert for ASS format
       const newAlpha = Math.round((1 - textStyle.opacity) * 255);
       primaryColor = `&H${newAlpha.toString(16).padStart(2, '0').toUpperCase()}${b}${g}${r}`;
-      console.log('🎨 Applied opacity to primary color:', {
+      console.log('🎨 Text Opacity Calculation:', {
+        inputOpacity: textStyle.opacity,
+        calculatedAlpha: newAlpha,
+        alphaHex: newAlpha.toString(16).padStart(2, '0').toUpperCase(),
         originalAlpha: currentAlpha,
-        opacity: textStyle.opacity,
-        newAlpha: newAlpha.toString(16).padStart(2, '0').toUpperCase(),
-        result: primaryColor,
+        resultColor: primaryColor,
+        formula: `(1 - ${textStyle.opacity}) * 255 = ${newAlpha}`,
       });
     }
   }
@@ -431,10 +433,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
           const glowShadowColor = convertColorToASS(textColorForGlow);
           
           // Set shadow properties for glow effect
-          const shadowBlur = (textStyle.glowIntensity || 2) + 6;
+          const shadowBlur = (textStyle.glowIntensity || 2) + 18; 
           overrideCommands.push(`\\shad${shadowBlur}`); // Shadow distance/size for glow
-          overrideCommands.push('\\xshad-3'); // Offset shadow horizontally
-          overrideCommands.push('\\yshad4'); // Offset shadow vertically
+          overrideCommands.push('\\xshad-5'); // Offset shadow horizontally (increased from -3 to -5)
+          overrideCommands.push('\\yshad6'); // Offset shadow vertically (increased from 4 to 6)
           overrideCommands.push(`\\4c${glowShadowColor}`); // Shadow color = text color for glow
           
           console.log('✨ Background + Glow mode (BorderStyle 3):', {
@@ -467,12 +469,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         const glowColorASS = convertColorToASS(glowColor);
         
         // Layer 0: Blurred glow/shadow layer (furthest back)
-        const glowBlurAmount = (textStyle.glowIntensity || 2) + 9;
+        const glowBlurAmount = (textStyle.glowIntensity || 2) + 10; // Increased intensity
         const glowOverrides: string[] = [];
         glowOverrides.push(`\\blur${glowBlurAmount}`); // Heavy blur for glow
-        glowOverrides.push(`\\bord${outlineWidth * 2}`); // Larger outline for glow spread
+        glowOverrides.push(`\\bord${outlineWidth * 3.25}`); // Larger outline for glow spread (decreased by 8 total)
         glowOverrides.push(`\\3c${glowColorASS}`); // Glow color on outline
-        glowOverrides.push('\\1a&H40&'); // Make text semi-transparent (25% opacity) for glow layer
+        glowOverrides.push('\\1a&H00&'); // More opaque glow (was &H05&) 
         glowOverrides.push('\\shad0'); // No shadow on glow layer
         
         const glowTags = `{${glowOverrides.join('')}}`;
