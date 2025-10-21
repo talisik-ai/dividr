@@ -3,6 +3,31 @@ import {
   VideoTrack,
 } from '@/frontend/features/editor/stores/videoEditor/index';
 
+/**
+ * Available fonts in the application
+ * This list matches the fonts in fontMapper.ts but doesn't require Electron imports
+ */
+const AVAILABLE_FONTS = [
+  'Cormorant',
+  'Inter',
+  'Lato',
+  'Libre Baskerville',
+  'Lora',
+  'Montserrat',
+  'Playfair Display',
+  'Poppins',
+  'Roboto',
+  'Arial',
+];
+
+/**
+ * Check if a font is available (frontend-safe version)
+ */
+function isFontAvailable(fontFamily: string): boolean {
+  const cleanFamily = fontFamily.replace(/['"]/g, '').trim();
+  return AVAILABLE_FONTS.includes(cleanFamily);
+}
+
 export interface SubtitleSegment {
   startTime: number; // in seconds
   endTime: number; // in seconds
@@ -579,7 +604,16 @@ function convertTextStyleToASS(textStyle?: TextStyleOptions): {
   let fontFamily = 'Arial';
   if (textStyle.fontFamily) {
     // Extract first font from font stack
-    fontFamily = textStyle.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
+    const requestedFont = textStyle.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
+    
+    // Check if the requested font is available
+    if (isFontAvailable(requestedFont)) {
+      fontFamily = requestedFont;
+      console.log(`✅ Using available font for ASS subtitles: ${fontFamily}`);
+    } else {
+      console.warn(`⚠️ Font "${requestedFont}" not available, falling back to Arial`);
+      fontFamily = 'Arial';
+    }
   }
 
   return {

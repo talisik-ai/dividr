@@ -17,6 +17,7 @@ import {
   VideoEditJob,
   VideoProcessingContext,
 } from './schema/ffmpegConfig';
+import { getFontPathByStyle } from './fontMapper';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -965,15 +966,16 @@ function generateDrawtextFilters(
     const rotationRadians = (transform.rotation * Math.PI) / 180;
 
     // Build font styling
-    const fontSize = style.fontSize || 18;
+    const fontSize = style.fontSize;
     const scaledFontSize = Math.round(fontSize * transform.scale);
     const fontFamily = style.fontFamily?.replace(/['"]/g, '') || 'Arial';
     
-    // Build font style string
-    let fontStyle = '';
-    if (style.isBold) fontStyle += 'Bold ';
-    if (style.isItalic) fontStyle += 'Italic ';
-    fontStyle = fontStyle.trim() || 'Regular';
+    // Get font path using font mapper
+    const isBold = style.isBold || false;
+    const isItalic = style.isItalic || false;
+    const fontPath = getFontPathByStyle(fontFamily, isBold, isItalic);
+    
+    console.log(`🎨 Font mapping for "${fontFamily}" (bold: ${isBold}, italic: ${isItalic}): ${fontPath}`);
 
     // Parse colors (convert hex/rgba to FFmpeg format)
     const fillColor = parseColorForFFmpeg(style.fillColor || '#FFFFFF');
@@ -992,7 +994,11 @@ function generateDrawtextFilters(
 
     // Build drawtext filter with enable expression for timing
     let drawtextFilter = `drawtext=text='${escapedText}'`;
-    drawtextFilter += `:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`; // Fallback font
+    
+    // Use the dynamic font path with proper escaping for FFmpeg
+    const escapedFontPath = convertToFfmpegPath(fontPath);
+    drawtextFilter += `:fontfile='${escapedFontPath}'`;
+    
     drawtextFilter += `:fontsize=${scaledFontSize}`;
     drawtextFilter += `:fontcolor=${fillColor}@${opacity}`;
     
