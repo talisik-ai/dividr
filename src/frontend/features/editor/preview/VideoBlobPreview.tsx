@@ -21,6 +21,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragActive, setDragActive] = useState(false);
   const [isPreviewFocused, setIsPreviewFocused] = useState(false);
+  const [isRotating, setIsRotating] = useState(false);
 
   // Initialize preview shortcuts
   usePreviewShortcuts(isPreviewFocused);
@@ -1344,12 +1345,46 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                   onTransformUpdate={handleTextTransformUpdate}
                   onSelect={handleTextSelect}
                   onTextUpdate={handleTextUpdate}
+                  onRotationStateChange={setIsRotating}
                   appliedStyle={completeStyle}
                 >
                   <div style={completeStyle}>{track.textContent}</div>
                 </TextTransformBoundary>
               );
             })}
+          </div>
+        );
+      })()}
+
+      {/* Rotation Info Badge - Only show during rotation */}
+      {(() => {
+        if (!isRotating) return null;
+
+        const selectedTextTrack = tracks.find(
+          (t) => t.type === 'text' && timeline.selectedTrackIds.includes(t.id),
+        );
+
+        if (!selectedTextTrack) return null;
+
+        const rotation = selectedTextTrack.textTransform?.rotation || 0;
+        const fullRotations = Math.floor(rotation / 360);
+        const normalizedDegrees = ((rotation % 360) + 360) % 360;
+        const displayDegrees =
+          normalizedDegrees > 180 ? normalizedDegrees - 360 : normalizedDegrees;
+
+        return (
+          <div className="absolute top-4 left-4 dark:bg-black/80 bg-white/80 dark:text-white backdrop-blur-sm text-black px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-2 z-[1002]">
+            <span className="text-[#F45513]">Rotation:</span>
+            {fullRotations !== 0 && (
+              <span className="font-bold">
+                {fullRotations > 0 ? '+' : ''}
+                {fullRotations}
+              </span>
+            )}
+            <span>
+              {displayDegrees > 0 ? '+' : displayDegrees < 0 ? '' : ''}
+              {displayDegrees.toFixed(0)}°
+            </span>
           </div>
         );
       })()}

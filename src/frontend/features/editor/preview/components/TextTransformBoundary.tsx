@@ -15,6 +15,7 @@ interface TextTransformBoundaryProps {
   ) => void;
   onSelect: (trackId: string) => void;
   onTextUpdate?: (trackId: string, newText: string) => void;
+  onRotationStateChange?: (isRotating: boolean) => void;
   children: React.ReactNode;
   appliedStyle?: React.CSSProperties;
 }
@@ -40,6 +41,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   onTransformUpdate,
   onSelect,
   onTextUpdate,
+  onRotationStateChange,
   children,
   appliedStyle,
 }) => {
@@ -278,8 +280,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setIsRotating(true);
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
+      onRotationStateChange?.(true);
     },
-    [isSelected, transform],
+    [isSelected, transform, onRotationStateChange],
   );
 
   // Handle mouse move for all interactions
@@ -368,7 +371,40 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
         // Calculate the angle delta and add to initial rotation
         const angleDelta = currentAngle - initialAngle;
-        const newRotation = initialTransform.rotation + angleDelta;
+        let newRotation = initialTransform.rotation + angleDelta;
+
+        // Snapping logic - only snap when Shift or Ctrl is held
+        // Snap to 0°, 90°, 180°, 270° (nearest angle only)
+        if (e.shiftKey || e.ctrlKey) {
+          const snapThreshold = 5; // degrees
+          const snapAngles = [0, 90, 180, 270];
+
+          // Normalize rotation to 0-360 range for comparison
+          const normalizedRotation = ((newRotation % 360) + 360) % 360;
+
+          // Find the nearest snap angle
+          let nearestAngle = null;
+          let minDistance = Infinity;
+
+          for (const snapAngle of snapAngles) {
+            // Calculate the shortest distance considering the circular nature (0° = 360°)
+            let distance = Math.abs(normalizedRotation - snapAngle);
+            if (distance > 180) {
+              distance = 360 - distance;
+            }
+
+            if (distance < minDistance) {
+              minDistance = distance;
+              nearestAngle = snapAngle;
+            }
+          }
+
+          // Only snap if within threshold of the nearest angle
+          if (nearestAngle !== null && minDistance <= snapThreshold) {
+            const rotationCount = Math.floor(newRotation / 360);
+            newRotation = rotationCount * 360 + nearestAngle;
+          }
+        }
 
         onTransformUpdate(track.id, {
           rotation: newRotation,
@@ -377,6 +413,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     };
 
     const handleMouseUp = () => {
+      if (isRotating) {
+        onRotationStateChange?.(false);
+      }
       setIsDragging(false);
       setIsScaling(false);
       setIsRotating(false);
@@ -402,6 +441,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     track.id,
     previewScale,
     onTransformUpdate,
+    onRotationStateChange,
     pixelsToNormalized,
     clampNormalized,
   ]);
