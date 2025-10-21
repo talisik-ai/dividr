@@ -12,6 +12,7 @@ import {
   InputCategory,
   ProcessedTimeline,
   ProcessedTimelineSegment,
+  TextClipData,
   TrackInfo,
   VideoEditJob,
   VideoProcessingContext,
@@ -898,6 +899,177 @@ function findFileIndexForSegment(
 }
 
 /**
+ * Generate drawtext filters for text clips
+ * Converts text clip data into FFmpeg drawtext filter strings
+ */
+function generateDrawtextFilters(
+  textClips: TextClipData[],
+  fps: number,
+  videoDimensions: { width: number; height: number },
+): string {
+  console.log('🎨 generateDrawtextFilters called:', {
+    textClipsCount: textClips?.length || 0,
+    fps,
+    videoDimensions,
+  });
+  
+  if (!textClips || textClips.length === 0) {
+    console.log('⚠️ No text clips provided to generateDrawtextFilters');
+    return '';
+  }
+
+  const filters: string[] = [];
+
+  for (const clip of textClips) {
+    console.log('🎨 Processing text clip:', {
+      id: clip.id,
+      content: clip.content,
+      startFrame: clip.startFrame,
+      endFrame: clip.endFrame,
+    });
+    const { content, startFrame, endFrame, style, transform } = clip;
+
+    // Convert frames to seconds
+    const startTime = startFrame / fps;
+    const endTime = endFrame / fps;
+
+    // Convert normalized coordinates (-1 to 1) to pixel coordinates
+    // x: -1 = left edge, 0 = center, 1 = right edge
+    // y: -1 = top edge, 0 = center, 1 = bottom edge
+    const centerX = videoDimensions.width / 2;
+    const centerY = videoDimensions.height / 2;
+    
+    // Calculate base position
+    const basePixelX = Math.round(centerX + (transform.x * centerX));
+    const basePixelY = Math.round(centerY + (transform.y * centerY));
+    
+    // Adjust for text alignment (FFmpeg drawtext uses top-left corner by default)
+    // We need to offset to center the text at the specified position
+    const textAlign = style.textAlign || 'center';
+    let pixelX: string | number;
+    let pixelY: string | number;
+    
+    if (textAlign === 'center') {
+      pixelX = `(w-text_w)/2+${basePixelX - centerX}`;
+      pixelY = `(h-text_h)/2+${basePixelY - centerY}`;
+    } else if (textAlign === 'right') {
+      pixelX = `w-text_w-${videoDimensions.width - basePixelX}`;
+      pixelY = basePixelY;
+    } else {
+      // 'left' alignment
+      pixelX = basePixelX;
+      pixelY = basePixelY;
+    }
+
+    // Convert rotation from degrees to radians
+    const rotationRadians = (transform.rotation * Math.PI) / 180;
+
+    // Build font styling
+    const fontSize = style.fontSize || 18;
+    const scaledFontSize = Math.round(fontSize * transform.scale);
+    const fontFamily = style.fontFamily?.replace(/['"]/g, '') || 'Arial';
+    
+    // Build font style string
+    let fontStyle = '';
+    if (style.isBold) fontStyle += 'Bold ';
+    if (style.isItalic) fontStyle += 'Italic ';
+    fontStyle = fontStyle.trim() || 'Regular';
+
+    // Parse colors (convert hex/rgba to FFmpeg format)
+    const fillColor = parseColorForFFmpeg(style.fillColor || '#FFFFFF');
+    const strokeColor = parseColorForFFmpeg(style.strokeColor || '#000000');
+    const bgColor = parseColorForFFmpeg(style.backgroundColor || 'rgba(0,0,0,0)');
+
+    // Calculate opacity (0-100 to 0.0-1.0)
+    const opacity = (style.opacity !== undefined ? style.opacity : 100) / 100;
+
+    // Escape text for FFmpeg
+    const escapedText = content
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/:/g, '\\:')
+      .replace(/\n/g, '\\n');
+
+    // Build drawtext filter with enable expression for timing
+    let drawtextFilter = `drawtext=text='${escapedText}'`;
+    drawtextFilter += `:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`; // Fallback font
+    drawtextFilter += `:fontsize=${scaledFontSize}`;
+    drawtextFilter += `:fontcolor=${fillColor}@${opacity}`;
+    
+    // Handle x,y as either numbers or expressions
+    if (typeof pixelX === 'string') {
+      drawtextFilter += `:x='${pixelX}'`;
+    } else {
+      drawtextFilter += `:x=${pixelX}`;
+    }
+    
+    if (typeof pixelY === 'string') {
+      drawtextFilter += `:y='${pixelY}'`;
+    } else {
+      drawtextFilter += `:y=${pixelY}`;
+    }
+    
+    // Add border/stroke if specified
+    if (style.strokeColor && style.strokeColor !== 'transparent') {
+      drawtextFilter += `:borderw=2`;
+      drawtextFilter += `:bordercolor=${strokeColor}`;
+    }
+
+    // Add background box if specified
+    if (style.backgroundColor && style.backgroundColor !== 'transparent' && !style.backgroundColor.includes('rgba(0, 0, 0, 0)')) {
+      drawtextFilter += `:box=1`;
+      drawtextFilter += `:boxcolor=${bgColor}`;
+      drawtextFilter += `:boxborderw=5`;
+    }
+
+    // Add shadow if specified
+    if (style.hasShadow) {
+      drawtextFilter += `:shadowx=2`;
+      drawtextFilter += `:shadowy=2`;
+      drawtextFilter += `:shadowcolor=black@0.5`;
+    }
+
+    // Add rotation
+    if (rotationRadians !== 0) {
+      drawtextFilter += `:text_angle=${rotationRadians}`;
+    }
+
+    // Add timing enable expression
+    drawtextFilter += `:enable='between(t,${startTime},${endTime})'`;
+
+    filters.push(drawtextFilter);
+
+    console.log(`📝 Generated drawtext filter for text clip "${content}": ${startTime}s - ${endTime}s`);
+  }
+
+  return filters.join(',');
+}
+
+/**
+ * Parse color from hex/rgba format to FFmpeg format
+ */
+function parseColorForFFmpeg(color: string): string {
+  // Handle hex colors
+  if (color.startsWith('#')) {
+    return color; // FFmpeg supports hex colors directly
+  }
+
+  // Handle rgba colors
+  const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+  if (rgbaMatch) {
+    const [, r, g, b] = rgbaMatch;
+    // Convert to hex
+    const hexR = parseInt(r).toString(16).padStart(2, '0');
+    const hexG = parseInt(g).toString(16).padStart(2, '0');
+    const hexB = parseInt(b).toString(16).padStart(2, '0');
+    return `#${hexR}${hexG}${hexB}`;
+  }
+
+  // Default to white
+  return '#FFFFFF';
+}
+
+/**
  * Builds filter complex for separate video and audio timelines - FIXED VERSION
  */
 function buildSeparateTimelineFilterComplex(
@@ -912,6 +1084,7 @@ function buildSeparateTimelineFilterComplex(
   const audioConcatInputs: string[] = [];
 
   console.log('🎬 Building filter complex from timelines:');
+  console.log('📝 Text clips in job:', job.textClips?.length || 0);
   console.log(
     'Video segments:',
     videoTimeline.segments.map(
@@ -1070,22 +1243,59 @@ function buildSeparateTimelineFilterComplex(
 
   // Apply subtitles to video stream if needed (must be in filter_complex)
   let subtitleFilter = '';
+  let currentVideoLabel = 'video_base';
+  
   if (job.operations.subtitles && videoConcatFilter) {
     const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
     const fileExtension = job.operations.subtitles.toLowerCase().split('.').pop();
     
     if (fileExtension === 'ass' || fileExtension === 'ssa') {
       // Use 'ass' filter for ASS/SSA files (better performance)
-      subtitleFilter = `[video_base]ass='${ffmpegPath}'[video]`;
+      subtitleFilter = `[video_base]ass='${ffmpegPath}'[video_subtitled]`;
       console.log('📝 Added ASS subtitle filter to filter_complex (optimized for ASS format)');
     } else {
       // Use 'subtitles' filter for other formats (SRT, VTT, etc.)
-      subtitleFilter = `[video_base]subtitles='${ffmpegPath}'[video]`;
+      subtitleFilter = `[video_base]subtitles='${ffmpegPath}'[video_subtitled]`;
       console.log(`📝 Added subtitles filter to filter_complex (format: ${fileExtension})`);
     }
+    currentVideoLabel = 'video_subtitled';
+  }
+
+  // Apply text clips using drawtext filters (separate from subtitles)
+  let textClipFilter = '';
+  console.log('🔍 Text clip check:', {
+    hasTextClips: !!job.textClips,
+    textClipsLength: job.textClips?.length || 0,
+    hasVideoConcatFilter: !!videoConcatFilter,
+    currentVideoLabel,
+  });
+  
+  if (job.textClips && job.textClips.length > 0 && videoConcatFilter) {
+    const fps = job.operations.targetFrameRate || 30;
+    const dimensions = job.videoDimensions || { width: 1920, height: 1080 };
+    
+    console.log('📝 Generating drawtext filters for text clips:', {
+      count: job.textClips.length,
+      fps,
+      dimensions,
+    });
+    
+    const drawtextFilters = generateDrawtextFilters(job.textClips, fps, dimensions);
+    
+    console.log('📝 Generated drawtext filters:', drawtextFilters);
+    
+    if (drawtextFilters) {
+      textClipFilter = `[${currentVideoLabel}]${drawtextFilters}[video]`;
+      console.log(`✅ Added ${job.textClips.length} text clip drawtext filters to filter_complex`);
+    } else {
+      // No valid drawtext filters, just pass through
+      textClipFilter = `[${currentVideoLabel}]null[video]`;
+      console.log('⚠️ No valid drawtext filters generated, using null passthrough');
+    }
   } else if (videoConcatFilter) {
-    // No subtitles - just rename video_base to video
-    subtitleFilter = '[video_base]null[video]';
+    // No text clips - just rename current label to video
+    textClipFilter = `[${currentVideoLabel}]null[video]`;
+    console.log('ℹ️ No text clips, using null passthrough');
   }
 
   // Combine all filters
@@ -1093,6 +1303,7 @@ function buildSeparateTimelineFilterComplex(
   if (videoConcatFilter) allFilters.push(videoConcatFilter);
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
   if (subtitleFilter) allFilters.push(subtitleFilter);
+  if (textClipFilter) allFilters.push(textClipFilter);
 
   const filterComplex = allFilters.join(';');
 
@@ -1252,6 +1463,20 @@ function handleTimelineProcessing(
         `${s.input.path}${s.input.gapType ? ` (${s.input.gapType} gap)` : ''} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
     ),
   );
+
+  // Log text clips if present
+  if (job.textClips && job.textClips.length > 0) {
+    console.log('📝 Text Clips:');
+    job.textClips.forEach((clip, index) => {
+      const startTime = clip.startFrame / targetFrameRate;
+      const endTime = clip.endFrame / targetFrameRate;
+      console.log(
+        `  ${index + 1}. "${clip.content}" [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s] (${clip.type}) - pos: (${clip.transform.x.toFixed(2)}, ${clip.transform.y.toFixed(2)}), scale: ${clip.transform.scale}, rotation: ${clip.transform.rotation}°`,
+      );
+    });
+  } else {
+    console.log('📝 No text clips in this job');
+  }
 
   // Categorize inputs for file indexing
   const categorizedInputs = categorizeInputs(job.inputs);
@@ -1425,7 +1650,6 @@ export async function buildFfmpegCommand(
   // Step 5: Add output file
   handleOutput(job, cmd, location);
 
-  console.log('FFmpeg Command Args:', cmd.args);
   console.log('Full FFmpeg Command:', ['ffmpeg', ...cmd.args].join(' '));
   return cmd.args;
 }
