@@ -43,13 +43,17 @@ const findAdjacentClips = (
 /**
  * CapCut-style non-destructive trimming helper with adjacent clip boundary checking
  * Clamps track resizing within:
- * 1. Original source media boundaries
+ * 1. Original source media boundaries (VIDEO/AUDIO ONLY)
  * 2. Adjacent clip boundaries (prevents overlapping)
+ *
+ * TRACK TYPE BEHAVIOR:
+ * - Video/Audio: Strict source duration limits (fixed media length)
+ * - Text/Subtitle/Image: Free extension allowed (no source duration limits)
  *
  * FIXED: Proper trimming that maintains timeline position when trimming back and forth
  * - Left trim: adjusts startFrame and sourceStartTime, endFrame stays fixed
  * - Right trim: adjusts endFrame, startFrame and sourceStartTime stay fixed
- * - Boundaries: prevents trimming beyond source media limits AND neighboring clips
+ * - Boundaries: prevents trimming beyond source media limits (media only) AND neighboring clips
  */
 const resizeTrackWithTrimming = (
   track: VideoTrack,
@@ -64,7 +68,22 @@ const resizeTrackWithTrimming = (
   const currentEndFrame = track.endFrame;
   const currentSourceStartTime = track.sourceStartTime || 0;
 
+  // Determine if this track type has fixed media duration constraints
+  const isMediaTrack = track.type === 'video' || track.type === 'audio';
+  const isExtensibleTrack =
+    track.type === 'text' ||
+    track.type === 'subtitle' ||
+    track.type === 'image';
+
+  // Log trim behavior for debugging (only in development)
+  if (process.env.NODE_ENV === 'development' && isExtensibleTrack) {
+    console.log(
+      `🔧 Trimming extensible track (${track.type}): ${track.name} - No source duration limits`,
+    );
+  }
+
   // Use sourceDuration if available, otherwise fall back to current duration
+  // For extensible tracks, this will be dynamically updated
   const sourceDurationFrames = track.sourceDuration || track.duration;
   const sourceDurationSeconds = sourceDurationFrames / fps;
 
@@ -107,30 +126,49 @@ const resizeTrackWithTrimming = (
     const frameDelta = boundedNewStartFrame - currentStartFrame;
     const timeDelta = frameDelta / fps;
 
-    // Calculate new source start time (trimming right moves in-point forward)
-    const proposedSourceStartTime = currentSourceStartTime + timeDelta;
+    // MEDIA TRACKS: Apply source duration constraints
+    if (isMediaTrack) {
+      // Calculate new source start time (trimming right moves in-point forward)
+      const proposedSourceStartTime = currentSourceStartTime + timeDelta;
 
-    // Clamp to source boundaries [0, sourceDuration]
-    finalSourceStartTime = Math.max(
-      0,
-      Math.min(sourceDurationSeconds, proposedSourceStartTime),
-    );
+      // Clamp to source boundaries [0, sourceDuration]
+      finalSourceStartTime = Math.max(
+        0,
+        Math.min(sourceDurationSeconds, proposedSourceStartTime),
+      );
 
-    // Calculate the actual frame delta after clamping
-    const clampedTimeDelta = finalSourceStartTime - currentSourceStartTime;
-    const clampedFrameDelta = Math.round(clampedTimeDelta * fps);
+      // Calculate the actual frame delta after clamping
+      const clampedTimeDelta = finalSourceStartTime - currentSourceStartTime;
+      const clampedFrameDelta = Math.round(clampedTimeDelta * fps);
 
-    // Apply the clamped delta to the start frame
-    finalStartFrame = currentStartFrame + clampedFrameDelta;
+      // Apply the clamped delta to the start frame
+      finalStartFrame = currentStartFrame + clampedFrameDelta;
 
-    // End frame stays the same (this is key for proper left trim)
-    finalEndFrame = currentEndFrame;
+      // End frame stays the same (this is key for proper left trim)
+      finalEndFrame = currentEndFrame;
 
-    // Ensure we don't exceed the end frame (minimum 1 frame duration)
-    if (finalStartFrame >= finalEndFrame) {
-      finalStartFrame = finalEndFrame - 1;
-      finalSourceStartTime =
-        currentSourceStartTime + (finalStartFrame - currentStartFrame) / fps;
+      // Ensure we don't exceed the end frame (minimum 1 frame duration)
+      if (finalStartFrame >= finalEndFrame) {
+        finalStartFrame = finalEndFrame - 1;
+        finalSourceStartTime =
+          currentSourceStartTime + (finalStartFrame - currentStartFrame) / fps;
+      }
+    }
+    // EXTENSIBLE TRACKS: No source duration limits, free extension
+    else if (isExtensibleTrack) {
+      // Apply the movement directly without source duration clamping
+      finalStartFrame = boundedNewStartFrame;
+
+      // End frame stays the same (this is key for proper left trim)
+      finalEndFrame = currentEndFrame;
+
+      // Ensure minimum 1 frame duration
+      if (finalStartFrame >= finalEndFrame) {
+        finalStartFrame = finalEndFrame - 1;
+      }
+
+      // For extensible tracks, sourceStartTime remains 0 (they don't have media in-points)
+      finalSourceStartTime = 0;
     }
   }
   // Handle RIGHT trim (dragging right edge)
@@ -157,34 +195,56 @@ const resizeTrackWithTrimming = (
       }
     }
 
-    // Calculate how many frames we're trimming from the right
-    const frameDelta = boundedNewEndFrame - currentEndFrame;
-    const timeDelta = frameDelta / fps;
+    // MEDIA TRACKS: Apply source duration constraints
+    if (isMediaTrack) {
+      // Calculate how many frames we're trimming from the right
+      const frameDelta = boundedNewEndFrame - currentEndFrame;
+      const timeDelta = frameDelta / fps;
 
-    // Calculate new source end time
-    const proposedSourceEndTime = currentSourceEndTime + timeDelta;
+      // Calculate new source end time
+      const proposedSourceEndTime = currentSourceEndTime + timeDelta;
 
-    // Clamp to source boundaries [sourceStartTime, sourceDuration]
-    const clampedSourceEndTime = Math.max(
-      finalSourceStartTime + 1 / fps, // Minimum 1 frame
-      Math.min(sourceDurationSeconds, proposedSourceEndTime),
-    );
+      // Clamp to source boundaries [sourceStartTime, sourceDuration]
+      const clampedSourceEndTime = Math.max(
+        finalSourceStartTime + 1 / fps, // Minimum 1 frame
+        Math.min(sourceDurationSeconds, proposedSourceEndTime),
+      );
 
-    // Calculate the new duration based on clamped source end time
-    const newDurationSeconds = clampedSourceEndTime - finalSourceStartTime;
-    const newDurationFrames = Math.round(newDurationSeconds * fps);
+      // Calculate the new duration based on clamped source end time
+      const newDurationSeconds = clampedSourceEndTime - finalSourceStartTime;
+      const newDurationFrames = Math.round(newDurationSeconds * fps);
 
-    // Apply the new end frame
-    finalEndFrame = finalStartFrame + newDurationFrames;
+      // Apply the new end frame
+      finalEndFrame = finalStartFrame + newDurationFrames;
 
-    // Ensure minimum 1 frame duration
-    if (finalEndFrame <= finalStartFrame) {
-      finalEndFrame = finalStartFrame + 1;
+      // Ensure minimum 1 frame duration
+      if (finalEndFrame <= finalStartFrame) {
+        finalEndFrame = finalStartFrame + 1;
+      }
+    }
+    // EXTENSIBLE TRACKS: No source duration limits, free extension
+    else if (isExtensibleTrack) {
+      // Apply the movement directly without source duration clamping
+      finalEndFrame = boundedNewEndFrame;
+
+      // Ensure minimum 1 frame duration
+      if (finalEndFrame <= finalStartFrame) {
+        finalEndFrame = finalStartFrame + 1;
+      }
+
+      // For extensible tracks, sourceStartTime remains 0 (they don't have media in-points)
+      finalSourceStartTime = 0;
     }
   }
 
   // Calculate final duration
   const finalDurationFrames = finalEndFrame - finalStartFrame;
+
+  // For extensible tracks, update sourceDuration to match the new duration
+  // This allows them to be extended indefinitely without artificial limits
+  const finalSourceDuration = isExtensibleTrack
+    ? finalDurationFrames
+    : track.sourceDuration;
 
   return {
     ...track,
@@ -192,6 +252,7 @@ const resizeTrackWithTrimming = (
     endFrame: finalEndFrame,
     duration: finalDurationFrames,
     sourceStartTime: finalSourceStartTime,
+    sourceDuration: finalSourceDuration,
   };
 };
 
