@@ -236,15 +236,23 @@ const processImportedFile = async (
   ) => void,
 ) => {
   // Get accurate duration using FFprobe
+  // Note: For images, we use a default duration since images are static and extensible
   let actualDurationSeconds: number;
-  try {
-    actualDurationSeconds = await window.electronAPI.getDuration(fileInfo.path);
-  } catch (error) {
-    console.warn(
-      `⚠️ Failed to get duration for ${fileInfo.name}, using fallback:`,
-      error,
-    );
-    actualDurationSeconds = fileInfo.type === 'image' ? 5 : 30;
+  if (fileInfo.type === 'image') {
+    // Images are extensible - use a default starting duration of 5 seconds
+    actualDurationSeconds = 5;
+  } else {
+    try {
+      actualDurationSeconds = await window.electronAPI.getDuration(
+        fileInfo.path,
+      );
+    } catch (error) {
+      console.warn(
+        `⚠️ Failed to get duration for ${fileInfo.name}, using fallback:`,
+        error,
+      );
+      actualDurationSeconds = fileInfo.type === 'audio' ? 30 : 30;
+    }
   }
   // Get video dimensions
   let videoDimensions: { width: number; height: number };

@@ -75,13 +75,6 @@ const resizeTrackWithTrimming = (
     track.type === 'subtitle' ||
     track.type === 'image';
 
-  // Log trim behavior for debugging (only in development)
-  if (process.env.NODE_ENV === 'development' && isExtensibleTrack) {
-    console.log(
-      `🔧 Trimming extensible track (${track.type}): ${track.name} - No source duration limits`,
-    );
-  }
-
   // Use sourceDuration if available, otherwise fall back to current duration
   // For extensible tracks, this will be dynamically updated
   const sourceDurationFrames = track.sourceDuration || track.duration;
@@ -396,13 +389,21 @@ export const createTracksSlice: StateCreator<
         existingTracks,
       );
 
+      // Determine if this is an extensible track type (text, subtitle, image)
+      const isExtensibleTrack =
+        trackData.type === 'text' ||
+        trackData.type === 'subtitle' ||
+        trackData.type === 'image';
+
       const track: VideoTrack = {
         ...trackData,
         id,
         startFrame,
         endFrame: startFrame + duration,
         sourceStartTime: trackData.sourceStartTime || 0,
-        sourceDuration: duration, // Store original duration for trimming boundaries
+        // For extensible tracks, set sourceDuration to match duration (will be updated dynamically)
+        // For audio tracks, store original duration for trimming boundaries
+        sourceDuration: isExtensibleTrack ? duration : duration,
         color: getTrackColor(state.tracks.length),
         muted: trackData.type === 'audio' ? false : undefined,
       };
