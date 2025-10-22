@@ -696,74 +696,137 @@ function resolveVideoLayerOverlaps(
   visualInputs: Array<{ trackInfo: TrackInfo; originalIndex: number; isImage: boolean; layer: number }>,
   targetFrameRate: number,
 ): ProcessedTimelineSegment[] {
-  const segments: ProcessedTimelineSegment[] = [];
-
   // Separate videos and images
   const videos = visualInputs.filter(v => !v.isImage);
   const images = visualInputs.filter(v => v.isImage);
 
   console.log(`🎬 Resolving overlaps: ${videos.length} videos, ${images.length} images`);
 
-  // Build a timeline of all time ranges, marking what should be visible
-  const timeRanges: Array<{
+  // Build a timeline by determining what should be visible at each point
+  // Images take priority over videos
+  const timeline: Array<{
     startTime: number;
     endTime: number;
-    content: { trackInfo: TrackInfo; originalIndex: number; isImage: boolean } | null;
+    content: { trackInfo: TrackInfo; originalIndex: number; isImage: boolean };
   }> = [];
 
-  // Add all video ranges
-  videos.forEach(video => {
-    const startFrame = video.trackInfo.timelineStartFrame || 0;
-    const endFrame = video.trackInfo.timelineEndFrame || 0;
-    timeRanges.push({
-      startTime: startFrame / targetFrameRate,
-      endTime: endFrame / targetFrameRate,
-      content: video,
-    });
-  });
-
-  // Add all image ranges (these will override videos)
+  // First, add all image segments (they have priority)
   images.forEach(image => {
     const startFrame = image.trackInfo.timelineStartFrame || 0;
     const endFrame = image.trackInfo.timelineEndFrame || 0;
-    timeRanges.push({
+    timeline.push({
       startTime: startFrame / targetFrameRate,
       endTime: endFrame / targetFrameRate,
       content: image,
     });
   });
 
-  // Sort by start time, then by layer (images last so they override)
-  timeRanges.sort((a, b) => {
-    if (a.startTime !== b.startTime) return a.startTime - b.startTime;
-    const aLayer = a.content?.isImage ? 1 : 0;
-    const bLayer = b.content?.isImage ? 1 : 0;
-    return aLayer - bLayer; // Videos first, then images (so images override in processing)
+  // Then, add video segments, but cut them where images exist
+  videos.forEach(video => {
+    const startFrame = video.trackInfo.timelineStartFrame || 0;
+    const endFrame = video.trackInfo.timelineEndFrame || 0;
+    const videoStart = startFrame / targetFrameRate;
+    const videoEnd = endFrame / targetFrameRate;
+
+    // Check if this video overlaps with any images
+    const overlappingImages = images.filter(img => {
+      const imgStart = (img.trackInfo.timelineStartFrame || 0) / targetFrameRate;
+      const imgEnd = (img.trackInfo.timelineEndFrame || 0) / targetFrameRate;
+      // Check if there's any overlap
+      return imgStart < videoEnd && imgEnd > videoStart;
+    });
+
+    if (overlappingImages.length === 0) {
+      // No overlap - add the full video segment
+      timeline.push({
+        startTime: videoStart,
+        endTime: videoEnd,
+        content: video,
+      });
+      console.log(`📹 Video segment ${video.originalIndex}: ${videoStart.toFixed(2)}s-${videoEnd.toFixed(2)}s (no overlap)`);
+    } else {
+      // There are overlapping images - need to cut the video into pieces
+      console.log(`📹 Video segment ${video.originalIndex} has ${overlappingImages.length} overlapping images, splitting...`);
+      
+      // Sort image overlaps by start time
+      const sortedImageOverlaps = overlappingImages
+        .map(img => ({
+          start: (img.trackInfo.timelineStartFrame || 0) / targetFrameRate,
+          end: (img.trackInfo.timelineEndFrame || 0) / targetFrameRate,
+        }))
+        .sort((a, b) => a.start - b.start);
+
+      // Cut the video into segments around the images
+      let currentVideoTime = videoStart;
+      
+      for (const imageOverlap of sortedImageOverlaps) {
+        // Add video segment before this image (if there is one)
+        if (currentVideoTime < imageOverlap.start) {
+          const segmentDuration = imageOverlap.start - currentVideoTime;
+          const sourceOffset = (video.trackInfo.startTime || 0) + (currentVideoTime - videoStart);
+          
+          // Create modified trackInfo with adjusted source trim
+          const modifiedTrackInfo: TrackInfo = {
+            ...video.trackInfo,
+            startTime: sourceOffset,
+            duration: segmentDuration,
+          };
+          
+          timeline.push({
+            startTime: currentVideoTime,
+            endTime: imageOverlap.start,
+            content: { ...video, trackInfo: modifiedTrackInfo },
+          });
+          console.log(`  📹 Video piece: ${currentVideoTime.toFixed(2)}s-${imageOverlap.start.toFixed(2)}s (source: ${sourceOffset.toFixed(2)}s, duration: ${segmentDuration.toFixed(2)}s)`);
+        }
+        
+        // Skip the image overlap region
+        currentVideoTime = Math.max(currentVideoTime, imageOverlap.end);
+      }
+
+      // Add remaining video segment after all images (if there is one)
+      if (currentVideoTime < videoEnd) {
+        const segmentDuration = videoEnd - currentVideoTime;
+        const sourceOffset = (video.trackInfo.startTime || 0) + (currentVideoTime - videoStart);
+        
+        // Create modified trackInfo with adjusted source trim
+        const modifiedTrackInfo: TrackInfo = {
+          ...video.trackInfo,
+          startTime: sourceOffset,
+          duration: segmentDuration,
+        };
+        
+        timeline.push({
+          startTime: currentVideoTime,
+          endTime: videoEnd,
+          content: { ...video, trackInfo: modifiedTrackInfo },
+        });
+        console.log(`  📹 Video piece: ${currentVideoTime.toFixed(2)}s-${videoEnd.toFixed(2)}s (source: ${sourceOffset.toFixed(2)}s, duration: ${segmentDuration.toFixed(2)}s)`);
+      }
+    }
   });
 
-  // Process ranges and create final timeline
-  // For simplicity, just add all segments in order
-  // The concat filter will handle them sequentially
-  timeRanges.forEach(range => {
-    if (range.content) {
-      const { trackInfo, originalIndex, isImage } = range.content;
-      const duration = range.endTime - range.startTime;
+  // Sort timeline by start time
+  timeline.sort((a, b) => a.startTime - b.startTime);
 
-      const segmentInput: TrackInfo = { ...trackInfo, isImage };
-      
-      segments.push({
-        input: segmentInput,
-        originalIndex,
-        startTime: range.startTime,
-        duration,
-        endTime: range.endTime,
-        timelineType: 'video',
-      });
+  // Convert to ProcessedTimelineSegment format
+  const segments: ProcessedTimelineSegment[] = timeline.map(item => {
+    const { trackInfo, originalIndex, isImage } = item.content;
+    const duration = item.endTime - item.startTime;
+    const segmentInput: TrackInfo = { ...trackInfo, isImage };
+    
+    console.log(
+      `${isImage ? '🖼️' : '📹'} Final segment ${originalIndex}: ${item.startTime.toFixed(2)}s-${item.endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+    );
 
-      console.log(
-        `${isImage ? '🖼️' : '📹'} Added segment ${originalIndex}: ${range.startTime.toFixed(2)}s-${range.endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
-      );
-    }
+    return {
+      input: segmentInput,
+      originalIndex,
+      startTime: item.startTime,
+      duration,
+      endTime: item.endTime,
+      timelineType: 'video',
+    };
   });
 
   return segments;
