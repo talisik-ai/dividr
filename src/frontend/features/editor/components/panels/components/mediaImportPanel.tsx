@@ -30,6 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { BasePanel } from '../../../components/panels/basePanel';
 import { CustomPanelProps } from '../../../components/panels/panelRegistry';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
@@ -129,9 +130,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       // Increment counter for nested elements
       dragCounter.current++;
 
-      // Check if we have files being dragged
-      if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-        // Only set active if we're not already active
+      // Check if we have files being dragged (not internal media items)
+      // Exclude internal drags by checking for our custom data type
+      const hasMediaId = e.dataTransfer.types.includes('text/plain');
+      const hasFiles = e.dataTransfer.types.includes('Files');
+
+      // Only activate drag state for external file drops, not internal media drags
+      if (hasFiles && !hasMediaId) {
         if (!dragActive) {
           setDragActive(true);
         }
@@ -142,26 +147,61 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      // Show immediate loading toast with promise
+      const importPromise = importMediaFromDrop(files);
+
+      toast.promise(importPromise, {
+        loading: `Importing ${files.length} ${files.length === 1 ? 'file' : 'files'}...`,
+        success: (result) => {
+          const importedCount = result.importedFiles.length;
+          const rejectedCount = result.rejectedFiles?.length || 0;
+
+          // Show detailed rejection info if any files were rejected
+          if (rejectedCount > 0 && result.rejectedFiles) {
+            // Group rejections by reason
+            const reasonGroups = result.rejectedFiles.reduce(
+              (acc, file) => {
+                const reason = file.reason || 'Unknown error';
+                if (!acc[reason]) {
+                  acc[reason] = [];
+                }
+                acc[reason].push(file.name);
+                return acc;
+              },
+              {} as Record<string, string[]>,
+            );
+
+            // Show detailed warnings for each rejection reason
+            Object.entries(reasonGroups).forEach(([reason, fileNames]) => {
+              const fileList =
+                fileNames.length > 3
+                  ? `${fileNames.slice(0, 3).join(', ')} and ${fileNames.length - 3} more`
+                  : fileNames.join(', ');
+
+              toast.warning(`${fileList}: ${reason}`, {
+                duration: 6000,
+              });
+            });
+          }
+
+          // Return success message
+          if (importedCount > 0) {
+            return `Successfully imported ${importedCount} ${importedCount === 1 ? 'file' : 'files'}`;
+          } else {
+            throw new Error('No files could be imported');
+          }
+        },
+        error: (error) => {
+          // Show detailed error message
+          if (error?.error) {
+            return `Import failed: ${error.error}`;
+          }
+          return 'Failed to import files. Please try again.';
+        },
+      });
+
       try {
-        console.log(
-          '🎯 MediaImportPanel handleFiles called with',
-          files.length,
-          'files:',
-          files.map((f) => f.name),
-        );
-
-        // Actually import the files using the proper Electron method
-        console.log('🚀 Calling importMediaFromDrop...');
-        const result = await importMediaFromDrop(files);
-        console.log('📦 importMediaFromDrop result:', result);
-
-        if (result.success) {
-          console.log(
-            `✅ Successfully imported ${result.importedFiles.length} files to media library`,
-          );
-        } else {
-          console.error('Failed to import dropped files');
-        }
+        await importPromise;
       } catch (error) {
         console.error('Error handling files:', error);
       }
@@ -191,6 +231,14 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       dragCounter.current = 0;
       setDragActive(false);
 
+      // Check if this is an internal media drag (not a file drop)
+      const mediaId = e.dataTransfer.getData('text/plain');
+      if (mediaId) {
+        // This is an internal drag from media library, ignore it
+        return;
+      }
+
+      // Handle external file drops
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         const files = Array.from(e.dataTransfer.files);
         await handleFiles(files);
@@ -681,9 +729,12 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         </div>
       </div>
 
-      {/* Drag overlay - shows when dragging files over existing content */}
+      {/* Drag overlay - shows when dragging EXTERNAL files over existing content */}
+      {/* Only show for external file drops, not internal media drags */}
       {dragActive && (
-        <div className="absolute inset-0 border-2 border-dashed flex items-center justify-center border-secondary bg-secondary/10 rounded-lg pointer-events-none z-10" />
+        <div className="absolute inset-0 border-2 border-dashed flex items-center justify-center border-secondary bg-secondary/10 rounded-lg pointer-events-none z-10">
+          <p className="text-sm text-muted-foreground">Drop files to import</p>
+        </div>
       )}
     </div>
   );

@@ -7,9 +7,17 @@ export interface ImportedFileData {
   thumbnail?: string;
 }
 
+export interface RejectedFileData {
+  name: string;
+  reason: string;
+  error?: string;
+}
+
 export interface ImportResult {
   success: boolean;
   importedFiles: ImportedFileData[];
+  rejectedFiles?: RejectedFileData[];
+  error?: string;
 }
 
 export interface FileBuffer {

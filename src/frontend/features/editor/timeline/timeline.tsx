@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { toast } from 'sonner';
 import { useTrackDragRecording } from '../stores/videoEditor/hooks/useTrackDragRecording';
 import { useUndoRedoShortcuts } from '../stores/videoEditor/hooks/useUndoRedoShortcuts';
 import {
@@ -132,6 +133,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const handleDrop = useCallback(
       async (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         setDropActive(false);
 
         // Check if this is a media library item (internal drag)
@@ -150,26 +152,67 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           const files = Array.from(e.dataTransfer.files);
           console.log(`🎯 Dropping ${files.length} files onto timeline`);
 
+          // Show immediate loading toast with promise
+          const importPromise = importMediaToTimeline(files);
+
+          toast.promise(importPromise, {
+            loading: `Adding ${files.length} ${files.length === 1 ? 'file' : 'files'} to timeline...`,
+            success: (result) => {
+              const importedCount = result.importedFiles.length;
+              const rejectedCount = result.rejectedFiles?.length || 0;
+
+              // Show detailed rejection info if any files were rejected
+              if (rejectedCount > 0 && result.rejectedFiles) {
+                // Group rejections by reason
+                const reasonGroups = result.rejectedFiles.reduce(
+                  (acc, file) => {
+                    const reason = file.reason || 'Unknown error';
+                    if (!acc[reason]) {
+                      acc[reason] = [];
+                    }
+                    acc[reason].push(file.name);
+                    return acc;
+                  },
+                  {} as Record<string, string[]>,
+                );
+
+                // Show detailed warnings for each rejection reason
+                Object.entries(reasonGroups).forEach(([reason, fileNames]) => {
+                  const fileList =
+                    fileNames.length > 3
+                      ? `${fileNames.slice(0, 3).join(', ')} and ${fileNames.length - 3} more`
+                      : fileNames.join(', ');
+
+                  toast.warning(`${fileList}: ${reason}`, {
+                    duration: 6000,
+                  });
+                });
+              }
+
+              // Return success message
+              if (importedCount > 0) {
+                return `Added ${importedCount} ${importedCount === 1 ? 'file' : 'files'} to timeline`;
+              } else {
+                throw new Error('No files could be added to timeline');
+              }
+            },
+            error: (error) => {
+              // Show detailed error message
+              if (error?.error) {
+                return `Import failed: ${error.error}`;
+              }
+              return 'Failed to add files to timeline. Please try again.';
+            },
+          });
+
           try {
-            const result = await importMediaToTimeline(files);
-            if (result.success) {
-              console.log(
-                `✅ Successfully imported ${result.importedFiles.length} files to timeline`,
-              );
-            } else {
-              console.error('❌ Failed to import files to timeline');
-            }
+            await importPromise;
           } catch (error) {
             console.error('❌ Error importing files to timeline:', error);
           }
         }
       },
-      [
-        timeline.scrollX,
-        timeline.zoom,
-        addTrackFromMediaLibrary,
-        importMediaToTimeline,
-      ],
+      [addTrackFromMediaLibrary, importMediaToTimeline],
     );
 
     // Animation loop for playback

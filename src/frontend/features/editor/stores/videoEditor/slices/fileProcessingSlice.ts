@@ -704,7 +704,11 @@ export const createFileProcessingSlice: StateCreator<
           '❌ Failed to process files in main process:',
           result.error,
         );
-        return { success: false, importedFiles: [] };
+        return {
+          success: false,
+          importedFiles: [],
+          error: result.error || 'Failed to process files',
+        };
       }
 
       const importedFiles: Array<{
@@ -715,28 +719,46 @@ export const createFileProcessingSlice: StateCreator<
         url: string;
         thumbnail?: string;
       }> = [];
+      const rejectedFiles: Array<{
+        name: string;
+        reason: string;
+        error?: string;
+      }> = [];
 
       // Process files and add to media library only (no timeline)
       await Promise.all(
         result.files.map(async (fileInfo) => {
-          const fileData = await processImportedFile(
-            fileInfo,
-            (get() as any).addToMediaLibrary,
-            undefined, // No timeline addition
-            () => (get() as any).timeline.fps,
-            (get() as any).generateSpriteSheetForMedia, // Generate sprite sheets on import
-            (get() as any).generateThumbnailForMedia, // Generate thumbnails on import
-            (get() as any).generateWaveformForMedia, // Generate waveforms on import
-            (get() as any).updateMediaLibraryItem, // Update media library items with extracted audio
-          );
-          importedFiles.push(fileData);
+          try {
+            const fileData = await processImportedFile(
+              fileInfo,
+              (get() as any).addToMediaLibrary,
+              undefined, // No timeline addition
+              () => (get() as any).timeline.fps,
+              (get() as any).generateSpriteSheetForMedia, // Generate sprite sheets on import
+              (get() as any).generateThumbnailForMedia, // Generate thumbnails on import
+              (get() as any).generateWaveformForMedia, // Generate waveforms on import
+              (get() as any).updateMediaLibraryItem, // Update media library items with extracted audio
+            );
+            importedFiles.push(fileData);
+          } catch (error: any) {
+            console.error(`❌ Failed to import ${fileInfo.name}:`, error);
+            rejectedFiles.push({
+              name: fileInfo.name,
+              reason: error.message || 'Failed to process file',
+              error: error.toString(),
+            });
+          }
         }),
       );
 
-      return { success: true, importedFiles };
-    } catch (error) {
+      return { success: true, importedFiles, rejectedFiles };
+    } catch (error: any) {
       console.error('Failed to import media from drop:', error);
-      return { success: false, importedFiles: [] };
+      return {
+        success: false,
+        importedFiles: [],
+        error: error.message || 'Unknown error occurred',
+      };
     }
   },
 
@@ -763,7 +785,11 @@ export const createFileProcessingSlice: StateCreator<
           '❌ Failed to process files in main process:',
           result.error,
         );
-        return { success: false, importedFiles: [] };
+        return {
+          success: false,
+          importedFiles: [],
+          error: result.error || 'Failed to process files',
+        };
       }
 
       const importedFiles: Array<{
@@ -774,31 +800,49 @@ export const createFileProcessingSlice: StateCreator<
         url: string;
         thumbnail?: string;
       }> = [];
+      const rejectedFiles: Array<{
+        name: string;
+        reason: string;
+        error?: string;
+      }> = [];
 
       // Process files and add to both media library AND timeline
       await Promise.all(
         result.files.map(async (fileInfo) => {
-          const fileData = await processImportedFile(
-            fileInfo,
-            (get() as any).addToMediaLibrary,
-            (get() as any).addTrack, // Also add to timeline
-            () => (get() as any).timeline.fps,
-            (get() as any).generateSpriteSheetForMedia, // Generate sprite sheets on import
-            (get() as any).generateThumbnailForMedia, // Generate thumbnails on import
-            (get() as any).generateWaveformForMedia, // Generate waveforms on import
-            (get() as any).updateMediaLibraryItem, // Update media library items with extracted audio
-          );
-          importedFiles.push(fileData);
+          try {
+            const fileData = await processImportedFile(
+              fileInfo,
+              (get() as any).addToMediaLibrary,
+              (get() as any).addTrack, // Also add to timeline
+              () => (get() as any).timeline.fps,
+              (get() as any).generateSpriteSheetForMedia, // Generate sprite sheets on import
+              (get() as any).generateThumbnailForMedia, // Generate thumbnails on import
+              (get() as any).generateWaveformForMedia, // Generate waveforms on import
+              (get() as any).updateMediaLibraryItem, // Update media library items with extracted audio
+            );
+            importedFiles.push(fileData);
+          } catch (error: any) {
+            console.error(`❌ Failed to import ${fileInfo.name}:`, error);
+            rejectedFiles.push({
+              name: fileInfo.name,
+              reason: error.message || 'Failed to process file',
+              error: error.toString(),
+            });
+          }
         }),
       );
 
       console.log(
         `✅ Added ${importedFiles.length} files to both media library and timeline`,
       );
-      return { success: true, importedFiles };
-    } catch (error) {
+      return { success: true, importedFiles, rejectedFiles };
+    } catch (error: any) {
       console.error('Failed to import media to timeline:', error);
-      return { success: false, importedFiles: [] };
+      return {
+        success: false,
+        importedFiles: [],
+        error: error.message || 'Unknown error occurred',
+      };
     }
   },
 });

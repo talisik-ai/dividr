@@ -4,6 +4,7 @@ import New from '@/frontend/assets/logo/New-Light.svg';
 import { useTheme } from '@/frontend/providers/ThemeProvider';
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { usePreviewShortcuts } from '../stores/videoEditor/hooks/usePreviewShortcuts';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AlignmentGuide, DragGuides } from './components/DragGuides';
@@ -919,8 +920,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Check if this is an external file drag (not internal media)
+    const hasMediaId = e.dataTransfer.types.includes('text/plain');
+    const hasFiles = e.dataTransfer.types.includes('Files');
+
     if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
+      // Only activate for external file drops
+      if (hasFiles && !hasMediaId) {
+        setDragActive(true);
+      }
     } else if (e.type === 'dragleave') {
       setDragActive(false);
     }
@@ -931,9 +940,75 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       e.preventDefault();
       e.stopPropagation();
       setDragActive(false);
+
+      // Check if this is an internal media drag (not a file drop)
+      const mediaId = e.dataTransfer.getData('text/plain');
+      if (mediaId) {
+        // This is an internal drag from media library, ignore it
+        return;
+      }
+
+      // Handle external file drops with validation
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
-        await importMediaToTimeline(files);
+        // Show immediate loading toast with promise
+        const importPromise = importMediaToTimeline(files);
+
+        toast.promise(importPromise, {
+          loading: `Adding ${files.length} ${files.length === 1 ? 'file' : 'files'} to timeline...`,
+          success: (result) => {
+            const importedCount = result.importedFiles.length;
+            const rejectedCount = result.rejectedFiles?.length || 0;
+
+            // Show detailed rejection info if any files were rejected
+            if (rejectedCount > 0 && result.rejectedFiles) {
+              // Group rejections by reason
+              const reasonGroups = result.rejectedFiles.reduce(
+                (acc, file) => {
+                  const reason = file.reason || 'Unknown error';
+                  if (!acc[reason]) {
+                    acc[reason] = [];
+                  }
+                  acc[reason].push(file.name);
+                  return acc;
+                },
+                {} as Record<string, string[]>,
+              );
+
+              // Show detailed warnings for each rejection reason
+              Object.entries(reasonGroups).forEach(([reason, fileNames]) => {
+                const fileList =
+                  fileNames.length > 3
+                    ? `${fileNames.slice(0, 3).join(', ')} and ${fileNames.length - 3} more`
+                    : fileNames.join(', ');
+
+                toast.warning(`${fileList}: ${reason}`, {
+                  duration: 6000,
+                });
+              });
+            }
+
+            // Return success message
+            if (importedCount > 0) {
+              return `Added ${importedCount} ${importedCount === 1 ? 'file' : 'files'} to timeline`;
+            } else {
+              throw new Error('No files could be added to timeline');
+            }
+          },
+          error: (error) => {
+            // Show detailed error message
+            if (error?.error) {
+              return `Import failed: ${error.error}`;
+            }
+            return 'Failed to add files to timeline. Please try again.';
+          },
+        });
+
+        try {
+          await importPromise;
+        } catch (error) {
+          console.error('❌ Error importing files to preview:', error);
+        }
       }
     },
     [importMediaToTimeline],
