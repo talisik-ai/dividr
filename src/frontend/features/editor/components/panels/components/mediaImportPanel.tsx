@@ -712,13 +712,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   // File List Component with Card Layout - not memoized to ensure fresh renders
   const fileListContent = (files: MediaItem[], tabType: string) => (
     <div
-      className="h-[273.2px] min-h-0 overflow-auto relative"
+      className="w-full h-full overflow-y-auto relative"
       onDragEnter={handleDragIn}
       onDragLeave={handleDragOut}
       onDragOver={handleDrag}
       onDrop={handleDrop}
     >
-      <div className="">
+      <div className="w-full">
         <h4 className="text-xs font-semibold text-muted-foreground mb-3">
           {getTabLabel(tabType, files.length)}
         </h4>
@@ -830,7 +830,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         description="Import and manage media files"
         className={className}
       >
-        <div className="flex flex-col h-full gap-4">
+        <div className="flex flex-col flex-1 min-h-0 gap-4">
           {/* Upload Button */}
           <Button
             onClick={async () => {
@@ -848,7 +848,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           </Button>
 
           {/* Tab Navigation and Content */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <Tabs
               defaultValue="all"
               className="flex-1 min-h-0 gap-4 flex flex-col"
@@ -871,19 +871,19 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="all" className="h-full min-h-0">
+              <TabsContent value="all" className="flex-1 min-h-0">
                 {getTabContent('all')}
               </TabsContent>
-              <TabsContent value="videos" className="h-full min-h-0">
+              <TabsContent value="videos" className="flex-1 min-h-0">
                 {getTabContent('videos')}
               </TabsContent>
-              <TabsContent value="audio" className="h-full min-h-0">
+              <TabsContent value="audio" className="flex-1 min-h-0">
                 {getTabContent('audio')}
               </TabsContent>
-              <TabsContent value="images" className="h-full min-h-0">
+              <TabsContent value="images" className="flex-1 min-h-0">
                 {getTabContent('images')}
               </TabsContent>
-              <TabsContent value="subtitles" className="h-full min-h-0">
+              <TabsContent value="subtitles" className="flex-1 min-h-0">
                 {getTabContent('subtitles')}
               </TabsContent>
             </Tabs>
