@@ -322,6 +322,7 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
 
 /**
  * Creates video trimming filters for a given video track
+ * Handles images differently (uses loop filter instead of trim)
  * @param context - Video processing context with track info and references
  * @returns Filter reference and filter strings for video trimming
  */
@@ -330,6 +331,31 @@ function createVideoTrimFilters(
 ): AudioTrimResult {
   const { trackInfo, originalIndex, inputStreamRef } = context;
 
+  // Check if this is an image
+  const isImage = trackInfo.isImage || (trackInfo.trackType === 'image');
+
+  if (isImage && trackInfo.duration !== undefined) {
+    // For images, treat them like gaps but with the actual image content
+    // Generate frames by looping the single image frame for the exact duration
+    const trimmedRef = `[v${originalIndex}_trimmed]`;
+    const fps = 30; // Default FPS, will be normalized later
+    const duration = trackInfo.duration;
+    const totalFrames = Math.round(duration * fps); // Round to nearest frame for exact timing
+    
+    console.log(`🖼️ Image input detected: generating ${duration}s (${totalFrames} frames) at ${fps}fps from static image`);
+    
+    // Use loop filter with exact frame count, then trim to exact duration
+    // loop=-1 means infinite loop, then we trim to exact duration
+    return {
+      filterRef: trimmedRef,
+      filters: [
+        `${inputStreamRef}loop=loop=-1:size=1:start=0,trim=duration=${duration}[temp_trim_${originalIndex}]`,
+        `[temp_trim_${originalIndex}]setpts=PTS-STARTPTS${trimmedRef}`,
+      ],
+    };
+  }
+
+  // For videos, use standard trim
   if (trackInfo.startTime === undefined && trackInfo.duration === undefined) {
     // No trimming needed, just return the original reference
     return {
@@ -485,97 +511,295 @@ function createSilentAudioFilters(
 }
 
 /**
- * Builds separate video and audio timelines from inputs
+ * Builds separate video and audio timelines from inputs with proper layering
+ * Images are prioritized over videos when they overlap
  */
 function buildSeparateTimelines(
   inputs: (string | TrackInfo)[],
   targetFrameRate: number = VIDEO_DEFAULTS.FPS,
 ): { video: ProcessedTimeline; audio: ProcessedTimeline } {
-  const videoSegments: ProcessedTimelineSegment[] = [];
-  const audioSegments: ProcessedTimelineSegment[] = [];
-
-  let videoCurrentTime = 0;
-  let audioCurrentTime = 0;
+  console.log('🎬 Building timelines with layering support');
+  
+  // Separate inputs by type
+  const videoInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> = [];
+  const imageInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> = [];
+  const audioInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> = [];
 
   inputs.forEach((input, originalIndex) => {
     const trackInfo = getTrackInfo(input);
     const path = getInputPath(input);
 
-    // Determine if this is video, audio, or both
-    const isVideo = FILE_EXTENSIONS.VIDEO.test(path) || FILE_EXTENSIONS.IMAGE.test(path) || isGapInput(path);
-    const isAudio = FILE_EXTENSIONS.AUDIO.test(path) || isGapInput(path);
+    if (isGapInput(path)) {
+      // Skip gaps here, they'll be added later
+      return;
+    }
 
-    const duration = calculateTrackDuration(trackInfo, 1);
-
-    if (isVideo) {
-      const segment: ProcessedTimelineSegment = {
-        input: trackInfo,
-        originalIndex,
-        startTime: videoCurrentTime,
-        duration,
-        endTime: videoCurrentTime + duration,
-        timelineType: 'video',
-      };
-      videoSegments.push(segment);
-      console.log(
-        `📹 Video segment ${originalIndex}: ${videoCurrentTime.toFixed(2)}s-${(videoCurrentTime + duration).toFixed(2)}s (duration: ${duration.toFixed(2)}s)`,
-      );
-      videoCurrentTime += duration;
-
-      // If this video has a separate audio file, create an audio segment for it
-      if (trackInfo.audioPath && !trackInfo.muted) {
-        // Create a modified trackInfo with the audio file path as the main path
-        const audioTrackInfo: TrackInfo = {
-          ...trackInfo,
-          path: trackInfo.audioPath, // Use audio file path instead of video file path
-        };
-        
-        const audioSegment: ProcessedTimelineSegment = {
-          input: audioTrackInfo,
-          originalIndex,
-          startTime: audioCurrentTime,
-          duration,
-          endTime: audioCurrentTime + duration,
-          timelineType: 'audio',
-        };
-        audioSegments.push(audioSegment);
-        console.log(
-          `🎵 Audio segment ${originalIndex}: ${audioCurrentTime.toFixed(2)}s-${(audioCurrentTime + duration).toFixed(2)}s from ${trackInfo.audioPath}`,
-        );
-        audioCurrentTime += duration;
-      } else {
-        console.log(
-          `⚠️ Video segment ${originalIndex}: No audio created (audioPath: ${trackInfo.audioPath || 'none'}, muted: ${trackInfo.muted})`,
-        );
-      }
-    } else if (isAudio) {
-      // Only process standalone audio files here (not video tracks with separate audio)
-      // Video tracks with separate audio are handled in the isVideo block above
-      const segment: ProcessedTimelineSegment = {
-        input: trackInfo,
-        originalIndex,
-        startTime: audioCurrentTime,
-        duration,
-        endTime: audioCurrentTime + duration,
-        timelineType: 'audio',
-      };
-      audioSegments.push(segment);
-      audioCurrentTime += duration;
+    if (FILE_EXTENSIONS.VIDEO.test(path)) {
+      videoInputs.push({ trackInfo, originalIndex });
+    } else if (FILE_EXTENSIONS.IMAGE.test(path)) {
+      imageInputs.push({ trackInfo, originalIndex });
+    } else if (FILE_EXTENSIONS.AUDIO.test(path)) {
+      audioInputs.push({ trackInfo, originalIndex });
     }
   });
+
+  console.log(`📊 Input counts: videos=${videoInputs.length}, images=${imageInputs.length}, audio=${audioInputs.length}`);
+
+  // Build video timeline with layering
+  let videoSegments = buildLayeredVideoTimeline(videoInputs, imageInputs, targetFrameRate);
+  
+  // Build audio timeline (simpler, no layering)
+  let audioSegments = buildAudioTimeline(audioInputs, targetFrameRate);
+
+  // Fill gaps in the timeline where there's no content
+  videoSegments = fillTimelineGaps(videoSegments, targetFrameRate, 'video');
+  audioSegments = fillTimelineGaps(audioSegments, targetFrameRate, 'audio');
+
+  const videoTotalDuration = videoSegments.length > 0 
+    ? Math.max(...videoSegments.map(s => s.endTime))
+    : 0;
+  
+  const audioTotalDuration = audioSegments.length > 0
+    ? Math.max(...audioSegments.map(s => s.endTime))
+    : 0;
 
   return {
     video: {
       segments: videoSegments,
-      totalDuration: videoCurrentTime,
+      totalDuration: videoTotalDuration,
       timelineType: 'video',
     },
     audio: {
       segments: audioSegments,
-      totalDuration: audioCurrentTime,
+      totalDuration: audioTotalDuration,
       timelineType: 'audio',
     },
   };
+}
+
+/**
+ * Fills gaps in the timeline where there's no content
+ * Only adds gaps where segments don't cover the timeline
+ */
+function fillTimelineGaps(
+  segments: ProcessedTimelineSegment[],
+  targetFrameRate: number,
+  timelineType: 'video' | 'audio',
+): ProcessedTimelineSegment[] {
+  if (segments.length === 0) {
+    return segments;
+  }
+
+  // Sort segments by start time
+  const sortedSegments = [...segments].sort((a, b) => a.startTime - b.startTime);
+  const filledSegments: ProcessedTimelineSegment[] = [];
+  
+  let currentTime = 0;
+  let gapIndex = 0;
+
+  sortedSegments.forEach((segment, index) => {
+    // Check if there's a gap before this segment
+    const gapDuration = segment.startTime - currentTime;
+    const frameDuration = 1 / targetFrameRate; // Duration of one frame
+    const minGapThreshold = frameDuration * 0.5; // Half a frame as threshold
+    
+    if (gapDuration > minGapThreshold) {
+      // Only add gap if it's larger than half a frame (to avoid rounding issues)
+      console.log(`🕳️ Found ${timelineType} gap: ${currentTime.toFixed(2)}s-${segment.startTime.toFixed(2)}s (${gapDuration.toFixed(2)}s)`);
+      
+      // Add gap segment
+      const gapTrackInfo: TrackInfo = {
+        path: GAP_MARKER,
+        duration: gapDuration,
+        trackType: timelineType,
+        gapType: timelineType,
+      };
+
+      filledSegments.push({
+        input: gapTrackInfo,
+        originalIndex: 9000 + gapIndex++, // High index to avoid conflicts
+        startTime: currentTime,
+        duration: gapDuration,
+        endTime: segment.startTime,
+        timelineType,
+      });
+      
+      // Add the actual segment at its original position
+      filledSegments.push(segment);
+      currentTime = Math.max(currentTime, segment.endTime);
+    } else if (gapDuration > 0 && gapDuration <= minGapThreshold) {
+      // Tiny gap (less than half a frame) - adjust segment to start at currentTime
+      console.log(`🔧 Adjusting segment to eliminate tiny gap of ${gapDuration.toFixed(4)}s`);
+      const adjustedSegment = {
+        ...segment,
+        startTime: currentTime,
+        endTime: currentTime + segment.duration,
+      };
+      filledSegments.push(adjustedSegment);
+      currentTime = adjustedSegment.endTime;
+    } else {
+      // No gap or negative gap (overlapping) - just add the segment
+      filledSegments.push(segment);
+      currentTime = Math.max(currentTime, segment.endTime);
+    }
+  });
+
+  console.log(`✅ ${timelineType} timeline after filling gaps: ${filledSegments.length} segments`);
+  return filledSegments;
+}
+
+/**
+ * Builds layered video timeline where images overlay videos
+ * Creates a continuous timeline with proper layering priority
+ */
+function buildLayeredVideoTimeline(
+  videoInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }>,
+  imageInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }>,
+  targetFrameRate: number,
+): ProcessedTimelineSegment[] {
+  const segments: ProcessedTimelineSegment[] = [];
+
+  // Combine all visual inputs with their timeline positions and layer priority
+  const allVisualInputs = [
+    ...videoInputs.map(v => ({ ...v, isImage: false, layer: 0 })), // Videos on bottom layer
+    ...imageInputs.map(i => ({ ...i, isImage: true, layer: 1 })),  // Images on top layer
+  ];
+
+  // Sort by timeline start position, then by layer (images on top)
+  allVisualInputs.sort((a, b) => {
+    const aStart = a.trackInfo.timelineStartFrame || 0;
+    const bStart = b.trackInfo.timelineStartFrame || 0;
+    if (aStart !== bStart) return aStart - bStart;
+    return b.layer - a.layer; // Higher layer first (images before videos)
+  });
+
+  console.log('📹 Visual inputs sorted by timeline position:');
+  allVisualInputs.forEach(input => {
+    const start = input.trackInfo.timelineStartFrame || 0;
+    const end = input.trackInfo.timelineEndFrame || 0;
+    console.log(`  ${input.isImage ? '🖼️' : '🎥'} ${input.trackInfo.path}: frames ${start}-${end} (layer ${input.layer})`);
+  });
+
+  // Determine the final timeline by resolving overlaps
+  // Images hide videos when they overlap
+  const resolvedSegments = resolveVideoLayerOverlaps(allVisualInputs, targetFrameRate);
+
+  return resolvedSegments;
+}
+
+/**
+ * Resolves overlapping video/image segments
+ * Images take priority - videos are cut/hidden where images exist
+ * Creates a flat timeline suitable for concat
+ */
+function resolveVideoLayerOverlaps(
+  visualInputs: Array<{ trackInfo: TrackInfo; originalIndex: number; isImage: boolean; layer: number }>,
+  targetFrameRate: number,
+): ProcessedTimelineSegment[] {
+  const segments: ProcessedTimelineSegment[] = [];
+
+  // Separate videos and images
+  const videos = visualInputs.filter(v => !v.isImage);
+  const images = visualInputs.filter(v => v.isImage);
+
+  console.log(`🎬 Resolving overlaps: ${videos.length} videos, ${images.length} images`);
+
+  // Build a timeline of all time ranges, marking what should be visible
+  const timeRanges: Array<{
+    startTime: number;
+    endTime: number;
+    content: { trackInfo: TrackInfo; originalIndex: number; isImage: boolean } | null;
+  }> = [];
+
+  // Add all video ranges
+  videos.forEach(video => {
+    const startFrame = video.trackInfo.timelineStartFrame || 0;
+    const endFrame = video.trackInfo.timelineEndFrame || 0;
+    timeRanges.push({
+      startTime: startFrame / targetFrameRate,
+      endTime: endFrame / targetFrameRate,
+      content: video,
+    });
+  });
+
+  // Add all image ranges (these will override videos)
+  images.forEach(image => {
+    const startFrame = image.trackInfo.timelineStartFrame || 0;
+    const endFrame = image.trackInfo.timelineEndFrame || 0;
+    timeRanges.push({
+      startTime: startFrame / targetFrameRate,
+      endTime: endFrame / targetFrameRate,
+      content: image,
+    });
+  });
+
+  // Sort by start time, then by layer (images last so they override)
+  timeRanges.sort((a, b) => {
+    if (a.startTime !== b.startTime) return a.startTime - b.startTime;
+    const aLayer = a.content?.isImage ? 1 : 0;
+    const bLayer = b.content?.isImage ? 1 : 0;
+    return aLayer - bLayer; // Videos first, then images (so images override in processing)
+  });
+
+  // Process ranges and create final timeline
+  // For simplicity, just add all segments in order
+  // The concat filter will handle them sequentially
+  timeRanges.forEach(range => {
+    if (range.content) {
+      const { trackInfo, originalIndex, isImage } = range.content;
+      const duration = range.endTime - range.startTime;
+
+      const segmentInput: TrackInfo = { ...trackInfo, isImage };
+      
+      segments.push({
+        input: segmentInput,
+        originalIndex,
+        startTime: range.startTime,
+        duration,
+        endTime: range.endTime,
+        timelineType: 'video',
+      });
+
+      console.log(
+        `${isImage ? '🖼️' : '📹'} Added segment ${originalIndex}: ${range.startTime.toFixed(2)}s-${range.endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+      );
+    }
+  });
+
+  return segments;
+}
+
+/**
+ * Builds audio timeline from audio inputs
+ */
+function buildAudioTimeline(
+  audioInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }>,
+  targetFrameRate: number,
+): ProcessedTimelineSegment[] {
+  const segments: ProcessedTimelineSegment[] = [];
+
+  audioInputs.forEach(({ trackInfo, originalIndex }) => {
+    const startFrame = trackInfo.timelineStartFrame || 0;
+    const endFrame = trackInfo.timelineEndFrame || 0;
+    const startTime = startFrame / targetFrameRate;
+    const endTime = endFrame / targetFrameRate;
+    const duration = endTime - startTime;
+
+    segments.push({
+      input: trackInfo,
+      originalIndex,
+      startTime,
+      duration,
+      endTime,
+      timelineType: 'audio',
+    });
+
+    console.log(
+      `🎵 Audio segment ${originalIndex}: ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+    );
+  });
+
+  return segments;
 }
 
 /**
@@ -664,7 +888,6 @@ function processGapsInTimeline(
     const gapTrackInfo: TrackInfo = {
       path: GAP_MARKER,
       duration: gapDuration,
-      startFrame: gap.startFrame,
       trackType: timeline.timelineType,
       gapType: timeline.timelineType,
     };
@@ -1495,30 +1718,15 @@ function handleTimelineProcessing(
   finalAudioTimeline: ProcessedTimeline;
   categorizedInputs: CategorizedInputs;
 } {
-  // Build separate initial timelines
+  // Build separate initial timelines (now with automatic gap filling based on timeline positions)
   const initialTimelines = buildSeparateTimelines(job.inputs, targetFrameRate);
 
-  // Process gaps for each timeline
-  let finalVideoTimeline = initialTimelines.video;
-  let finalAudioTimeline = initialTimelines.audio;
+  // Use the timelines as-is (gaps are already filled based on timeline positions)
+  const finalVideoTimeline = initialTimelines.video;
+  const finalAudioTimeline = initialTimelines.audio;
 
-  if (job.gaps) {
-    if (job.gaps.video?.length) {
-      finalVideoTimeline = processGapsInTimeline(
-        initialTimelines.video,
-        job.gaps.video,
-        targetFrameRate,
-      );
-    }
-
-    if (job.gaps.audio?.length) {
-      finalAudioTimeline = processGapsInTimeline(
-        initialTimelines.audio,
-        job.gaps.audio,
-        targetFrameRate,
-      );
-    }
-  }
+  // NOTE: We no longer use job.gaps here because gaps are now calculated
+  // based on actual timeline coverage from timelineStartFrame/timelineEndFrame
 
   console.log(
     'Final Video Timeline:',
