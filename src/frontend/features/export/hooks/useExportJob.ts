@@ -281,7 +281,7 @@ function convertTracksToFFmpegInputs(
     const sourceStartTime = track.sourceStartTime || 0;
 
     console.log(
-      `🎥 Adding track "${track.name}": type=${track.type}, source start ${sourceStartTime}s, duration ${trackDurationSeconds}s`,
+      `🎥 Adding track "${track.name}": type=${track.type}, source start ${sourceStartTime}s, duration ${trackDurationSeconds}s, dimensions: ${track.width}x${track.height}`,
     );
 
     // DON'T attach audio to video tracks - process them independently
@@ -294,6 +294,8 @@ function convertTracksToFFmpegInputs(
       muted: track.type === 'video' ? true : false, // Video tracks are "muted" (no audio from video file)
       trackType: track.type,
       visible: track.visible,
+      width: track.width,
+      height: track.height,
     };
 
     return trackInfo;

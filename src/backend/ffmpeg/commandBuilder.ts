@@ -81,6 +81,7 @@ function escapePath(filePath: string) {
 const FILE_EXTENSIONS = {
   VIDEO: /\.(mp4|mov|mkv|avi|webm)$/i,
   AUDIO: /\.(mp3|wav|aac|flac)$/i,
+  IMAGE: /\.(png|jpg|jpeg|gif|bmp|tiff|webp)$/i,
 } as const;
 
 const ENCODING_DEFAULTS = {
@@ -216,7 +217,7 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
     const trackInfo = getTrackInfo(input);
     const isGap = isGapInput(path);
 
-    const isVideo = !isGap && FILE_EXTENSIONS.VIDEO.test(path);
+    const isVideo = !isGap && (FILE_EXTENSIONS.VIDEO.test(path) || FILE_EXTENSIONS.IMAGE.test(path));
     const isAudio = !isGap && FILE_EXTENSIONS.AUDIO.test(path);
 
     if (isVideo) {
@@ -501,7 +502,7 @@ function buildSeparateTimelines(
     const path = getInputPath(input);
 
     // Determine if this is video, audio, or both
-    const isVideo = FILE_EXTENSIONS.VIDEO.test(path) || isGapInput(path);
+    const isVideo = FILE_EXTENSIONS.VIDEO.test(path) || FILE_EXTENSIONS.IMAGE.test(path) || isGapInput(path);
     const isAudio = FILE_EXTENSIONS.AUDIO.test(path) || isGapInput(path);
 
     const duration = calculateTrackDuration(trackInfo, 1);
@@ -1076,6 +1077,48 @@ function parseColorForFFmpeg(color: string): string {
 }
 
 /**
+ * Determines the target dimensions for video processing
+ * Prioritizes actual video file dimensions over project dimensions
+ */
+function determineTargetDimensions(
+  videoTimeline: ProcessedTimeline,
+  job: VideoEditJob,
+): { width: number; height: number } {
+  // Strategy 1: Look for actual video files (not images or gaps) in the original inputs
+  for (const input of job.inputs) {
+    const trackInfo = getTrackInfo(input);
+    const path = getInputPath(input);
+    
+    console.log(`📐 Checking input: ${path}, isVideo: ${FILE_EXTENSIONS.VIDEO.test(path)}, width: ${trackInfo.width}, height: ${trackInfo.height}`);
+    
+    if (!isGapInput(path) && FILE_EXTENSIONS.VIDEO.test(path)) {
+      // Found a video file - check if it has explicit dimensions
+      if (trackInfo.width && trackInfo.height) {
+        console.log(`📐 ✅ Using video input dimensions from inputs: ${trackInfo.width}x${trackInfo.height}`);
+        return { width: trackInfo.width, height: trackInfo.height };
+      }
+    }
+  }
+
+  // Strategy 2: Look in the timeline segments
+  for (const segment of videoTimeline.segments) {
+    const path = segment.input.path;
+    if (!isGapInput(path) && FILE_EXTENSIONS.VIDEO.test(path)) {
+      // Found a video file - check if it has explicit dimensions
+      if (segment.input.width && segment.input.height) {
+        console.log(`📐 Using video input dimensions from timeline: ${segment.input.width}x${segment.input.height}`);
+        return { width: segment.input.width, height: segment.input.height };
+      }
+    }
+  }
+
+  // Fallback to job's video dimensions
+  const dimensions = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
+  console.log(`📐 Using project dimensions (fallback): ${dimensions.width}x${dimensions.height}`);
+  return dimensions;
+}
+
+/**
  * Builds filter complex for separate video and audio timelines - FIXED VERSION
  */
 function buildSeparateTimelineFilterComplex(
@@ -1088,6 +1131,9 @@ function buildSeparateTimelineFilterComplex(
   const audioFilters: string[] = [];
   const videoConcatInputs: string[] = [];
   const audioConcatInputs: string[] = [];
+
+  // Determine target dimensions (prioritize video input dimensions)
+  const targetDimensions = determineTargetDimensions(videoTimeline, job);
 
   console.log('🎬 Building filter complex from timelines:');
   console.log('📝 Text clips in job:', job.textClips?.length || 0);
@@ -1111,14 +1157,13 @@ function buildSeparateTimelineFilterComplex(
     const { input: trackInfo, originalIndex, timelineType } = segment;
 
     if (isGapInput(trackInfo.path)) {
-      // Video gap - create black video
+      // Video gap - create black video using target dimensions
       const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
-      const videoDim = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
       const gapResult = createGapVideoFilters(
         segmentIndex, // Use segment index to avoid conflicts
         trackInfo.duration || 1,
         targetFps,
-        videoDim,
+        targetDimensions,
       );
       videoFilters.push(...gapResult.filters);
       videoConcatInputs.push(gapResult.filterRef);
@@ -1162,6 +1207,26 @@ function buildSeparateTimelineFilterComplex(
           );
           videoFilters.push(...fpsResult.filters);
           videoStreamRef = fpsResult.filterRef;
+        }
+
+        // Scale to match target dimensions if needed (for images and videos with different dimensions)
+        const isImage = FILE_EXTENSIONS.IMAGE.test(trackInfo.path);
+        const isVideoFile = FILE_EXTENSIONS.VIDEO.test(trackInfo.path);
+        
+        // For images, always scale to match target dimensions
+        // For videos, only scale if dimensions are explicitly different
+        const needsScaling = isImage || 
+          (isVideoFile && trackInfo.width && trackInfo.height && 
+           (trackInfo.width !== targetDimensions.width || 
+            trackInfo.height !== targetDimensions.height));
+
+        if (needsScaling) {
+          const scaleRef = `[v${segmentIndex}_scaled]`;
+          videoFilters.push(
+            `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`
+          );
+          videoStreamRef = scaleRef;
+          console.log(`📐 Scaled segment ${segmentIndex} to ${targetDimensions.width}x${targetDimensions.height}`);
         }
 
         videoConcatInputs.push(videoStreamRef);
