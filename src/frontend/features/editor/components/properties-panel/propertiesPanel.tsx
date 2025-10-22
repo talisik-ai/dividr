@@ -11,19 +11,19 @@ interface PropertiesPanelProps {
 const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
   className,
 }) => {
-  // Only subscribe to tracks and timeline for selection logic
+  // Only subscribe to specific state slices to minimize re-renders
   const tracks = useVideoEditorStore((state) => state.tracks);
   const selectedTrackIds = useVideoEditorStore(
     (state) => state.timeline.selectedTrackIds,
   );
 
-  // Get selected tracks
+  // Memoize selected tracks to prevent unnecessary recalculations
   const selectedTracks = useMemo(
     () => tracks.filter((track) => selectedTrackIds.includes(track.id)),
     [tracks, selectedTrackIds],
   );
 
-  // Determine track type to render appropriate properties
+  // Memoize track type checks to prevent unnecessary recalculations
   const hasSubtitleSelection = useMemo(
     () => selectedTracks.some((track) => track.type === 'subtitle'),
     [selectedTracks],
@@ -34,12 +34,12 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
     [selectedTracks],
   );
 
-  // Don't render if no tracks are selected
+  // Early return if no tracks are selected
   if (selectedTracks.length === 0) {
     return null;
   }
 
-  // Don't render if none of the selected tracks have implemented properties
+  // Early return if none of the selected tracks have implemented properties
   if (!hasSubtitleSelection && !hasTextSelection) {
     return null;
   }
@@ -70,4 +70,5 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
 
 PropertiesPanelComponent.displayName = 'PropertiesPanel';
 
+// Memoize the component to prevent re-renders when parent re-renders
 export const PropertiesPanel = React.memo(PropertiesPanelComponent);

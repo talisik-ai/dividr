@@ -16,7 +16,10 @@ interface HotkeyItemProps {
   category?: string;
 }
 
-const HotkeyItem: React.FC<HotkeyItemProps> = ({ keys, description }) => {
+const HotkeyItemComponent: React.FC<HotkeyItemProps> = ({
+  keys,
+  description,
+}) => {
   return (
     <div className="flex items-center justify-between py-2 px-3 hover:bg-muted/40 rounded-lg transition-all duration-150 group">
       <span className="text-sm text-foreground/90 group-hover:text-foreground">
@@ -55,12 +58,19 @@ const HotkeyItem: React.FC<HotkeyItemProps> = ({ keys, description }) => {
   );
 };
 
+HotkeyItemComponent.displayName = 'HotkeyItem';
+
+const HotkeyItem = React.memo(HotkeyItemComponent);
+
 interface HotkeySectionProps {
   title: string;
   hotkeys: HotkeyItemProps[];
 }
 
-const HotkeySection: React.FC<HotkeySectionProps> = ({ title, hotkeys }) => {
+const HotkeySectionComponent: React.FC<HotkeySectionProps> = ({
+  title,
+  hotkeys,
+}) => {
   return (
     <div className="space-y-3">
       <h3 className="font-semibold text-xs text-muted-foreground/80 uppercase tracking-wide pb-1">
@@ -78,6 +88,10 @@ const HotkeySection: React.FC<HotkeySectionProps> = ({ title, hotkeys }) => {
     </div>
   );
 };
+
+HotkeySectionComponent.displayName = 'HotkeySection';
+
+const HotkeySection = React.memo(HotkeySectionComponent);
 
 interface HotkeysDialogProps {
   open?: boolean;

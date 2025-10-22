@@ -14,7 +14,7 @@ import { cn } from '@/frontend/utils/utils';
 import ColorPicker from '@rc-component/color-picker';
 import '@rc-component/color-picker/assets/index.css';
 import { Pipette } from 'lucide-react';
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 interface ColorPickerPopoverProps {
   value: string;
@@ -25,7 +25,7 @@ interface ColorPickerPopoverProps {
   showDiagonal?: boolean;
 }
 
-export const ColorPickerPopover: React.FC<ColorPickerPopoverProps> = ({
+const ColorPickerPopoverComponent: React.FC<ColorPickerPopoverProps> = ({
   value,
   onChange,
   onChangeComplete,
@@ -33,8 +33,50 @@ export const ColorPickerPopover: React.FC<ColorPickerPopoverProps> = ({
   disabled = false,
   showDiagonal = false,
 }) => {
-  const isTransparent =
-    value === 'transparent' || value.includes('rgba(0, 0, 0, 0');
+  // Memoize expensive calculations
+  const isTransparent = useMemo(
+    () => value === 'transparent' || value.includes('rgba(0, 0, 0, 0'),
+    [value],
+  );
+
+  // Memoize recent colors slice to prevent recalculation
+  const displayedRecentColors = useMemo(
+    () => recentColors.slice(0, 18),
+    [recentColors],
+  );
+
+  // Memoize handlers to prevent re-creation
+  const handleTransparentClick = useCallback(() => {
+    onChange('transparent');
+    onChangeComplete('transparent');
+  }, [onChange, onChangeComplete]);
+
+  const handleColorChange = useCallback(
+    (color: any) => {
+      onChange(color.toHexString());
+    },
+    [onChange],
+  );
+
+  const handleApplyClick = useCallback(() => {
+    onChangeComplete(value);
+  }, [onChangeComplete, value]);
+
+  const handleRecentColorClick = useCallback(
+    (color: string) => {
+      onChange(color);
+      onChangeComplete(color);
+    },
+    [onChange, onChangeComplete],
+  );
+
+  const handleRecommendedColorClick = useCallback(
+    (color: string) => {
+      onChange(color);
+      onChangeComplete(color);
+    },
+    [onChange, onChangeComplete],
+  );
 
   return (
     <DropdownMenu>
@@ -129,10 +171,7 @@ export const ColorPickerPopover: React.FC<ColorPickerPopoverProps> = ({
               {/* No Color Button */}
               <button
                 className="w-7 h-7 aspect-square rounded border border-border hover:scale-110 transition-transform relative overflow-hidden bg-background"
-                onClick={() => {
-                  onChange('transparent');
-                  onChangeComplete('transparent');
-                }}
+                onClick={handleTransparentClick}
                 aria-label="No color"
               >
                 <svg
@@ -170,17 +209,14 @@ export const ColorPickerPopover: React.FC<ColorPickerPopoverProps> = ({
                   />
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="p-3">
-                  <ColorPicker
-                    value={value}
-                    onChange={(color) => onChange(color.toHexString())}
-                  />
+                  <ColorPicker value={value} onChange={handleColorChange} />
                   <div className="flex gap-2 mt-3">
                     <Button size="sm" variant="outline" className="flex-1">
                       Cancel
                     </Button>
                     <Button
                       size="sm"
-                      onClick={() => onChangeComplete(value)}
+                      onClick={handleApplyClick}
                       className="flex-1"
                     >
                       Apply
@@ -190,14 +226,11 @@ export const ColorPickerPopover: React.FC<ColorPickerPopoverProps> = ({
               </DropdownMenuSub>
 
               {/* Recent colors from history - max 18 (3 rows of 7, minus 3 fixed buttons = 18) */}
-              {recentColors.slice(0, 18).map((color) => (
+              {displayedRecentColors.map((color) => (
                 <button
                   key={color}
                   className="w-7 h-7 aspect-square rounded border border-border hover:scale-110 transition-transform relative overflow-hidden"
-                  onClick={() => {
-                    onChange(color);
-                    onChangeComplete(color);
-                  }}
+                  onClick={() => handleRecentColorClick(color)}
                   aria-label={`Recent color ${color}`}
                 >
                   {color === 'transparent' ? (
@@ -257,10 +290,7 @@ export const ColorPickerPopover: React.FC<ColorPickerPopoverProps> = ({
                   key={color}
                   className="w-7 h-7 aspect-square rounded border border-border hover:scale-110 transition-transform"
                   style={{ backgroundColor: color }}
-                  onClick={() => {
-                    onChange(color);
-                    onChangeComplete(color);
-                  }}
+                  onClick={() => handleRecommendedColorClick(color)}
                   aria-label={`Set color to ${color}`}
                 />
               ))}
@@ -279,3 +309,8 @@ export const ColorPickerPopover: React.FC<ColorPickerPopoverProps> = ({
     </DropdownMenu>
   );
 };
+
+ColorPickerPopoverComponent.displayName = 'ColorPickerPopover';
+
+// Memoize the component to prevent unnecessary re-renders
+export const ColorPickerPopover = React.memo(ColorPickerPopoverComponent);

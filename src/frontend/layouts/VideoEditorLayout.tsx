@@ -4,12 +4,13 @@ import { VideoEditorHeader } from '@/frontend/features/editor/components/videoEd
 import { FullscreenPreview } from '@/frontend/features/editor/preview/FullscreenPreview';
 import { ToolsPanel } from '@/frontend/features/editor/preview/ToolsPanel';
 import { useIsPanelVisible } from '@/frontend/features/editor/stores/PanelStore';
+import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Timeline } from '../features/editor/timeline/timeline';
 import Toolbar from '../features/editor/Toolbar';
 import TitleBar from './Titlebar';
 
-const VideoEditorLayout = () => {
+const VideoEditorLayoutComponent = () => {
   const isPanelVisible = useIsPanelVisible();
 
   return (
@@ -56,5 +57,10 @@ const VideoEditorLayout = () => {
     </ProjectGuard>
   );
 };
+
+VideoEditorLayoutComponent.displayName = 'VideoEditorLayout';
+
+// Memoize layout to prevent unnecessary re-renders
+const VideoEditorLayout = React.memo(VideoEditorLayoutComponent);
 
 export default VideoEditorLayout;
