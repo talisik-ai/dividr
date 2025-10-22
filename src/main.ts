@@ -1866,34 +1866,51 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
         // Check if this was a user cancellation:
         // 1. Signal is SIGTERM/SIGKILL (direct signal kill)
         // 2. Code 255 AND logs contain "received signal 15" (FFmpeg caught signal)
-        const wasCancelled = 
-          signal === 'SIGTERM' || 
-          signal === 'SIGKILL' || 
-          (code === 255 && (logs.includes('received signal 15') || logs.includes('Exiting normally, received signal')));
+        const wasCancelled =
+          signal === 'SIGTERM' ||
+          signal === 'SIGKILL' ||
+          (code === 255 &&
+            (logs.includes('received signal 15') ||
+              logs.includes('Exiting normally, received signal')));
 
         if (wasCancelled) {
           console.log('🛑 FFmpeg process was cancelled by user');
-          
+
           // Delete the incomplete output file
           const outputFilePath = path.join(absoluteLocation, job.output);
-          console.log('🔍 Checking for incomplete output file at:', outputFilePath);
-          
+          console.log(
+            '🔍 Checking for incomplete output file at:',
+            outputFilePath,
+          );
+
           if (fs.existsSync(outputFilePath)) {
             try {
               fs.unlinkSync(outputFilePath);
               console.log('🗑️ Deleted incomplete output file:', outputFilePath);
             } catch (deleteError) {
-              console.warn('⚠️ Failed to delete incomplete output file:', deleteError);
+              console.warn(
+                '⚠️ Failed to delete incomplete output file:',
+                deleteError,
+              );
             }
           } else {
-            console.log('ℹ️ No output file found to delete (may not have been created yet)');
+            console.log(
+              'ℹ️ No output file found to delete (may not have been created yet)',
+            );
           }
-          
-          resolve({ success: true, cancelled: true, logs, message: 'Export cancelled by user' });
+
+          resolve({
+            success: true,
+            cancelled: true,
+            logs,
+            message: 'Export cancelled by user',
+          });
           return;
         }
 
-        console.log(`🏁 FFmpeg process finished with code: ${code}, signal: ${signal}`);
+        console.log(
+          `🏁 FFmpeg process finished with code: ${code}, signal: ${signal}`,
+        );
 
         if (code === 0) {
           resolve({ success: true, logs });
@@ -1946,10 +1963,10 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
 ipcMain.handle('ffmpeg:cancel', async () => {
   if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
     console.log('🛑 Cancelling FFmpeg process...');
-    
+
     // Send SIGTERM for graceful termination
     currentFfmpegProcess.kill('SIGTERM');
-    
+
     // Force kill after 2 seconds if still running
     setTimeout(() => {
       if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
@@ -1957,11 +1974,11 @@ ipcMain.handle('ffmpeg:cancel', async () => {
         currentFfmpegProcess.kill('SIGKILL');
       }
     }, 2000);
-    
+
     currentFfmpegProcess = null;
     return { success: true, message: 'Export cancelled' };
   }
-  
+
   return { success: false, message: 'No export running' };
 });
 
@@ -1995,6 +2012,8 @@ const createWindow = () => {
     autoHideMenuBar: true,
     minWidth: 750,
     minHeight: 500,
+    show: false, // Don't show immediately - wait for ready-to-show
+    backgroundColor: '#09090b', // Match loader background to prevent flash
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
@@ -2005,6 +2024,11 @@ const createWindow = () => {
   });
 
   if (mainWindow) {
+    // Show window only when ready to prevent white flash
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show();
+    });
+
     if (
       process.env.NODE_ENV === 'development' &&
       MAIN_WINDOW_VITE_DEV_SERVER_URL
@@ -2104,9 +2128,14 @@ async function getRunInBackgroundSetting(): Promise<boolean> {
 }
 
 app.on('ready', async () => {
-  // Initialize FFmpeg paths before creating the window (now async)
-  await initializeFfmpegPaths();
+  // Create window first to show loader immediately
   createWindow();
+
+  // Initialize FFmpeg paths in background (non-blocking)
+  // This can happen after window is shown
+  initializeFfmpegPaths().catch(() => {
+    // App can still function without FFmpeg for project management
+  });
 });
 
 app.on('window-all-closed', () => {

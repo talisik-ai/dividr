@@ -56,10 +56,10 @@ export const DragGuides: React.FC<DragGuidesProps> = ({
                 height: '1px',
                 backgroundColor: isBoundaryWarning
                   ? 'rgb(239, 68, 68)' // red-500 for boundary warning
-                  : 'hsl(var(--secondary))',
+                  : '#F45513',
                 boxShadow: isBoundaryWarning
                   ? '0 0 8px rgba(239, 68, 68, 0.6)'
-                  : '0 0 8px hsla(var(--secondary), 0.6)',
+                  : '0 0 8px #F45513',
               }}
             />
           );
@@ -75,10 +75,10 @@ export const DragGuides: React.FC<DragGuidesProps> = ({
                 width: '1px',
                 backgroundColor: isBoundaryWarning
                   ? 'rgb(239, 68, 68)' // red-500 for boundary warning
-                  : 'hsl(var(--secondary))',
+                  : '#F45513',
                 boxShadow: isBoundaryWarning
                   ? '0 0 8px rgba(239, 68, 68, 0.6)'
-                  : '0 0 8px hsla(var(--secondary), 0.6)',
+                  : '0 0 8px #F45513',
               }}
             />
           );

@@ -107,11 +107,16 @@ export const useProjectStore = create<ProjectStore>()(
       set({ isLoading: true });
 
       try {
+        // Initialize database connection (lazy, non-blocking)
         await projectService.init();
+
+        // Load projects progressively
         await get().loadProjects();
+
         set({ isInitialized: true });
       } catch (error) {
-        console.error('Failed to initialize projects:', error);
+        // Still mark as initialized to prevent blocking the app
+        set({ isInitialized: true });
       } finally {
         set({ isLoading: false });
       }
@@ -124,7 +129,7 @@ export const useProjectStore = create<ProjectStore>()(
         const projects = await projectService.getAllProjects();
         set({ projects });
       } catch (error) {
-        console.error('Failed to load projects:', error);
+        set({ projects: [] }); // Set empty array on error
       } finally {
         set({ isLoading: false });
       }
@@ -144,9 +149,6 @@ export const useProjectStore = create<ProjectStore>()(
         videoEditorStore.setCurrentProjectId(newProject.id);
 
         return newProject.id;
-      } catch (error) {
-        console.error('Failed to create project:', error);
-        throw error;
       } finally {
         set({ isLoading: false });
       }
@@ -175,9 +177,6 @@ export const useProjectStore = create<ProjectStore>()(
 
         // Refresh project list to update lastOpenedAt
         await get().loadProjects();
-      } catch (error) {
-        console.error('Failed to open project:', error);
-        throw error;
       } finally {
         set({ isLoading: false });
       }
@@ -197,9 +196,6 @@ export const useProjectStore = create<ProjectStore>()(
 
         // Update last saved timestamp
         set({ lastSavedAt: new Date().toISOString() });
-      } catch (error) {
-        console.error('Failed to save project:', error);
-        throw error;
       } finally {
         set({ isSaving: false });
       }
@@ -226,29 +222,11 @@ export const useProjectStore = create<ProjectStore>()(
 
           // Clean up extracted audio files if any exist
           if (extractedAudioPaths.length > 0) {
-            console.log(
-              `🧹 Cleaning up ${extractedAudioPaths.length} extracted audio files for project: ${projectToDelete.metadata.title}`,
-            );
             try {
-              const cleanupResult =
-                await window.electronAPI.cleanupExtractedAudio(
-                  extractedAudioPaths,
-                );
-              if (cleanupResult.success) {
-                console.log(
-                  `✅ Successfully cleaned up extracted audio files: ${cleanupResult.deletedFiles.length} deleted`,
-                );
-              } else {
-                console.warn(
-                  `⚠️ Some audio files could not be deleted:`,
-                  cleanupResult.failedFiles,
-                );
-              }
-            } catch (cleanupError) {
-              console.error(
-                'Failed to cleanup extracted audio files:',
-                cleanupError,
+              await window.electronAPI.cleanupExtractedAudio(
+                extractedAudioPaths,
               );
+            } catch (cleanupError) {
               // Don't fail the project deletion if cleanup fails
             }
           }
@@ -264,9 +242,6 @@ export const useProjectStore = create<ProjectStore>()(
         }
 
         await get().loadProjects();
-      } catch (error) {
-        console.error('Failed to delete project:', error);
-        throw error;
       } finally {
         set({ isLoading: false });
       }
@@ -305,9 +280,6 @@ export const useProjectStore = create<ProjectStore>()(
 
         // Refresh project list
         await get().loadProjects();
-      } catch (error) {
-        console.error('Failed to rename project:', error);
-        throw error;
       } finally {
         set({ isLoading: false });
       }
@@ -323,9 +295,6 @@ export const useProjectStore = create<ProjectStore>()(
         );
         await get().loadProjects();
         return newProjectId;
-      } catch (error) {
-        console.error('Failed to duplicate project:', error);
-        throw error;
       } finally {
         set({ isLoading: false });
       }
@@ -335,7 +304,6 @@ export const useProjectStore = create<ProjectStore>()(
       try {
         return await projectService.searchProjects(query);
       } catch (error) {
-        console.error('Failed to search projects:', error);
         return [];
       }
     },
@@ -344,32 +312,26 @@ export const useProjectStore = create<ProjectStore>()(
       try {
         return await projectService.getRecentProjects(limit);
       } catch (error) {
-        console.error('Failed to get recent projects:', error);
         return [];
       }
     },
 
     exportProject: async (id) => {
-      try {
-        const exportData = await projectService.exportProject(id);
+      const exportData = await projectService.exportProject(id);
 
-        // Create and download file
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-          type: 'application/json',
-        });
+      // Create and download file
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json',
+      });
 
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${exportData.metadata.title.replace(/[^a-z0-9]/gi, '_')}.dividr`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } catch (error) {
-        console.error('Failed to export project:', error);
-        throw error;
-      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${exportData.metadata.title.replace(/[^a-z0-9]/gi, '_')}.dividr`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     },
 
     importProject: async (file) => {
@@ -383,9 +345,6 @@ export const useProjectStore = create<ProjectStore>()(
         await get().loadProjects();
 
         return newProjectId;
-      } catch (error) {
-        console.error('Failed to import project:', error);
-        throw error;
       } finally {
         set({ isLoading: false });
       }
@@ -400,7 +359,7 @@ export const useProjectStore = create<ProjectStore>()(
           await get().loadProjects();
         }
       } catch (error) {
-        console.error('Failed to sync video editor state:', error);
+        // Silent fail
       }
     },
 

@@ -14,6 +14,7 @@ import { Button } from '@/frontend/components/ui/button';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
 import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
 import { useTheme } from '@/frontend/providers/ThemeProvider';
+import { startupManager } from '@/frontend/utils/startupManager';
 import { ProjectSummary } from '@/shared/types/project.types';
 import { Loader2, Plus, Search, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -68,7 +69,21 @@ const Projects = () => {
 
   // Initialize projects on component mount
   useEffect(() => {
-    initializeProjects();
+    const initializeApp = async () => {
+      startupManager.logStage('projects-loading');
+
+      try {
+        await initializeProjects();
+        startupManager.logStage('projects-loaded');
+      } catch (error) {
+        // Silent fail
+      } finally {
+        // Mark app as ready after projects are loaded (or failed)
+        startupManager.logStage('app-ready');
+      }
+    };
+
+    initializeApp();
   }, [initializeProjects]);
 
   // Load recent projects
@@ -93,8 +108,7 @@ const Projects = () => {
       // Navigate to video editor with the new project
       navigate('/video-editor');
     } catch (error) {
-      console.error('Failed to create project:', error);
-      // Could add toast notification here if needed
+      toast.error('Failed to create project');
     }
   };
 
@@ -104,7 +118,6 @@ const Projects = () => {
       navigate('/video-editor');
       toast.success('Project opened successfully!');
     } catch (error) {
-      console.error('Failed to open project:', error);
       toast.error('Failed to open project');
     }
   };
@@ -119,7 +132,6 @@ const Projects = () => {
       await duplicateProject(id, newTitle);
       toast.success('Project duplicated successfully!');
     } catch (error) {
-      console.error('Failed to duplicate project:', error);
       toast.error('Failed to duplicate project');
     }
   };
@@ -129,7 +141,6 @@ const Projects = () => {
       await exportProject(id);
       toast.success('Project exported successfully!');
     } catch (error) {
-      console.error('Failed to export project:', error);
       toast.error('Failed to export project');
     }
   };
@@ -150,7 +161,6 @@ const Projects = () => {
       await deleteProject(deleteConfirm.projectId);
       toast.success('Project deleted successfully!');
     } catch (error) {
-      console.error('Failed to delete project:', error);
       toast.error('Failed to delete project');
     } finally {
       setDeleteConfirm({ show: false, projectId: null, projectName: '' });
@@ -167,7 +177,6 @@ const Projects = () => {
       await importProject(file);
       toast.success('Project imported successfully!');
     } catch (error) {
-      console.error('Failed to import project:', error);
       toast.error('Failed to import project');
     }
 
@@ -203,7 +212,6 @@ const Projects = () => {
       await renameProject(id, newName);
       toast.success('Project renamed successfully!');
     } catch (error) {
-      console.error('Failed to rename project:', error);
       toast.error('Failed to rename project');
     }
   };
