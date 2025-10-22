@@ -16,6 +16,10 @@ interface TextTransformBoundaryProps {
   onSelect: (trackId: string) => void;
   onTextUpdate?: (trackId: string, newText: string) => void;
   onRotationStateChange?: (isRotating: boolean) => void;
+  onDragStateChange?: (
+    isDragging: boolean,
+    position?: { x: number; y: number; width: number; height: number },
+  ) => void;
   children: React.ReactNode;
   appliedStyle?: React.CSSProperties;
 }
@@ -42,6 +46,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   onSelect,
   onTextUpdate,
   onRotationStateChange,
+  onDragStateChange,
   children,
   appliedStyle,
 }) => {
@@ -300,8 +305,49 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         const normalizedDeltaY = deltaY / previewScale;
 
         // Add delta to initial position (already in screen pixels)
-        const newPixelX = initialTransform.x / previewScale + normalizedDeltaX;
-        const newPixelY = initialTransform.y / previewScale + normalizedDeltaY;
+        let newPixelX = initialTransform.x / previewScale + normalizedDeltaX;
+        let newPixelY = initialTransform.y / previewScale + normalizedDeltaY;
+
+        // Snapping logic - only when Shift or Ctrl is held
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+          const snapTolerance = e.ctrlKey || e.metaKey ? 2 : 10; // Strong snap (Ctrl) vs soft snap (Shift)
+
+          // Define snap points (in video pixel coordinates, centered at 0,0)
+          const snapPoints = {
+            horizontal: [0], // Center
+            vertical: [0], // Center
+          };
+
+          // Add edge snap points
+          const halfWidth = (containerSize.width * transform.scale) / 2;
+          const halfHeight = (containerSize.height * transform.scale) / 2;
+
+          // Video frame edges (in video pixel coordinates)
+          snapPoints.horizontal.push(
+            -videoHeight / 2 + halfHeight, // Top edge
+            videoHeight / 2 - halfHeight, // Bottom edge
+          );
+          snapPoints.vertical.push(
+            -videoWidth / 2 + halfWidth, // Left edge
+            videoWidth / 2 - halfWidth, // Right edge
+          );
+
+          // Snap to horizontal points
+          for (const snapY of snapPoints.horizontal) {
+            if (Math.abs(newPixelY - snapY) < snapTolerance) {
+              newPixelY = snapY;
+              break;
+            }
+          }
+
+          // Snap to vertical points
+          for (const snapX of snapPoints.vertical) {
+            if (Math.abs(newPixelX - snapX) < snapTolerance) {
+              newPixelX = snapX;
+              break;
+            }
+          }
+        }
 
         // Convert to normalized coordinates
         const normalizedPos = pixelsToNormalized({
@@ -309,6 +355,16 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
           y: newPixelY,
         });
         const clampedPos = clampNormalized(normalizedPos);
+
+        // Notify parent of drag state for guide rendering
+        if (onDragStateChange && containerSize.width > 0) {
+          onDragStateChange(true, {
+            x: newPixelX,
+            y: newPixelY,
+            width: containerSize.width * transform.scale,
+            height: containerSize.height * transform.scale,
+          });
+        }
 
         onTransformUpdate(track.id, {
           x: clampedPos.x,
@@ -416,6 +472,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       if (isRotating) {
         onRotationStateChange?.(false);
       }
+      if (isDragging) {
+        onDragStateChange?.(false);
+      }
       setIsDragging(false);
       setIsScaling(false);
       setIsRotating(false);
@@ -442,8 +501,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     previewScale,
     onTransformUpdate,
     onRotationStateChange,
+    onDragStateChange,
     pixelsToNormalized,
     clampNormalized,
+    containerSize,
+    transform.scale,
+    videoWidth,
+    videoHeight,
   ]);
 
   // Get cursor style based on interaction mode and active handle
