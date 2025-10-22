@@ -10,6 +10,10 @@ import React, { useCallback, useMemo } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AddTrackButton } from './addTrackButton';
 import { TRACK_ROWS, TrackRowDefinition } from './timelineTracks';
+import {
+  getRowHeightClasses,
+  TIMELINE_HEADER_HEIGHT_CLASSES,
+} from './utils/timelineConstants';
 
 interface TrackControllerRowProps {
   rowDef: TrackRowDefinition;
@@ -80,7 +84,12 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
 
     return (
-      <div className="flex items-center justify-between px-2 mb-2 sm:h-6 md:h-8 lg:h-12 border-b border-border/20">
+      <div
+        className={cn(
+          'flex items-center justify-between px-2 border-b border-border/20',
+          getRowHeightClasses(rowDef.id),
+        )}
+      >
         {/* Track type info */}
         {/* <div className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-xs" title={rowDef.name}>
@@ -222,7 +231,12 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
       return (
         <div className={cn('', className)}>
           {/* Header with Add Track button */}
-          <div className="h-8 border-b border-border/20 flex items-center justify-center px-2">
+          <div
+            className={cn(
+              'border-b border-border/20 flex items-center justify-center px-2',
+              TIMELINE_HEADER_HEIGHT_CLASSES,
+            )}
+          >
             <AddTrackButton />
           </div>
 

@@ -23,6 +23,7 @@ import { TimelinePlayhead } from './timelinePlayhead';
 import { TimelineRuler } from './timelineRuler';
 import { TimelineTrackControllers } from './timelineTrackControllers';
 import { TimelineTracks } from './timelineTracks';
+import { getRowHeight } from './utils/timelineConstants';
 import {
   calculateFrameFromPosition,
   handleTimelineMouseDown as centralizedHandleMouseDown,
@@ -31,11 +32,7 @@ import {
   isContextMenuClick,
   TimelineInteractionHandlers,
 } from './utils/timelineInteractionHandlers';
-import {
-  getTrackRowHeight,
-  getTrackRowTop,
-  getVisibleRowIndex,
-} from './utils/trackRowPositions';
+import { getTrackRowHeight, getTrackRowTop } from './utils/trackRowPositions';
 
 interface TimelineProps {
   className?: string;
@@ -422,16 +419,31 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
     // Track viewport width for responsive timeline grid
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+    // Track row height changes for responsive alignment
+    // This state triggers re-renders when breakpoints change, ensuring all child components
+    // recalculate their heights using getCurrentTrackRowHeight()
+    const [layoutKey, setLayoutKey] = useState(0);
 
-    // Update viewport width on resize for responsive full-width grid
+    // Update viewport width and track row height on resize for responsive full-width grid and alignment
     useEffect(() => {
       const handleResize = () => {
-        setViewportWidth(window.innerWidth);
+        const newWidth = window.innerWidth;
+        const oldBreakpoint =
+          viewportWidth < 640 ? 'sm' : viewportWidth < 1024 ? 'md' : 'lg';
+        const newBreakpoint =
+          newWidth < 640 ? 'sm' : newWidth < 1024 ? 'md' : 'lg';
+
+        setViewportWidth(newWidth);
+
+        // Force re-render when breakpoint changes to ensure all heights recalculate
+        if (oldBreakpoint !== newBreakpoint) {
+          setLayoutKey((prev) => prev + 1);
+        }
       };
 
       window.addEventListener('resize', handleResize);
       return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    }, [viewportWidth]);
 
     // Calculate timeline width - always span at least the full viewport width
     // This ensures a professional full-width grid like Premiere Pro/DaVinci Resolve
@@ -517,20 +529,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const findTracksInMarquee = useCallback(
       (rect: { left: number; top: number; right: number; bottom: number }) => {
         const selectedIds: string[] = [];
-        const trackRowHeight = getTrackRowHeight();
 
         tracks.forEach((track) => {
           const trackLeft = track.startFrame * frameWidth;
           const trackRight = track.endFrame * frameWidth;
 
-          // Use dynamic row index based on visible tracks
-          const rowIndex = getVisibleRowIndex(track.type, visibleTrackRows);
+          // Use dynamic row positioning based on individual row heights
+          const trackTop = getTrackRowTop(track.type, visibleTrackRows);
 
           // Skip if track type is not visible
-          if (rowIndex === -1) return;
+          if (trackTop === 0 && !visibleTrackRows.includes(track.type)) return;
 
-          const trackTop = rowIndex * trackRowHeight;
-          const trackBottom = trackTop + trackRowHeight;
+          const trackBottom = trackTop + getRowHeight(track.type);
 
           // Check if track intersects with marquee
           const intersects =
@@ -997,13 +1007,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         <div className="flex flex-1">
           {/* Timeline Track Controllers */}
           <TimelineTrackControllers
+            key={`controllers-${layoutKey}`}
             tracks={tracks}
             className="w-fit flex-shrink-0"
           />
 
           {/* Project Thumbnail Setter - Only show if there are video tracks */}
           {tracks.some((track) => track.type === 'video') && (
-            <ProjectThumbnailSetter />
+            <ProjectThumbnailSetter key={`thumbnail-${layoutKey}`} />
           )}
           {/* Timeline Content Area */}
           <div className="flex flex-col flex-1 relative overflow-hidden">
@@ -1105,6 +1116,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 }}
               >
                 <TimelineTracks
+                  key={`tracks-${layoutKey}`}
                   tracks={tracks}
                   frameWidth={frameWidth}
                   timelineWidth={timelineWidth}

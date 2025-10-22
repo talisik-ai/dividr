@@ -5,6 +5,11 @@ import { ImageUp, PenLine } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ThumbnailChangerDialog } from '../components/thumbnailChangerDialog';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
+import {
+  getRowHeightClasses,
+  TIMELINE_HEADER_HEIGHT_CLASSES,
+} from './utils/timelineConstants';
+import { TRACK_ROW_ORDER } from './utils/trackRowPositions';
 
 interface ProjectThumbnailSetterProps {
   className?: string;
@@ -59,20 +64,40 @@ export const ProjectThumbnailSetter: React.FC<ProjectThumbnailSetterProps> =
 
     return (
       <>
-        <div className="space-y-1 mr-2">
+        <div className="flex flex-col mr-2">
           {/* Header spacer to align with timeline ruler */}
-          <div className="h-8 pointer-events-none"></div>
+          <div
+            className={cn(
+              'pointer-events-none',
+              TIMELINE_HEADER_HEIGHT_CLASSES,
+            )}
+          ></div>
 
           {/* Render spacers for rows before the video track */}
-          {Array.from({ length: videoTrackIndex }).map((_, index) => (
-            <div
-              key={`spacer-${index}`}
-              className="sm:h-6 md:h-8 lg:h-12 pointer-events-none"
-            ></div>
-          ))}
+          {Array.from({ length: videoTrackIndex }).map((_, index) => {
+            // Get the row ID for this spacer based on visible rows order
+            const visibleRowsInOrder = TRACK_ROW_ORDER.filter((id) =>
+              visibleTrackRows.includes(id),
+            );
+            const rowId = visibleRowsInOrder[index];
+            return (
+              <div
+                key={`spacer-${index}`}
+                className={cn(
+                  'pointer-events-none',
+                  getRowHeightClasses(rowId),
+                )}
+              ></div>
+            );
+          })}
 
           {/* Video row - this is where we place the thumbnail setter */}
-          <div className="sm:h-6 md:h-8 lg:h-12 flex items-center group pointer-events-auto">
+          <div
+            className={cn(
+              'flex items-center group pointer-events-auto',
+              getRowHeightClasses('video'),
+            )}
+          >
             <Button
               variant="ghost"
               size="icon"

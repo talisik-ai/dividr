@@ -1,3 +1,4 @@
+import { cn } from '@/frontend/utils/utils';
 import { Film } from 'lucide-react';
 import React, {
   useCallback,
@@ -8,6 +9,11 @@ import React, {
 } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
+import {
+  getRowHeightClasses,
+  getTrackItemHeight,
+  getTrackItemHeightClasses,
+} from './utils/timelineConstants';
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 // Define track row types - easy to extend in the future
@@ -137,14 +143,15 @@ const TrackItemWrapper: React.FC<{
 
     return (
       <div
-        className={`
-          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded flex items-center select-none
-          ${isDuplicationFeedback ? 'overflow-visible' : 'overflow-hidden'}
-          ${isSelected ? 'border-2 border-secondary' : ''}
-          ${getCursorClass()}
-          ${track.visible ? 'opacity-100' : 'opacity-50'}
-          ${isDuplicationFeedback ? 'track-duplicate-feedback z-50' : 'z-10'}
-        `}
+        className={cn(
+          'absolute rounded flex items-center select-none',
+          getTrackItemHeightClasses(track.type),
+          isDuplicationFeedback ? 'overflow-visible' : 'overflow-hidden',
+          isSelected ? 'border-2 border-secondary' : '',
+          getCursorClass(),
+          track.visible ? 'opacity-100' : 'opacity-50',
+          isDuplicationFeedback ? 'track-duplicate-feedback z-50' : 'z-10',
+        )}
         style={{
           transform: `translate3d(${left}px, 0, 0)`,
           width: `${width}px`,
@@ -595,8 +602,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
     // Render appropriate content based on track type
     const trackContent = useMemo(() => {
-      const contentHeight =
-        window.innerWidth <= 640 ? 24 : window.innerWidth <= 768 ? 26 : 40;
+      // Get the dynamic content height based on track type
+      const contentHeight = getTrackItemHeight(track.type);
 
       if (track.type === 'video') {
         return (
@@ -626,7 +633,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         );
       }
 
-      // Text content for other track types
+      // Text content for other track types (text, subtitle, logo)
       return (
         <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
@@ -676,25 +683,37 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           )}
         </TrackItemWrapper>
 
-        {/* Resize handles */}
+        {/* Resize handles - smaller and dynamically sized based on track type */}
         {!track.locked && isSelected && !isSplitModeActive && (
           <>
             <div
-              className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-trim z-20 lg:rounded-r flex items-center justify-center
-                ${isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary'}`}
+              className={cn(
+                'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-r flex items-center justify-center',
+                // Smaller resize handles based on track type
+                track.type === 'text' || track.type === 'subtitle'
+                  ? 'sm:h-3 md:h-4 lg:h-5'
+                  : 'sm:h-3 md:h-7 lg:h-8',
+                isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary',
+              )}
               style={{ left }}
               onMouseDown={(e) => handleResizeMouseDown('left', e)}
             >
-              <div className="w-0.5 h-3/4 bg-primary-foreground rounded-full" />
+              <div className="w-0.5 h-2/3 bg-primary-foreground rounded-full" />
             </div>
 
             <div
-              className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-trim z-20 lg:rounded-l flex items-center justify-center
-                ${isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary'}`}
-              style={{ left: left + width - 8 }}
+              className={cn(
+                'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-l flex items-center justify-center',
+                // Smaller resize handles based on track type
+                track.type === 'text' || track.type === 'subtitle'
+                  ? 'sm:h-3 md:h-4 lg:h-5'
+                  : 'sm:h-3 md:h-6 lg:h-8',
+                isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary',
+              )}
+              style={{ left: left + width - 6 }}
               onMouseDown={(e) => handleResizeMouseDown('right', e)}
             >
-              <div className="w-0.5 h-3/4 bg-primary-foreground rounded-full" />
+              <div className="w-0.5 h-2/3 bg-primary-foreground rounded-full" />
             </div>
           </>
         )}
@@ -801,8 +820,13 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
 
     return (
       <div
-        className={`relative sm:h-6 md:h-8 lg:h-12 border-l-[3px]
-        ${isDragOver ? 'bg-secondary/10 border-l-secondary' : 'bg-transparent border-l-transparent'}`}
+        className={cn(
+          'relative border-l-[3px]',
+          getRowHeightClasses(rowDef.id),
+          isDragOver
+            ? 'bg-secondary/10 border-l-secondary'
+            : 'bg-transparent border-l-transparent',
+        )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -823,8 +847,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           }}
         />
 
-        {/* Tracks in this row */}
-        <div className="py-1.5 h-full">
+        {/* Tracks in this row - centered vertically */}
+        <div className="h-full flex items-center">
           {visibleTracks.map((track) => (
             <TrackItem
               key={`${track.id}-${track.source}-${track.name}`}

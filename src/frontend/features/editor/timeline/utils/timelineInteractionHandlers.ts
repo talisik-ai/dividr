@@ -14,6 +14,7 @@
  * - Split mode click: Split track at position
  */
 
+import { getRowHeight } from './timelineConstants';
 import { getVisibleRowsInOrder } from './trackRowPositions';
 
 import { VideoTrack } from '../../stores/videoEditor/types';
@@ -218,14 +219,22 @@ export const findTrackAtPosition = (
   const y = clientY - rect.top;
   const frame = Math.floor(x / frameWidth);
 
-  // Find which track row is being hovered based on Y position
-  const trackRowHeight = 48; // Height of each track row
-  const rowIndex = Math.floor(y / trackRowHeight);
-
-  // Map row index to track type based on visible track rows (dynamic)
+  // Find which track row is being hovered based on Y position with individual row heights
   const visibleRows = visibleTrackRows || ['video', 'audio'];
   const visibleRowsInOrder = getVisibleRowsInOrder(visibleRows);
-  const trackType = visibleRowsInOrder[rowIndex] as VideoTrack['type'];
+
+  // Calculate cumulative heights to find which row the Y position falls into
+  let cumulativeHeight = 0;
+  let trackType: VideoTrack['type'] | null = null;
+
+  for (const rowId of visibleRowsInOrder) {
+    const rowHeight = getRowHeight(rowId);
+    if (y >= cumulativeHeight && y < cumulativeHeight + rowHeight) {
+      trackType = rowId as VideoTrack['type'];
+      break;
+    }
+    cumulativeHeight += rowHeight;
+  }
 
   if (!trackType) return null;
 
