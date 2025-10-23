@@ -176,6 +176,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }) => ipcRenderer.invoke('write-subtitle-file', options),
 
   deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
+
+  // ============================================================================
+  // Whisper.cpp API
+  // ============================================================================
+
+  // Transcribe audio file
+  whisperTranscribe: (
+    audioPath: string,
+    options?: {
+      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+      language?: string;
+      translate?: boolean;
+      wordTimestamps?: boolean;
+    },
+  ) => ipcRenderer.invoke('whisper:transcribe', audioPath, options),
+
+  // Cancel active transcription
+  whisperCancel: () => ipcRenderer.invoke('whisper:cancel'),
+
+  // Get Whisper status and available models
+  whisperStatus: () => ipcRenderer.invoke('whisper:status'),
+
+  // Listen for transcription progress updates
+  onWhisperProgress: (
+    callback: (progress: {
+      stage: 'loading' | 'processing' | 'complete' | 'error';
+      progress: number;
+      message?: string;
+    }) => void,
+  ) => ipcRenderer.on('whisper:progress', (_, progress) => callback(progress)),
+
+  // Remove progress listener
+  removeWhisperProgressListener: () =>
+    ipcRenderer.removeAllListeners('whisper:progress'),
 });
 
 contextBridge.exposeInMainWorld('appControl', {
