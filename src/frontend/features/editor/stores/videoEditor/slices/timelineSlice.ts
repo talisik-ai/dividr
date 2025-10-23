@@ -173,8 +173,8 @@ export const createTimelineSlice: StateCreator<
         return state; // Already visible, no change
       }
 
-      // Define the order: video, logo, text, subtitle, audio
-      const order = ['video', 'logo', 'text', 'subtitle', 'audio'];
+      // Define the order: video, image, text, subtitle, audio
+      const order = ['video', 'image', 'text', 'subtitle', 'audio'];
       const newRows = [...state.timeline.visibleTrackRows, rowId];
 
       // Sort according to the defined order

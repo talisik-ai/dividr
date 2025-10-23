@@ -52,7 +52,7 @@ export const AddTrackButton: React.FC<AddTrackButtonProps> = React.memo(
           return <Music className="h-4 w-4" />;
         case 'subtitle':
           return <Type className="h-4 w-4" />;
-        case 'logo':
+        case 'image':
           return <Image className="h-4 w-4" />;
         default:
           return <Plus className="h-4 w-4" />;

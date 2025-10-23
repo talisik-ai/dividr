@@ -423,7 +423,7 @@ export const createTracksSlice: StateCreator<
       } else if (trackData.type === 'image') {
         setTimeout(() => {
           const currentState = get() as any;
-          currentState.ensureTrackRowVisible?.('logo');
+          currentState.ensureTrackRowVisible?.('image');
           console.log('🖼️ Auto-created Image/Overlay track row');
         }, 0);
       }

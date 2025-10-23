@@ -8,7 +8,7 @@ import { getCurrentTrackRowHeight, getRowHeight } from './timelineConstants';
 export const TRACK_ROW_ORDER = [
   'text',
   'subtitle',
-  'logo',
+  'image',
   'video',
   'audio',
 ] as const;

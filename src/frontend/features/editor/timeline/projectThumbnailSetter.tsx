@@ -49,8 +49,8 @@ export const ProjectThumbnailSetter: React.FC<ProjectThumbnailSetterProps> =
 
     // Get the position of the video track row
     const videoTrackIndex = useMemo(() => {
-      // Define the order: video, logo, subtitle, audio
-      const order = ['text', 'subtitle', 'logo', 'video', 'audio'];
+      // Define the order: video, image, text, subtitle, audio
+      const order = ['text', 'subtitle', 'image', 'video', 'audio'];
       const visibleRowsInOrder = order.filter((id) =>
         visibleTrackRows.includes(id),
       );

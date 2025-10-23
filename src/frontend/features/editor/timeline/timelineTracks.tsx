@@ -53,7 +53,7 @@ export const TRACK_ROWS: TrackRowDefinition[] = [
     icon: '💬',
   },
   {
-    id: 'logo',
+    id: 'image',
     name: 'Images/Overlays',
     trackTypes: ['image'],
     color: '#e67e22',
@@ -643,7 +643,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               : track.name}
         </div>
       );
-    }, [track, frameWidth, width, zoomLevel]);
+    }, [track, track.muted, frameWidth, width, zoomLevel]);
 
     return (
       <>
@@ -728,6 +728,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.endFrame === nextProps.track.endFrame &&
       prevProps.track.visible === nextProps.track.visible &&
       prevProps.track.locked === nextProps.track.locked &&
+      prevProps.track.muted === nextProps.track.muted &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive &&
       prevProps.frameWidth === nextProps.frameWidth &&
