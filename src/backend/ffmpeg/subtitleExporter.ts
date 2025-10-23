@@ -443,14 +443,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                                    textStyle.backgroundColor !== 'rgba(0,0,0,0)' &&
                                    textStyle.backgroundColor !== 'rgba(0, 0, 0, 0)';
       
-      if (textStyle?.hasGlow) {
-        if (hasActualBackground) {
-          // When background color exists with BorderStyle 3:
-          // BorderStyle 3 shows an opaque background box
-          // The Outline parameter in the style becomes the padding/margin for the box
+      if (textStyle?.hasGlow && hasActualBackground) {
           
-          // DON'T blur the text/box - keep it crisp
-          // Instead only blur/enhance the shadow for glow effect
           overrideCommands.push('\\blur0'); // Disable blur on text and box
           
           // For glow behind the background box, use shadow with text color
@@ -460,8 +454,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
           // Set shadow properties for glow effect
           const shadowBlur = (textStyle.glowIntensity || 2) + 18; 
           overrideCommands.push(`\\shad${shadowBlur}`); // Shadow distance/size for glow
-          overrideCommands.push('\\xshad-5'); // Offset shadow horizontally (increased from -3 to -5)
-          overrideCommands.push('\\yshad6'); // Offset shadow vertically (increased from 4 to 6)
+          overrideCommands.push('\\xshad-5'); // Offset shadow horizontally 
+          overrideCommands.push('\\yshad6'); // Offset shadow vertically 
           overrideCommands.push(`\\4c${glowShadowColor}`); // Shadow color = text color for glow
           
           console.log('✨ Background + Glow mode (BorderStyle 3):', {
@@ -472,13 +466,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             shadowBlur: shadowBlur,
             note: 'Text and box are crisp, only shadow is blurred for glow',
           });
-        } else {
-          // No background color - glow without background
-          // For clean look matching example: NO blur, just outline
-          // The outline itself provides the glow effect
-          console.log('✨ Glow mode without background (BorderStyle 1 with outline)');
-          // Don't add any overrides - let the base style with BorderStyle 1 and outline show through
-        }
       }
       
       if (overrideCommands.length > 0) {
