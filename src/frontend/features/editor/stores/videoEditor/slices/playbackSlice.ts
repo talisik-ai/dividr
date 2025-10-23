@@ -17,6 +17,14 @@ export interface PlaybackSlice {
   endDraggingTrack: (recordUndo?: boolean) => void;
   setMagneticSnapFrame: (frame: number | null) => void;
   trackBoundaryCollision: (attemptedFrame: number, wasBlocked: boolean) => void;
+  setDragGhost: (ghost: PlaybackState['dragGhost']) => void;
+  updateDragGhostPosition: (
+    mouseX: number,
+    mouseY: number,
+    targetRow: string | null,
+    targetFrame: number | null,
+  ) => void;
+  clearDragGhost: () => void;
 }
 
 export const createPlaybackSlice: StateCreator<
@@ -34,6 +42,7 @@ export const createPlaybackSlice: StateCreator<
     dragStartFrame: null,
     boundaryCollisionCount: 0,
     lastAttemptedFrame: null,
+    dragGhost: null,
     ...DEFAULT_PLAYBACK_CONFIG,
   },
 
@@ -153,4 +162,30 @@ export const createPlaybackSlice: StateCreator<
         },
       };
     }),
+
+  setDragGhost: (ghost) =>
+    set((state: any) => ({
+      playback: { ...state.playback, dragGhost: ghost },
+    })),
+
+  updateDragGhostPosition: (mouseX, mouseY, targetRow, targetFrame) =>
+    set((state: any) => ({
+      playback: {
+        ...state.playback,
+        dragGhost: state.playback.dragGhost
+          ? {
+              ...state.playback.dragGhost,
+              mouseX,
+              mouseY,
+              targetRow,
+              targetFrame,
+            }
+          : null,
+      },
+    })),
+
+  clearDragGhost: () =>
+    set((state: any) => ({
+      playback: { ...state.playback, dragGhost: null },
+    })),
 });

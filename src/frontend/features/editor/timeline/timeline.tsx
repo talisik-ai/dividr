@@ -17,6 +17,8 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../stores/videoEditor/index';
+import { DragGhost } from './dragGhost';
+import { DropZoneIndicator } from './dropZoneIndicator';
 import { ProjectThumbnailSetter } from './projectThumbnailSetter';
 import { TimelineControls } from './timelineControls';
 import { TimelinePlayhead } from './timelinePlayhead';
@@ -79,6 +81,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const visibleTrackRows = useVideoEditorStore(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
     );
+    const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
     );
@@ -1214,9 +1217,116 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   }}
                 />
               )}
+
+              {/* Drop Zone Indicator - shows where clip will land */}
+              {dragGhost?.isActive &&
+                dragGhost.targetRow &&
+                dragGhost.targetFrame !== null &&
+                tracksRef.current &&
+                (() => {
+                  const draggedTrack = tracks.find(
+                    (t) => t.id === dragGhost.trackId,
+                  );
+                  if (!draggedTrack) return null;
+
+                  const duration =
+                    draggedTrack.endFrame - draggedTrack.startFrame;
+
+                  // Get linked track if exists
+                  const linkedTrack = draggedTrack.isLinked
+                    ? tracks.find((t) => t.id === draggedTrack.linkedTrackId)
+                    : null;
+
+                  return (
+                    <>
+                      {/* Main track drop zone */}
+                      <DropZoneIndicator
+                        targetRow={dragGhost.targetRow}
+                        startFrame={dragGhost.targetFrame}
+                        endFrame={dragGhost.targetFrame + duration}
+                        frameWidth={frameWidth}
+                        scrollX={timeline.scrollX}
+                        visibleTrackRows={visibleTrackRows}
+                        isValidDrop={true}
+                      />
+
+                      {/* Linked track drop zone */}
+                      {linkedTrack && (
+                        <DropZoneIndicator
+                          targetRow={linkedTrack.type}
+                          startFrame={dragGhost.targetFrame}
+                          endFrame={
+                            dragGhost.targetFrame +
+                            (linkedTrack.endFrame - linkedTrack.startFrame)
+                          }
+                          frameWidth={frameWidth}
+                          scrollX={timeline.scrollX}
+                          visibleTrackRows={visibleTrackRows}
+                          isValidDrop={true}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
             </div>
           </div>
         </div>
+
+        {/* Drag Ghost - floating preview that follows cursor */}
+        {dragGhost?.isActive && dragGhost.trackId && (
+          <>
+            {(() => {
+              const draggedTrack = tracks.find(
+                (t) => t.id === dragGhost.trackId,
+              );
+              if (!draggedTrack) return null;
+
+              // Get linked track if exists
+              const linkedTrack = draggedTrack.isLinked
+                ? tracks.find((t) => t.id === draggedTrack.linkedTrackId)
+                : null;
+
+              // Calculate height offset for linked track
+              const mainTrackHeight = getRowHeight(draggedTrack.type);
+              const linkedTrackHeight = linkedTrack
+                ? getRowHeight(linkedTrack.type)
+                : 0;
+
+              return (
+                <>
+                  {/* Main track drag ghost */}
+                  <DragGhost
+                    track={draggedTrack}
+                    frameWidth={frameWidth}
+                    zoomLevel={timeline.zoom}
+                    mouseX={dragGhost.mouseX}
+                    mouseY={dragGhost.mouseY}
+                    offsetX={dragGhost.offsetX}
+                    offsetY={dragGhost.offsetY}
+                  />
+
+                  {/* Linked track drag ghost */}
+                  {linkedTrack && (
+                    <DragGhost
+                      track={linkedTrack}
+                      frameWidth={frameWidth}
+                      zoomLevel={timeline.zoom}
+                      mouseX={dragGhost.mouseX}
+                      mouseY={
+                        dragGhost.mouseY +
+                        (linkedTrack.type === 'audio'
+                          ? mainTrackHeight
+                          : -linkedTrackHeight)
+                      }
+                      offsetX={dragGhost.offsetX}
+                      offsetY={dragGhost.offsetY}
+                    />
+                  )}
+                </>
+              );
+            })()}
+          </>
+        )}
 
         {/* Project Shortcut Confirmation Dialog */}
         <ConfirmationDialog />

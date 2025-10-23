@@ -115,6 +115,16 @@ const TrackItemWrapper: React.FC<{
     const left = track.startFrame * frameWidth;
     const width = Math.max(1, (track.endFrame - track.startFrame) * frameWidth);
 
+    // Check if this track is being dragged (has active drag ghost)
+    const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
+
+    // Check if this track OR its linked partner is being dragged
+    const isBeingDragged =
+      dragGhost?.isActive &&
+      (dragGhost?.trackId === track.id ||
+        // Check if this track is linked to the dragged track
+        (track.isLinked && track.linkedTrackId === dragGhost?.trackId));
+
     const getTrackGradient = (type: VideoTrack['type']) => {
       switch (type) {
         case 'text':
@@ -144,13 +154,15 @@ const TrackItemWrapper: React.FC<{
     return (
       <div
         className={cn(
-          'absolute rounded flex items-center select-none',
+          'absolute rounded flex items-center select-none transition-opacity duration-150',
           getTrackItemHeightClasses(track.type),
           isDuplicationFeedback ? 'overflow-visible' : 'overflow-hidden',
           isSelected ? 'border-2 border-secondary' : '',
           getCursorClass(),
           track.visible ? 'opacity-100' : 'opacity-50',
           isDuplicationFeedback ? 'track-duplicate-feedback z-50' : 'z-10',
+          // Hide the original track completely when drag ghost is active
+          isBeingDragged ? 'opacity-0' : '',
         )}
         style={{
           transform: `translate3d(${left}px, 0, 0)`,
@@ -196,6 +208,13 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       state.duplicationFeedbackTrackIds.has(track.id),
     );
 
+    // Check if this track or its linked partner is being dragged
+    const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
+    const isThisOrLinkedTrackBeingDragged =
+      dragGhost?.isActive &&
+      (dragGhost?.trackId === track.id ||
+        (track.isLinked && track.linkedTrackId === dragGhost?.trackId));
+
     // Apply global cursor override during resize/drag to prevent flickering
     useEffect(() => {
       if (isResizing) {
@@ -240,8 +259,27 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         // Don't call onSelect here - let handleClick handle selection
         // We'll auto-select during actual drag movement if needed
 
-        const { startDraggingTrack } = useVideoEditorStore.getState();
+        const { startDraggingTrack, setDragGhost } =
+          useVideoEditorStore.getState();
         startDraggingTrack(track.startFrame); // Pass initial frame for force drag tracking
+
+        // Calculate offset from track's left edge to cursor
+        const trackElement = e.currentTarget as HTMLElement;
+        const trackRect = trackElement.getBoundingClientRect();
+        const offsetX = e.clientX - trackRect.left;
+        const offsetY = e.clientY - trackRect.top;
+
+        // Initialize drag ghost
+        setDragGhost({
+          isActive: true,
+          trackId: track.id,
+          mouseX: e.clientX,
+          mouseY: e.clientY,
+          offsetX,
+          offsetY,
+          targetRow: track.type,
+          targetFrame: track.startFrame,
+        });
 
         setIsDragging(true);
         setDragStart({
@@ -250,7 +288,14 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           endFrame: track.endFrame,
         });
       },
-      [track.locked, track.startFrame, track.endFrame, isSplitModeActive],
+      [
+        track.locked,
+        track.startFrame,
+        track.endFrame,
+        track.id,
+        track.type,
+        isSplitModeActive,
+      ],
     );
 
     const handleResizeMouseDown = useCallback(
@@ -268,6 +313,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
         const { startDraggingTrack } = useVideoEditorStore.getState();
         startDraggingTrack(track.startFrame); // Pass initial frame for tracking
+
+        // DON'T initialize drag ghost for resize operations
+        // Resizing should not show drop zones
 
         setIsResizing(side);
         setDragStart({
@@ -510,7 +558,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             const newEndFrame = newStartFrame + duration;
 
             // Check if snapping should be active (either Shift held OR snapEnabled toggle)
-            const { timeline } = useVideoEditorStore.getState();
+            const { timeline, updateDragGhostPosition } =
+              useVideoEditorStore.getState();
             const shouldSnap = e.shiftKey || timeline.snapEnabled;
 
             if (shouldSnap) {
@@ -543,6 +592,15 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               useVideoEditorStore.getState().setMagneticSnapFrame(null);
             }
 
+            // Update drag ghost position with target row detection
+            // For now, keep it in the same row (cross-row will be added in Timeline component)
+            updateDragGhostPosition(
+              e.clientX,
+              e.clientY,
+              track.type,
+              newStartFrame,
+            );
+
             onMove(newStartFrame);
           }
         });
@@ -562,8 +620,10 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     );
 
     const handleMouseUp = useCallback(() => {
-      const { endDraggingTrack } = useVideoEditorStore.getState();
+      const { endDraggingTrack, clearDragGhost } =
+        useVideoEditorStore.getState();
       endDraggingTrack();
+      clearDragGhost();
 
       setIsResizing(false);
       setIsDragging(false);
@@ -684,39 +744,43 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         </TrackItemWrapper>
 
         {/* Resize handles - smaller and dynamically sized based on track type */}
-        {!track.locked && isSelected && !isSplitModeActive && (
-          <>
-            <div
-              className={cn(
-                'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-r flex items-center justify-center',
-                // Smaller resize handles based on track type
-                track.type === 'text' || track.type === 'subtitle'
-                  ? 'sm:h-3 md:h-4 lg:h-5'
-                  : 'sm:h-3 md:h-7 lg:h-8',
-                isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary',
-              )}
-              style={{ left }}
-              onMouseDown={(e) => handleResizeMouseDown('left', e)}
-            >
-              <div className="w-0.5 h-2/3 bg-primary-foreground rounded-full" />
-            </div>
+        {!track.locked &&
+          isSelected &&
+          !isSplitModeActive &&
+          !isDragging &&
+          !isThisOrLinkedTrackBeingDragged && (
+            <>
+              <div
+                className={cn(
+                  'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-r flex items-center justify-center',
+                  // Smaller resize handles based on track type
+                  track.type === 'text' || track.type === 'subtitle'
+                    ? 'sm:h-3 md:h-4 lg:h-5'
+                    : 'sm:h-3 md:h-7 lg:h-8',
+                  isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary',
+                )}
+                style={{ left }}
+                onMouseDown={(e) => handleResizeMouseDown('left', e)}
+              >
+                <div className="w-0.5 h-2/3 bg-primary-foreground rounded-full" />
+              </div>
 
-            <div
-              className={cn(
-                'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-l flex items-center justify-center',
-                // Smaller resize handles based on track type
-                track.type === 'text' || track.type === 'subtitle'
-                  ? 'sm:h-3 md:h-4 lg:h-5'
-                  : 'sm:h-3 md:h-6 lg:h-8',
-                isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary',
-              )}
-              style={{ left: left + width - 6 }}
-              onMouseDown={(e) => handleResizeMouseDown('right', e)}
-            >
-              <div className="w-0.5 h-2/3 bg-primary-foreground rounded-full" />
-            </div>
-          </>
-        )}
+              <div
+                className={cn(
+                  'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-l flex items-center justify-center',
+                  // Smaller resize handles based on track type
+                  track.type === 'text' || track.type === 'subtitle'
+                    ? 'sm:h-3 md:h-4 lg:h-5'
+                    : 'sm:h-3 md:h-6 lg:h-8',
+                  isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary',
+                )}
+                style={{ left: left + width - 6 }}
+                onMouseDown={(e) => handleResizeMouseDown('right', e)}
+              >
+                <div className="w-0.5 h-2/3 bg-primary-foreground rounded-full" />
+              </div>
+            </>
+          )}
       </>
     );
   },
