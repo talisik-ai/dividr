@@ -511,14 +511,14 @@ function createSilentAudioFilters(
 }
 
 /**
- * Builds separate video and audio timelines from inputs with proper layering
- * Images are prioritized over videos when they overlap
+ * Builds separate video and audio timelines from inputs
+ * Videos and images are kept separate for overlay-based compositing
  */
 function buildSeparateTimelines(
   inputs: (string | TrackInfo)[],
   targetFrameRate: number = VIDEO_DEFAULTS.FPS,
-): { video: ProcessedTimeline; audio: ProcessedTimeline } {
-  console.log('🎬 Building timelines with layering support');
+): { video: ProcessedTimeline; audio: ProcessedTimeline; images: ProcessedTimeline } {
+  console.log('🎬 Building timelines with overlay-based layering support');
   
   // Separate inputs by type
   const videoInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> = [];
@@ -545,8 +545,11 @@ function buildSeparateTimelines(
 
   console.log(`📊 Input counts: videos=${videoInputs.length}, images=${imageInputs.length}, audio=${audioInputs.length}`);
 
-  // Build video timeline with layering
-  let videoSegments = buildLayeredVideoTimeline(videoInputs, imageInputs, targetFrameRate);
+  // Build video timeline (no cutting, videos play continuously)
+  let videoSegments = buildVideoTimeline(videoInputs, targetFrameRate);
+  
+  // Build image timeline (separate from video)
+  let imageSegments = buildImageTimeline(imageInputs, targetFrameRate);
   
   // Build audio timeline (simpler, no layering)
   let audioSegments = buildAudioTimeline(audioInputs, targetFrameRate);
@@ -559,6 +562,10 @@ function buildSeparateTimelines(
     ? Math.max(...videoSegments.map(s => s.endTime))
     : 0;
   
+  const imageTotalDuration = imageSegments.length > 0
+    ? Math.max(...imageSegments.map(s => s.endTime))
+    : 0;
+  
   const audioTotalDuration = audioSegments.length > 0
     ? Math.max(...audioSegments.map(s => s.endTime))
     : 0;
@@ -568,6 +575,11 @@ function buildSeparateTimelines(
       segments: videoSegments,
       totalDuration: videoTotalDuration,
       timelineType: 'video',
+    },
+    images: {
+      segments: imageSegments,
+      totalDuration: imageTotalDuration,
+      timelineType: 'video', // Images are video-like
     },
     audio: {
       segments: audioSegments,
@@ -649,184 +661,69 @@ function fillTimelineGaps(
 }
 
 /**
- * Builds layered video timeline where images overlay videos
- * Creates a continuous timeline with proper layering priority
+ * Builds video timeline without cutting - videos play continuously
  */
-function buildLayeredVideoTimeline(
+function buildVideoTimeline(
   videoInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }>,
+  targetFrameRate: number,
+): ProcessedTimelineSegment[] {
+  const segments: ProcessedTimelineSegment[] = [];
+
+  videoInputs.forEach(({ trackInfo, originalIndex }) => {
+    const startFrame = trackInfo.timelineStartFrame || 0;
+    const endFrame = trackInfo.timelineEndFrame || 0;
+    const startTime = startFrame / targetFrameRate;
+    const endTime = endFrame / targetFrameRate;
+    const duration = endTime - startTime;
+
+    segments.push({
+      input: trackInfo,
+      originalIndex,
+      startTime,
+      duration,
+      endTime,
+      timelineType: 'video',
+    });
+
+    console.log(
+      `🎥 Video segment ${originalIndex}: ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+    );
+  });
+
+  return segments;
+}
+
+/**
+ * Builds image timeline - images will be overlaid with opacity transitions
+ */
+function buildImageTimeline(
   imageInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }>,
   targetFrameRate: number,
 ): ProcessedTimelineSegment[] {
   const segments: ProcessedTimelineSegment[] = [];
 
-  // Combine all visual inputs with their timeline positions and layer priority
-  const allVisualInputs = [
-    ...videoInputs.map(v => ({ ...v, isImage: false, layer: 0 })), // Videos on bottom layer
-    ...imageInputs.map(i => ({ ...i, isImage: true, layer: 1 })),  // Images on top layer
-  ];
+  imageInputs.forEach(({ trackInfo, originalIndex }) => {
+    const startFrame = trackInfo.timelineStartFrame || 0;
+    const endFrame = trackInfo.timelineEndFrame || 0;
+    const startTime = startFrame / targetFrameRate;
+    const endTime = endFrame / targetFrameRate;
+    const duration = endTime - startTime;
 
-  // Sort by timeline start position, then by layer (images on top)
-  allVisualInputs.sort((a, b) => {
-    const aStart = a.trackInfo.timelineStartFrame || 0;
-    const bStart = b.trackInfo.timelineStartFrame || 0;
-    if (aStart !== bStart) return aStart - bStart;
-    return b.layer - a.layer; // Higher layer first (images before videos)
-  });
+    // Mark as image for special handling
+    const imageTrackInfo: TrackInfo = { ...trackInfo, isImage: true };
 
-  console.log('📹 Visual inputs sorted by timeline position:');
-  allVisualInputs.forEach(input => {
-    const start = input.trackInfo.timelineStartFrame || 0;
-    const end = input.trackInfo.timelineEndFrame || 0;
-    console.log(`  ${input.isImage ? '🖼️' : '🎥'} ${input.trackInfo.path}: frames ${start}-${end} (layer ${input.layer})`);
-  });
-
-  // Determine the final timeline by resolving overlaps
-  // Images hide videos when they overlap
-  const resolvedSegments = resolveVideoLayerOverlaps(allVisualInputs, targetFrameRate);
-
-  return resolvedSegments;
-}
-
-/**
- * Resolves overlapping video/image segments
- * Images take priority - videos are cut/hidden where images exist
- * Creates a flat timeline suitable for concat
- */
-function resolveVideoLayerOverlaps(
-  visualInputs: Array<{ trackInfo: TrackInfo; originalIndex: number; isImage: boolean; layer: number }>,
-  targetFrameRate: number,
-): ProcessedTimelineSegment[] {
-  // Separate videos and images
-  const videos = visualInputs.filter(v => !v.isImage);
-  const images = visualInputs.filter(v => v.isImage);
-
-  console.log(`🎬 Resolving overlaps: ${videos.length} videos, ${images.length} images`);
-
-  // Build a timeline by determining what should be visible at each point
-  // Images take priority over videos
-  const timeline: Array<{
-    startTime: number;
-    endTime: number;
-    content: { trackInfo: TrackInfo; originalIndex: number; isImage: boolean };
-  }> = [];
-
-  // First, add all image segments (they have priority)
-  images.forEach(image => {
-    const startFrame = image.trackInfo.timelineStartFrame || 0;
-    const endFrame = image.trackInfo.timelineEndFrame || 0;
-    timeline.push({
-      startTime: startFrame / targetFrameRate,
-      endTime: endFrame / targetFrameRate,
-      content: image,
-    });
-  });
-
-  // Then, add video segments, but cut them where images exist
-  videos.forEach(video => {
-    const startFrame = video.trackInfo.timelineStartFrame || 0;
-    const endFrame = video.trackInfo.timelineEndFrame || 0;
-    const videoStart = startFrame / targetFrameRate;
-    const videoEnd = endFrame / targetFrameRate;
-
-    // Check if this video overlaps with any images
-    const overlappingImages = images.filter(img => {
-      const imgStart = (img.trackInfo.timelineStartFrame || 0) / targetFrameRate;
-      const imgEnd = (img.trackInfo.timelineEndFrame || 0) / targetFrameRate;
-      // Check if there's any overlap
-      return imgStart < videoEnd && imgEnd > videoStart;
-    });
-
-    if (overlappingImages.length === 0) {
-      // No overlap - add the full video segment
-      timeline.push({
-        startTime: videoStart,
-        endTime: videoEnd,
-        content: video,
-      });
-      console.log(`📹 Video segment ${video.originalIndex}: ${videoStart.toFixed(2)}s-${videoEnd.toFixed(2)}s (no overlap)`);
-    } else {
-      // There are overlapping images - need to cut the video into pieces
-      console.log(`📹 Video segment ${video.originalIndex} has ${overlappingImages.length} overlapping images, splitting...`);
-      
-      // Sort image overlaps by start time
-      const sortedImageOverlaps = overlappingImages
-        .map(img => ({
-          start: (img.trackInfo.timelineStartFrame || 0) / targetFrameRate,
-          end: (img.trackInfo.timelineEndFrame || 0) / targetFrameRate,
-        }))
-        .sort((a, b) => a.start - b.start);
-
-      // Cut the video into segments around the images
-      let currentVideoTime = videoStart;
-      
-      for (const imageOverlap of sortedImageOverlaps) {
-        // Add video segment before this image (if there is one)
-        if (currentVideoTime < imageOverlap.start) {
-          const segmentDuration = imageOverlap.start - currentVideoTime;
-          const sourceOffset = (video.trackInfo.startTime || 0) + (currentVideoTime - videoStart);
-          
-          // Create modified trackInfo with adjusted source trim
-          const modifiedTrackInfo: TrackInfo = {
-            ...video.trackInfo,
-            startTime: sourceOffset,
-            duration: segmentDuration,
-          };
-          
-          timeline.push({
-            startTime: currentVideoTime,
-            endTime: imageOverlap.start,
-            content: { ...video, trackInfo: modifiedTrackInfo },
-          });
-          console.log(`  📹 Video piece: ${currentVideoTime.toFixed(2)}s-${imageOverlap.start.toFixed(2)}s (source: ${sourceOffset.toFixed(2)}s, duration: ${segmentDuration.toFixed(2)}s)`);
-        }
-        
-        // Skip the image overlap region
-        currentVideoTime = Math.max(currentVideoTime, imageOverlap.end);
-      }
-
-      // Add remaining video segment after all images (if there is one)
-      if (currentVideoTime < videoEnd) {
-        const segmentDuration = videoEnd - currentVideoTime;
-        const sourceOffset = (video.trackInfo.startTime || 0) + (currentVideoTime - videoStart);
-        
-        // Create modified trackInfo with adjusted source trim
-        const modifiedTrackInfo: TrackInfo = {
-          ...video.trackInfo,
-          startTime: sourceOffset,
-          duration: segmentDuration,
-        };
-        
-        timeline.push({
-          startTime: currentVideoTime,
-          endTime: videoEnd,
-          content: { ...video, trackInfo: modifiedTrackInfo },
-        });
-        console.log(`  📹 Video piece: ${currentVideoTime.toFixed(2)}s-${videoEnd.toFixed(2)}s (source: ${sourceOffset.toFixed(2)}s, duration: ${segmentDuration.toFixed(2)}s)`);
-      }
-    }
-  });
-
-  // Sort timeline by start time
-  timeline.sort((a, b) => a.startTime - b.startTime);
-
-  // Convert to ProcessedTimelineSegment format
-  const segments: ProcessedTimelineSegment[] = timeline.map(item => {
-    const { trackInfo, originalIndex, isImage } = item.content;
-    const duration = item.endTime - item.startTime;
-    const segmentInput: TrackInfo = { ...trackInfo, isImage };
-    
-    console.log(
-      `${isImage ? '🖼️' : '📹'} Final segment ${originalIndex}: ${item.startTime.toFixed(2)}s-${item.endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
-    );
-
-    return {
-      input: segmentInput,
+    segments.push({
+      input: imageTrackInfo,
       originalIndex,
-      startTime: item.startTime,
+      startTime,
       duration,
-      endTime: item.endTime,
+      endTime,
       timelineType: 'video',
-    };
+    });
+
+    console.log(
+      `🖼️ Image segment ${originalIndex}: ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+    );
   });
 
   return segments;
@@ -1363,6 +1260,65 @@ function parseColorForFFmpeg(color: string): string {
 }
 
 /**
+ * Builds image overlay filters with time-based enable/disable
+ * Images are only rendered during their timeline presence, not rendered at all outside
+ */
+function buildImageOverlayFilters(
+  imageSegments: ProcessedTimelineSegment[],
+  categorizedInputs: CategorizedInputs,
+  targetDimensions: { width: number; height: number },
+  targetFps: number,
+  totalDuration: number,
+  baseVideoLabel: string,
+): { filters: string[]; outputLabel: string } {
+  const filters: string[] = [];
+  let currentLabel = baseVideoLabel;
+  
+  // Process each image segment
+  imageSegments.forEach((segment, index) => {
+    const { input: trackInfo, startTime, endTime, originalIndex, duration } = segment;
+    
+    // Find the file index for this image
+    const fileIndex = findFileIndexForSegment(segment, categorizedInputs, 'video');
+    
+    if (fileIndex === undefined) {
+      console.warn(`❌ Could not find file index for image segment ${originalIndex}`);
+      return;
+    }
+    
+    console.log(`🖼️ Processing image overlay ${index}: ${trackInfo.path} [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s]`);
+    
+    // Prepare the image: scale and loop only for its duration
+    const imageInputRef = `[${fileIndex}:v]`;
+    const imagePreparedRef = `[img${index}_prepared]`;
+    const overlayOutputRef = index === imageSegments.length - 1 ? `[video_with_images]` : `[overlay${index}]`;
+    
+    // Step 1: Scale image to match video dimensions and loop it ONLY for its duration
+    filters.push(
+      `${imageInputRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,` +
+      `pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black,` +
+      `loop=loop=-1:size=1:start=0,trim=duration=${duration},setpts=PTS-STARTPTS,` +
+      `tpad=start_duration=${startTime}:start_mode=add:color=black@0.0${imagePreparedRef}`
+    );
+    
+    // Step 2: Overlay the image onto the current video with time-based enable
+    // The overlay is only active between startTime and endTime
+    filters.push(
+      `[${currentLabel}]${imagePreparedRef}overlay=0:0:enable='between(t,${startTime},${endTime})'${overlayOutputRef}`
+    );
+    
+    currentLabel = overlayOutputRef.replace('[', '').replace(']', '');
+    
+    console.log(`✅ Image overlay ${index} enabled only between ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s`);
+  });
+  
+  return {
+    filters,
+    outputLabel: currentLabel,
+  };
+}
+
+/**
  * Determines the target dimensions for video processing
  * Prioritizes actual video file dimensions over project dimensions
  */
@@ -1405,10 +1361,11 @@ function determineTargetDimensions(
 }
 
 /**
- * Builds filter complex for separate video and audio timelines - FIXED VERSION
+ * Builds filter complex with image overlay support using opacity transitions
  */
 function buildSeparateTimelineFilterComplex(
   videoTimeline: ProcessedTimeline,
+  imageTimeline: ProcessedTimeline,
   audioTimeline: ProcessedTimeline,
   job: VideoEditJob,
   categorizedInputs: CategorizedInputs,
@@ -1420,12 +1377,20 @@ function buildSeparateTimelineFilterComplex(
 
   // Determine target dimensions (prioritize video input dimensions)
   const targetDimensions = determineTargetDimensions(videoTimeline, job);
+  const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
 
-  console.log('🎬 Building filter complex from timelines:');
+  console.log('🎬 Building filter complex with image overlay support:');
   console.log('📝 Text clips in job:', job.textClips?.length || 0);
   console.log(
     'Video segments:',
     videoTimeline.segments.map(
+      (s) =>
+        `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
+    ),
+  );
+  console.log(
+    'Image segments:',
+    imageTimeline.segments.map(
       (s) =>
         `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
     ),
@@ -1444,9 +1409,8 @@ function buildSeparateTimelineFilterComplex(
 
     if (isGapInput(trackInfo.path)) {
       // Video gap - create black video using target dimensions
-      const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
       const gapResult = createGapVideoFilters(
-        segmentIndex, // Use segment index to avoid conflicts
+        segmentIndex,
         trackInfo.duration || 1,
         targetFps,
         targetDimensions,
@@ -1484,8 +1448,6 @@ function buildSeparateTimelineFilterComplex(
         let videoStreamRef = trimResult.filterRef;
 
         if (job.operations.normalizeFrameRate) {
-          const targetFps =
-            job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
           const fpsResult = createFpsNormalizationFilters(
             segmentIndex,
             videoStreamRef,
@@ -1495,16 +1457,11 @@ function buildSeparateTimelineFilterComplex(
           videoStreamRef = fpsResult.filterRef;
         }
 
-        // Scale to match target dimensions if needed (for images and videos with different dimensions)
-        const isImage = FILE_EXTENSIONS.IMAGE.test(trackInfo.path);
+        // Scale to match target dimensions if needed
         const isVideoFile = FILE_EXTENSIONS.VIDEO.test(trackInfo.path);
-        
-        // For images, always scale to match target dimensions
-        // For videos, only scale if dimensions are explicitly different
-        const needsScaling = isImage || 
-          (isVideoFile && trackInfo.width && trackInfo.height && 
+        const needsScaling = isVideoFile && trackInfo.width && trackInfo.height && 
            (trackInfo.width !== targetDimensions.width || 
-            trackInfo.height !== targetDimensions.height));
+            trackInfo.height !== targetDimensions.height);
 
         if (needsScaling) {
           const scaleRef = `[v${segmentIndex}_scaled]`;
@@ -1535,7 +1492,7 @@ function buildSeparateTimelineFilterComplex(
     if (isGapInput(trackInfo.path)) {
       // Audio gap - create silent audio
       const silentResult = createSilentAudioFilters(
-        segmentIndex, // Use segment index to avoid conflicts
+        segmentIndex,
         trackInfo.duration || 1,
       );
       audioFilters.push(...silentResult.filters);
@@ -1598,9 +1555,30 @@ function buildSeparateTimelineFilterComplex(
     }
   }
 
+  // Process image overlays with opacity transitions
+  let imageOverlayFilters = '';
+  let currentVideoLabel = 'video_base';
+  
+  if (imageTimeline.segments.length > 0 && videoConcatFilter) {
+    const totalDuration = Math.max(videoTimeline.totalDuration, imageTimeline.totalDuration);
+    const overlayResult = buildImageOverlayFilters(
+      imageTimeline.segments,
+      categorizedInputs,
+      targetDimensions,
+      targetFps,
+      totalDuration,
+      currentVideoLabel,
+    );
+    
+    if (overlayResult.filters.length > 0) {
+      imageOverlayFilters = overlayResult.filters.join(';');
+      currentVideoLabel = overlayResult.outputLabel;
+      console.log(`🖼️ Added ${imageTimeline.segments.length} image overlay(s) with opacity transitions`);
+    }
+  }
+
   // Apply subtitles to video stream if needed (must be in filter_complex)
   let subtitleFilter = '';
-  let currentVideoLabel = 'video_base';
   
   if (job.operations.subtitles && videoConcatFilter) {
     const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
@@ -1608,11 +1586,11 @@ function buildSeparateTimelineFilterComplex(
     
     if (fileExtension === 'ass' || fileExtension === 'ssa') {
       // Use 'ass' filter for ASS/SSA files (better performance)
-      subtitleFilter = `[video_base]ass='${ffmpegPath}'[video_subtitled]`;
+      subtitleFilter = `[${currentVideoLabel}]ass='${ffmpegPath}'[video_subtitled]`;
       console.log('📝 Added ASS subtitle filter to filter_complex (optimized for ASS format)');
     } else {
       // Use 'subtitles' filter for other formats (SRT, VTT, etc.)
-      subtitleFilter = `[video_base]subtitles='${ffmpegPath}'[video_subtitled]`;
+      subtitleFilter = `[${currentVideoLabel}]subtitles='${ffmpegPath}'[video_subtitled]`;
       console.log(`📝 Added subtitles filter to filter_complex (format: ${fileExtension})`);
     }
     currentVideoLabel = 'video_subtitled';
@@ -1628,16 +1606,15 @@ function buildSeparateTimelineFilterComplex(
   });
   
   if (job.textClips && job.textClips.length > 0 && videoConcatFilter) {
-    const fps = job.operations.targetFrameRate || 30;
     const dimensions = job.videoDimensions || { width: 1920, height: 1080 };
     
     console.log('📝 Generating drawtext filters for text clips:', {
       count: job.textClips.length,
-      fps,
+      fps: targetFps,
       dimensions,
     });
     
-    const drawtextFilters = generateDrawtextFilters(job.textClips, fps, dimensions);
+    const drawtextFilters = generateDrawtextFilters(job.textClips, targetFps, dimensions);
     
     console.log('📝 Generated drawtext filters:', drawtextFilters);
     
@@ -1659,6 +1636,7 @@ function buildSeparateTimelineFilterComplex(
   const allFilters = [...videoFilters, ...audioFilters];
   if (videoConcatFilter) allFilters.push(videoConcatFilter);
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
+  if (imageOverlayFilters) allFilters.push(imageOverlayFilters);
   if (subtitleFilter) allFilters.push(subtitleFilter);
   if (textClipFilter) allFilters.push(textClipFilter);
 
@@ -1778,6 +1756,7 @@ function handleTimelineProcessing(
   targetFrameRate: number,
 ): {
   finalVideoTimeline: ProcessedTimeline;
+  finalImageTimeline: ProcessedTimeline;
   finalAudioTimeline: ProcessedTimeline;
   categorizedInputs: CategorizedInputs;
 } {
@@ -1786,6 +1765,7 @@ function handleTimelineProcessing(
 
   // Use the timelines as-is (gaps are already filled based on timeline positions)
   const finalVideoTimeline = initialTimelines.video;
+  const finalImageTimeline = initialTimelines.images;
   const finalAudioTimeline = initialTimelines.audio;
 
   // NOTE: We no longer use job.gaps here because gaps are now calculated
@@ -1796,6 +1776,13 @@ function handleTimelineProcessing(
     finalVideoTimeline.segments.map(
       (s) =>
         `${s.input.path}${s.input.gapType ? ` (${s.input.gapType} gap)` : ''} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
+    ),
+  );
+  console.log(
+    'Final Image Timeline:',
+    finalImageTimeline.segments.map(
+      (s) =>
+        `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
     ),
   );
   console.log(
@@ -1823,7 +1810,7 @@ function handleTimelineProcessing(
   // Categorize inputs for file indexing
   const categorizedInputs = categorizeInputs(job.inputs);
 
-  return { finalVideoTimeline, finalAudioTimeline, categorizedInputs };
+  return { finalVideoTimeline, finalImageTimeline, finalAudioTimeline, categorizedInputs };
 }
 
 /**
@@ -1833,12 +1820,14 @@ function handleFilterComplex(
   job: VideoEditJob,
   cmd: CommandParts,
   videoTimeline: ProcessedTimeline,
+  imageTimeline: ProcessedTimeline,
   audioTimeline: ProcessedTimeline,
   categorizedInputs: CategorizedInputs,
   hwAccel: HardwareAcceleration | null,
 ): void {
   let filterComplex = buildSeparateTimelineFilterComplex(
     videoTimeline,
+    imageTimeline,
     audioTimeline,
     job,
     categorizedInputs,
@@ -1971,14 +1960,15 @@ export async function buildFfmpegCommand(
   handleFileInputs(job, cmd);
 
   // Step 2: Build and process timelines with gaps
-  const { finalVideoTimeline, finalAudioTimeline, categorizedInputs } =
+  const { finalVideoTimeline, finalImageTimeline, finalAudioTimeline, categorizedInputs } =
     handleTimelineProcessing(job, targetFrameRate);
 
-  // Step 3: Build and apply filter complex (includes subtitles)
+  // Step 3: Build and apply filter complex (includes subtitles and image overlays)
   handleFilterComplex(
     job,
     cmd,
     finalVideoTimeline,
+    finalImageTimeline,
     finalAudioTimeline,
     categorizedInputs,
     hwAccel,
