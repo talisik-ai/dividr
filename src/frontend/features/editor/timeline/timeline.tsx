@@ -1218,53 +1218,53 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 />
               )}
 
-              {/* Drop Zone Indicator - shows where clip will land */}
+              {/* Drop Zone Indicator - shows where all clips will land */}
               {dragGhost?.isActive &&
                 dragGhost.targetRow &&
                 dragGhost.targetFrame !== null &&
+                dragGhost.selectedTrackIds &&
                 tracksRef.current &&
                 (() => {
-                  const draggedTrack = tracks.find(
+                  // Get all tracks being dragged
+                  const draggedTracks = tracks.filter((t) =>
+                    dragGhost.selectedTrackIds.includes(t.id),
+                  );
+                  if (draggedTracks.length === 0) return null;
+
+                  // Find the primary track
+                  const primaryTrack = draggedTracks.find(
                     (t) => t.id === dragGhost.trackId,
                   );
-                  if (!draggedTrack) return null;
+                  if (!primaryTrack) return null;
 
-                  const duration =
-                    draggedTrack.endFrame - draggedTrack.startFrame;
-
-                  // Get linked track if exists
-                  const linkedTrack = draggedTrack.isLinked
-                    ? tracks.find((t) => t.id === draggedTrack.linkedTrackId)
-                    : null;
+                  // Calculate the offset for each track from the primary track
+                  const primaryTrackStartFrame = primaryTrack.startFrame;
 
                   return (
                     <>
-                      {/* Main track drop zone */}
-                      <DropZoneIndicator
-                        targetRow={dragGhost.targetRow}
-                        startFrame={dragGhost.targetFrame}
-                        endFrame={dragGhost.targetFrame + duration}
-                        frameWidth={frameWidth}
-                        scrollX={timeline.scrollX}
-                        visibleTrackRows={visibleTrackRows}
-                        isValidDrop={true}
-                      />
+                      {draggedTracks.map((track) => {
+                        // Calculate where this track will land relative to primary
+                        const frameOffset =
+                          track.startFrame - primaryTrackStartFrame;
+                        const targetStartFrame =
+                          dragGhost.targetFrame + frameOffset;
+                        const targetEndFrame =
+                          targetStartFrame +
+                          (track.endFrame - track.startFrame);
 
-                      {/* Linked track drop zone */}
-                      {linkedTrack && (
-                        <DropZoneIndicator
-                          targetRow={linkedTrack.type}
-                          startFrame={dragGhost.targetFrame}
-                          endFrame={
-                            dragGhost.targetFrame +
-                            (linkedTrack.endFrame - linkedTrack.startFrame)
-                          }
-                          frameWidth={frameWidth}
-                          scrollX={timeline.scrollX}
-                          visibleTrackRows={visibleTrackRows}
-                          isValidDrop={true}
-                        />
-                      )}
+                        return (
+                          <DropZoneIndicator
+                            key={`drop-zone-${track.id}`}
+                            targetRow={track.type}
+                            startFrame={targetStartFrame}
+                            endFrame={targetEndFrame}
+                            frameWidth={frameWidth}
+                            scrollX={timeline.scrollX}
+                            visibleTrackRows={visibleTrackRows}
+                            isValidDrop={true}
+                          />
+                        );
+                      })}
                     </>
                   );
                 })()}
@@ -1273,55 +1273,58 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         </div>
 
         {/* Drag Ghost - floating preview that follows cursor */}
-        {dragGhost?.isActive && dragGhost.trackId && (
+        {dragGhost?.isActive && dragGhost.selectedTrackIds && (
           <>
             {(() => {
-              const draggedTrack = tracks.find(
+              // Get all tracks being dragged
+              const draggedTracks = tracks.filter((t) =>
+                dragGhost.selectedTrackIds.includes(t.id),
+              );
+              if (draggedTracks.length === 0) return null;
+
+              // Find the primary track (the one being clicked/dragged)
+              const primaryTrack = draggedTracks.find(
                 (t) => t.id === dragGhost.trackId,
               );
-              if (!draggedTrack) return null;
+              if (!primaryTrack) return null;
 
-              // Get linked track if exists
-              const linkedTrack = draggedTrack.isLinked
-                ? tracks.find((t) => t.id === draggedTrack.linkedTrackId)
-                : null;
-
-              // Calculate height offset for linked track
-              const mainTrackHeight = getRowHeight(draggedTrack.type);
-              const linkedTrackHeight = linkedTrack
-                ? getRowHeight(linkedTrack.type)
-                : 0;
+              // Calculate relative offsets for all tracks from the primary track
+              const primaryTrackStartFrame = primaryTrack.startFrame;
+              const primaryTrackRowTop = getTrackRowTop(
+                primaryTrack.type,
+                visibleTrackRows,
+              );
 
               return (
                 <>
-                  {/* Main track drag ghost */}
-                  <DragGhost
-                    track={draggedTrack}
-                    frameWidth={frameWidth}
-                    zoomLevel={timeline.zoom}
-                    mouseX={dragGhost.mouseX}
-                    mouseY={dragGhost.mouseY}
-                    offsetX={dragGhost.offsetX}
-                    offsetY={dragGhost.offsetY}
-                  />
+                  {draggedTracks.map((track) => {
+                    // Calculate frame offset from primary track (preserve spacing)
+                    const frameOffset =
+                      track.startFrame - primaryTrackStartFrame;
+                    const horizontalOffset = frameOffset * frameWidth;
 
-                  {/* Linked track drag ghost */}
-                  {linkedTrack && (
-                    <DragGhost
-                      track={linkedTrack}
-                      frameWidth={frameWidth}
-                      zoomLevel={timeline.zoom}
-                      mouseX={dragGhost.mouseX}
-                      mouseY={
-                        dragGhost.mouseY +
-                        (linkedTrack.type === 'audio'
-                          ? mainTrackHeight
-                          : -linkedTrackHeight)
-                      }
-                      offsetX={dragGhost.offsetX}
-                      offsetY={dragGhost.offsetY}
-                    />
-                  )}
+                    // Calculate vertical offset from primary track row
+                    const trackRowTop = getTrackRowTop(
+                      track.type,
+                      visibleTrackRows,
+                    );
+                    const verticalOffset = trackRowTop - primaryTrackRowTop;
+
+                    // For non-primary tracks, adjust mouse position but keep offset the same
+                    // This preserves the spacing between clips
+                    return (
+                      <DragGhost
+                        key={`drag-ghost-${track.id}`}
+                        track={track}
+                        frameWidth={frameWidth}
+                        zoomLevel={timeline.zoom}
+                        mouseX={dragGhost.mouseX + horizontalOffset}
+                        mouseY={dragGhost.mouseY + verticalOffset}
+                        offsetX={dragGhost.offsetX}
+                        offsetY={dragGhost.offsetY}
+                      />
+                    );
+                  })}
                 </>
               );
             })()}

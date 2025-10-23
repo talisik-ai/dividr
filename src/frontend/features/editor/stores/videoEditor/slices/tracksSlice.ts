@@ -722,27 +722,40 @@ export const createTracksSlice: StateCreator<
           }
         }
 
-        // Standard boundary collision (no bypass or bypass not possible)
+        // Standard boundary collision: only block if we would actually overlap
         if (movementDelta > 0) {
-          // Moving RIGHT: find the nearest obstacle and stop when we touch it
+          // Moving RIGHT: find obstacles we would actually hit
           let safeDelta = movementDelta;
           conflicts.forEach((conflict) => {
-            // Distance we can move before our END touches the conflict's START
-            const spaceBeforeConflict = conflict.startFrame - originalEnd;
-            if (spaceBeforeConflict >= 0 && spaceBeforeConflict < safeDelta) {
-              safeDelta = spaceBeforeConflict;
+            // Check if we would overlap with this conflict at the proposed position
+            const wouldOverlap =
+              proposedStart < conflict.endFrame &&
+              proposedEnd > conflict.startFrame;
+
+            if (wouldOverlap) {
+              // Distance we can move before our END touches the conflict's START
+              const spaceBeforeConflict = conflict.startFrame - originalEnd;
+              if (spaceBeforeConflict >= 0 && spaceBeforeConflict < safeDelta) {
+                safeDelta = spaceBeforeConflict;
+              }
             }
           });
           return safeDelta;
         } else {
-          // Moving LEFT: find the nearest obstacle and stop when we touch it
+          // Moving LEFT: find obstacles we would actually hit
           let safeDelta = movementDelta; // negative value
           conflicts.forEach((conflict) => {
-            // Distance we can move before our START touches the conflict's END
-            const spaceAfterConflict = conflict.endFrame - trackStart;
+            // Check if we would overlap with this conflict at the proposed position
+            const wouldOverlap =
+              proposedStart < conflict.endFrame &&
+              proposedEnd > conflict.startFrame;
 
-            if (spaceAfterConflict <= 0 && spaceAfterConflict > safeDelta) {
-              safeDelta = spaceAfterConflict;
+            if (wouldOverlap) {
+              // Distance we can move before our START touches the conflict's END
+              const spaceAfterConflict = conflict.endFrame - trackStart;
+              if (spaceAfterConflict <= 0 && spaceAfterConflict > safeDelta) {
+                safeDelta = spaceAfterConflict;
+              }
             }
           });
           return safeDelta;
@@ -936,35 +949,52 @@ export const createTracksSlice: StateCreator<
 
           const trackStart = track.startFrame;
           const trackEnd = track.endFrame;
+          const trackDuration = trackEnd - trackStart;
 
-          // Check all conflicts in the direction of movement
-          // Don't use hasOverlap check - we need to find the nearest boundary regardless
           if (movementDelta > 0) {
             // Moving RIGHT: find nearest obstacle and stop when our END touches their START
             conflicts.forEach((conflict) => {
-              const spaceBeforeConflict = conflict.startFrame - trackEnd;
-              // Only consider conflicts ahead of us (in our path)
-              if (
-                spaceBeforeConflict >= 0 &&
-                spaceBeforeConflict < minSafeDelta
-              ) {
-                minSafeDelta = spaceBeforeConflict;
-                hasAnyCollision = true;
+              const proposedStart = trackStart + movementDelta;
+              const proposedEnd = proposedStart + trackDuration;
+
+              // Only consider conflicts that we would actually overlap with
+              const wouldOverlap =
+                proposedStart < conflict.endFrame &&
+                proposedEnd > conflict.startFrame;
+
+              if (wouldOverlap) {
+                // Calculate how much we can move before touching this conflict
+                const spaceBeforeConflict = conflict.startFrame - trackEnd;
+                if (
+                  spaceBeforeConflict >= 0 &&
+                  spaceBeforeConflict < minSafeDelta
+                ) {
+                  minSafeDelta = spaceBeforeConflict;
+                  hasAnyCollision = true;
+                }
               }
             });
           } else if (movementDelta < 0) {
             // Moving LEFT: find nearest obstacle and stop when our START touches their END
             conflicts.forEach((conflict) => {
-              const spaceAfterConflict = conflict.endFrame - trackStart;
-              // Only consider conflicts behind us (in our path)
-              // spaceAfterConflict should be negative or zero (conflict is behind/at us)
-              // We want the one closest to zero (least negative = nearest obstacle)
-              if (
-                spaceAfterConflict <= 0 &&
-                spaceAfterConflict > minSafeDelta
-              ) {
-                minSafeDelta = spaceAfterConflict;
-                hasAnyCollision = true;
+              const proposedStart = trackStart + movementDelta;
+              const proposedEnd = proposedStart + trackDuration;
+
+              // Only consider conflicts that we would actually overlap with
+              const wouldOverlap =
+                proposedStart < conflict.endFrame &&
+                proposedEnd > conflict.startFrame;
+
+              if (wouldOverlap) {
+                // Calculate how much we can move before touching this conflict
+                const spaceAfterConflict = conflict.endFrame - trackStart;
+                if (
+                  spaceAfterConflict <= 0 &&
+                  spaceAfterConflict > minSafeDelta
+                ) {
+                  minSafeDelta = spaceAfterConflict;
+                  hasAnyCollision = true;
+                }
               }
             });
           }

@@ -18,6 +18,9 @@ import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 // Define track row types - easy to extend in the future
 
+// Drag activation threshold in pixels - prevents accidental drags during clicks
+const DRAG_ACTIVATION_THRESHOLD = 5;
+
 interface TimelineTracksProps {
   tracks: VideoTrack[];
   frameWidth: number;
@@ -118,12 +121,11 @@ const TrackItemWrapper: React.FC<{
     // Check if this track is being dragged (has active drag ghost)
     const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
 
-    // Check if this track OR its linked partner is being dragged
+    // Check if this track is in the current drag selection
     const isBeingDragged =
       dragGhost?.isActive &&
-      (dragGhost?.trackId === track.id ||
-        // Check if this track is linked to the dragged track
-        (track.isLinked && track.linkedTrackId === dragGhost?.trackId));
+      dragGhost.selectedTrackIds &&
+      dragGhost.selectedTrackIds.includes(track.id);
 
     const getTrackGradient = (type: VideoTrack['type']) => {
       switch (type) {
@@ -197,23 +199,28 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({
       x: 0,
+      y: 0,
       startFrame: 0,
       endFrame: 0,
     });
     const rafRef = useRef<number | null>(null);
     const hasAutoSelectedRef = useRef(false);
+    const dragThresholdMetRef = useRef(false); // Track if drag threshold has been exceeded
+    const dragOffsetRef = useRef({ offsetX: 0, offsetY: 0 }); // Store offset at mouseDown
 
     // Subscribe to duplication feedback state
     const isDuplicationFeedback = useVideoEditorStore((state) =>
       state.duplicationFeedbackTrackIds.has(track.id),
     );
 
-    // Check if this track or its linked partner is being dragged
-    const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
+    // Check if this track is in the current drag selection (for hiding resize handles)
+    const dragGhostForHandles = useVideoEditorStore(
+      (state) => state.playback.dragGhost,
+    );
     const isThisOrLinkedTrackBeingDragged =
-      dragGhost?.isActive &&
-      (dragGhost?.trackId === track.id ||
-        (track.isLinked && track.linkedTrackId === dragGhost?.trackId));
+      dragGhostForHandles?.isActive &&
+      dragGhostForHandles.selectedTrackIds &&
+      dragGhostForHandles.selectedTrackIds.includes(track.id);
 
     // Apply global cursor override during resize/drag to prevent flickering
     useEffect(() => {
@@ -259,34 +266,29 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         // Don't call onSelect here - let handleClick handle selection
         // We'll auto-select during actual drag movement if needed
 
-        const { startDraggingTrack, setDragGhost } =
-          useVideoEditorStore.getState();
+        const { startDraggingTrack } = useVideoEditorStore.getState();
         startDraggingTrack(track.startFrame); // Pass initial frame for force drag tracking
 
-        // Calculate offset from track's left edge to cursor
+        // Calculate and store offset from track's left edge to cursor
         const trackElement = e.currentTarget as HTMLElement;
         const trackRect = trackElement.getBoundingClientRect();
-        const offsetX = e.clientX - trackRect.left;
-        const offsetY = e.clientY - trackRect.top;
+        dragOffsetRef.current = {
+          offsetX: e.clientX - trackRect.left,
+          offsetY: e.clientY - trackRect.top,
+        };
 
-        // Initialize drag ghost
-        setDragGhost({
-          isActive: true,
-          trackId: track.id,
-          mouseX: e.clientX,
-          mouseY: e.clientY,
-          offsetX,
-          offsetY,
-          targetRow: track.type,
-          targetFrame: track.startFrame,
-        });
-
+        // Store initial drag state but DON'T activate drag ghost yet
+        // Wait for movement threshold to be exceeded
         setIsDragging(true);
         setDragStart({
           x: e.clientX,
+          y: e.clientY,
           startFrame: track.startFrame,
           endFrame: track.endFrame,
         });
+
+        // Reset threshold tracking
+        dragThresholdMetRef.current = false;
       },
       [
         track.locked,
@@ -320,6 +322,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         setIsResizing(side);
         setDragStart({
           x: e.clientX,
+          y: e.clientY,
           startFrame: track.startFrame,
           endFrame: track.endFrame,
         });
@@ -450,12 +453,69 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       (e: MouseEvent) => {
         if (!isResizing && !isDragging) return;
 
+        // Check if drag threshold has been met (only for dragging, not resizing)
+        if (isDragging && !dragThresholdMetRef.current) {
+          const deltaX = Math.abs(e.clientX - dragStart.x);
+          const deltaY = Math.abs(e.clientY - dragStart.y);
+          const totalMovement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+          if (totalMovement >= DRAG_ACTIVATION_THRESHOLD) {
+            // Threshold exceeded - activate drag ghost now
+            dragThresholdMetRef.current = true;
+
+            const { setDragGhost, timeline } = useVideoEditorStore.getState();
+
+            // Check if this is a multi-selection drag
+            const selectedTrackIds = timeline.selectedTrackIds;
+            const isMultiSelectionDrag =
+              selectedTrackIds.length > 1 &&
+              selectedTrackIds.includes(track.id);
+
+            // Get all selected tracks (including linked tracks)
+            const allSelectedTrackIds = isMultiSelectionDrag
+              ? [...selectedTrackIds]
+              : [track.id];
+
+            // Add linked track if not already in selection
+            if (track.isLinked && track.linkedTrackId) {
+              if (!allSelectedTrackIds.includes(track.linkedTrackId)) {
+                allSelectedTrackIds.push(track.linkedTrackId);
+              }
+            }
+
+            // Multi-selection detection (for UI/UX purposes)
+            const isMultiSelection = allSelectedTrackIds.length > 1;
+
+            // Calculate target frame based on current mouse position
+            const deltaX = e.clientX - dragStart.x;
+            const deltaFrames = Math.round(deltaX / frameWidth);
+            const targetFrame = Math.max(0, dragStart.startFrame + deltaFrames);
+
+            // Initialize drag ghost with stored offset from mouseDown
+            setDragGhost({
+              isActive: true,
+              trackId: track.id,
+              selectedTrackIds: allSelectedTrackIds,
+              mouseX: e.clientX,
+              mouseY: e.clientY,
+              offsetX: dragOffsetRef.current.offsetX,
+              offsetY: dragOffsetRef.current.offsetY,
+              targetRow: track.type,
+              targetFrame, // Use calculated target frame, not original position
+              isMultiSelection,
+            });
+          } else {
+            // Threshold not met yet - don't process drag movement
+            return;
+          }
+        }
+
         // Auto-select unselected track on first actual drag movement
         if (
           isDragging &&
           !isSelected &&
           !hasAutoSelectedRef.current &&
-          Math.abs(e.clientX - dragStart.x) > 3
+          dragThresholdMetRef.current
         ) {
           onSelect(e.shiftKey);
           hasAutoSelectedRef.current = true;
@@ -552,7 +612,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             }
 
             onResize(undefined, newEndFrame);
-          } else if (isDragging) {
+          } else if (isDragging && dragThresholdMetRef.current) {
+            // Only process drag movement after threshold is met
             let newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
             const duration = dragStart.endFrame - dragStart.startFrame;
             const newEndFrame = newStartFrame + duration;
@@ -616,6 +677,10 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         onSelect,
         findMagneticSnapPoint,
         track.id,
+        track.type,
+        track.linkedTrackId,
+        track.isLinked,
+        track.startFrame,
       ],
     );
 
@@ -628,6 +693,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       setIsResizing(false);
       setIsDragging(false);
       hasAutoSelectedRef.current = false;
+      dragThresholdMetRef.current = false;
 
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
@@ -1056,15 +1122,23 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handleTrackMove = useCallback(
       (trackId: string, newStartFrame: number) => {
-        // Check if multiple tracks are selected
-        const { timeline } = useVideoEditorStore.getState();
+        // Check if multiple tracks are selected OR if we're dragging multiple tracks
+        const { timeline, playback } = useVideoEditorStore.getState();
         const selectedTrackIds = timeline.selectedTrackIds;
+        const dragGhost = playback.dragGhost;
 
-        // If the track being moved is part of a multi-selection, move all selected tracks
-        if (selectedTrackIds.length > 1 && selectedTrackIds.includes(trackId)) {
+        // Use drag ghost's selectedTrackIds if available (includes linked tracks)
+        const tracksBeingDragged =
+          dragGhost?.selectedTrackIds || selectedTrackIds;
+
+        // If multiple tracks are being dragged, use multi-track move logic
+        if (
+          tracksBeingDragged.length > 1 &&
+          tracksBeingDragged.includes(trackId)
+        ) {
           moveSelectedTracks(trackId, newStartFrame);
         } else {
-          // Single track movement (or dragged track not in selection)
+          // Single track movement
           moveTrack(trackId, newStartFrame);
         }
       },
