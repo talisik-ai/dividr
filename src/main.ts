@@ -12,6 +12,14 @@ import {
   runFfmpegWithProgress,
 } from './backend/ffmpeg/ffmpegRunner';
 import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
+import {
+  cancelTranscription,
+  getWhisperStatus,
+  initializeWhisperPath,
+  transcribeAudio,
+  WhisperProgress,
+  WhisperResult,
+} from './backend/whisper/whisperRunner';
 
 // Import Vite dev server URL
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -2004,6 +2012,71 @@ ipcMain.handle('ffmpeg:status', async () => {
   };
 });
 
+// ============================================================================
+// Whisper.cpp IPC Handlers
+// ============================================================================
+
+// IPC Handler for Whisper transcription
+ipcMain.handle(
+  'whisper:transcribe',
+  async (
+    event,
+    audioPath: string,
+    options?: {
+      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+      language?: string;
+      translate?: boolean;
+      wordTimestamps?: boolean;
+    },
+  ) => {
+    console.log('🎤 MAIN PROCESS: whisper:transcribe handler called');
+    console.log('   Audio path:', audioPath);
+    console.log('   Options:', options);
+
+    try {
+      const result: WhisperResult = await transcribeAudio(audioPath, {
+        ...options,
+        onProgress: (progress: WhisperProgress) => {
+          // Send progress updates to renderer process
+          event.sender.send('whisper:progress', progress);
+        },
+      });
+
+      console.log('✅ Transcription successful');
+      return { success: true, result };
+    } catch (error) {
+      console.error('❌ Whisper transcription failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  },
+);
+
+// IPC Handler to cancel transcription
+ipcMain.handle('whisper:cancel', async () => {
+  console.log('🛑 MAIN PROCESS: whisper:cancel handler called');
+
+  const cancelled = cancelTranscription();
+  return {
+    success: cancelled,
+    message: cancelled
+      ? 'Transcription cancelled successfully'
+      : 'No active transcription to cancel',
+  };
+});
+
+// IPC Handler to check Whisper status
+ipcMain.handle('whisper:status', async () => {
+  console.log('📊 MAIN PROCESS: whisper:status handler called');
+
+  const status = getWhisperStatus();
+  console.log('   Status:', status);
+
+  return status;
+});
+
 const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -2135,6 +2208,12 @@ app.on('ready', async () => {
   // This can happen after window is shown
   initializeFfmpegPaths().catch(() => {
     // App can still function without FFmpeg for project management
+  });
+
+  // Initialize Whisper.cpp paths in background (non-blocking)
+  initializeWhisperPath().catch((error) => {
+    console.error('⚠️ Whisper.cpp initialization failed:', error);
+    // App can still function without Whisper for transcription
   });
 });
 
