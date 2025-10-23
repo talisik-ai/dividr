@@ -1356,15 +1356,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             }}
           >
             {activeSubs.map((track) => {
-              // Build glow filter if enabled - scale glow with zoom level
-              const glowRadius1 = 5 * preview.previewScale;
-              const glowRadius2 = 10 * preview.previewScale;
-              const glowStyle = (appliedStyle as any).hasGlow
-                ? {
-                    filter: `drop-shadow(0 0 ${glowRadius1}px ${appliedStyle.color}) drop-shadow(0 0 ${glowRadius2}px ${appliedStyle.color})`,
-                  }
-                : {};
-
               // Scale text shadow with zoom level if present
               let scaledTextShadow = appliedStyle.textShadow;
               if (scaledTextShadow && preview.previewScale !== 1) {
@@ -1377,31 +1368,161 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 );
               }
 
+              // Check if has actual background (not transparent)
+              const hasActualBackground =
+                appliedStyle.backgroundColor &&
+                appliedStyle.backgroundColor !== 'transparent' &&
+                appliedStyle.backgroundColor !== 'rgba(0,0,0,0)' &&
+                appliedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)';
+
+              // Base text style shared across all layers
+              const baseTextStyle: React.CSSProperties = {
+                fontSize: `${responsiveFontSize}px`,
+                fontFamily: appliedStyle.fontFamily,
+                fontWeight: appliedStyle.fontWeight,
+                fontStyle: appliedStyle.fontStyle,
+                textTransform: appliedStyle.textTransform as any,
+                textDecoration: appliedStyle.textDecoration,
+                textAlign: appliedStyle.textAlign as any,
+                lineHeight: appliedStyle.lineHeight,
+                letterSpacing: appliedStyle.letterSpacing
+                  ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
+                  : appliedStyle.letterSpacing,
+                whiteSpace: 'pre-line',
+                wordBreak: 'keep-all',
+                overflowWrap: 'normal',
+                padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+              };
+
+              // Multi-layer rendering for glow effect (matching export implementation)
+              if ((appliedStyle as any).hasGlow) {
+                // Calculate glow parameters - balanced for spread and subtlety
+                const glowBlurAmount = 8 * preview.previewScale; // Moderate blur for soft spread
+                const glowSpread = 8 * preview.previewScale; // Good spread distance
+
+                if (hasActualBackground) {
+                  // Triple-layer mode: glow + background box + text
+                  return (
+                    <div
+                      key={track.id}
+                      style={{
+                        position: 'relative',
+                        display: 'inline-block',
+                      }}
+                    >
+                      {/* Layer 0: Blurred glow layer behind background box */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          color: appliedStyle.color, // Glow uses text color
+                          backgroundColor: hasActualBackground
+                            ? appliedStyle.backgroundColor
+                            : 'transparent',
+                          opacity: 0.75,
+                          filter: `blur(${glowBlurAmount}px)`,
+                          boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                          zIndex: 0,
+                        }}
+                        aria-hidden="true"
+                      >
+                        {track.subtitleText}
+                      </div>
+
+                      {/* Layer 1: Background box (crisp, no blur) */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          color: 'transparent', // Invisible text, just the box
+                          backgroundColor: appliedStyle.backgroundColor,
+                          opacity: appliedStyle.opacity,
+                          zIndex: 1,
+                        }}
+                        aria-hidden="true"
+                      >
+                        {track.subtitleText}
+                      </div>
+
+                      {/* Layer 2: Text with outline on top (crisp, no blur) */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'relative',
+                          color: appliedStyle.color,
+                          backgroundColor: 'transparent',
+                          opacity: appliedStyle.opacity,
+                          textShadow: scaledTextShadow,
+                          zIndex: 2,
+                        }}
+                      >
+                        {track.subtitleText}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Double-layer mode: glow + text (no background)
+                return (
+                  <div
+                    key={track.id}
+                    style={{
+                      position: 'relative',
+                      display: 'inline-block',
+                    }}
+                  >
+                    {/* Layer 0: Blurred glow layer (furthest back) */}
+                    <div
+                      style={{
+                        ...baseTextStyle,
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        color: appliedStyle.color, // Glow uses text color
+                        backgroundColor: 'transparent',
+                        opacity: 0.75, // Slightly more visible for better spread
+                        filter: `blur(${glowBlurAmount}px)`,
+                        textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                        WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
+                        zIndex: 0,
+                      }}
+                      aria-hidden="true"
+                    >
+                      {track.subtitleText}
+                    </div>
+
+                    {/* Layer 1: Main text with outline */}
+                    <div
+                      style={{
+                        ...baseTextStyle,
+                        position: 'relative',
+                        color: appliedStyle.color,
+                        backgroundColor: 'transparent',
+                        opacity: appliedStyle.opacity,
+                        textShadow: scaledTextShadow,
+                        zIndex: 1,
+                      }}
+                    >
+                      {track.subtitleText}
+                    </div>
+                  </div>
+                );
+              }
+
+              // No glow - simple single layer rendering
               return (
                 <div
                   key={track.id}
                   style={{
-                    // Apply all text styles from getTextStyleForSubtitle with zoom responsiveness
-                    fontSize: `${responsiveFontSize}px`,
-                    fontFamily: appliedStyle.fontFamily,
-                    fontWeight: appliedStyle.fontWeight,
-                    fontStyle: appliedStyle.fontStyle,
-                    textTransform: appliedStyle.textTransform as any,
-                    textDecoration: appliedStyle.textDecoration,
-                    textAlign: appliedStyle.textAlign as any,
-                    lineHeight: appliedStyle.lineHeight,
-                    letterSpacing: appliedStyle.letterSpacing
-                      ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
-                      : appliedStyle.letterSpacing,
+                    ...baseTextStyle,
                     textShadow: scaledTextShadow,
-                    whiteSpace: 'pre-line', // Always preserve original line breaks from subtitle text
-                    wordBreak: 'keep-all', // Prevent breaking words unnecessarily
-                    overflowWrap: 'normal', // Don't force wrapping
                     color: appliedStyle.color,
                     backgroundColor: appliedStyle.backgroundColor,
                     opacity: appliedStyle.opacity,
-                    padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-                    ...glowStyle,
                   }}
                 >
                   {track.subtitleText}
@@ -1447,15 +1568,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               const scaledPaddingVertical = 2 * preview.previewScale;
               const scaledPaddingHorizontal = 8 * preview.previewScale;
 
-              // Build glow filter if enabled
-              const glowRadius1 = 5 * preview.previewScale;
-              const glowRadius2 = 10 * preview.previewScale;
-              const glowStyle = appliedStyle.hasGlow
-                ? {
-                    filter: `drop-shadow(0 0 ${glowRadius1}px ${appliedStyle.color}) drop-shadow(0 0 ${glowRadius2}px ${appliedStyle.color})`,
-                  }
-                : {};
-
               // Scale text shadow with zoom level
               let scaledTextShadow = appliedStyle.textShadow;
               if (scaledTextShadow && preview.previewScale !== 1) {
@@ -1467,8 +1579,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 );
               }
 
-              // Create the complete style object for both display and editing
-              const completeStyle: React.CSSProperties = {
+              // Check if has actual background (not transparent)
+              const hasActualBackground =
+                appliedStyle.backgroundColor &&
+                appliedStyle.backgroundColor !== 'transparent' &&
+                appliedStyle.backgroundColor !== 'rgba(0,0,0,0)' &&
+                appliedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)';
+
+              // Base text style shared across all layers
+              const baseTextStyle: React.CSSProperties = {
                 fontSize: `${responsiveFontSize}px`,
                 fontFamily: appliedStyle.fontFamily,
                 fontWeight: appliedStyle.fontWeight,
@@ -1480,15 +1599,175 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 letterSpacing: appliedStyle.letterSpacing
                   ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
                   : appliedStyle.letterSpacing,
-                textShadow: scaledTextShadow,
                 whiteSpace: 'pre-line',
                 wordBreak: 'keep-all',
                 overflowWrap: 'normal',
+                padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+              };
+
+              // Multi-layer rendering for glow effect (matching export implementation)
+              if (appliedStyle.hasGlow) {
+                // Calculate glow parameters - balanced for spread and subtlety
+                const glowBlurAmount = 8 * preview.previewScale; // Moderate blur for soft spread
+                const glowSpread = 8 * preview.previewScale; // Good spread distance
+
+                // Create the complete style for the boundary wrapper
+                const completeStyle: React.CSSProperties = {
+                  ...baseTextStyle,
+                  color: appliedStyle.color,
+                  backgroundColor: hasActualBackground
+                    ? appliedStyle.backgroundColor
+                    : 'transparent',
+                  opacity: appliedStyle.opacity,
+                  textShadow: scaledTextShadow,
+                };
+
+                if (hasActualBackground) {
+                  // Triple-layer mode: glow + background box + text
+                  return (
+                    <TextTransformBoundary
+                      key={track.id}
+                      track={track}
+                      isSelected={isSelected}
+                      previewScale={preview.previewScale}
+                      videoWidth={baseVideoWidth}
+                      videoHeight={baseVideoHeight}
+                      onTransformUpdate={handleTextTransformUpdate}
+                      onSelect={handleTextSelect}
+                      onTextUpdate={handleTextUpdate}
+                      onRotationStateChange={setIsRotating}
+                      onDragStateChange={handleDragStateChange}
+                      appliedStyle={completeStyle}
+                    >
+                      <div
+                        style={{
+                          position: 'relative',
+                          display: 'inline-block',
+                        }}
+                      >
+                        {/* Layer 0: Blurred glow layer behind background box */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            color: appliedStyle.color, // Glow uses text color
+                            backgroundColor: appliedStyle.backgroundColor,
+                            opacity: 0.75,
+                            filter: `blur(${glowBlurAmount}px)`,
+                            boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                            zIndex: 0,
+                          }}
+                          aria-hidden="true"
+                        >
+                          {track.textContent}
+                        </div>
+
+                        {/* Layer 1: Background box (crisp, no blur) */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            color: 'transparent', // Invisible text, just the box
+                            backgroundColor: appliedStyle.backgroundColor,
+                            opacity: appliedStyle.opacity,
+                            zIndex: 1,
+                          }}
+                          aria-hidden="true"
+                        >
+                          {track.textContent}
+                        </div>
+
+                        {/* Layer 2: Text with outline on top (crisp, no blur) */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'relative',
+                            color: appliedStyle.color,
+                            backgroundColor: 'transparent',
+                            opacity: appliedStyle.opacity,
+                            textShadow: scaledTextShadow,
+                            zIndex: 2,
+                          }}
+                        >
+                          {track.textContent}
+                        </div>
+                      </div>
+                    </TextTransformBoundary>
+                  );
+                }
+
+                // Double-layer mode: glow + text (no background)
+                return (
+                  <TextTransformBoundary
+                    key={track.id}
+                    track={track}
+                    isSelected={isSelected}
+                    previewScale={preview.previewScale}
+                    videoWidth={baseVideoWidth}
+                    videoHeight={baseVideoHeight}
+                    onTransformUpdate={handleTextTransformUpdate}
+                    onSelect={handleTextSelect}
+                    onTextUpdate={handleTextUpdate}
+                    onRotationStateChange={setIsRotating}
+                    onDragStateChange={handleDragStateChange}
+                    appliedStyle={completeStyle}
+                  >
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-block',
+                      }}
+                    >
+                      {/* Layer 0: Blurred glow layer (furthest back) */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          color: appliedStyle.color, // Glow uses text color
+                          backgroundColor: 'transparent',
+                          opacity: 0.75, // Slightly more visible for better spread
+                          filter: `blur(${glowBlurAmount}px)`,
+                          textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                          WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
+                          zIndex: 0,
+                        }}
+                        aria-hidden="true"
+                      >
+                        {track.textContent}
+                      </div>
+
+                      {/* Layer 1: Main text with outline */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'relative',
+                          color: appliedStyle.color,
+                          backgroundColor: 'transparent',
+                          opacity: appliedStyle.opacity,
+                          textShadow: scaledTextShadow,
+                          zIndex: 1,
+                        }}
+                      >
+                        {track.textContent}
+                      </div>
+                    </div>
+                  </TextTransformBoundary>
+                );
+              }
+
+              // No glow - simple single layer rendering
+              const completeStyle: React.CSSProperties = {
+                ...baseTextStyle,
+                textShadow: scaledTextShadow,
                 color: appliedStyle.color,
                 backgroundColor: appliedStyle.backgroundColor,
                 opacity: appliedStyle.opacity,
-                padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-                ...glowStyle,
               };
 
               return (
