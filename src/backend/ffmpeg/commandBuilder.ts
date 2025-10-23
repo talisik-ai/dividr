@@ -12,10 +12,12 @@ import {
   InputCategory,
   ProcessedTimeline,
   ProcessedTimelineSegment,
+  TextClipData,
   TrackInfo,
   VideoEditJob,
   VideoProcessingContext,
 } from './schema/ffmpegConfig';
+import { getFontPathByStyle } from './fontMapper';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -79,6 +81,7 @@ function escapePath(filePath: string) {
 const FILE_EXTENSIONS = {
   VIDEO: /\.(mp4|mov|mkv|avi|webm)$/i,
   AUDIO: /\.(mp3|wav|aac|flac)$/i,
+  IMAGE: /\.(png|jpg|jpeg|gif|bmp|tiff|webp)$/i,
 } as const;
 
 const ENCODING_DEFAULTS = {
@@ -214,7 +217,7 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
     const trackInfo = getTrackInfo(input);
     const isGap = isGapInput(path);
 
-    const isVideo = !isGap && FILE_EXTENSIONS.VIDEO.test(path);
+    const isVideo = !isGap && (FILE_EXTENSIONS.VIDEO.test(path) || FILE_EXTENSIONS.IMAGE.test(path));
     const isAudio = !isGap && FILE_EXTENSIONS.AUDIO.test(path);
 
     if (isVideo) {
@@ -319,6 +322,7 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
 
 /**
  * Creates video trimming filters for a given video track
+ * Handles images differently (uses loop filter instead of trim)
  * @param context - Video processing context with track info and references
  * @returns Filter reference and filter strings for video trimming
  */
@@ -327,6 +331,31 @@ function createVideoTrimFilters(
 ): AudioTrimResult {
   const { trackInfo, originalIndex, inputStreamRef } = context;
 
+  // Check if this is an image
+  const isImage = trackInfo.isImage || (trackInfo.trackType === 'image');
+
+  if (isImage && trackInfo.duration !== undefined) {
+    // For images, treat them like gaps but with the actual image content
+    // Generate frames by looping the single image frame for the exact duration
+    const trimmedRef = `[v${originalIndex}_trimmed]`;
+    const fps = 30; // Default FPS, will be normalized later
+    const duration = trackInfo.duration;
+    const totalFrames = Math.round(duration * fps); // Round to nearest frame for exact timing
+    
+    console.log(`🖼️ Image input detected: generating ${duration}s (${totalFrames} frames) at ${fps}fps from static image`);
+    
+    // Use loop filter with exact frame count, then trim to exact duration
+    // loop=-1 means infinite loop, then we trim to exact duration
+    return {
+      filterRef: trimmedRef,
+      filters: [
+        `${inputStreamRef}loop=loop=-1:size=1:start=0,trim=duration=${duration}[temp_trim_${originalIndex}]`,
+        `[temp_trim_${originalIndex}]setpts=PTS-STARTPTS${trimmedRef}`,
+      ],
+    };
+  }
+
+  // For videos, use standard trim
   if (trackInfo.startTime === undefined && trackInfo.duration === undefined) {
     // No trimming needed, just return the original reference
     return {
@@ -483,96 +512,254 @@ function createSilentAudioFilters(
 
 /**
  * Builds separate video and audio timelines from inputs
+ * Videos and images are kept separate for overlay-based compositing
  */
 function buildSeparateTimelines(
   inputs: (string | TrackInfo)[],
   targetFrameRate: number = VIDEO_DEFAULTS.FPS,
-): { video: ProcessedTimeline; audio: ProcessedTimeline } {
-  const videoSegments: ProcessedTimelineSegment[] = [];
-  const audioSegments: ProcessedTimelineSegment[] = [];
-
-  let videoCurrentTime = 0;
-  let audioCurrentTime = 0;
+): { video: ProcessedTimeline; audio: ProcessedTimeline; images: ProcessedTimeline } {
+  console.log('🎬 Building timelines with overlay-based layering support');
+  
+  // Separate inputs by type
+  const videoInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> = [];
+  const imageInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> = [];
+  const audioInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> = [];
 
   inputs.forEach((input, originalIndex) => {
     const trackInfo = getTrackInfo(input);
     const path = getInputPath(input);
 
-    // Determine if this is video, audio, or both
-    const isVideo = FILE_EXTENSIONS.VIDEO.test(path) || isGapInput(path);
-    const isAudio = FILE_EXTENSIONS.AUDIO.test(path) || isGapInput(path);
+    if (isGapInput(path)) {
+      // Skip gaps here, they'll be added later
+      return;
+    }
 
-    const duration = calculateTrackDuration(trackInfo, 1);
-
-    if (isVideo) {
-      const segment: ProcessedTimelineSegment = {
-        input: trackInfo,
-        originalIndex,
-        startTime: videoCurrentTime,
-        duration,
-        endTime: videoCurrentTime + duration,
-        timelineType: 'video',
-      };
-      videoSegments.push(segment);
-      console.log(
-        `📹 Video segment ${originalIndex}: ${videoCurrentTime.toFixed(2)}s-${(videoCurrentTime + duration).toFixed(2)}s (duration: ${duration.toFixed(2)}s)`,
-      );
-      videoCurrentTime += duration;
-
-      // If this video has a separate audio file, create an audio segment for it
-      if (trackInfo.audioPath && !trackInfo.muted) {
-        // Create a modified trackInfo with the audio file path as the main path
-        const audioTrackInfo: TrackInfo = {
-          ...trackInfo,
-          path: trackInfo.audioPath, // Use audio file path instead of video file path
-        };
-        
-        const audioSegment: ProcessedTimelineSegment = {
-          input: audioTrackInfo,
-          originalIndex,
-          startTime: audioCurrentTime,
-          duration,
-          endTime: audioCurrentTime + duration,
-          timelineType: 'audio',
-        };
-        audioSegments.push(audioSegment);
-        console.log(
-          `🎵 Audio segment ${originalIndex}: ${audioCurrentTime.toFixed(2)}s-${(audioCurrentTime + duration).toFixed(2)}s from ${trackInfo.audioPath}`,
-        );
-        audioCurrentTime += duration;
-      } else {
-        console.log(
-          `⚠️ Video segment ${originalIndex}: No audio created (audioPath: ${trackInfo.audioPath || 'none'}, muted: ${trackInfo.muted})`,
-        );
-      }
-    } else if (isAudio) {
-      // Only process standalone audio files here (not video tracks with separate audio)
-      // Video tracks with separate audio are handled in the isVideo block above
-      const segment: ProcessedTimelineSegment = {
-        input: trackInfo,
-        originalIndex,
-        startTime: audioCurrentTime,
-        duration,
-        endTime: audioCurrentTime + duration,
-        timelineType: 'audio',
-      };
-      audioSegments.push(segment);
-      audioCurrentTime += duration;
+    if (FILE_EXTENSIONS.VIDEO.test(path)) {
+      videoInputs.push({ trackInfo, originalIndex });
+    } else if (FILE_EXTENSIONS.IMAGE.test(path)) {
+      imageInputs.push({ trackInfo, originalIndex });
+    } else if (FILE_EXTENSIONS.AUDIO.test(path)) {
+      audioInputs.push({ trackInfo, originalIndex });
     }
   });
+
+  console.log(`📊 Input counts: videos=${videoInputs.length}, images=${imageInputs.length}, audio=${audioInputs.length}`);
+
+  // Build video timeline (no cutting, videos play continuously)
+  let videoSegments = buildVideoTimeline(videoInputs, targetFrameRate);
+  
+  // Build image timeline (separate from video)
+  let imageSegments = buildImageTimeline(imageInputs, targetFrameRate);
+  
+  // Build audio timeline (simpler, no layering)
+  let audioSegments = buildAudioTimeline(audioInputs, targetFrameRate);
+
+  // Fill gaps in the timeline where there's no content
+  videoSegments = fillTimelineGaps(videoSegments, targetFrameRate, 'video');
+  audioSegments = fillTimelineGaps(audioSegments, targetFrameRate, 'audio');
+
+  const videoTotalDuration = videoSegments.length > 0 
+    ? Math.max(...videoSegments.map(s => s.endTime))
+    : 0;
+  
+  const imageTotalDuration = imageSegments.length > 0
+    ? Math.max(...imageSegments.map(s => s.endTime))
+    : 0;
+  
+  const audioTotalDuration = audioSegments.length > 0
+    ? Math.max(...audioSegments.map(s => s.endTime))
+    : 0;
 
   return {
     video: {
       segments: videoSegments,
-      totalDuration: videoCurrentTime,
+      totalDuration: videoTotalDuration,
       timelineType: 'video',
+    },
+    images: {
+      segments: imageSegments,
+      totalDuration: imageTotalDuration,
+      timelineType: 'video', // Images are video-like
     },
     audio: {
       segments: audioSegments,
-      totalDuration: audioCurrentTime,
+      totalDuration: audioTotalDuration,
       timelineType: 'audio',
     },
   };
+}
+
+/**
+ * Fills gaps in the timeline where there's no content
+ * Only adds gaps where segments don't cover the timeline
+ */
+function fillTimelineGaps(
+  segments: ProcessedTimelineSegment[],
+  targetFrameRate: number,
+  timelineType: 'video' | 'audio',
+): ProcessedTimelineSegment[] {
+  if (segments.length === 0) {
+    return segments;
+  }
+
+  // Sort segments by start time
+  const sortedSegments = [...segments].sort((a, b) => a.startTime - b.startTime);
+  const filledSegments: ProcessedTimelineSegment[] = [];
+  
+  let currentTime = 0;
+  let gapIndex = 0;
+
+  sortedSegments.forEach((segment, index) => {
+    // Check if there's a gap before this segment
+    const gapDuration = segment.startTime - currentTime;
+    const frameDuration = 1 / targetFrameRate; // Duration of one frame
+    const minGapThreshold = frameDuration * 0.5; // Half a frame as threshold
+    
+    if (gapDuration > minGapThreshold) {
+      // Only add gap if it's larger than half a frame (to avoid rounding issues)
+      console.log(`🕳️ Found ${timelineType} gap: ${currentTime.toFixed(2)}s-${segment.startTime.toFixed(2)}s (${gapDuration.toFixed(2)}s)`);
+      
+      // Add gap segment
+      const gapTrackInfo: TrackInfo = {
+        path: GAP_MARKER,
+        duration: gapDuration,
+        trackType: timelineType,
+        gapType: timelineType,
+      };
+
+      filledSegments.push({
+        input: gapTrackInfo,
+        originalIndex: 9000 + gapIndex++, // High index to avoid conflicts
+        startTime: currentTime,
+        duration: gapDuration,
+        endTime: segment.startTime,
+        timelineType,
+      });
+      
+      // Add the actual segment at its original position
+      filledSegments.push(segment);
+      currentTime = Math.max(currentTime, segment.endTime);
+    } else if (gapDuration > 0 && gapDuration <= minGapThreshold) {
+      // Tiny gap (less than half a frame) - adjust segment to start at currentTime
+      console.log(`🔧 Adjusting segment to eliminate tiny gap of ${gapDuration.toFixed(4)}s`);
+      const adjustedSegment = {
+        ...segment,
+        startTime: currentTime,
+        endTime: currentTime + segment.duration,
+      };
+      filledSegments.push(adjustedSegment);
+      currentTime = adjustedSegment.endTime;
+    } else {
+      // No gap or negative gap (overlapping) - just add the segment
+      filledSegments.push(segment);
+      currentTime = Math.max(currentTime, segment.endTime);
+    }
+  });
+
+  console.log(`✅ ${timelineType} timeline after filling gaps: ${filledSegments.length} segments`);
+  return filledSegments;
+}
+
+/**
+ * Builds video timeline without cutting - videos play continuously
+ */
+function buildVideoTimeline(
+  videoInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }>,
+  targetFrameRate: number,
+): ProcessedTimelineSegment[] {
+  const segments: ProcessedTimelineSegment[] = [];
+
+  videoInputs.forEach(({ trackInfo, originalIndex }) => {
+    const startFrame = trackInfo.timelineStartFrame || 0;
+    const endFrame = trackInfo.timelineEndFrame || 0;
+    const startTime = startFrame / targetFrameRate;
+    const endTime = endFrame / targetFrameRate;
+    const duration = endTime - startTime;
+
+    segments.push({
+      input: trackInfo,
+      originalIndex,
+      startTime,
+      duration,
+      endTime,
+      timelineType: 'video',
+    });
+
+    console.log(
+      `🎥 Video segment ${originalIndex}: ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+    );
+  });
+
+  return segments;
+}
+
+/**
+ * Builds image timeline - images will be overlaid with opacity transitions
+ */
+function buildImageTimeline(
+  imageInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }>,
+  targetFrameRate: number,
+): ProcessedTimelineSegment[] {
+  const segments: ProcessedTimelineSegment[] = [];
+
+  imageInputs.forEach(({ trackInfo, originalIndex }) => {
+    const startFrame = trackInfo.timelineStartFrame || 0;
+    const endFrame = trackInfo.timelineEndFrame || 0;
+    const startTime = startFrame / targetFrameRate;
+    const endTime = endFrame / targetFrameRate;
+    const duration = endTime - startTime;
+
+    // Mark as image for special handling
+    const imageTrackInfo: TrackInfo = { ...trackInfo, isImage: true };
+
+    segments.push({
+      input: imageTrackInfo,
+      originalIndex,
+      startTime,
+      duration,
+      endTime,
+      timelineType: 'video',
+    });
+
+    console.log(
+      `🖼️ Image segment ${originalIndex}: ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+    );
+  });
+
+  return segments;
+}
+
+/**
+ * Builds audio timeline from audio inputs
+ */
+function buildAudioTimeline(
+  audioInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }>,
+  targetFrameRate: number,
+): ProcessedTimelineSegment[] {
+  const segments: ProcessedTimelineSegment[] = [];
+
+  audioInputs.forEach(({ trackInfo, originalIndex }) => {
+    const startFrame = trackInfo.timelineStartFrame || 0;
+    const endFrame = trackInfo.timelineEndFrame || 0;
+    const startTime = startFrame / targetFrameRate;
+    const endTime = endFrame / targetFrameRate;
+    const duration = endTime - startTime;
+
+    segments.push({
+      input: trackInfo,
+      originalIndex,
+      startTime,
+      duration,
+      endTime,
+      timelineType: 'audio',
+    });
+
+    console.log(
+      `🎵 Audio segment ${originalIndex}: ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+    );
+  });
+
+  return segments;
 }
 
 /**
@@ -661,7 +848,6 @@ function processGapsInTimeline(
     const gapTrackInfo: TrackInfo = {
       path: GAP_MARKER,
       duration: gapDuration,
-      startFrame: gap.startFrame,
       trackType: timeline.timelineType,
       gapType: timeline.timelineType,
     };
@@ -898,10 +1084,288 @@ function findFileIndexForSegment(
 }
 
 /**
- * Builds filter complex for separate video and audio timelines - FIXED VERSION
+ * Generate drawtext filters for text clips
+ * Converts text clip data into FFmpeg drawtext filter strings
+ */
+function generateDrawtextFilters(
+  textClips: TextClipData[],
+  fps: number,
+  videoDimensions: { width: number; height: number },
+): string {
+  console.log('🎨 generateDrawtextFilters called:', {
+    textClipsCount: textClips?.length || 0,
+    fps,
+    videoDimensions,
+  });
+  
+  if (!textClips || textClips.length === 0) {
+    console.log('⚠️ No text clips provided to generateDrawtextFilters');
+    return '';
+  }
+
+  const filters: string[] = [];
+
+  for (const clip of textClips) {
+    console.log('🎨 Processing text clip:', {
+      id: clip.id,
+      content: clip.content,
+      startFrame: clip.startFrame,
+      endFrame: clip.endFrame,
+    });
+    const { content, startFrame, endFrame, style, transform } = clip;
+
+    // Convert frames to seconds
+    const startTime = startFrame / fps;
+    const endTime = endFrame / fps;
+
+    // Convert normalized coordinates (-1 to 1) to pixel coordinates
+    // x: -1 = left edge, 0 = center, 1 = right edge
+    // y: -1 = top edge, 0 = center, 1 = bottom edge
+    const centerX = videoDimensions.width / 2;
+    const centerY = videoDimensions.height / 2;
+    
+    // Calculate base position
+    const basePixelX = Math.round(centerX + (transform.x * centerX));
+    const basePixelY = Math.round(centerY + (transform.y * centerY));
+    
+    // Adjust for text alignment (FFmpeg drawtext uses top-left corner by default)
+    // We need to offset to center the text at the specified position
+    const textAlign = style.textAlign || 'center';
+    let pixelX: string | number;
+    let pixelY: string | number;
+    
+    if (textAlign === 'center') {
+      pixelX = `(w-text_w)/2+${basePixelX - centerX}`;
+      pixelY = `(h-text_h)/2+${basePixelY - centerY}`;
+    } else if (textAlign === 'right') {
+      pixelX = `w-text_w-${videoDimensions.width - basePixelX}`;
+      pixelY = basePixelY;
+    } else {
+      // 'left' alignment
+      pixelX = basePixelX;
+      pixelY = basePixelY;
+    }
+
+    // Convert rotation from degrees to radians
+    const rotationRadians = (transform.rotation * Math.PI) / 180;
+
+    // Build font styling
+    const fontSize = style.fontSize;
+    const scaledFontSize = Math.round(fontSize * transform.scale);
+    const fontFamily = style.fontFamily?.replace(/['"]/g, '') || 'Arial';
+    
+    // Get font path using font mapper
+    const isBold = style.isBold || false;
+    const isItalic = style.isItalic || false;
+    const fontPath = getFontPathByStyle(fontFamily, isBold, isItalic);
+    
+    console.log(`🎨 Font mapping for "${fontFamily}" (bold: ${isBold}, italic: ${isItalic}): ${fontPath}`);
+
+    // Parse colors (convert hex/rgba to FFmpeg format)
+    const fillColor = parseColorForFFmpeg(style.fillColor || '#FFFFFF');
+    const strokeColor = parseColorForFFmpeg(style.strokeColor || '#000000');
+    const bgColor = parseColorForFFmpeg(style.backgroundColor || 'rgba(0,0,0,0)');
+
+    // Calculate opacity (0-100 to 0.0-1.0)
+    const opacity = (style.opacity !== undefined ? style.opacity : 100) / 100;
+
+    // Escape text for FFmpeg
+    const escapedText = content
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/:/g, '\\:')
+      .replace(/\n/g, '\\n');
+
+    // Build drawtext filter with enable expression for timing
+    let drawtextFilter = `drawtext=text='${escapedText}'`;
+    
+    // Use the dynamic font path with proper escaping for FFmpeg
+    const escapedFontPath = convertToFfmpegPath(fontPath);
+    drawtextFilter += `:fontfile='${escapedFontPath}'`;
+    
+    drawtextFilter += `:fontsize=${scaledFontSize}`;
+    drawtextFilter += `:fontcolor=${fillColor}@${opacity}`;
+    
+    // Handle x,y as either numbers or expressions
+    if (typeof pixelX === 'string') {
+      drawtextFilter += `:x='${pixelX}'`;
+    } else {
+      drawtextFilter += `:x=${pixelX}`;
+    }
+    
+    if (typeof pixelY === 'string') {
+      drawtextFilter += `:y='${pixelY}'`;
+    } else {
+      drawtextFilter += `:y=${pixelY}`;
+    }
+    
+    // Add border/stroke if specified
+    if (style.strokeColor && style.strokeColor !== 'transparent') {
+      drawtextFilter += `:borderw=2`;
+      drawtextFilter += `:bordercolor=${strokeColor}`;
+    }
+
+    // Add background box if specified
+    if (style.backgroundColor && style.backgroundColor !== 'transparent' && !style.backgroundColor.includes('rgba(0, 0, 0, 0)')) {
+      drawtextFilter += `:box=1`;
+      drawtextFilter += `:boxcolor=${bgColor}`;
+      drawtextFilter += `:boxborderw=5`;
+    }
+
+    // Add shadow if specified
+    if (style.hasShadow) {
+      drawtextFilter += `:shadowx=2`;
+      drawtextFilter += `:shadowy=2`;
+      drawtextFilter += `:shadowcolor=black@0.5`;
+    }
+
+    // Add rotation
+    if (rotationRadians !== 0) {
+      drawtextFilter += `:text_angle=${rotationRadians}`;
+    }
+
+    // Add timing enable expression
+    drawtextFilter += `:enable='between(t,${startTime},${endTime})'`;
+
+    filters.push(drawtextFilter);
+
+    console.log(`📝 Generated drawtext filter for text clip "${content}": ${startTime}s - ${endTime}s`);
+  }
+
+  return filters.join(',');
+}
+
+/**
+ * Parse color from hex/rgba format to FFmpeg format
+ */
+function parseColorForFFmpeg(color: string): string {
+  // Handle hex colors
+  if (color.startsWith('#')) {
+    return color; // FFmpeg supports hex colors directly
+  }
+
+  // Handle rgba colors
+  const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+  if (rgbaMatch) {
+    const [, r, g, b] = rgbaMatch;
+    // Convert to hex
+    const hexR = parseInt(r).toString(16).padStart(2, '0');
+    const hexG = parseInt(g).toString(16).padStart(2, '0');
+    const hexB = parseInt(b).toString(16).padStart(2, '0');
+    return `#${hexR}${hexG}${hexB}`;
+  }
+
+  // Default to white
+  return '#FFFFFF';
+}
+
+/**
+ * Builds image overlay filters with time-based enable/disable
+ * Images are only rendered during their timeline presence, not rendered at all outside
+ */
+function buildImageOverlayFilters(
+  imageSegments: ProcessedTimelineSegment[],
+  categorizedInputs: CategorizedInputs,
+  targetDimensions: { width: number; height: number },
+  targetFps: number,
+  totalDuration: number,
+  baseVideoLabel: string,
+): { filters: string[]; outputLabel: string } {
+  const filters: string[] = [];
+  let currentLabel = baseVideoLabel;
+  
+  // Process each image segment
+  imageSegments.forEach((segment, index) => {
+    const { input: trackInfo, startTime, endTime, originalIndex, duration } = segment;
+    
+    // Find the file index for this image
+    const fileIndex = findFileIndexForSegment(segment, categorizedInputs, 'video');
+    
+    if (fileIndex === undefined) {
+      console.warn(`❌ Could not find file index for image segment ${originalIndex}`);
+      return;
+    }
+    
+    console.log(`🖼️ Processing image overlay ${index}: ${trackInfo.path} [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s]`);
+    
+    // Prepare the image: scale and loop only for its duration
+    const imageInputRef = `[${fileIndex}:v]`;
+    const imagePreparedRef = `[img${index}_prepared]`;
+    const overlayOutputRef = index === imageSegments.length - 1 ? `[video_with_images]` : `[overlay${index}]`;
+    
+    // Step 1: Scale image to match video dimensions and loop it ONLY for its duration
+    filters.push(
+      `${imageInputRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,` +
+      `pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black,` +
+      `loop=loop=-1:size=1:start=0,trim=duration=${duration},setpts=PTS-STARTPTS,` +
+      `tpad=start_duration=${startTime}:start_mode=add:color=black@0.0${imagePreparedRef}`
+    );
+    
+    // Step 2: Overlay the image onto the current video with time-based enable
+    // The overlay is only active between startTime and endTime
+    filters.push(
+      `[${currentLabel}]${imagePreparedRef}overlay=0:0:enable='between(t,${startTime},${endTime})'${overlayOutputRef}`
+    );
+    
+    currentLabel = overlayOutputRef.replace('[', '').replace(']', '');
+    
+    console.log(`✅ Image overlay ${index} enabled only between ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s`);
+  });
+  
+  return {
+    filters,
+    outputLabel: currentLabel,
+  };
+}
+
+/**
+ * Determines the target dimensions for video processing
+ * Prioritizes actual video file dimensions over project dimensions
+ */
+function determineTargetDimensions(
+  videoTimeline: ProcessedTimeline,
+  job: VideoEditJob,
+): { width: number; height: number } {
+  // Strategy 1: Look for actual video files (not images or gaps) in the original inputs
+  for (const input of job.inputs) {
+    const trackInfo = getTrackInfo(input);
+    const path = getInputPath(input);
+    
+    console.log(`📐 Checking input: ${path}, isVideo: ${FILE_EXTENSIONS.VIDEO.test(path)}, width: ${trackInfo.width}, height: ${trackInfo.height}`);
+    
+    if (!isGapInput(path) && FILE_EXTENSIONS.VIDEO.test(path)) {
+      // Found a video file - check if it has explicit dimensions
+      if (trackInfo.width && trackInfo.height) {
+        console.log(`📐 ✅ Using video input dimensions from inputs: ${trackInfo.width}x${trackInfo.height}`);
+        return { width: trackInfo.width, height: trackInfo.height };
+      }
+    }
+  }
+
+  // Strategy 2: Look in the timeline segments
+  for (const segment of videoTimeline.segments) {
+    const path = segment.input.path;
+    if (!isGapInput(path) && FILE_EXTENSIONS.VIDEO.test(path)) {
+      // Found a video file - check if it has explicit dimensions
+      if (segment.input.width && segment.input.height) {
+        console.log(`📐 Using video input dimensions from timeline: ${segment.input.width}x${segment.input.height}`);
+        return { width: segment.input.width, height: segment.input.height };
+      }
+    }
+  }
+
+  // Fallback to job's video dimensions
+  const dimensions = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
+  console.log(`📐 Using project dimensions (fallback): ${dimensions.width}x${dimensions.height}`);
+  return dimensions;
+}
+
+/**
+ * Builds filter complex with image overlay support using opacity transitions
  */
 function buildSeparateTimelineFilterComplex(
   videoTimeline: ProcessedTimeline,
+  imageTimeline: ProcessedTimeline,
   audioTimeline: ProcessedTimeline,
   job: VideoEditJob,
   categorizedInputs: CategorizedInputs,
@@ -911,10 +1375,22 @@ function buildSeparateTimelineFilterComplex(
   const videoConcatInputs: string[] = [];
   const audioConcatInputs: string[] = [];
 
-  console.log('🎬 Building filter complex from timelines:');
+  // Determine target dimensions (prioritize video input dimensions)
+  const targetDimensions = determineTargetDimensions(videoTimeline, job);
+  const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+
+  console.log('🎬 Building filter complex with image overlay support:');
+  console.log('📝 Text clips in job:', job.textClips?.length || 0);
   console.log(
     'Video segments:',
     videoTimeline.segments.map(
+      (s) =>
+        `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
+    ),
+  );
+  console.log(
+    'Image segments:',
+    imageTimeline.segments.map(
       (s) =>
         `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
     ),
@@ -932,14 +1408,12 @@ function buildSeparateTimelineFilterComplex(
     const { input: trackInfo, originalIndex, timelineType } = segment;
 
     if (isGapInput(trackInfo.path)) {
-      // Video gap - create black video
-      const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
-      const videoDim = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
+      // Video gap - create black video using target dimensions
       const gapResult = createGapVideoFilters(
-        segmentIndex, // Use segment index to avoid conflicts
+        segmentIndex,
         trackInfo.duration || 1,
         targetFps,
-        videoDim,
+        targetDimensions,
       );
       videoFilters.push(...gapResult.filters);
       videoConcatInputs.push(gapResult.filterRef);
@@ -974,8 +1448,6 @@ function buildSeparateTimelineFilterComplex(
         let videoStreamRef = trimResult.filterRef;
 
         if (job.operations.normalizeFrameRate) {
-          const targetFps =
-            job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
           const fpsResult = createFpsNormalizationFilters(
             segmentIndex,
             videoStreamRef,
@@ -983,6 +1455,21 @@ function buildSeparateTimelineFilterComplex(
           );
           videoFilters.push(...fpsResult.filters);
           videoStreamRef = fpsResult.filterRef;
+        }
+
+        // Scale to match target dimensions if needed
+        const isVideoFile = FILE_EXTENSIONS.VIDEO.test(trackInfo.path);
+        const needsScaling = isVideoFile && trackInfo.width && trackInfo.height && 
+           (trackInfo.width !== targetDimensions.width || 
+            trackInfo.height !== targetDimensions.height);
+
+        if (needsScaling) {
+          const scaleRef = `[v${segmentIndex}_scaled]`;
+          videoFilters.push(
+            `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`
+          );
+          videoStreamRef = scaleRef;
+          console.log(`📐 Scaled segment ${segmentIndex} to ${targetDimensions.width}x${targetDimensions.height}`);
         }
 
         videoConcatInputs.push(videoStreamRef);
@@ -1005,7 +1492,7 @@ function buildSeparateTimelineFilterComplex(
     if (isGapInput(trackInfo.path)) {
       // Audio gap - create silent audio
       const silentResult = createSilentAudioFilters(
-        segmentIndex, // Use segment index to avoid conflicts
+        segmentIndex,
         trackInfo.duration || 1,
       );
       audioFilters.push(...silentResult.filters);
@@ -1068,31 +1555,90 @@ function buildSeparateTimelineFilterComplex(
     }
   }
 
+  // Process image overlays with opacity transitions
+  let imageOverlayFilters = '';
+  let currentVideoLabel = 'video_base';
+  
+  if (imageTimeline.segments.length > 0 && videoConcatFilter) {
+    const totalDuration = Math.max(videoTimeline.totalDuration, imageTimeline.totalDuration);
+    const overlayResult = buildImageOverlayFilters(
+      imageTimeline.segments,
+      categorizedInputs,
+      targetDimensions,
+      targetFps,
+      totalDuration,
+      currentVideoLabel,
+    );
+    
+    if (overlayResult.filters.length > 0) {
+      imageOverlayFilters = overlayResult.filters.join(';');
+      currentVideoLabel = overlayResult.outputLabel;
+      console.log(`🖼️ Added ${imageTimeline.segments.length} image overlay(s) with opacity transitions`);
+    }
+  }
+
   // Apply subtitles to video stream if needed (must be in filter_complex)
   let subtitleFilter = '';
+  
   if (job.operations.subtitles && videoConcatFilter) {
     const ffmpegPath = convertToFfmpegPath(job.operations.subtitles);
     const fileExtension = job.operations.subtitles.toLowerCase().split('.').pop();
     
     if (fileExtension === 'ass' || fileExtension === 'ssa') {
       // Use 'ass' filter for ASS/SSA files (better performance)
-      subtitleFilter = `[video_base]ass='${ffmpegPath}'[video]`;
+      subtitleFilter = `[${currentVideoLabel}]ass='${ffmpegPath}'[video_subtitled]`;
       console.log('📝 Added ASS subtitle filter to filter_complex (optimized for ASS format)');
     } else {
       // Use 'subtitles' filter for other formats (SRT, VTT, etc.)
-      subtitleFilter = `[video_base]subtitles='${ffmpegPath}'[video]`;
+      subtitleFilter = `[${currentVideoLabel}]subtitles='${ffmpegPath}'[video_subtitled]`;
       console.log(`📝 Added subtitles filter to filter_complex (format: ${fileExtension})`);
     }
+    currentVideoLabel = 'video_subtitled';
+  }
+
+  // Apply text clips using drawtext filters (separate from subtitles)
+  let textClipFilter = '';
+  console.log('🔍 Text clip check:', {
+    hasTextClips: !!job.textClips,
+    textClipsLength: job.textClips?.length || 0,
+    hasVideoConcatFilter: !!videoConcatFilter,
+    currentVideoLabel,
+  });
+  
+  if (job.textClips && job.textClips.length > 0 && videoConcatFilter) {
+    const dimensions = job.videoDimensions || { width: 1920, height: 1080 };
+    
+    console.log('📝 Generating drawtext filters for text clips:', {
+      count: job.textClips.length,
+      fps: targetFps,
+      dimensions,
+    });
+    
+    const drawtextFilters = generateDrawtextFilters(job.textClips, targetFps, dimensions);
+    
+    console.log('📝 Generated drawtext filters:', drawtextFilters);
+    
+    if (drawtextFilters) {
+      textClipFilter = `[${currentVideoLabel}]${drawtextFilters}[video]`;
+      console.log(`✅ Added ${job.textClips.length} text clip drawtext filters to filter_complex`);
+    } else {
+      // No valid drawtext filters, just pass through
+      textClipFilter = `[${currentVideoLabel}]null[video]`;
+      console.log('⚠️ No valid drawtext filters generated, using null passthrough');
+    }
   } else if (videoConcatFilter) {
-    // No subtitles - just rename video_base to video
-    subtitleFilter = '[video_base]null[video]';
+    // No text clips - just rename current label to video
+    textClipFilter = `[${currentVideoLabel}]null[video]`;
+    console.log('ℹ️ No text clips, using null passthrough');
   }
 
   // Combine all filters
   const allFilters = [...videoFilters, ...audioFilters];
   if (videoConcatFilter) allFilters.push(videoConcatFilter);
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
+  if (imageOverlayFilters) allFilters.push(imageOverlayFilters);
   if (subtitleFilter) allFilters.push(subtitleFilter);
+  if (textClipFilter) allFilters.push(textClipFilter);
 
   const filterComplex = allFilters.join(';');
 
@@ -1210,39 +1756,33 @@ function handleTimelineProcessing(
   targetFrameRate: number,
 ): {
   finalVideoTimeline: ProcessedTimeline;
+  finalImageTimeline: ProcessedTimeline;
   finalAudioTimeline: ProcessedTimeline;
   categorizedInputs: CategorizedInputs;
 } {
-  // Build separate initial timelines
+  // Build separate initial timelines (now with automatic gap filling based on timeline positions)
   const initialTimelines = buildSeparateTimelines(job.inputs, targetFrameRate);
 
-  // Process gaps for each timeline
-  let finalVideoTimeline = initialTimelines.video;
-  let finalAudioTimeline = initialTimelines.audio;
+  // Use the timelines as-is (gaps are already filled based on timeline positions)
+  const finalVideoTimeline = initialTimelines.video;
+  const finalImageTimeline = initialTimelines.images;
+  const finalAudioTimeline = initialTimelines.audio;
 
-  if (job.gaps) {
-    if (job.gaps.video?.length) {
-      finalVideoTimeline = processGapsInTimeline(
-        initialTimelines.video,
-        job.gaps.video,
-        targetFrameRate,
-      );
-    }
-
-    if (job.gaps.audio?.length) {
-      finalAudioTimeline = processGapsInTimeline(
-        initialTimelines.audio,
-        job.gaps.audio,
-        targetFrameRate,
-      );
-    }
-  }
+  // NOTE: We no longer use job.gaps here because gaps are now calculated
+  // based on actual timeline coverage from timelineStartFrame/timelineEndFrame
 
   console.log(
     'Final Video Timeline:',
     finalVideoTimeline.segments.map(
       (s) =>
         `${s.input.path}${s.input.gapType ? ` (${s.input.gapType} gap)` : ''} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
+    ),
+  );
+  console.log(
+    'Final Image Timeline:',
+    finalImageTimeline.segments.map(
+      (s) =>
+        `${s.input.path} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
     ),
   );
   console.log(
@@ -1253,10 +1793,24 @@ function handleTimelineProcessing(
     ),
   );
 
+  // Log text clips if present
+  if (job.textClips && job.textClips.length > 0) {
+    console.log('📝 Text Clips:');
+    job.textClips.forEach((clip, index) => {
+      const startTime = clip.startFrame / targetFrameRate;
+      const endTime = clip.endFrame / targetFrameRate;
+      console.log(
+        `  ${index + 1}. "${clip.content}" [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s] (${clip.type}) - pos: (${clip.transform.x.toFixed(2)}, ${clip.transform.y.toFixed(2)}), scale: ${clip.transform.scale}, rotation: ${clip.transform.rotation}°`,
+      );
+    });
+  } else {
+    console.log('📝 No text clips in this job');
+  }
+
   // Categorize inputs for file indexing
   const categorizedInputs = categorizeInputs(job.inputs);
 
-  return { finalVideoTimeline, finalAudioTimeline, categorizedInputs };
+  return { finalVideoTimeline, finalImageTimeline, finalAudioTimeline, categorizedInputs };
 }
 
 /**
@@ -1266,12 +1820,14 @@ function handleFilterComplex(
   job: VideoEditJob,
   cmd: CommandParts,
   videoTimeline: ProcessedTimeline,
+  imageTimeline: ProcessedTimeline,
   audioTimeline: ProcessedTimeline,
   categorizedInputs: CategorizedInputs,
   hwAccel: HardwareAcceleration | null,
 ): void {
   let filterComplex = buildSeparateTimelineFilterComplex(
     videoTimeline,
+    imageTimeline,
     audioTimeline,
     job,
     categorizedInputs,
@@ -1404,14 +1960,15 @@ export async function buildFfmpegCommand(
   handleFileInputs(job, cmd);
 
   // Step 2: Build and process timelines with gaps
-  const { finalVideoTimeline, finalAudioTimeline, categorizedInputs } =
+  const { finalVideoTimeline, finalImageTimeline, finalAudioTimeline, categorizedInputs } =
     handleTimelineProcessing(job, targetFrameRate);
 
-  // Step 3: Build and apply filter complex (includes subtitles)
+  // Step 3: Build and apply filter complex (includes subtitles and image overlays)
   handleFilterComplex(
     job,
     cmd,
     finalVideoTimeline,
+    finalImageTimeline,
     finalAudioTimeline,
     categorizedInputs,
     hwAccel,
@@ -1425,7 +1982,6 @@ export async function buildFfmpegCommand(
   // Step 5: Add output file
   handleOutput(job, cmd, location);
 
-  console.log('FFmpeg Command Args:', cmd.args);
   console.log('Full FFmpeg Command:', ['ffmpeg', ...cmd.args].join(' '));
   return cmd.args;
 }

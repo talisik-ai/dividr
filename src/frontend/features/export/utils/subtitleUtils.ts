@@ -24,6 +24,7 @@ export function generateSubtitleContent(
   subtitleTracks: VideoTrack[],
   textStyle: any,
   getTextStyleForSubtitle: (styleId: string) => any,
+  videoDimensions?: { width: number; height: number },
 ): SubtitleGenerationResult {
   if (subtitleTracks.length === 0) {
     return {
@@ -41,12 +42,14 @@ export function generateSubtitleContent(
   // Get current text style
   const currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
 
-  // Generate ASS content with styling
-  const subtitleContent = generateASSContent(segments, currentTextStyle);
+  // Generate ASS content with styling and video dimensions
+  const subtitleContent = generateASSContent(segments, currentTextStyle, videoDimensions);
 
   console.log(
     '📝 Generated subtitle content for export with text style:',
     textStyle.activeStyle,
+    'and video dimensions:',
+    videoDimensions,
   );
 
   return {

@@ -2,16 +2,18 @@ export interface TrackInfo {
   path: string;
   audioPath?: string;
   audioFileIndex?: number; // File index for the separate audio file (if audioPath is provided)
-  startTime?: number; // in seconds
-  duration?: number; // in seconds
+  startTime?: number; // Source trim start time in seconds (where to start reading from source file)
+  duration?: number; // Duration in seconds (how long to read from source)
   endTime?: number; // in seconds
-  startFrame?: number;
+  timelineStartFrame?: number; // Timeline position where this track starts (in frames)
+  timelineEndFrame?: number; // Timeline position where this track ends (in frames)
   muted?: boolean; // Whether this track's audio should be muted
   trackType?: 'video' | 'audio' | 'image' | 'subtitle' | 'text' | 'both'; // Type of the track
   visible?: boolean; // Whether this track's video should be visible (if false, show black)
   gapType?: 'video' | 'audio' | 'both';
   width?: number;
   height?: number;
+  isImage?: boolean; // Internal flag to mark image layers for overlay processing
 }
 
 export interface TextStyleConfig {
