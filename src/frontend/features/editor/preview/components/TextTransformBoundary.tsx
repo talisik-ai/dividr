@@ -11,7 +11,14 @@ interface TextTransformBoundaryProps {
   videoHeight: number;
   onTransformUpdate: (
     trackId: string,
-    transform: { x?: number; y?: number; scale?: number; rotation?: number },
+    transform: {
+      x?: number;
+      y?: number;
+      scale?: number;
+      rotation?: number;
+      width?: number;
+      height?: number;
+    },
   ) => void;
   onSelect: (trackId: string) => void;
   onTextUpdate?: (trackId: string, newText: string) => void;
@@ -106,6 +113,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     y: 0,
     scale: 0.2,
     rotation: 0,
+    width: 0,
+    height: 0,
   };
 
   // Migration: If coordinates appear to be in pixel space, convert to normalized
@@ -118,6 +127,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       onTransformUpdate(track.id, {
         x: normalized.x,
         y: normalized.y,
+        width: rawTransform.width,
+        height: rawTransform.height,
       });
       return {
         ...rawTransform,
@@ -131,6 +142,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     rawTransform.y,
     rawTransform.scale,
     rawTransform.rotation,
+    rawTransform.width,
+    rawTransform.height,
     pixelsToNormalized,
     onTransformUpdate,
     track.id,
@@ -235,6 +248,35 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       });
     }
   }, [transform.scale, transform.rotation, track.textContent, previewScale]);
+
+  // Update dimensions in the store when container size changes
+  useEffect(() => {
+    if (containerSize.width > 0 && containerSize.height > 0) {
+      const currentWidth = normalizedTransform.width || 0;
+      const currentHeight = normalizedTransform.height || 0;
+      const newWidth = containerSize.width * transform.scale;
+      const newHeight = containerSize.height * transform.scale;
+
+      // Only update if dimensions have changed significantly (avoid infinite loops)
+      if (
+        Math.abs(currentWidth - newWidth) > 1 ||
+        Math.abs(currentHeight - newHeight) > 1
+      ) {
+        onTransformUpdate(track.id, {
+          width: newWidth,
+          height: newHeight,
+        });
+      }
+    }
+  }, [
+    containerSize.width,
+    containerSize.height,
+    transform.scale,
+    normalizedTransform.width,
+    normalizedTransform.height,
+    track.id,
+    onTransformUpdate,
+  ]);
 
   // Handle mouse down on the text element (start dragging)
   const handleMouseDown = useCallback(
@@ -369,6 +411,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         onTransformUpdate(track.id, {
           x: clampedPos.x,
           y: clampedPos.y,
+          width: containerSize.width * transform.scale,
+          height: containerSize.height * transform.scale,
         });
       } else if (isScaling && activeHandle) {
         const scaleSensitivity = 200;
@@ -407,6 +451,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
         onTransformUpdate(track.id, {
           scale: newScale,
+          width: containerSize.width * newScale,
+          height: containerSize.height * newScale,
         });
       } else if (isRotating) {
         const boundaryRect = boundaryRef.current?.getBoundingClientRect();
@@ -464,6 +510,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
         onTransformUpdate(track.id, {
           rotation: newRotation,
+          width: containerSize.width * transform.scale,
+          height: containerSize.height * transform.scale,
         });
       }
     };

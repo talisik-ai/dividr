@@ -407,7 +407,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const handleTextTransformUpdate = useCallback(
     (
       trackId: string,
-      transform: { x?: number; y?: number; scale?: number; rotation?: number },
+      transform: {
+        x?: number;
+        y?: number;
+        scale?: number;
+        rotation?: number;
+        width?: number;
+        height?: number;
+      },
     ) => {
       const track = tracks.find((t) => t.id === trackId);
       if (!track || track.type !== 'text') return;
@@ -417,6 +424,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         y: 0,
         scale: 1,
         rotation: 0,
+        width: 0,
+        height: 0,
       };
 
       updateTrack(trackId, {

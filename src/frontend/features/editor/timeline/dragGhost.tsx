@@ -98,7 +98,7 @@ export const DragGhost: React.FC<DragGhostProps> = React.memo(
 
       // Text content for other track types
       return (
-        <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
+        <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
             ? track.subtitleText
             : track.type === 'text' && track.textContent

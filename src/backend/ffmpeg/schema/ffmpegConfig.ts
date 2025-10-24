@@ -28,6 +28,8 @@ export interface TextClipTransform {
   y: number; // Normalized position (-1 to 1)
   scale: number; // Scale factor
   rotation: number; // Rotation in degrees
+  width: number; // Width in pixels (actual rendered width)
+  height: number; // Height in pixels (actual rendered height)
 }
 
 export interface TextClipStyle {
