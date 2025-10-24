@@ -15,6 +15,8 @@ export interface PlaybackSlice {
   toggleLoop: () => void;
   startDraggingTrack: (initialFrame: number) => void;
   endDraggingTrack: (recordUndo?: boolean) => void;
+  startDraggingPlayhead: () => void;
+  endDraggingPlayhead: () => void;
   setMagneticSnapFrame: (frame: number | null) => void;
   trackBoundaryCollision: (attemptedFrame: number, wasBlocked: boolean) => void;
   setDragGhost: (ghost: PlaybackState['dragGhost']) => void;
@@ -38,6 +40,8 @@ export const createPlaybackSlice: StateCreator<
     isLooping: false,
     isDraggingTrack: false,
     wasPlayingBeforeDrag: false,
+    isDraggingPlayhead: false,
+    wasPlayingBeforePlayheadDrag: false,
     magneticSnapFrame: null,
     dragStartFrame: null,
     boundaryCollisionCount: 0,
@@ -188,4 +192,30 @@ export const createPlaybackSlice: StateCreator<
     set((state: any) => ({
       playback: { ...state.playback, dragGhost: null },
     })),
+
+  startDraggingPlayhead: () =>
+    set((state: any) => {
+      const wasPlaying = state.playback.isPlaying;
+      return {
+        playback: {
+          ...state.playback,
+          isDraggingPlayhead: true,
+          wasPlayingBeforePlayheadDrag: wasPlaying,
+          isPlaying: false, // Pause playback during playhead drag
+        },
+      };
+    }),
+
+  endDraggingPlayhead: () =>
+    set((state: any) => {
+      const shouldResume = state.playback.wasPlayingBeforePlayheadDrag;
+      return {
+        playback: {
+          ...state.playback,
+          isDraggingPlayhead: false,
+          isPlaying: shouldResume, // Resume if was playing before
+          wasPlayingBeforePlayheadDrag: false,
+        },
+      };
+    }),
 });

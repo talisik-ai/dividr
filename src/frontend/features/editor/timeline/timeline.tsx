@@ -106,6 +106,15 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const importMediaToTimeline = useVideoEditorStore(
       (state) => state.importMediaToTimeline,
     );
+    const startDraggingPlayhead = useVideoEditorStore(
+      (state) => state.startDraggingPlayhead,
+    );
+    const endDraggingPlayhead = useVideoEditorStore(
+      (state) => state.endDraggingPlayhead,
+    );
+    const isDraggingPlayhead = useVideoEditorStore(
+      (state) => state.playback.isDraggingPlayhead,
+    );
 
     // Calculate effective timeline duration based on actual track content - memoized
     const effectiveEndFrame = useMemo(() => {
@@ -708,8 +717,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Always listen for mouse events to ensure marquee can activate
     useEffect(() => {
       const handleGlobalMouseMove = (e: MouseEvent) => {
-        // Block marquee during track drag/resize or split mode
-        if (playback.isDraggingTrack || isSplitModeActive) {
+        // Block marquee during track drag/resize, playhead drag, or split mode
+        if (
+          playback.isDraggingTrack ||
+          isDraggingPlayhead ||
+          isSplitModeActive
+        ) {
           return;
         }
 
@@ -778,6 +791,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       handleMarqueeMouseMove,
       handleMarqueeMouseUp,
       playback.isDraggingTrack,
+      isDraggingPlayhead,
       isSplitModeActive,
     ]);
 
@@ -792,6 +806,49 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const getTrackRowHeightValue = useCallback(() => {
       return getTrackRowHeight();
     }, []);
+
+    // Playhead drag handler
+    const handlePlayheadDragStart = useCallback(() => {
+      if (!tracksRef.current) return;
+
+      // Start playhead drag mode
+      startDraggingPlayhead();
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        if (!tracksRef.current) return;
+
+        const rect = tracksRef.current.getBoundingClientRect();
+        const x = moveEvent.clientX - rect.left + tracksRef.current.scrollLeft;
+        const frame = Math.floor(x / frameWidth);
+        const clampedFrame = Math.max(
+          0,
+          Math.min(frame, effectiveEndFrame - 1),
+        );
+
+        // Update frame in real-time during drag
+        lastFrameUpdateRef.current = clampedFrame;
+        setCurrentFrame(clampedFrame);
+      };
+
+      const handleMouseUp = () => {
+        // End playhead drag mode
+        endDraggingPlayhead();
+
+        // Clean up listeners
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+
+      // Attach global listeners for smooth dragging
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }, [
+      frameWidth,
+      effectiveEndFrame,
+      setCurrentFrame,
+      startDraggingPlayhead,
+      endDraggingPlayhead,
+    ]);
 
     // Centralized interaction handlers
     const interactionHandlers: TimelineInteractionHandlers = useMemo(
@@ -896,6 +953,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         onSplit: (frame: number, trackId: string) => {
           splitAtPosition(frame, trackId);
         },
+        onStartPlayheadDrag: () => {
+          startDraggingPlayhead();
+        },
       }),
       [
         effectiveEndFrame,
@@ -904,6 +964,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         setSelectedTracks,
         splitAtPosition,
         marqueeSelection,
+        startDraggingPlayhead,
       ],
     );
 
@@ -912,8 +973,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
 
-        // Block all timeline interactions during track drag/resize operations
-        if (playback.isDraggingTrack) {
+        // Block all timeline interactions during track drag/resize or playhead drag operations
+        if (playback.isDraggingTrack || isDraggingPlayhead) {
           return;
         }
 
@@ -979,12 +1040,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       },
       [
         playback.isDraggingTrack,
+        isDraggingPlayhead,
         tracksRef,
         frameWidth,
         tracks,
         effectiveEndFrame,
         isSplitModeActive,
         interactionHandlers,
+        visibleTrackRows,
       ],
     );
 
@@ -1132,13 +1195,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               </div>
 
               {/* Global Playhead - spans across ruler and tracks */}
-              <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-[999]">
+              <div className="absolute top-0 left-0 right-0 bottom-0 z-[999] pointer-events-none">
                 <TimelinePlayhead
                   currentFrame={timeline.currentFrame}
                   frameWidth={frameWidth}
                   scrollX={timeline.scrollX}
                   visible={timeline.playheadVisible}
                   timelineScrollElement={tracksRef.current}
+                  onStartDrag={handlePlayheadDragStart}
                 />
               </div>
 
