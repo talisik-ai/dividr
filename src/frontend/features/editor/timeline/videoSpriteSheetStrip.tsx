@@ -471,10 +471,11 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
 
           {/* Track name overlay */}
           <div
-            className="absolute bottom-1 left-2 text-white text-xs font-medium pointer-events-none"
+            className="absolute bottom-1 left-2 text-white text-xs font-medium pointer-events-none whitespace-nowrap overflow-hidden"
             style={{
               zIndex: 2,
               textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+              maxWidth: `calc(${width}px - 16px)`,
             }}
           >
             {track.name}

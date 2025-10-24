@@ -55,5 +55,7 @@ export interface VideoTrack {
     y: number; // Y position normalized (-1 to 1, relative to video center, 0 = center)
     scale: number; // Scale factor (1 = 100%)
     rotation: number; // Rotation in degrees
+    width: number; // Width in pixels (actual rendered width)
+    height: number; // Height in pixels (actual rendered height)
   };
 }

@@ -47,6 +47,8 @@ export function extractTextClips(
       y: track.textTransform?.y || 0,
       scale: track.textTransform?.scale || 1,
       rotation: track.textTransform?.rotation || 0,
+      width: track.textTransform?.width || 0,
+      height: track.textTransform?.height || 0,
     };
 
     // Calculate duration in frames
