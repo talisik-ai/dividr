@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
+import { ImageTrackStrip } from './imageTrackStrip';
 import {
   getRowHeightClasses,
   getTrackItemHeight,
@@ -138,7 +139,7 @@ const TrackItemWrapper: React.FC<{
         case 'audio':
           return 'hsl(var(--secondary) / 0.3)';
         case 'image':
-          return 'linear-gradient(135deg, #e67e22, #f39c12)';
+          return 'transparent';
         default:
           return 'linear-gradient(135deg, #34495e, #7f8c8d)';
       }
@@ -759,7 +760,19 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         );
       }
 
-      // Text content for other track types (text, subtitle, logo)
+      if (track.type === 'image') {
+        return (
+          <ImageTrackStrip
+            track={track}
+            frameWidth={frameWidth}
+            width={width}
+            height={contentHeight}
+            zoomLevel={zoomLevel}
+          />
+        );
+      }
+
+      // Text content for other track types (text, subtitle)
       return (
         <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
