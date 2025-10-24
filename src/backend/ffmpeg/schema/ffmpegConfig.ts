@@ -118,6 +118,7 @@ export interface VideoEditJob {
   videoDimensions?: { width: number; height: number };
   textClips?: TextClipData[]; // Text clips for rendering (heading/body)
   textClipsContent?: string; // Generated ASS content for text clips
+  subtitleFontFamilies?: string[]; // Font families used in subtitles (resolved to paths in main process)
 }
 
 export interface CommandParts {

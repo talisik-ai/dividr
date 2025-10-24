@@ -112,12 +112,13 @@ export const useExportJob = () => {
       );
 
       // Generate subtitle content if needed
-      const { subtitleContent, currentTextStyle } = generateSubtitleContent(
+      const { subtitleContent, currentTextStyle, fontFamilies } = generateSubtitleContent(
         subtitleTracks,
         textStyle,
         getTextStyleForSubtitle,
         videoDimensions,
       );
+
 
       // Generate text clip data for export
       const { textClips, textClipsContent } = generateTextClipContent(
@@ -144,6 +145,7 @@ export const useExportJob = () => {
         },
         subtitleContent,
         subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+        subtitleFontFamilies: fontFamilies, // Pass font families, main process will resolve paths
         videoDimensions,
         textClips: textClips.length > 0 ? textClips : undefined,
         textClipsContent,

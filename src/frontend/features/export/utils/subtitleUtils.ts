@@ -15,6 +15,7 @@ import {
 interface SubtitleGenerationResult {
   subtitleContent: string;
   currentTextStyle: any;
+  fontFamilies: string[];
 }
 
 /**
@@ -30,6 +31,7 @@ export function generateSubtitleContent(
     return {
       subtitleContent: '',
       currentTextStyle: undefined,
+      fontFamilies: [],
     };
   }
 
@@ -43,7 +45,7 @@ export function generateSubtitleContent(
   const currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
 
   // Generate ASS content with styling and video dimensions
-  const subtitleContent = generateASSContent(segments, currentTextStyle, videoDimensions);
+  const assResult = generateASSContent(segments, currentTextStyle, videoDimensions);
 
   console.log(
     '📝 Generated subtitle content for export with text style:',
@@ -51,9 +53,11 @@ export function generateSubtitleContent(
     'and video dimensions:',
     videoDimensions,
   );
+  console.log('📝 Fonts used in subtitles:', assResult.fontFamilies.join(', '));
 
   return {
-    subtitleContent,
+    subtitleContent: assResult.content,
     currentTextStyle,
+    fontFamilies: assResult.fontFamilies,
   };
 }

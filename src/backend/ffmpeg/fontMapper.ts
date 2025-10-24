@@ -248,3 +248,80 @@ export function isFontAvailable(fontFamily: string): boolean {
   const cleanFamily = fontFamily.replace(/['"]/g, '').trim();
   return cleanFamily in FONT_MAPPINGS;
 }
+
+/**
+ * Get the directory path for a specific font family
+ * @param fontFamily - Font family name (e.g., 'Roboto', 'Montserrat')
+ * @returns Absolute path to the font family directory
+ */
+export function getFontFamilyDirectory(fontFamily: string): string | null {
+  const cleanFamily = fontFamily.replace(/['"]/g, '').trim();
+  const mapping = FONT_MAPPINGS[cleanFamily];
+  
+  if (!mapping) {
+    return null;
+  }
+  
+  // Get any variant to extract the directory path
+  const variantPath = mapping.variants.regular || Object.values(mapping.variants)[0];
+  
+  if (!variantPath || !variantPath.includes('/')) {
+    // System font, no directory
+    return null;
+  }
+  
+  // Extract directory from path (e.g., "Montserrat/Montserrat-Regular.ttf" -> "Montserrat")
+  const directory = variantPath.split('/')[0];
+  const fontsDir = getFontsDirectory();
+  
+  return path.join(fontsDir, directory);
+}
+
+/**
+ * Get all font family directories used in a list of font names
+ * @param fontFamilies - Array of font family names
+ * @returns Array of unique directory paths
+ */
+export function getFontDirectoriesForFamilies(fontFamilies: string[]): string[] {
+  const directories = new Set<string>();
+  
+  for (const family of fontFamilies) {
+    const dir = getFontFamilyDirectory(family);
+    if (dir) {
+      directories.add(dir);
+    }
+  }
+  
+  return Array.from(directories);
+}
+
+/**
+ * Get all font file paths for a list of font families
+ * Returns all variants (regular, bold, italic, etc.) for each family
+ * @param fontFamilies - Array of font family names
+ * @returns Array of absolute paths to font files
+ */
+export function getFontPathsForFamilies(fontFamilies: string[]): string[] {
+  const fontPaths = new Set<string>();
+  const fontsDir = getFontsDirectory();
+  
+  for (const family of fontFamilies) {
+    const cleanFamily = family.replace(/['"]/g, '').trim();
+    const mapping = FONT_MAPPINGS[cleanFamily];
+    
+    if (!mapping) {
+      console.warn(`⚠️  Font family not found in mappings: ${cleanFamily}`);
+      continue;
+    }
+    
+    // Get all variants for this font family
+    for (const variant of Object.values(mapping.variants)) {
+      if (variant && variant.includes('/') && variant.includes('.ttf')) {
+        const fontPath = path.join(fontsDir, variant);
+        fontPaths.add(fontPath);
+      }
+    }
+  }
+  
+  return Array.from(fontPaths);
+}

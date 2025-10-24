@@ -17,7 +17,7 @@ import {
   VideoEditJob,
   VideoProcessingContext,
 } from './schema/ffmpegConfig';
-import { getFontPathByStyle } from './fontMapper';
+import { getFontPathByStyle, getFontPathsForFamilies } from './fontMapper';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -1667,14 +1667,31 @@ function buildSeparateTimelineFilterComplex(
     const escapedPath = escapePathForFilter(job.operations.subtitles);
     const fileExtension = job.operations.subtitles.toLowerCase().split('.').pop();
     
+    // Get font directories for the fonts used in subtitles
+    let fontsDirParam = '';
+    if (job.subtitleFontFamilies && job.subtitleFontFamilies.length > 0) {
+      console.log('📝 Font families used in subtitles:', job.subtitleFontFamilies);
+      const fontPaths = getFontPathsForFamilies(job.subtitleFontFamilies);
+      console.log('📝 Resolved font file paths:', fontPaths);
+      
+      // Get the directory of the first font (they should all be in family-specific directories)
+      if (fontPaths.length > 0) {
+        const pathModule = require('path');
+        const fontDir = pathModule.dirname(fontPaths[0]);
+        const escapedFontDir = fontDir.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+        fontsDirParam = `:fontsdir='${escapedFontDir}'`;
+        console.log('📝 Using fonts directory:', fontDir);
+      }
+    }
+    
     if (fileExtension === 'ass' || fileExtension === 'ssa') {
-      // Use 'ass' filter for ASS/SSA files (better performance)
-      subtitleFilter = `[${currentVideoLabel}]ass='${escapedPath}'[video_subtitled]`;
-      console.log('📝 Added ASS subtitle filter to filter_complex (optimized for ASS format)');
+      // Use 'subtitles' filter for ASS files with fontsdir parameter
+      subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'${fontsDirParam}[video_subtitled]`;
+      console.log('📝 Added ASS subtitles filter with fontsdir');
     } else {
-      // Use 'subtitles' filter for other formats (SRT, VTT, etc.)
-      subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'[video_subtitled]`;
-      console.log(`📝 Added subtitles filter to filter_complex (format: ${fileExtension})`);
+      // Use 'subtitles' filter for other formats
+      subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'${fontsDirParam}[video_subtitled]`;
+      console.log(`📝 Added subtitles filter (format: ${fileExtension})`);
     }
     currentVideoLabel = 'video_subtitled';
   }
