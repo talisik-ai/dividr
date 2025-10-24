@@ -395,6 +395,37 @@ export const createTracksSlice: StateCreator<
         trackData.type === 'subtitle' ||
         trackData.type === 'image';
 
+      // Calculate auto-fit dimensions for image tracks
+      let imageTransform = trackData.textTransform;
+      if (trackData.type === 'image' && trackData.width && trackData.height) {
+        const canvasWidth = state.preview?.canvasWidth || 1920;
+        const canvasHeight = state.preview?.canvasHeight || 1080;
+        const imageAspectRatio = trackData.width / trackData.height;
+        const canvasAspectRatio = canvasWidth / canvasHeight;
+
+        let fitWidth = canvasWidth;
+        let fitHeight = canvasHeight;
+
+        if (imageAspectRatio > canvasAspectRatio) {
+          // Image is wider than canvas - fit to width
+          fitWidth = canvasWidth;
+          fitHeight = canvasWidth / imageAspectRatio;
+        } else {
+          // Image is taller than canvas - fit to height
+          fitHeight = canvasHeight;
+          fitWidth = canvasHeight * imageAspectRatio;
+        }
+
+        imageTransform = {
+          x: 0, // Centered
+          y: 0, // Centered
+          scale: 1, // 100% scale
+          rotation: 0, // No rotation
+          width: fitWidth, // Auto-fit widthx
+          height: fitHeight, // Auto-fit height
+        };
+      }
+
       const track: VideoTrack = {
         ...trackData,
         id,
@@ -406,6 +437,8 @@ export const createTracksSlice: StateCreator<
         sourceDuration: isExtensibleTrack ? duration : duration,
         color: getTrackColor(state.tracks.length),
         muted: trackData.type === 'audio' ? false : undefined,
+        // Apply auto-fit transform for images
+        ...(imageTransform && { textTransform: imageTransform }),
       };
 
       set((state: any) => ({
