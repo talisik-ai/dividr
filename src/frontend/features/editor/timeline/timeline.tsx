@@ -19,6 +19,7 @@ import {
 } from '../stores/videoEditor/index';
 import { DragGhost } from './dragGhost';
 import { DropZoneIndicator } from './dropZoneIndicator';
+import { useAutoScroll } from './hooks/useAutoScroll';
 import { ProjectThumbnailSetter } from './projectThumbnailSetter';
 import { TimelineControls } from './timelineControls';
 import { TimelinePlayhead } from './timelinePlayhead';
@@ -58,6 +59,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [, setDropActive] = useState(false);
     const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
+    const [autoScrollMousePos, setAutoScrollMousePos] = useState<{
+      x: number;
+      y: number;
+    } | null>(null);
     const [splitIndicatorPosition, setSplitIndicatorPosition] = useState<
       number | null
     >(null);
@@ -115,7 +120,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const isDraggingPlayhead = useVideoEditorStore(
       (state) => state.playback.isDraggingPlayhead,
     );
-
+    const updateDragGhostPosition = useVideoEditorStore(
+      (state) => state.updateDragGhostPosition,
+    );
     // Calculate effective timeline duration based on actual track content - memoized
     const effectiveEndFrame = useMemo(() => {
       // When tracks exist, use the maximum track end frame
@@ -327,6 +334,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Record state when track drag operations complete
     useTrackDragRecording();
 
+    useAutoScroll({
+      enabled: !!dragGhost?.isActive,
+      mouseX: autoScrollMousePos?.x || 0,
+      mouseY: autoScrollMousePos?.y || 0,
+      scrollElement: tracksRef.current,
+      threshold: 50,
+      speed: 1.2,
+      onScroll: (newScrollX) => {
+        setScrollX(newScrollX);
+      },
+    });
+
     // Global keyboard event listener as fallback for Delete/Backspace
     // This ensures delete works even when react-hotkeys-hook might not catch it
     useEffect(() => {
@@ -371,19 +390,44 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Global safety net: Reset drag state if user releases mouse anywhere
     // Use capture phase to ensure this runs AFTER child handlers
     useEffect(() => {
-      const handleGlobalMouseUp = () => {
-        // Use setTimeout to ensure this runs after all other mouseup handlers
-        setTimeout(() => {
-          const { playback, endDraggingTrack } = useVideoEditorStore.getState();
-          if (playback.isDraggingTrack) {
-            endDraggingTrack();
-          }
-        }, 0);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const handleGlobalMouseUp = (e: MouseEvent) => {
+        const { playback, endDraggingTrack, clearDragGhost } =
+          useVideoEditorStore.getState();
+
+        if (playback.isDraggingTrack || playback.dragGhost?.isActive) {
+          console.log('🛡️ Global cleanup: Ending stuck drag operation');
+
+          // Clear all drag state
+          endDraggingTrack(true); // Record undo
+          clearDragGhost();
+
+          // Clear any local mouse tracking
+          setAutoScrollMousePos(null);
+        }
       };
 
-      document.addEventListener('mouseup', handleGlobalMouseUp);
+      const handleGlobalMouseLeave = (e: MouseEvent) => {
+        // Only trigger if we're actually leaving the window
+        if (
+          e.clientY <= 0 ||
+          e.clientX <= 0 ||
+          e.clientX >= window.innerWidth ||
+          e.clientY >= window.innerHeight
+        ) {
+          handleGlobalMouseUp(e);
+        }
+      };
+
+      // Listen on document AND window for maximum coverage
+      document.addEventListener('mouseup', handleGlobalMouseUp, true); // Capture phase
+      window.addEventListener('mouseup', handleGlobalMouseUp, true);
+      document.addEventListener('mouseleave', handleGlobalMouseLeave);
+
       return () => {
-        document.removeEventListener('mouseup', handleGlobalMouseUp);
+        document.removeEventListener('mouseup', handleGlobalMouseUp, true);
+        window.removeEventListener('mouseup', handleGlobalMouseUp, true);
+        document.removeEventListener('mouseleave', handleGlobalMouseLeave);
       };
     }, []);
 
@@ -428,6 +472,108 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
     // Calculate frame width based on zoom - memoized
     const frameWidth = useMemo(() => 2 * timeline.zoom, [timeline.zoom]);
+
+    // track mouse position during drag for auto-scroll
+    useEffect(() => {
+      if (!dragGhost?.isActive) {
+        setAutoScrollMousePos(null);
+        return;
+      }
+
+      // Shared function to calculate and update drag ghost position
+      const updateDragGhostWithCurrentScroll = (
+        clientX: number,
+        clientY: number,
+      ) => {
+        if (!tracksRef.current) return;
+
+        const rect = tracksRef.current.getBoundingClientRect();
+        const currentScrollX = tracksRef.current.scrollLeft;
+        const mouseRelativeX = clientX - rect.left;
+
+        // Calculate target frame accounting for current scroll AND offset
+        const targetFrame = Math.max(
+          0,
+          Math.floor(
+            (mouseRelativeX + currentScrollX - (dragGhost.offsetX || 0)) /
+              frameWidth,
+          ),
+        );
+
+        // Find which row the cursor is over
+        const mouseRelativeY = clientY - rect.top;
+        let targetRow: string | null = null;
+
+        for (const rowType of visibleTrackRows) {
+          const rowTop = getTrackRowTop(rowType, visibleTrackRows);
+          const rowHeight = getRowHeight(rowType);
+          if (mouseRelativeY >= rowTop && mouseRelativeY < rowTop + rowHeight) {
+            targetRow = rowType;
+            break;
+          }
+        }
+
+        // Update drag ghost state
+        updateDragGhostPosition(clientX, clientY, targetRow, targetFrame);
+      };
+
+      const handleMouseMove = (e: MouseEvent) => {
+        setAutoScrollMousePos({ x: e.clientX, y: e.clientY });
+        updateDragGhostWithCurrentScroll(e.clientX, e.clientY);
+      };
+
+      document.addEventListener('mousemove', handleMouseMove, {
+        passive: true,
+      });
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+      };
+    }, [
+      dragGhost?.isActive,
+      dragGhost?.offsetX,
+      frameWidth,
+      visibleTrackRows,
+      updateDragGhostPosition,
+    ]);
+
+    // target frame when scroll changes (even if mouse doesn't move)
+    useEffect(() => {
+      if (!dragGhost?.isActive || !autoScrollMousePos || !tracksRef.current) {
+        return;
+      }
+
+      // Recalculate target frame based on current scroll
+      const rect = tracksRef.current.getBoundingClientRect();
+      const currentScrollX = tracksRef.current.scrollLeft;
+      const mouseRelativeX = autoScrollMousePos.x - rect.left;
+      const targetFrame = Math.max(
+        0,
+        Math.floor(
+          (mouseRelativeX + currentScrollX - (dragGhost.offsetX || 0)) /
+            frameWidth,
+        ),
+      );
+
+      // Only update if frame actually changed
+      if (dragGhost.targetFrame !== targetFrame) {
+        updateDragGhostPosition(
+          autoScrollMousePos.x,
+          autoScrollMousePos.y,
+          dragGhost.targetRow,
+          targetFrame,
+        );
+      }
+    }, [
+      timeline.scrollX, // Triggers when auto-scroll updates
+      dragGhost?.isActive,
+      dragGhost?.targetFrame,
+      dragGhost?.targetRow,
+      dragGhost?.offsetX,
+      autoScrollMousePos,
+      frameWidth,
+      updateDragGhostPosition,
+    ]);
 
     // Track viewport width for responsive timeline grid
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
