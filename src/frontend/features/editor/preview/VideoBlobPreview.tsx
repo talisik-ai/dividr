@@ -349,6 +349,50 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     return activeTexts;
   }, [tracks, timeline.currentFrame]);
 
+  // Image tracks
+  const getActiveImageTracks = useCallback(() => {
+    const currentFrame = timeline.currentFrame;
+    const activeImages = tracks.filter(
+      (track) =>
+        track.type === 'image' &&
+        track.visible &&
+        currentFrame >= track.startFrame &&
+        currentFrame < track.endFrame &&
+        (track.previewUrl || track.source),
+    );
+
+    return activeImages;
+  }, [tracks, timeline.currentFrame]);
+
+  // Helper function to get z-index based on timeline track order
+  // Lower index in timeline = rendered first = lower z-index (appears behind)
+  // Fallback order: Audio (0) → Video (100) → Image (200) → Subtitles (300) → Text (400)
+  const getTrackZIndex = useCallback(
+    (track: VideoTrack): number => {
+      // Find the track's position in the timeline tracks array
+      const trackIndex = tracks.findIndex((t) => t.id === track.id);
+
+      // Base z-index by type (fallback if track not found in array)
+      const typeBaseZIndex: Record<VideoTrack['type'], number> = {
+        audio: 0,
+        video: 100,
+        image: 200,
+        subtitle: 300,
+        text: 400,
+      };
+
+      // If track found in timeline, use its index for fine-grained ordering
+      // Add type base to ensure type separation, then add track index for within-type ordering
+      if (trackIndex !== -1) {
+        return typeBaseZIndex[track.type] + trackIndex;
+      }
+
+      // Fallback to type-based ordering if track not found
+      return typeBaseZIndex[track.type];
+    },
+    [tracks],
+  );
+
   // Helper function to convert text track style to CSS
   const getTextStyleForTextClip = useCallback((track: VideoTrack) => {
     const style = track.textStyle || {};
@@ -1279,7 +1323,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       {/* Video */}
       {(activeVideoTrack || activeAudioTrack) && (
         <div
-          className="absolute inset-0 flex items-center justify-center transition-[width,height,left,top] duration-150 ease-out"
+          className="absolute inset-0 flex items-center justify-center"
           style={{
             width: actualWidth,
             height: actualHeight,
@@ -1289,6 +1333,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             // Hide video visually if track is not visible, but keep element for audio
             opacity: activeVideoTrack ? 1 : 0,
             pointerEvents: activeVideoTrack ? 'auto' : 'none',
+            zIndex: activeVideoTrack ? getTrackZIndex(activeVideoTrack) : 0,
           }}
         >
           <video
@@ -1343,7 +1388,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
         return (
           <div
-            className="absolute inset-0 pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
+            className="absolute inset-0 pointer-events-none"
             style={{
               width: actualWidth,
               height: actualHeight,
@@ -1362,6 +1407,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               paddingBottom: `${20 * preview.previewScale}px`,
               paddingLeft: `${scaledHorizontalPadding}px`,
               paddingRight: `${scaledHorizontalPadding}px`,
+              zIndex:
+                activeSubs.length > 0
+                  ? Math.max(...activeSubs.map((t) => getTrackZIndex(t)))
+                  : 300,
             }}
           >
             {activeSubs.map((track) => {
@@ -1542,6 +1591,124 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         );
       })()}
 
+      {/* Image Tracks */}
+      {(() => {
+        const activeImages = getActiveImageTracks();
+        if (activeImages.length === 0) return null;
+
+        // Use ORIGINAL video dimensions (not scaled) for coordinate normalization
+        const baseVideoHeight =
+          activeVideoTrack?.height || preview.canvasHeight;
+        const baseVideoWidth = activeVideoTrack?.width || preview.canvasWidth;
+
+        // Sort images by their index in the tracks array to maintain layer order
+        // Lower index = rendered first = appears behind higher index tracks
+        const sortedImages = [...activeImages].sort((a, b) => {
+          const indexA = tracks.findIndex((t) => t.id === a.id);
+          const indexB = tracks.findIndex((t) => t.id === b.id);
+          return indexA - indexB;
+        });
+
+        return (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              width: actualWidth,
+              height: actualHeight,
+              left: `calc(50% + ${preview.panX}px)`,
+              top: `calc(50% + ${preview.panY}px)`,
+              transform: 'translate(-50%, -50%)',
+              overflow: 'hidden', // Clip images that go outside video canvas
+              zIndex:
+                sortedImages.length > 0
+                  ? Math.max(...sortedImages.map((t) => getTrackZIndex(t)))
+                  : 200,
+            }}
+          >
+            {sortedImages.map((track) => {
+              const imageUrl = track.previewUrl || track.source;
+
+              // Calculate adaptive image dimensions that fit canvas while preserving aspect ratio
+              // Priority: preserve width, adjust height to maintain aspect ratio
+              let defaultWidth = baseVideoWidth;
+              let defaultHeight = baseVideoHeight;
+
+              if (track.width && track.height) {
+                const imageAspectRatio = track.width / track.height;
+                const canvasAspectRatio = baseVideoWidth / baseVideoHeight;
+
+                if (imageAspectRatio > canvasAspectRatio) {
+                  // Image is wider than canvas - fit to width
+                  defaultWidth = baseVideoWidth;
+                  defaultHeight = baseVideoWidth / imageAspectRatio;
+                } else {
+                  // Image is taller than canvas - fit to height
+                  defaultHeight = baseVideoHeight;
+                  defaultWidth = baseVideoHeight * imageAspectRatio;
+                }
+              }
+
+              // Get image transform properties (default to centered, adaptive-fit if not set)
+              const imageTransform = track.textTransform || {
+                x: 0, // Centered
+                y: 0, // Centered
+                scale: 1, // 100% scale
+                rotation: 0, // No rotation
+                width: defaultWidth, // Adaptive width
+                height: defaultHeight, // Adaptive height
+              };
+
+              // Calculate position in pixels (from normalized coordinates)
+              // x and y are normalized (-1 to 1, where 0 is center)
+              const pixelX = imageTransform.x * (baseVideoWidth / 2);
+              const pixelY = imageTransform.y * (baseVideoHeight / 2);
+
+              // Calculate scaled dimensions
+              const scaledWidth =
+                (imageTransform.width || defaultWidth) * imageTransform.scale;
+              const scaledHeight =
+                (imageTransform.height || defaultHeight) * imageTransform.scale;
+
+              // Apply preview scale for zoom responsiveness
+              const displayWidth = scaledWidth * preview.previewScale;
+              const displayHeight = scaledHeight * preview.previewScale;
+              const displayX = pixelX * preview.previewScale;
+              const displayY = pixelY * preview.previewScale;
+
+              return (
+                <div
+                  key={track.id}
+                  className="absolute pointer-events-auto"
+                  style={{
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(-50%, -50%) translate(${displayX}px, ${displayY}px) rotate(${imageTransform.rotation}deg)`,
+                    width: `${displayWidth}px`,
+                    height: `${displayHeight}px`,
+                    opacity:
+                      track.textStyle?.opacity !== undefined
+                        ? track.textStyle.opacity / 100
+                        : 1,
+                    zIndex: getTrackZIndex(track), // Use timeline-based z-index
+                  }}
+                >
+                  <img
+                    src={imageUrl}
+                    alt={track.name}
+                    className="w-full h-full object-contain"
+                    style={{
+                      userSelect: 'none',
+                      pointerEvents: 'none',
+                    }}
+                    draggable={false}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       {/* Text Clips (Heading and Body) with Transform Controls */}
       {(() => {
         const activeTexts = getActiveTextTracks();
@@ -1555,7 +1722,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
         return (
           <div
-            className="absolute inset-0 pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
+            className="absolute inset-0 pointer-events-none"
             style={{
               width: actualWidth,
               height: actualHeight,
@@ -1563,6 +1730,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               top: `calc(50% + ${preview.panY}px)`,
               transform: 'translate(-50%, -50%)',
               overflow: 'hidden', // Clip text elements that go outside video canvas
+              zIndex:
+                activeTexts.length > 0
+                  ? Math.max(...activeTexts.map((t) => getTrackZIndex(t)))
+                  : 400,
             }}
           >
             {activeTexts.map((track) => {
