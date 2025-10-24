@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 interface TimelinePlayheadProps {
   currentFrame: number;
@@ -6,10 +6,18 @@ interface TimelinePlayheadProps {
   scrollX: number;
   visible: boolean;
   timelineScrollElement?: HTMLElement | null;
+  onStartDrag?: (e: React.MouseEvent) => void;
 }
 
 export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
-  ({ currentFrame, frameWidth, scrollX, visible, timelineScrollElement }) => {
+  ({
+    currentFrame,
+    frameWidth,
+    scrollX,
+    visible,
+    timelineScrollElement,
+    onStartDrag,
+  }) => {
     if (!visible) return null;
 
     const left = useMemo(
@@ -40,16 +48,35 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
       [left],
     );
 
+    const handleMouseDown = useCallback(
+      (e: React.MouseEvent) => {
+        // Only respond to left mouse button
+        if (e.button !== 0) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (onStartDrag) {
+          onStartDrag(e);
+        }
+      },
+      [onStartDrag],
+    );
+
     return (
       <>
+        {/* Playhead line - clickable for dragging */}
         <div
-          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-30 pointer-events-none will-change-transform"
+          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-30 cursor-ew-resize will-change-transform pointer-events-auto"
           style={styles.line}
+          onMouseDown={handleMouseDown}
         />
 
+        {/* Playhead handle - draggable */}
         <div
-          className="absolute -top-6 pointer-events-none z-30 will-change-transform"
+          className="absolute -top-6 z-30 cursor-grab active:cursor-grabbing will-change-transform pointer-events-auto"
           style={styles.handle}
+          onMouseDown={handleMouseDown}
         >
           <svg width="24" height="24" viewBox="0 0 24 24">
             <path
@@ -60,9 +87,11 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
           </svg>
         </div>
 
+        {/* Frame indicator - also draggable */}
         <div
-          className="absolute top-0.5 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-30 pointer-events-none will-change-transform"
+          className="absolute top-0.5 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-30 cursor-grab active:cursor-grabbing will-change-transform pointer-events-auto"
           style={styles.indicator}
+          onMouseDown={handleMouseDown}
         >
           {currentFrame}
         </div>
@@ -75,7 +104,8 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
       prevProps.frameWidth === nextProps.frameWidth &&
       prevProps.scrollX === nextProps.scrollX &&
       prevProps.visible === nextProps.visible &&
-      prevProps.timelineScrollElement === nextProps.timelineScrollElement
+      prevProps.timelineScrollElement === nextProps.timelineScrollElement &&
+      prevProps.onStartDrag === nextProps.onStartDrag
     );
   },
 );

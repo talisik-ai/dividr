@@ -8,6 +8,10 @@ export interface PlaybackState {
   wasPlayingBeforeDrag: boolean;
   magneticSnapFrame: number | null; // For visual indicator when Shift + dragging
 
+  // Playhead drag state for scrubbing
+  isDraggingPlayhead: boolean;
+  wasPlayingBeforePlayheadDrag: boolean;
+
   // Force drag tracking for progressive boundary bypass
   dragStartFrame: number | null; // Initial position when drag started
   boundaryCollisionCount: number; // Number of consecutive boundary collisions

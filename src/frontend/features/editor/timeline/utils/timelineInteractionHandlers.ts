@@ -54,6 +54,7 @@ export interface TimelineInteractionHandlers {
     startX: number,
   ) => void;
   onSplit: (frame: number, trackId: string) => void;
+  onStartPlayheadDrag?: () => void;
 }
 
 export interface TimelineState {
