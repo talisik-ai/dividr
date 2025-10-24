@@ -2,6 +2,7 @@ import { cn } from '@/frontend/utils/utils';
 import React, { useEffect, useRef } from 'react';
 import { VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
+import { ImageTrackStrip } from './imageTrackStrip';
 import { getTrackItemHeightClasses } from './utils/timelineConstants';
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
@@ -93,6 +94,18 @@ export const DragGhost: React.FC<DragGhostProps> = React.memo(
               zoomLevel={zoomLevel}
             />
           </div>
+        );
+      }
+
+      if (track.type === 'image') {
+        return (
+          <ImageTrackStrip
+            track={track}
+            frameWidth={frameWidth}
+            width={width}
+            height={44} // Use standard height for ghost
+            zoomLevel={zoomLevel}
+          />
         );
       }
 
