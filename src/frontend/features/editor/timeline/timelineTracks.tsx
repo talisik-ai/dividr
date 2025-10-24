@@ -487,10 +487,28 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             // Multi-selection detection (for UI/UX purposes)
             const isMultiSelection = allSelectedTrackIds.length > 1;
 
-            // Calculate target frame based on current mouse position
-            const deltaX = e.clientX - dragStart.x;
-            const deltaFrames = Math.round(deltaX / frameWidth);
-            const targetFrame = Math.max(0, dragStart.startFrame + deltaFrames);
+            // Calculate target frame using live scroll position
+            // Find the scroll container (the tracks scrollable area)
+            const scrollContainer = (e.target as HTMLElement).closest(
+              '.overflow-auto',
+            ) as HTMLElement | null;
+            const currentScrollX = scrollContainer?.scrollLeft || 0;
+            const scrollContainerRect =
+              scrollContainer?.getBoundingClientRect();
+            const mouseRelativeX = scrollContainerRect
+              ? e.clientX - scrollContainerRect.left
+              : e.clientX;
+
+            // Calculate target frame accounting for current scroll AND offset
+            const targetFrame = Math.max(
+              0,
+              Math.floor(
+                (mouseRelativeX +
+                  currentScrollX -
+                  dragOffsetRef.current.offsetX) /
+                  frameWidth,
+              ),
+            );
 
             // Initialize drag ghost with stored offset from mouseDown
             setDragGhost({
@@ -502,7 +520,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               offsetX: dragOffsetRef.current.offsetX,
               offsetY: dragOffsetRef.current.offsetY,
               targetRow: track.type,
-              targetFrame, // Use calculated target frame, not original position
+              targetFrame, // Use calculated target frame with live scroll
               isMultiSelection,
             });
           } else {
@@ -525,6 +543,14 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
         rafRef.current = requestAnimationFrame(() => {
+          // Find the scroll container for live scroll position
+          const scrollContainer = (e.target as HTMLElement).closest(
+            '.overflow-auto',
+          ) as HTMLElement | null;
+          const currentScrollX = scrollContainer?.scrollLeft || 0;
+          const scrollContainerRect = scrollContainer?.getBoundingClientRect();
+
+          // For resize operations, use delta-based calculation (scroll doesn't affect resize)
           const deltaX = e.clientX - dragStart.x;
           const deltaFrames = Math.round(deltaX / frameWidth);
 
@@ -614,8 +640,32 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
             onResize(undefined, newEndFrame);
           } else if (isDragging && dragThresholdMetRef.current) {
-            // Only process drag movement after threshold is met
-            let newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
+            // DRAG: Use absolute position calculation with live scroll
+            // This ensures drop location matches visual indicator during auto-scroll
+            if (!scrollContainerRect) {
+              // Fallback to delta-based if we can't find scroll container
+              const newStartFrame = Math.max(
+                0,
+                dragStart.startFrame + deltaFrames,
+              );
+              onMove(newStartFrame);
+              return;
+            }
+
+            const mouseRelativeX = e.clientX - scrollContainerRect.left;
+
+            // Calculate target frame accounting for current scroll AND drag offset
+            // This matches the dropzone indicator calculation in timeline.tsx
+            let newStartFrame = Math.max(
+              0,
+              Math.floor(
+                (mouseRelativeX +
+                  currentScrollX -
+                  dragOffsetRef.current.offsetX) /
+                  frameWidth,
+              ),
+            );
+
             const duration = dragStart.endFrame - dragStart.startFrame;
             const newEndFrame = newStartFrame + duration;
 

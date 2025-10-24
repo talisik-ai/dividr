@@ -221,6 +221,7 @@ export const createProjectSlice: StateCreator<
       const projectStore = useProjectStore.getState();
       projectStore.setCurrentProject(updatedProject);
     } catch (error) {
+      console.log(error);
       throw error;
     }
   },
