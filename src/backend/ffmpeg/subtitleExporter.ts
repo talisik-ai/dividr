@@ -619,9 +619,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       // Simple rendering without glow
       if (styleParams?.hasBackground && styleParams?.hasOutline) {
         // Double-layer: background + outlined text
-        const backgroundLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
+        // Adjust background box: wider by 4px, shorter by 4px
+        const xbord = styleParams.outlineWidth + 10;
+        const ybord = Math.max(0, styleParams.outlineWidth - 8);
+        const backgroundLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
         const textLayer = `Dialogue: 1,${startTime},${endTime},${styleName}Outline,,0,0,0,,${text}`;
         return `${backgroundLayer}\n${textLayer}`;
+      }
+
+      // For backgrounds without outline, also adjust box dimensions
+      if (styleParams?.hasBackground) {
+        const xbord = styleParams.outlineWidth + 10;
+        const ybord = Math.max(0, styleParams.outlineWidth - 8);
+        return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
       }
 
       return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
@@ -656,7 +666,8 @@ function generateGlowLayers(
   const glowBlurAmount = (params.glowIntensity || 2) + 10;
   const glowOverrides: string[] = [];
   glowOverrides.push(`\\blur${glowBlurAmount}`);
-  glowOverrides.push(`\\bord${params.outlineWidth * 3.25}`);
+  glowOverrides.push(`\\xbord${params.outlineWidth * 3.25 + 6}`); // Horizontal border (length)
+  glowOverrides.push(`\\ybord${params.outlineWidth * 3.25}`); // Vertical border (width)
   glowOverrides.push(`\\3c${glowColorASS}`);
   glowOverrides.push('\\1a&H00&');
   glowOverrides.push('\\shad0');
@@ -667,18 +678,28 @@ function generateGlowLayers(
   
   if (params.hasBackground && params.hasOutline) {
     // Triple-layer: glow + background + outlined text
-    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
+    // Adjust background box: wider by 4px, shorter by 4px
+    const xbord = params.outlineWidth + 10;
+    const ybord = Math.max(0, params.outlineWidth - 8);
+    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
     layers.push(backgroundLayer);
     
     const textLayer = `Dialogue: 2,${startTime},${endTime},${styleName}Outline,,0,0,0,,${text}`;
     layers.push(textLayer);
     
     console.log('✨ Triple-layer mode: glow + background + outlined text');
+  } else if (params.hasBackground) {
+    // Double-layer: glow + background (no outline)
+    // Adjust background box: wider by 4px, shorter by 4px
+    const xbord = params.outlineWidth + 10;
+    const ybord = Math.max(0, params.outlineWidth - 8);
+    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
+    layers.push(backgroundLayer);
+    
+    console.log('✨ Double-layer mode: glow + background');
   } else {
-    // Double-layer: glow + text
-    const mainLayer = params.hasOutline && params.hasBackground 
-      ? `Dialogue: 1,${startTime},${endTime},${styleName}Outline,,0,0,0,,${text}`
-      : `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
+    // Double-layer: glow + text (no background)
+    const mainLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
     layers.push(mainLayer);
     
     console.log('✨ Double-layer mode: glow + text');
@@ -738,7 +759,7 @@ function convertTextStyleToASS(textStyle?: TextStyleOptions): {
     // Check if the requested font is available
     if (isFontAvailable(requestedFont)) {
       fontFamily = requestedFont;
-      console.log(`✅ Using available font for ASS subtitles: ${fontFamily}`);
+      //console.log(`✅ Using available font for ASS subtitles: ${fontFamily}`);
     } else {
       console.warn(`⚠️ Font "${requestedFont}" not available, falling back to Arial`);
       fontFamily = 'Arial';
