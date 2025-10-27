@@ -223,18 +223,6 @@ function processLinkedTracks(
     }
   }
 
-  // Fallback to image dimensions if no video dimensions found
-  if (videoWidth === 1920 && videoHeight === 1080 && imageTracks.length > 0) {
-    const firstVisibleImage = imageTracks.find((track) => track.visible);
-    if (firstVisibleImage?.width && firstVisibleImage?.height) {
-      videoWidth = firstVisibleImage.width;
-      videoHeight = firstVisibleImage.height;
-      console.log(
-        `📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`,
-      );
-    }
-  }
-
   // Add all unprocessed audio tracks (process independently from video)
   console.log(`🔍 Adding unprocessed audio tracks...`);
   console.log(`   Total audio tracks: ${audioTracks.length}`);

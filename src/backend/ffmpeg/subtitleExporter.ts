@@ -34,6 +34,11 @@ export interface SubtitleSegment {
   text: string;
   index: number;
   style?: TextStyleOptions; // Per-segment styling
+  position?: {
+    x?: number; // X coordinate (0-1 normalized, or pixel value if > 1)
+    y?: number; // Y coordinate (0-1 normalized, or pixel value if > 1)
+    rotation?: number; // Rotation angle in degrees (clockwise)
+  };
 }
 
 export interface TextStyleOptions {
@@ -617,27 +622,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       // Convert newlines to ASS format
       text = text.replace(/\n/g, '\\N');
 
+      // Generate position tags if custom position is specified
+      const positionTags = generatePositionTags(segment.position, videoDimensions);
+
       // Handle glow effect with multi-layer rendering
       if (styleParams?.hasGlow) {
-        return generateGlowLayers(segment, text, styleName, mergedStyle, styleParams, startTime, endTime);
+        return generateGlowLayers(segment, text, styleName, mergedStyle, styleParams, startTime, endTime, videoDimensions);
       }
 
       // Simple rendering without glow
       if (styleParams?.hasBackground && styleParams?.hasOutline) {
         // Double-layer: background + outlined text
         const { xbord, ybord } = calculateBackgroundBoxDimensions(styleParams.outlineWidth);
-        const backgroundLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
-        const textLayer = `Dialogue: 1,${startTime},${endTime},${styleName}Outline,,0,0,0,,${text}`;
+        const backgroundLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
+        const textLayer = `Dialogue: 1,${startTime},${endTime},${styleName}Outline,,0,0,0,,${positionTags}${text}`;
         return `${backgroundLayer}\n${textLayer}`;
       }
 
       // For backgrounds without outline, also adjust box dimensions
       if (styleParams?.hasBackground) {
         const { xbord, ybord } = calculateBackgroundBoxDimensions(styleParams.outlineWidth);
-        return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
+        return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
       }
 
-      return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
+      return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${text}`;
     })
     .join('\n');
 
@@ -658,6 +666,65 @@ function calculateBackgroundBoxDimensions(outlineWidth: number): { xbord: number
 }
 
 /**
+ * Converts normalized or pixel coordinates to ASS pixel coordinates
+ * @param value - Coordinate value (0-1 for normalized, >1 for pixels)
+ * @param resolution - Video resolution (width or height)
+ * @returns Pixel coordinate for ASS
+ */
+function convertToASSCoordinate(value: number, resolution: number): number {
+  // If value is between 0 and 1, treat as normalized (percentage)
+  if (value >= 0 && value <= 1) {
+    return Math.round(value * resolution);
+  }
+  // Otherwise treat as absolute pixel value
+  return Math.round(value);
+}
+
+/**
+ * Generates ASS position and rotation override tags
+ * @param position - Position object with x, y, and rotation
+ * @param videoDimensions - Video dimensions for coordinate conversion
+ * @returns ASS override tags string (empty if no position specified)
+ */
+function generatePositionTags(
+  position?: SubtitleSegment['position'],
+  videoDimensions?: { width: number; height: number }
+): string {
+  if (!position) {
+    return '';
+  }
+
+  const tags: string[] = [];
+  const playResX = videoDimensions?.width || 1920;
+  const playResY = videoDimensions?.height || 1080;
+
+  // Add position override if x or y is specified
+  if (position.x !== undefined || position.y !== undefined) {
+    // Default to center if not specified
+    const x = position.x !== undefined 
+      ? convertToASSCoordinate(position.x, playResX)
+      : playResX / 2;
+    const y = position.y !== undefined
+      ? convertToASSCoordinate(position.y, playResY)
+      : playResY - 20; // Default bottom position with 20px margin
+
+    // \pos(x,y) - absolute position
+    tags.push(`\\pos(${x},${y})`);
+    
+    // When using \pos, we need to set alignment to center (5) for proper rotation pivot
+    tags.push('\\an5');
+  }
+
+  // Add rotation if specified
+  if (position.rotation !== undefined && position.rotation !== 0) {
+    // \frz<angle> - rotation around Z axis (2D rotation)
+    tags.push(`\\frz${position.rotation}`);
+  }
+
+  return tags.length > 0 ? `{${tags.join('')}}` : '';
+}
+
+/**
  * Generates multi-layer dialogue lines for glow effects
  */
 function generateGlowLayers(
@@ -668,8 +735,12 @@ function generateGlowLayers(
   params: ASSStyleParams,
   startTime: string,
   endTime: string,
+  videoDimensions?: { width: number; height: number },
 ): string {
   const layers: string[] = [];
+  
+  // Generate position tags if custom position is specified
+  const positionTags = generatePositionTags(segment.position, videoDimensions);
   
   // Determine glow color - use text color for the glow effect with opacity applied
   const glowColor = style?.color || '#FFFFFF';
@@ -686,29 +757,29 @@ function generateGlowLayers(
   glowOverrides.push('\\shad0');
   
   const glowTags = `{${glowOverrides.join('')}}`;
-  const glowLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${glowTags}${text}`;
+  const glowLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${glowTags}${text}`;
   layers.push(glowLayer);
   
   if (params.hasBackground && params.hasOutline) {
     // Triple-layer: glow + background + outlined text
     const { xbord, ybord } = calculateBackgroundBoxDimensions(params.outlineWidth);
-    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
+    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
     layers.push(backgroundLayer);
     
-    const textLayer = `Dialogue: 2,${startTime},${endTime},${styleName}Outline,,0,0,0,,${text}`;
+    const textLayer = `Dialogue: 2,${startTime},${endTime},${styleName}Outline,,0,0,0,,${positionTags}${text}`;
     layers.push(textLayer);
     
     console.log('✨ Triple-layer mode: glow + background + outlined text');
   } else if (params.hasBackground) {
     // Double-layer: glow + background (no outline)
     const { xbord, ybord } = calculateBackgroundBoxDimensions(params.outlineWidth);
-    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
+    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
     layers.push(backgroundLayer);
     
     console.log('✨ Double-layer mode: glow + background');
   } else {
     // Double-layer: glow + text (no background)
-    const mainLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${text}`;
+    const mainLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${text}`;
     layers.push(mainLayer);
     
     console.log('✨ Double-layer mode: glow + text');
