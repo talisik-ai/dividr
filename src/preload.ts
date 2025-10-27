@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cleanupTempFiles: (filePaths: string[]) =>
     ipcRenderer.invoke('cleanup-temp-files', filePaths),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  readFileAsBuffer: (filePath: string) =>
+    ipcRenderer.invoke('read-file-as-buffer', filePath),
 
   // FFmpeg API
   ffmpegRun: (job: VideoEditJob) => ipcRenderer.invoke('ffmpegRun', job),

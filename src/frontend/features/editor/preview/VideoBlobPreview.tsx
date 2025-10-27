@@ -1013,47 +1013,24 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             const importedCount = result.importedFiles.length;
             const rejectedCount = result.rejectedFiles?.length || 0;
 
-            // Show detailed rejection info if any files were rejected
-            if (rejectedCount > 0 && result.rejectedFiles) {
-              // Group rejections by reason
-              const reasonGroups = result.rejectedFiles.reduce(
-                (acc, file) => {
-                  const reason = file.reason || 'Unknown error';
-                  if (!acc[reason]) {
-                    acc[reason] = [];
-                  }
-                  acc[reason].push(file.name);
-                  return acc;
-                },
-                {} as Record<string, string[]>,
-              );
-
-              // Show detailed warnings for each rejection reason
-              Object.entries(reasonGroups).forEach(([reason, fileNames]) => {
-                const fileList =
-                  fileNames.length > 3
-                    ? `${fileNames.slice(0, 3).join(', ')} and ${fileNames.length - 3} more`
-                    : fileNames.join(', ');
-
-                toast.warning(`${fileList}: ${reason}`, {
-                  duration: 6000,
-                });
-              });
-            }
-
             // Return success message
             if (importedCount > 0) {
-              return `Added ${importedCount} ${importedCount === 1 ? 'file' : 'files'} to timeline`;
+              return (
+                `Added ${importedCount} ${importedCount === 1 ? 'file' : 'files'} to timeline` +
+                (rejectedCount > 0 ? ` (${rejectedCount} rejected)` : '')
+              );
             } else {
-              throw new Error('No files could be added to timeline');
+              throw new Error(
+                'All files were rejected due to corruption or invalid format',
+              );
             }
           },
           error: (error) => {
-            // Show detailed error message
-            if (error?.error) {
-              return `Import failed: ${error.error}`;
-            }
-            return 'Failed to add files to timeline. Please try again.';
+            // Use the actual error message from validation results
+            const errorMessage =
+              error?.error ||
+              'All files were rejected due to corruption or invalid format';
+            return errorMessage;
           },
         });
 
@@ -2029,7 +2006,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               : 'border-accent hover:!border-secondary hover:bg-secondary/10',
           )}
           onClick={async () => {
-            await importMediaFromDialog();
+            const result = await importMediaFromDialog();
+            if (result.success && result.importedFiles.length > 0) {
+              console.log(
+                `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
+              );
+            } else {
+              // Use the actual error message from validation results
+              const errorMessage =
+                result.error ||
+                'All files were rejected due to corruption or invalid format';
+              toast.error(errorMessage);
+            }
           }}
         >
           <img src={theme === 'dark' ? NewDark : New} alt="New Project" />
