@@ -17,7 +17,7 @@ import {
   VideoEditJob,
   VideoProcessingContext,
 } from './schema/ffmpegConfig';
-import { getFontPathByStyle, getFontPathsForFamilies } from './fontMapper';
+import { getFontPathByStyle, getFontPathsForFamilies, getFontDirectoriesForFamilies } from './fontMapper';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -1401,6 +1401,44 @@ function buildImageOverlayFilters(
 }
 
 /**
+ * Builds the font directories parameter for FFmpeg subtitle filter
+ * Collects all unique font directories used by the subtitle font families
+ * and formats them for FFmpeg's fontsdir parameter
+ * @param fontFamilies - Array of font family names used in subtitles
+ * @returns Formatted fontsdir parameter string, or empty string if no valid directories
+ */
+function buildFontDirectoriesParameter(fontFamilies: string[]): string {
+  if (!fontFamilies || fontFamilies.length === 0) {
+    return '';
+  }
+
+  console.log('📝 Font families used in subtitles:', fontFamilies);
+  
+  // Get all unique font directories
+  const fontDirectories = getFontDirectoriesForFamilies(fontFamilies);
+  console.log('📝 Resolved font directories:', fontDirectories);
+  
+  if (fontDirectories.length === 0) {
+    return '';
+  }
+
+  // Escape each directory path for FFmpeg filter syntax
+  const escapedDirs = fontDirectories.map(dir => {
+    const escapedDir = dir.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+    return escapedDir;
+  });
+
+  // Join all directories with the platform-specific path separator
+  // FFmpeg expects multiple directories separated by ':' on Unix or ';' on Windows
+  const separator = process.platform === 'win32' ? ';' : ':';
+  const joinedDirs = escapedDirs.join(separator);
+  
+  console.log('📝 Using fonts directories:', joinedDirs);
+  
+  return `:fontsdir='${joinedDirs}'`;
+}
+
+/**
  * Determines the target dimensions for video processing
  * Prioritizes actual video file dimensions over project dimensions
  */
@@ -1670,18 +1708,8 @@ function buildSeparateTimelineFilterComplex(
     // Get font directories for the fonts used in subtitles
     let fontsDirParam = '';
     if (job.subtitleFontFamilies && job.subtitleFontFamilies.length > 0) {
-      console.log('📝 Font families used in subtitles:', job.subtitleFontFamilies);
-      const fontPaths = getFontPathsForFamilies(job.subtitleFontFamilies);
-      console.log('📝 Resolved font file paths:', fontPaths);
-      
-      // Get the directory of the first font (they should all be in family-specific directories)
-      if (fontPaths.length > 0) {
-        const pathModule = require('path');
-        const fontDir = pathModule.dirname(fontPaths[0]);
-        const escapedFontDir = fontDir.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-        fontsDirParam = `:fontsdir='${escapedFontDir}'`;
-        console.log('📝 Using fonts directory:', fontDir);
-      }
+      // Use the new method to build font directories parameter
+      fontsDirParam = buildFontDirectoriesParameter(job.subtitleFontFamilies);
     }
     
     if (fileExtension === 'ass' || fileExtension === 'ssa') {
