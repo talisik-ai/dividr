@@ -441,7 +441,7 @@ function computeASSStyleParams(
                               effectiveStrokeColor.match(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)/);
   
   const hasOutline = !isTransparentStroke;
-  const outlineWidth = hasOutline ? 2.5 : 0;
+  const outlineWidth = hasOutline ? 1.5 : 0;
   
   // Convert strokeColor to ASS BGR format with opacity applied
   let outlineColor = '&H00000000'; // Default: black
@@ -652,8 +652,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  */
 function calculateBackgroundBoxDimensions(outlineWidth: number): { xbord: number; ybord: number } {
   return {
-    xbord: outlineWidth + 10,
-    ybord: Math.max(0, outlineWidth - 8),
+    xbord: outlineWidth + 10, 
+    ybord: 0,  // No vertical padding - tight fit to text
   };
 }
 
