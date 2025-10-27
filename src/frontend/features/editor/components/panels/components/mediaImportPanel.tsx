@@ -155,6 +155,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
         // Import files
         const result = await importMediaFromDrop(files);
+        if (!result || (!result.success && !result.error)) return;
 
         // Dismiss loading toast
         toast.dismiss(loadingToast);
@@ -401,6 +402,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         onDrop={handleDrop}
         onClick={async () => {
           const result = await importMediaFromDialog();
+          if (!result || (!result.success && !result.error)) return;
+
           if (result.success && result.importedFiles.length > 0) {
             console.log(
               `✅ Successfully imported ${result.importedFiles.length} files via dialog`,
@@ -822,6 +825,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           <Button
             onClick={async () => {
               const result = await importMediaFromDialog();
+              if (!result || (!result.success && !result.error)) return;
+
               if (result.success && result.importedFiles.length > 0) {
                 console.log(
                   `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
