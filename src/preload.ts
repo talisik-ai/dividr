@@ -187,7 +187,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   whisperTranscribe: (
     audioPath: string,
     options?: {
-      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
       language?: string;
       translate?: boolean;
       wordTimestamps?: boolean;
@@ -212,6 +212,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Remove progress listener
   removeWhisperProgressListener: () =>
     ipcRenderer.removeAllListeners('whisper:progress'),
+
+  // Check if media file has audio
+  mediaHasAudio: (filePath: string) =>
+    ipcRenderer.invoke('media:has-audio', filePath),
 });
 
 contextBridge.exposeInMainWorld('appControl', {

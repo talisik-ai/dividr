@@ -826,9 +826,14 @@ export const createFileProcessingSlice: StateCreator<
 
     // Flatten tracks array (subtitle files return arrays of tracks) and filter out null/undefined
     const validTracks = newTracks.flat().filter(Boolean);
-    await Promise.all(
-      validTracks.map((track) => (get() as any).addTrack(track)),
-    );
+
+    // Use batch addTracks for better performance when adding multiple tracks
+    if (validTracks.length > 1) {
+      console.log(`🚀 Adding ${validTracks.length} tracks in batch...`);
+      await (get() as any).addTracks(validTracks);
+    } else if (validTracks.length === 1) {
+      await (get() as any).addTrack(validTracks[0]);
+    }
   },
 
   importMediaFromDrop: async (files: File[]): Promise<ImportResult> => {

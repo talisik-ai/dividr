@@ -11,6 +11,7 @@ import {
 } from '@/frontend/components/ui/select';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
+import { Switch } from '@/frontend/components/ui/switch';
 import { Textarea } from '@/frontend/components/ui/textarea';
 import {
   ToggleGroup,
@@ -627,16 +628,12 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">Shadow</label>
             <div className="flex items-center gap-1">
-              <Button
-                variant={
-                  textStyle.globalControls.hasShadow ? 'default' : 'outline'
-                }
-                size="sm"
-                onClick={toggleShadow}
-                className="h-7 w-14 text-xs"
-              >
-                {textStyle.globalControls.hasShadow ? 'On' : 'Off'}
-              </Button>
+              <Switch
+                checked={textStyle.globalControls.hasShadow}
+                onCheckedChange={toggleShadow}
+                className="h-4 w-7"
+                thumbClassName="size-3.5"
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -662,14 +659,12 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-sm font-semibold text-foreground">Glow</label>
-          <Button
-            variant={textStyle.globalControls.hasGlow ? 'default' : 'outline'}
-            size="sm"
-            onClick={toggleGlow}
-            className="h-7 w-14 text-xs"
-          >
-            {textStyle.globalControls.hasGlow ? 'On' : 'Off'}
-          </Button>
+          <Switch
+            checked={textStyle.globalControls.hasGlow}
+            onCheckedChange={toggleGlow}
+            className="h-4 w-7"
+            thumbClassName="size-3.5"
+          />
         </div>
       </div>
 

@@ -2049,7 +2049,7 @@ ipcMain.handle(
     event,
     audioPath: string,
     options?: {
-      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
       language?: string;
       translate?: boolean;
       wordTimestamps?: boolean;
@@ -2101,6 +2101,73 @@ ipcMain.handle('whisper:status', async () => {
   console.log('   Status:', status);
 
   return status;
+});
+
+// IPC Handler to check if a media file has audio
+ipcMain.handle('media:has-audio', async (event, filePath: string) => {
+  console.log('🔊 MAIN PROCESS: media:has-audio handler called');
+  console.log('   File path:', filePath);
+
+  if (!ffmpegPath) {
+    return {
+      success: false,
+      hasAudio: false,
+      error: 'FFmpeg binary not available',
+    };
+  }
+
+  try {
+    return new Promise((resolve) => {
+      const ffprobe = spawn(ffmpegPath, [
+        '-i',
+        filePath,
+        '-show_streams',
+        '-select_streams',
+        'a',
+        '-loglevel',
+        'error',
+      ]);
+
+      let stdout = '';
+      let stderr = '';
+
+      ffprobe.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      ffprobe.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      ffprobe.on('close', (code) => {
+        // If there's audio stream info in stdout, the file has audio
+        const hasAudio = stdout.includes('[STREAM]');
+
+        console.log(`   Has audio: ${hasAudio} (exit code: ${code})`);
+
+        resolve({
+          success: true,
+          hasAudio,
+        });
+      });
+
+      ffprobe.on('error', (error) => {
+        console.error('   FFprobe error:', error);
+        resolve({
+          success: false,
+          hasAudio: false,
+          error: error.message,
+        });
+      });
+    });
+  } catch (error) {
+    console.error('❌ Error checking audio:', error);
+    return {
+      success: false,
+      hasAudio: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 });
 
 const createWindow = () => {

@@ -252,6 +252,7 @@ const resizeTrackWithTrimming = (
 export interface TracksSlice {
   tracks: VideoTrack[];
   addTrack: (track: Omit<VideoTrack, 'id'>) => Promise<string>;
+  addTracks: (tracks: Omit<VideoTrack, 'id'>[]) => Promise<string[]>;
   addTrackFromMediaLibrary: (
     mediaId: string,
     startFrame?: number,
@@ -468,6 +469,112 @@ export const createTracksSlice: StateCreator<
     }
   },
 
+  addTracks: async (tracksData) => {
+    const state = get() as any;
+    const trackIds: string[] = [];
+
+    // Begin grouped transaction for batch track addition
+    state.beginGroup?.('Add Multiple Tracks');
+
+    try {
+      // Process all tracks in a single state update for better performance
+      const newTracks: VideoTrack[] = [];
+
+      for (const trackData of tracksData) {
+        const id = uuidv4();
+
+        // For video tracks (which create video+audio pairs)
+        if (trackData.type === 'video') {
+          const audioId = uuidv4();
+          const duration = trackData.endFrame - trackData.startFrame;
+          const existingVideoTracks = state.tracks.filter(
+            (t: VideoTrack) => t.type === 'video',
+          );
+          const existingAudioTracks = state.tracks.filter(
+            (t: VideoTrack) => t.type === 'audio',
+          );
+
+          const videoStartFrame = findNearestAvailablePosition(
+            trackData.startFrame,
+            duration,
+            existingVideoTracks,
+          );
+          const audioStartFrame = findNearestAvailablePosition(
+            trackData.startFrame,
+            duration,
+            existingAudioTracks,
+          );
+
+          const mediaItem = state.mediaLibrary?.find(
+            (item: any) =>
+              item.source === trackData.source && item.type === 'video',
+          );
+          const extractedAudio = mediaItem?.extractedAudio;
+
+          const videoTrack: VideoTrack = {
+            ...trackData,
+            id,
+            type: 'video',
+            startFrame: videoStartFrame,
+            endFrame: videoStartFrame + duration,
+            sourceStartTime: trackData.sourceStartTime || 0,
+            sourceDuration: duration,
+            color: getTrackColor(state.tracks.length + newTracks.length),
+            muted: false,
+            linkedTrackId: audioId,
+            isLinked: true,
+          };
+
+          const audioTrack: VideoTrack = {
+            ...trackData,
+            id: audioId,
+            type: 'audio',
+            startFrame: audioStartFrame,
+            endFrame: audioStartFrame + duration,
+            sourceStartTime: trackData.sourceStartTime || 0,
+            sourceDuration: duration,
+            color: getTrackColor(state.tracks.length + newTracks.length + 1),
+            muted: false,
+            linkedTrackId: id,
+            isLinked: true,
+            source: extractedAudio?.audioPath || trackData.source,
+            previewUrl: extractedAudio?.previewUrl || trackData.previewUrl,
+          };
+
+          newTracks.push(videoTrack);
+          newTracks.push(audioTrack);
+          trackIds.push(id, audioId);
+        } else {
+          // For non-video tracks
+          const newTrack: VideoTrack = {
+            ...trackData,
+            id,
+            color: getTrackColor(state.tracks.length + newTracks.length),
+          };
+
+          newTracks.push(newTrack);
+          trackIds.push(id);
+        }
+      }
+
+      // Single state update for all tracks
+      set((state) => ({
+        tracks: [...state.tracks, ...newTracks],
+      }));
+
+      // Refresh state reference
+      const currentState = get() as any;
+      currentState.markUnsavedChanges?.();
+
+      console.log(`✅ Added ${newTracks.length} tracks in batch`);
+    } finally {
+      // End grouped transaction
+      state.endGroup?.();
+    }
+
+    return trackIds;
+  },
+
   addTrackFromMediaLibrary: async (mediaId, startFrame = 0) => {
     const state = get() as any;
     const mediaItem = state.mediaLibrary?.find(
@@ -509,23 +616,14 @@ export const createTracksSlice: StateCreator<
             mediaItem.previewUrl,
           );
 
-          // Begin grouped transaction for all subtitle segments
-          state.beginGroup?.(`Import Subtitle File: ${mediaItem.name}`);
-
-          // Add each subtitle segment as a track preserving original timing
-          const addedIds: string[] = [];
-
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          for (const [_index, track] of subtitleTracks.entries()) {
-            const trackId = await get().addTrack(track);
-            addedIds.push(trackId);
-          }
-
-          // End grouped transaction - all subtitle segments as one atomic action
-          state.endGroup?.();
+          // Use batch addTracks for better performance
+          console.log(
+            `🚀 Adding ${subtitleTracks.length} subtitle tracks in batch...`,
+          );
+          const addedIds = await get().addTracks(subtitleTracks);
 
           console.log(
-            `✅ Imported ${subtitleTracks.length} subtitle segments as grouped transaction`,
+            `✅ Imported ${subtitleTracks.length} subtitle segments using batch operation`,
           );
 
           return addedIds[0] || ''; // Return first track ID for consistency

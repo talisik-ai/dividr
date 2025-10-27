@@ -237,7 +237,7 @@ declare global {
       whisperTranscribe: (
         audioPath: string,
         options?: {
-          model?: 'tiny' | 'base' | 'small' | 'medium' | 'large';
+          model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
           language?: string;
           translate?: boolean;
           wordTimestamps?: boolean;
@@ -293,6 +293,15 @@ declare global {
        * Remove progress listener
        */
       removeWhisperProgressListener: () => void;
+
+      /**
+       * Check if media file has audio
+       */
+      mediaHasAudio: (filePath: string) => Promise<{
+        success: boolean;
+        hasAudio: boolean;
+        error?: string;
+      }>;
     };
     appControl: {
       showWindow: () => Promise<boolean>;

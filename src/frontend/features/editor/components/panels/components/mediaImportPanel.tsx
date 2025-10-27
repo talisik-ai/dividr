@@ -291,9 +291,117 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     [addTrackFromMediaLibrary],
   );
 
-  const handleGenerateKaraokeSubtitles = useCallback((fileId: string) => {
-    toast.info('Karaoke subtitle generation coming soon!');
-    console.log('Generate karaoke subtitles for:', fileId);
+  const generateKaraokeSubtitles = useVideoEditorStore(
+    (state) => state.generateKaraokeSubtitles,
+  );
+  const removeTrack = useVideoEditorStore((state) => state.removeTrack);
+
+  const [karaokeConfirmation, setKaraokeConfirmation] = useState<{
+    show: boolean;
+    mediaId: string | null;
+    mediaName: string;
+    existingSubtitleCount: number;
+  }>({
+    show: false,
+    mediaId: null,
+    mediaName: '',
+    existingSubtitleCount: 0,
+  });
+
+  const handleGenerateKaraokeSubtitles = useCallback(
+    (fileId: string) => {
+      const mediaItem = mediaLibrary.find((item) => item.id === fileId);
+      if (!mediaItem) {
+        toast.error('Media item not found');
+        return;
+      }
+
+      // Check if there are existing subtitle tracks
+      const existingSubtitles = tracks.filter(
+        (track) => track.type === 'subtitle',
+      );
+
+      if (existingSubtitles.length > 0) {
+        // Show confirmation dialog
+        setKaraokeConfirmation({
+          show: true,
+          mediaId: fileId,
+          mediaName: mediaItem.name,
+          existingSubtitleCount: existingSubtitles.length,
+        });
+      } else {
+        // No existing subtitles, proceed directly
+        handleConfirmKaraokeGeneration(fileId);
+      }
+    },
+    [mediaLibrary, tracks],
+  );
+
+  const handleConfirmKaraokeGeneration = useCallback(
+    async (fileId: string, deleteExisting = false) => {
+      const mediaItem = mediaLibrary.find((item) => item.id === fileId);
+      if (!mediaItem) {
+        toast.error('Media item not found');
+        return;
+      }
+
+      // Delete existing subtitles if requested
+      if (deleteExisting) {
+        const existingSubtitles = tracks.filter(
+          (track) => track.type === 'subtitle',
+        );
+        console.log(
+          `🗑️ Deleting ${existingSubtitles.length} existing subtitle tracks...`,
+        );
+        for (const track of existingSubtitles) {
+          removeTrack(track.id);
+        }
+      }
+
+      // Show loading toast
+      const loadingToast = toast.loading(
+        `Generating karaoke subtitles for "${mediaItem.name}"...`,
+      );
+
+      try {
+        const result = await generateKaraokeSubtitles(fileId, {
+          model: 'base',
+          onProgress: (progress) => {
+            console.log('Transcription progress:', progress);
+          },
+        });
+
+        toast.dismiss(loadingToast);
+
+        if (result.success && result.trackIds) {
+          toast.success(
+            `Successfully generated ${result.trackIds.length} karaoke subtitle tracks!`,
+          );
+        } else {
+          toast.error(result.error || 'Failed to generate karaoke subtitles');
+        }
+      } catch (error) {
+        toast.dismiss(loadingToast);
+        console.error('Error generating karaoke subtitles:', error);
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : 'Failed to generate karaoke subtitles',
+        );
+      }
+    },
+    [mediaLibrary, tracks, generateKaraokeSubtitles, removeTrack],
+  );
+
+  const handleKaraokeDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setKaraokeConfirmation({
+        show: false,
+        mediaId: null,
+        mediaName: '',
+        existingSubtitleCount: 0,
+      });
+    }
   }, []);
 
   const formatFileSize = (bytes: number): string => {
@@ -868,6 +976,80 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={karaokeConfirmation.show}
+        onOpenChange={handleKaraokeDialogOpenChange}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Generate Karaoke Subtitles</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                Generate karaoke subtitles for{' '}
+                <span className="font-semibold text-foreground">
+                  "{karaokeConfirmation.mediaName}"
+                </span>
+                ?
+              </p>
+              {karaokeConfirmation.existingSubtitleCount > 0 && (
+                <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-3">
+                  <p className="text-amber-600 dark:text-amber-400 font-medium text-sm">
+                    ⚠️ You have {karaokeConfirmation.existingSubtitleCount}{' '}
+                    existing subtitle track
+                    {karaokeConfirmation.existingSubtitleCount !== 1
+                      ? 's'
+                      : ''}{' '}
+                    on the timeline.
+                  </p>
+                  <p className="text-amber-600/80 dark:text-amber-400/80 text-xs mt-1">
+                    Do you want to delete them before generating new karaoke
+                    subtitles?
+                  </p>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                This will use Whisper AI to transcribe the audio and create
+                word-level subtitle tracks for karaoke-style animations.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {karaokeConfirmation.existingSubtitleCount > 0 && (
+              <AlertDialogAction
+                onClick={() => {
+                  if (karaokeConfirmation.mediaId) {
+                    handleConfirmKaraokeGeneration(
+                      karaokeConfirmation.mediaId,
+                      true,
+                    );
+                    handleKaraokeDialogOpenChange(false);
+                  }
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete & Generate
+              </AlertDialogAction>
+            )}
+            <AlertDialogAction
+              onClick={() => {
+                if (karaokeConfirmation.mediaId) {
+                  handleConfirmKaraokeGeneration(
+                    karaokeConfirmation.mediaId,
+                    false,
+                  );
+                  handleKaraokeDialogOpenChange(false);
+                }
+              }}
+            >
+              {karaokeConfirmation.existingSubtitleCount > 0
+                ? 'Keep & Generate'
+                : 'Generate'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
