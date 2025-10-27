@@ -104,6 +104,7 @@ declare global {
         error?: string;
       }>;
       readFile: (filePath: string) => Promise<string>;
+      readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
 
       // Subtitle file operations
       writeSubtitleFile: (options: {

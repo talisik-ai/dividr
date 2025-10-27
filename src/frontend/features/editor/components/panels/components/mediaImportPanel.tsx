@@ -147,63 +147,44 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
-      // Show immediate loading toast with promise
-      const importPromise = importMediaFromDrop(files);
-
-      toast.promise(importPromise, {
-        loading: `Importing ${files.length} ${files.length === 1 ? 'file' : 'files'}...`,
-        success: (result) => {
-          const importedCount = result.importedFiles.length;
-          const rejectedCount = result.rejectedFiles?.length || 0;
-
-          // Show detailed rejection info if any files were rejected
-          if (rejectedCount > 0 && result.rejectedFiles) {
-            // Group rejections by reason
-            const reasonGroups = result.rejectedFiles.reduce(
-              (acc, file) => {
-                const reason = file.reason || 'Unknown error';
-                if (!acc[reason]) {
-                  acc[reason] = [];
-                }
-                acc[reason].push(file.name);
-                return acc;
-              },
-              {} as Record<string, string[]>,
-            );
-
-            // Show detailed warnings for each rejection reason
-            Object.entries(reasonGroups).forEach(([reason, fileNames]) => {
-              const fileList =
-                fileNames.length > 3
-                  ? `${fileNames.slice(0, 3).join(', ')} and ${fileNames.length - 3} more`
-                  : fileNames.join(', ');
-
-              toast.warning(`${fileList}: ${reason}`, {
-                duration: 6000,
-              });
-            });
-          }
-
-          // Return success message
-          if (importedCount > 0) {
-            return `Successfully imported ${importedCount} ${importedCount === 1 ? 'file' : 'files'}`;
-          } else {
-            throw new Error('No files could be imported');
-          }
-        },
-        error: (error) => {
-          // Show detailed error message
-          if (error?.error) {
-            return `Import failed: ${error.error}`;
-          }
-          return 'Failed to import files. Please try again.';
-        },
-      });
-
       try {
-        await importPromise;
-      } catch (error) {
+        // Show loading toast
+        const loadingToast = toast.loading(
+          `Validating and importing ${files.length} ${files.length === 1 ? 'file' : 'files'}...`,
+        );
+
+        // Import files
+        const result = await importMediaFromDrop(files);
+
+        // Dismiss loading toast
+        toast.dismiss(loadingToast);
+
+        // Handle results
+        const importedCount = result.importedFiles.length;
+        const rejectedCount = result.rejectedFiles?.length || 0;
+
+        // Show final status message
+        if (importedCount > 0) {
+          toast.success(
+            `Successfully imported ${importedCount} ${importedCount === 1 ? 'file' : 'files'}` +
+              (rejectedCount > 0 ? ` (${rejectedCount} rejected)` : ''),
+          );
+        } else if (rejectedCount > 0) {
+          // Use the actual error message from validation results
+          const errorMessage =
+            result.error ||
+            'All files were rejected due to corruption or invalid format';
+          toast.error(errorMessage);
+        } else {
+          toast.error('No files to import');
+        }
+      } catch (error: unknown) {
         console.error('Error handling files:', error);
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : 'Failed to import files. Please try again.',
+        );
       }
     },
     [importMediaFromDrop],
@@ -424,6 +405,12 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
             console.log(
               `✅ Successfully imported ${result.importedFiles.length} files via dialog`,
             );
+          } else {
+            // Use the actual error message from validation results
+            const errorMessage =
+              result.error ||
+              'All files were rejected due to corruption or invalid format';
+            toast.error(errorMessage);
           }
         }}
       >
@@ -839,6 +826,12 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 console.log(
                   `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
                 );
+              } else {
+                // Use the actual error message from validation results
+                const errorMessage =
+                  result.error ||
+                  'All files were rejected due to corruption or invalid format';
+                toast.error(errorMessage);
               }
             }}
             className="w-full"

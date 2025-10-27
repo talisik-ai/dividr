@@ -1478,6 +1478,32 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
   }
 });
 
+// IPC Handler for reading file as ArrayBuffer (for validation)
+ipcMain.handle('read-file-as-buffer', async (event, filePath: string) => {
+  try {
+    console.log(`📖 Reading file as buffer from: ${filePath}`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    // Read file as Buffer
+    const buffer = fs.readFileSync(filePath);
+    console.log(
+      `📄 Successfully read file buffer, size: ${buffer.length} bytes`,
+    );
+
+    // Convert Node Buffer to ArrayBuffer for transfer to renderer
+    return buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength,
+    );
+  } catch (error) {
+    console.error(`❌ Failed to read file as buffer ${filePath}:`, error);
+    throw error;
+  }
+});
+
 // IPC Handler for creating preview URLs from file paths
 ipcMain.handle('create-preview-url', async (event, filePath: string) => {
   try {

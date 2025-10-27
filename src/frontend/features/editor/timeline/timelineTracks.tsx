@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { toast } from 'sonner';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
@@ -1256,6 +1257,12 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           'Files imported successfully from timeline placeholder:',
           result.importedFiles,
         );
+      } else {
+        // Use the actual error message from validation results
+        const errorMessage =
+          result.error ||
+          'All files were rejected due to corruption or invalid format';
+        toast.error(errorMessage);
       }
     }, [importMediaFromDialog]);
 
