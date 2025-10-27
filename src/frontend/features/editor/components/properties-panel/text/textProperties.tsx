@@ -11,6 +11,7 @@ import {
 } from '@/frontend/components/ui/select';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
+import { Switch } from '@/frontend/components/ui/switch';
 import { Textarea } from '@/frontend/components/ui/textarea';
 import {
   ToggleGroup,
@@ -661,16 +662,14 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">Shadow</label>
             <div className="flex items-center gap-1">
-              <Button
-                variant={currentStyle.hasShadow ? 'default' : 'outline'}
-                size="sm"
-                onClick={() =>
+              <Switch
+                checked={currentStyle.hasShadow}
+                onCheckedChange={() =>
                   updateTextStyle({ hasShadow: !currentStyle.hasShadow })
                 }
-                className="h-7 w-14 text-xs"
-              >
-                {currentStyle.hasShadow ? 'On' : 'Off'}
-              </Button>
+                className="h-4 w-7"
+                thumbClassName="size-3.5"
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -696,14 +695,14 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-sm font-semibold text-foreground">Glow</label>
-          <Button
-            variant={currentStyle.hasGlow ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => updateTextStyle({ hasGlow: !currentStyle.hasGlow })}
-            className="h-7 w-14 text-xs"
-          >
-            {currentStyle.hasGlow ? 'On' : 'Off'}
-          </Button>
+          <Switch
+            checked={currentStyle.hasGlow}
+            onCheckedChange={() =>
+              updateTextStyle({ hasGlow: !currentStyle.hasGlow })
+            }
+            className="h-4 w-7"
+            thumbClassName="size-3.5"
+          />
         </div>
       </div>
 

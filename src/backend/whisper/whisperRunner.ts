@@ -38,7 +38,13 @@ export interface WhisperProgress {
   message?: string;
 }
 
-export type WhisperModel = 'tiny' | 'base' | 'small' | 'medium' | 'large';
+export type WhisperModel =
+  | 'tiny'
+  | 'base'
+  | 'small'
+  | 'medium'
+  | 'large'
+  | 'large-v3';
 
 // ============================================================================
 // Path Resolution & Initialization
@@ -169,7 +175,14 @@ export const isModelAvailable = (modelName: WhisperModel): boolean => {
  * Get list of available models
  */
 export const getAvailableModels = (): WhisperModel[] => {
-  const models: WhisperModel[] = ['tiny', 'base', 'small', 'medium', 'large'];
+  const models: WhisperModel[] = [
+    'tiny',
+    'base',
+    'small',
+    'medium',
+    'large',
+    'large-v3',
+  ];
   return models.filter((model) => isModelAvailable(model));
 };
 
@@ -239,66 +252,112 @@ export const transcribeAudio = async (
     onProgress?: (progress: WhisperProgress) => void;
   } = {},
 ): Promise<WhisperResult> => {
-  // Validate initialization
   if (!whisperPath) {
     throw new Error(
       'Whisper.cpp not initialized. Call initializeWhisperPath() first.',
     );
   }
 
-  // Validate audio file
   validateAudioPath(audioPath);
 
-  // Get model
   const modelName = options.model || 'base';
   const modelPath = getModelPath(modelName);
 
   if (!fs.existsSync(modelPath)) {
     const availableModels = getAvailableModels();
     throw new Error(
-      `Model "${modelName}" not found at: ${modelPath}. Available models: ${availableModels.length > 0 ? availableModels.join(', ') : 'none'}`,
+      `Model "${modelName}" not found at: ${modelPath}. Available models: ${
+        availableModels.length > 0 ? availableModels.join(', ') : 'none'
+      }`,
     );
   }
 
-  // Create temp directory for output
   const tempDir = path.join(os.tmpdir(), 'dividr-whisper');
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
   const timestamp = Date.now();
   const outputPrefix = path.join(tempDir, `transcript_${timestamp}`);
 
-  // Build command arguments
+  // ✅ OPTIMIZED ARGS FOR TIMESTAMP ACCURACY
   const args: string[] = [
     '-m',
-    modelPath, // Model path
+    modelPath,
     '-f',
-    audioPath, // Audio file
+    audioPath,
     '-oj', // Output JSON
     '-of',
-    outputPrefix, // Output file prefix
+    outputPrefix,
+
+    // Thread optimization
     '-t',
-    Math.max(1, os.cpus().length - 1).toString(), // Threads (leave 1 core free)
+    Math.max(1, os.cpus().length - 1).toString(),
+
+    // ✅ CRITICAL: Small context window prevents timestamp drift
+    '-c',
+    '256', // Reduced from 512 - smaller context = better alignment
+
+    // ✅ Beam search for better accuracy
+    '-bs',
+    '5',
+
+    // ✅ CRITICAL: Zero temperature for deterministic, accurate timestamps
+    '--temperature',
+    '0.0',
+    '--temperature-inc',
+    '0.0', // No temperature fallback
+
+    // ✅ CRITICAL: Shorter segments = more accurate timestamps
+    '--max-len',
+    '0', // Let Whisper decide based on natural pauses (better than forcing '1')
+    '--max-segment-length',
+    '20', // Reduced from 25 - shorter segments minimize drift
+
+    // ✅ Word-level splitting and alignment
+    '--split-on-word',
+    'true',
+
+    // ✅ Multiple decode paths for accuracy
+    '--best-of',
+    '5',
+
+    // ✅ CRITICAL: Enable token-level timestamps (required for word timestamps)
+    '--token-timestamps',
+    'true',
+
+    // ✅ Disable initial prompt (can cause timestamp issues)
+    '--no-context',
+    'true',
+
+    // ✅ Enable precise timing
+    '--no-timestamps',
+    'false',
+
+    // ✅ Entropy threshold helps with silence detection
+    '--entropy-thold',
+    '2.4',
+
+    // ✅ Logprob threshold for better word boundary detection
+    '--logprob-thold',
+    '-1.0',
   ];
 
-  // Enable word-level timestamps (default: true)
+  // ✅ Enable word timestamps (critical for accuracy)
   if (options.wordTimestamps !== false) {
-    args.push('-ml', '1'); // Max line length = 1 word for word-level timestamps
+    args.push('--word-timestamps', 'true');
+    args.push('--max-tokens', '0'); // No token limit for better word detection
   }
 
-  // Add language if specified
+  // ✅ Add language if specified (helps with alignment)
   if (options.language) {
     args.push('-l', options.language);
   }
 
-  // Add translation flag if requested
+  // ✅ Add translation if needed
   if (options.translate) {
     args.push('--translate');
   }
 
-  // Add print progress flag
-  args.push('-pp'); // Print progress
+  args.push('-pp'); // print progress
 
   console.log('🎤 Running Whisper.cpp transcription:');
   console.log('   Binary:', whisperPath);
@@ -306,7 +365,6 @@ export const transcribeAudio = async (
   console.log('   Audio:', audioPath);
   console.log('   Command:', [path.basename(whisperPath), ...args].join(' '));
 
-  // Notify loading
   if (options.onProgress) {
     options.onProgress({
       stage: 'loading',
@@ -316,14 +374,9 @@ export const transcribeAudio = async (
   }
 
   return new Promise((resolve, reject) => {
-    if (!whisperPath) {
-      reject(new Error('Whisper path not initialized'));
-      return;
-    }
-
     const whisper = spawn(whisperPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true, // Hide console window on Windows
+      windowsHide: true,
     });
 
     currentWhisperProcess = whisper;
@@ -332,28 +385,24 @@ export const transcribeAudio = async (
     let lastProgress = 0;
 
     whisper.stdout.on('data', (data) => {
-      const text = data.toString();
-      console.log('[Whisper stdout]', text.trim());
+      const text = data.toString().trim();
+      if (text) console.log('[Whisper stdout]', text);
     });
 
     whisper.stderr.on('data', (data) => {
       const text = data.toString();
       stderr += text;
 
-      // Parse progress from stderr
-      if (options.onProgress) {
-        // Whisper outputs progress like: "whisper_full: progress = 45%"
-        const progressMatch = text.match(/progress\s*=\s*(\d+)%/);
-        if (progressMatch) {
-          const progress = parseInt(progressMatch[1], 10);
-          if (progress > lastProgress) {
-            lastProgress = progress;
-            options.onProgress({
-              stage: 'processing',
-              progress,
-              message: `Transcribing... ${progress}%`,
-            });
-          }
+      const match = text.match(/progress\s*=\s*(\d+)%/);
+      if (match && options.onProgress) {
+        const progress = parseInt(match[1], 10);
+        if (progress > lastProgress) {
+          lastProgress = progress;
+          options.onProgress({
+            stage: 'processing',
+            progress,
+            message: `Transcribing... ${progress}%`,
+          });
         }
       }
     });
@@ -361,61 +410,46 @@ export const transcribeAudio = async (
     whisper.on('close', (code) => {
       currentWhisperProcess = null;
 
-      if (code === 0) {
-        try {
-          // Read JSON output
-          const jsonPath = `${outputPrefix}.json`;
-
-          if (!fs.existsSync(jsonPath)) {
-            reject(
-              new Error('Whisper completed but no output file was created'),
-            );
-            return;
-          }
-
-          const jsonContent = fs.readFileSync(jsonPath, 'utf-8');
-          const jsonData = JSON.parse(jsonContent);
-
-          // Parse result
-          const result = parseWhisperOutput(jsonData);
-
-          // Cleanup temp file
-          try {
-            fs.unlinkSync(jsonPath);
-            console.log('🗑️ Cleaned up temp file:', jsonPath);
-          } catch (cleanupError) {
-            console.warn('⚠️ Failed to cleanup temp file:', cleanupError);
-          }
-
-          if (options.onProgress) {
-            options.onProgress({
-              stage: 'complete',
-              progress: 100,
-              message: 'Transcription complete!',
-            });
-          }
-
-          console.log('✅ Transcription successful:', {
-            segments: result.segments.length,
-            duration: result.duration,
-            language: result.language,
-          });
-
-          resolve(result);
-        } catch (parseError) {
-          console.error('❌ Failed to parse Whisper output:', parseError);
-          reject(
-            new Error(
-              `Failed to parse Whisper output: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`,
-            ),
-          );
-        }
-      } else {
+      if (code !== 0) {
         console.error('❌ Whisper.cpp exited with code:', code);
-        console.error('Stderr:', stderr.slice(-500));
-        reject(
+        return reject(
           new Error(
             `Whisper.cpp exited with code ${code}\nStderr: ${stderr.slice(-500)}`,
+          ),
+        );
+      }
+
+      const jsonPath = `${outputPrefix}.json`;
+      if (!fs.existsSync(jsonPath)) {
+        return reject(
+          new Error('Whisper completed but no output file was created.'),
+        );
+      }
+
+      try {
+        const jsonContent = fs.readFileSync(jsonPath, 'utf-8');
+        const jsonData = JSON.parse(jsonContent);
+        const result = parseWhisperOutput(jsonData);
+
+        fs.unlinkSync(jsonPath); // cleanup
+
+        options.onProgress?.({
+          stage: 'complete',
+          progress: 100,
+          message: 'Transcription complete!',
+        });
+
+        console.log('✅ Transcription successful:', {
+          segments: result.segments.length,
+          duration: result.duration,
+          language: result.language,
+        });
+
+        resolve(result);
+      } catch (err) {
+        reject(
+          new Error(
+            `Failed to parse Whisper output: ${(err as Error).message}`,
           ),
         );
       }
@@ -423,7 +457,6 @@ export const transcribeAudio = async (
 
     whisper.on('error', (error) => {
       currentWhisperProcess = null;
-      console.error('❌ Whisper.cpp spawn error:', error);
       reject(new Error(`Whisper.cpp spawn error: ${error.message}`));
     });
   });

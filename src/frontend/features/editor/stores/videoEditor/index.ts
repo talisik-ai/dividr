@@ -21,6 +21,10 @@ import { createTextClipsSlice, TextClipsSlice } from './slices/textClipsSlice';
 import { createTextStyleSlice, TextStyleSlice } from './slices/textStyleSlice';
 import { createTimelineSlice, TimelineSlice } from './slices/timelineSlice';
 import { createTracksSlice, TracksSlice } from './slices/tracksSlice';
+import {
+  createTranscriptionSlice,
+  TranscriptionSlice,
+} from './slices/transcriptionSlice';
 import { createUndoRedoSlice, UndoRedoSlice } from './slices/undoRedoSlice';
 import { createUtilitySlice, UtilitySlice } from './slices/utilitySlice';
 
@@ -38,7 +42,8 @@ type VideoEditorStore = TimelineSlice &
   TextClipsSlice &
   ColorHistorySlice &
   ClipboardSlice &
-  UndoRedoSlice;
+  UndoRedoSlice &
+  TranscriptionSlice;
 
 // Create the unified store
 export const useVideoEditorStore = create<VideoEditorStore>()(
@@ -59,6 +64,7 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
         ...createColorHistorySlice(...a),
         ...createClipboardSlice(...a),
         ...createUndoRedoSlice(...a),
+        ...createTranscriptionSlice(...a),
       })),
       {
         name: 'video-editor-store',
