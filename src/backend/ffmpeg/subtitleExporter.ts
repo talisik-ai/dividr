@@ -158,14 +158,27 @@ export function extractSubtitleSegments(
 }
 
 /**
+ * Parses seconds into time components
+ */
+function parseTimeComponents(seconds: number): {
+  hours: number;
+  minutes: number;
+  secs: number;
+  milliseconds: number;
+} {
+  return {
+    hours: Math.floor(seconds / 3600),
+    minutes: Math.floor((seconds % 3600) / 60),
+    secs: Math.floor(seconds % 60),
+    milliseconds: Math.floor((seconds % 1) * 1000),
+  };
+}
+
+/**
  * Formats time for SRT format (HH:MM:SS,mmm)
  */
 function formatTimeForSRT(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const milliseconds = Math.floor((seconds % 1) * 1000);
-
+  const { hours, minutes, secs, milliseconds } = parseTimeComponents(seconds);
   return `${hours.toString().padStart(2, '0')}:${minutes
     .toString()
     .padStart(2, '0')}:${secs.toString().padStart(2, '0')},${milliseconds
@@ -177,11 +190,7 @@ function formatTimeForSRT(seconds: number): string {
  * Formats time for VTT format (HH:MM:SS.mmm)
  */
 function formatTimeForVTT(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const milliseconds = Math.floor((seconds % 1) * 1000);
-
+  const { hours, minutes, secs, milliseconds } = parseTimeComponents(seconds);
   return `${hours.toString().padStart(2, '0')}:${minutes
     .toString()
     .padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${milliseconds
@@ -239,7 +248,7 @@ function convertColorToASS(color: string, opacity?: number): string {
   let r = 0, g = 0, b = 0;
   let cssAlpha = 1.0; // CSS alpha (0=transparent, 1=opaque)
   
-  // Handle hex colors (#RRGGBB or #RGB)
+  // Handle hex colors (#RRGGBB, #RRGGBBAA, or #RGB)
   if (color.startsWith('#')) {
     let hex = color.substring(1);
     
@@ -253,6 +262,13 @@ function convertColorToASS(color: string, opacity?: number): string {
       g = parseInt(hex.substring(2, 4), 16);
       b = parseInt(hex.substring(4, 6), 16);
       cssAlpha = 1.0; // Hex colors are fully opaque by default
+    } else if (hex.length === 8) {
+      // Handle 8-character hex with alpha (#RRGGBBAA)
+      r = parseInt(hex.substring(0, 2), 16);
+      g = parseInt(hex.substring(2, 4), 16);
+      b = parseInt(hex.substring(4, 6), 16);
+      const alphaHex = parseInt(hex.substring(6, 8), 16);
+      cssAlpha = alphaHex / 255; // Convert 0-255 to 0.0-1.0
     }
   }
   
@@ -278,14 +294,17 @@ function convertColorToASS(color: string, opacity?: number): string {
   // Convert CSS alpha (0=transparent, 1=opaque) to ASS alpha (0=opaque, 255=transparent)
   const assAlpha = Math.round((1 - cssAlpha) * 255);
   
-  // Log opacity calculations for debugging (only when opacity is applied)
-  if (opacity !== undefined && opacity < 1 && originalCssAlpha !== cssAlpha) {
+  // Log opacity calculations for debugging (when opacity is applied or color has alpha)
+  if ((opacity !== undefined && opacity < 1 && originalCssAlpha !== cssAlpha) || 
+      (originalCssAlpha < 1.0 && color.startsWith('#') && color.length === 9)) {
     console.log('🎨 CSS Opacity Calculation:', {
       color,
       colorAlpha: originalCssAlpha.toFixed(3),
-      opacityProperty: opacity.toFixed(3),
+      opacityProperty: opacity?.toFixed(3) || 'none',
       finalCssAlpha: cssAlpha.toFixed(3),
-      formula: `${originalCssAlpha.toFixed(3)} × ${opacity.toFixed(3)} = ${cssAlpha.toFixed(3)}`,
+      formula: opacity !== undefined 
+        ? `${originalCssAlpha.toFixed(3)} × ${opacity.toFixed(3)} = ${cssAlpha.toFixed(3)}`
+        : `${originalCssAlpha.toFixed(3)} (from color alpha)`,
       assAlpha: assAlpha,
       assAlphaHex: assAlpha.toString(16).padStart(2, '0').toUpperCase(),
       note: 'CSS: 0=transparent, 1=opaque | ASS: 0=opaque, 255=transparent',
@@ -325,6 +344,16 @@ function mergeTextStyles(globalStyle?: TextStyleOptions, segmentStyle?: TextStyl
 }
 
 /**
+ * Checks if a background color is effectively transparent or empty
+ */
+function isTransparentBackground(backgroundColor?: string): boolean {
+  return !backgroundColor ||
+         backgroundColor === 'transparent' ||
+         backgroundColor === 'rgba(0,0,0,0)' ||
+         backgroundColor === 'rgba(0, 0, 0, 0)';
+}
+
+/**
  * Generates a unique style name based on style properties
  */
 function generateStyleName(style: TextStyleOptions, baseIndex: number): string {
@@ -346,9 +375,7 @@ function generateStyleName(style: TextStyleOptions, baseIndex: number): string {
     name += 'Glow';
   }
   
-  if (style.backgroundColor && 
-      style.backgroundColor !== 'transparent' &&
-      !style.backgroundColor.includes('rgba(0, 0, 0, 0)')) {
+  if (!isTransparentBackground(style.backgroundColor)) {
     name += 'BG';
   }
   
@@ -375,6 +402,25 @@ interface ASSStyleParams {
   hasBackground: boolean;
   hasGlow: boolean;
   glowIntensity?: number;
+}
+
+/**
+ * Creates a unique key for style parameters (used for deduplication)
+ */
+function createStyleKey(params: ASSStyleParams): string {
+  return JSON.stringify({
+    font: params.fontFamily,
+    size: params.fontSize,
+    primary: params.primaryColor,
+    outline: params.outlineColor,
+    back: params.backColor,
+    bold: params.bold,
+    italic: params.italic,
+    underline: params.underline,
+    borderStyle: params.borderStyle,
+    outlineWidth: params.outlineWidth,
+    shadow: params.shadowDistance,
+  });
 }
 
 function computeASSStyleParams(
@@ -415,10 +461,7 @@ function computeASSStyleParams(
   let borderStyle = 1; // Default: outline + shadow style
   let finalOutlineColor = outlineColor;
   
-  const hasBackground = style?.backgroundColor && 
-                        style.backgroundColor !== 'transparent' &&
-                        style.backgroundColor !== 'rgba(0,0,0,0)' &&
-                        style.backgroundColor !== 'rgba(0, 0, 0, 0)';
+  const hasBackground = !isTransparentBackground(style?.backgroundColor);
   
   if (hasBackground) {
     // Apply opacity to background color (CSS-style multiplication)
@@ -482,21 +525,7 @@ export function generateASSContent(
     // Merge global style with segment-specific style
     const mergedStyle = mergeTextStyles(textStyle, segment.style);
     const styleParams = computeASSStyleParams(mergedStyle, videoDimensions);
-    
-    // Create a unique key for this style combination
-    const styleKey = JSON.stringify({
-      font: styleParams.fontFamily,
-      size: styleParams.fontSize,
-      primary: styleParams.primaryColor,
-      outline: styleParams.outlineColor,
-      back: styleParams.backColor,
-      bold: styleParams.bold,
-      italic: styleParams.italic,
-      underline: styleParams.underline,
-      borderStyle: styleParams.borderStyle,
-      outlineWidth: styleParams.outlineWidth,
-      shadow: styleParams.shadowDistance,
-    });
+    const styleKey = createStyleKey(styleParams);
 
     let styleName: string;
     if (styleMap.has(styleKey)) {
@@ -528,7 +557,7 @@ export function generateASSContent(
 
   // Generate style definitions
   const styleDefinitions: string[] = [];
-  styleMap.forEach(({ params, styleName }) => {
+  styleMap.forEach(({ params, styleName, style }) => {
     // Base style
     console.log(`🎨 Creating ASS style "${styleName}" with font: "${params.fontFamily}"`);
     styleDefinitions.push(
@@ -538,22 +567,9 @@ export function generateASSContent(
     // If this style has both background and outline, create an outline variant
     if (params.hasBackground && params.hasOutline) {
       // Get the original outline color (before it was overridden by background)
-      const styleData = styleMap.get(JSON.stringify({
-        font: params.fontFamily,
-        size: params.fontSize,
-        primary: params.primaryColor,
-        outline: params.outlineColor,
-        back: params.backColor,
-        bold: params.bold,
-        italic: params.italic,
-        underline: params.underline,
-        borderStyle: params.borderStyle,
-        outlineWidth: params.outlineWidth,
-        shadow: params.shadowDistance,
-      }));
       const originalOutlineColor = convertColorToASS(
-        styleData?.style.strokeColor || '#000000',
-        styleData?.style.opacity
+        style.strokeColor || '#000000',
+        style.opacity
       );
       
       styleDefinitions.push(
@@ -588,19 +604,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const endTime = formatTimeForASS(segment.endTime);
       const styleName = segmentStyleNames[index];
       const mergedStyle = mergeTextStyles(textStyle, segment.style);
-      const styleParams = styleMap.get(JSON.stringify({
-        font: computeASSStyleParams(mergedStyle, videoDimensions).fontFamily,
-        size: computeASSStyleParams(mergedStyle, videoDimensions).fontSize,
-        primary: computeASSStyleParams(mergedStyle, videoDimensions).primaryColor,
-        outline: computeASSStyleParams(mergedStyle, videoDimensions).outlineColor,
-        back: computeASSStyleParams(mergedStyle, videoDimensions).backColor,
-        bold: computeASSStyleParams(mergedStyle, videoDimensions).bold,
-        italic: computeASSStyleParams(mergedStyle, videoDimensions).italic,
-        underline: computeASSStyleParams(mergedStyle, videoDimensions).underline,
-        borderStyle: computeASSStyleParams(mergedStyle, videoDimensions).borderStyle,
-        outlineWidth: computeASSStyleParams(mergedStyle, videoDimensions).outlineWidth,
-        shadow: computeASSStyleParams(mergedStyle, videoDimensions).shadowDistance,
-      }))?.params;
+      const computedParams = computeASSStyleParams(mergedStyle, videoDimensions);
+      const styleKey = createStyleKey(computedParams);
+      const styleParams = styleMap.get(styleKey)?.params;
 
       // Apply text transformations if specified
       let text = segment.text;
@@ -619,9 +625,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       // Simple rendering without glow
       if (styleParams?.hasBackground && styleParams?.hasOutline) {
         // Double-layer: background + outlined text
-        // Adjust background box: wider by 4px, shorter by 4px
-        const xbord = styleParams.outlineWidth + 10;
-        const ybord = Math.max(0, styleParams.outlineWidth - 8);
+        const { xbord, ybord } = calculateBackgroundBoxDimensions(styleParams.outlineWidth);
         const backgroundLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
         const textLayer = `Dialogue: 1,${startTime},${endTime},${styleName}Outline,,0,0,0,,${text}`;
         return `${backgroundLayer}\n${textLayer}`;
@@ -629,8 +633,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
       // For backgrounds without outline, also adjust box dimensions
       if (styleParams?.hasBackground) {
-        const xbord = styleParams.outlineWidth + 10;
-        const ybord = Math.max(0, styleParams.outlineWidth - 8);
+        const { xbord, ybord } = calculateBackgroundBoxDimensions(styleParams.outlineWidth);
         return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
       }
 
@@ -642,6 +645,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const fontFamilies = Array.from(usedFontFamilies);
   
   return { content, fontFamilies };
+}
+
+/**
+ * Calculates background box dimensions for ASS subtitles
+ */
+function calculateBackgroundBoxDimensions(outlineWidth: number): { xbord: number; ybord: number } {
+  return {
+    xbord: outlineWidth + 10,
+    ybord: Math.max(0, outlineWidth - 8),
+  };
 }
 
 /**
@@ -678,9 +691,7 @@ function generateGlowLayers(
   
   if (params.hasBackground && params.hasOutline) {
     // Triple-layer: glow + background + outlined text
-    // Adjust background box: wider by 4px, shorter by 4px
-    const xbord = params.outlineWidth + 10;
-    const ybord = Math.max(0, params.outlineWidth - 8);
+    const { xbord, ybord } = calculateBackgroundBoxDimensions(params.outlineWidth);
     const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
     layers.push(backgroundLayer);
     
@@ -690,9 +701,7 @@ function generateGlowLayers(
     console.log('✨ Triple-layer mode: glow + background + outlined text');
   } else if (params.hasBackground) {
     // Double-layer: glow + background (no outline)
-    // Adjust background box: wider by 4px, shorter by 4px
-    const xbord = params.outlineWidth + 10;
-    const ybord = Math.max(0, params.outlineWidth - 8);
+    const { xbord, ybord } = calculateBackgroundBoxDimensions(params.outlineWidth);
     const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,{\\xbord${xbord}\\ybord${ybord}}${text}`;
     layers.push(backgroundLayer);
     
@@ -795,9 +804,7 @@ function applyTextTransform(text: string, transform: string): string {
  * Formats time for ASS format (H:MM:SS.cc)
  */
 function formatTimeForASS(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
+  const { hours, minutes, secs } = parseTimeComponents(seconds);
   const centiseconds = Math.floor((seconds % 1) * 100);
 
   return `${hours}:${minutes.toString().padStart(2, '0')}:${secs
