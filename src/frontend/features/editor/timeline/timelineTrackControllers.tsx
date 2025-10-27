@@ -1,11 +1,26 @@
+import { KaraokeIcon } from '@/frontend/assets/icons/karaoke';
 import { Button } from '@/frontend/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/frontend/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
 import { cn } from '@/frontend/utils/utils';
-import { Eye, EyeOff, Volume2, VolumeX, X } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  MoreHorizontal,
+  Trash2,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AddTrackButton } from './addTrackButton';
@@ -30,6 +45,8 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       (state) => state.toggleTrackMute,
     );
     const removeTrackRow = useVideoEditorStore((state) => state.removeTrackRow);
+    const deleteTrack = useVideoEditorStore((state) => state.removeTrack);
+    const allTracks = useVideoEditorStore((state) => state.tracks);
 
     // Check if any non-audio tracks in this row are visible
     const hasVisibleTracks = tracks.some(
@@ -50,6 +67,20 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       );
       return audible;
     }, [tracks]);
+
+    // Check if video and audio tracks are linked
+    const hasLinkedAudioVideo = useMemo(() => {
+      if (rowDef.id !== 'video') return false;
+
+      const videoTracks = tracks.filter((t) => t.type === 'video');
+      return videoTracks.some((videoTrack) => {
+        if (!videoTrack.isLinked || !videoTrack.linkedTrackId) return false;
+        // Check if there's an audio track with the matching ID
+        return allTracks.some(
+          (t) => t.type === 'audio' && t.id === videoTrack.linkedTrackId,
+        );
+      });
+    }, [rowDef.id, tracks, allTracks]);
 
     const handleToggleVisibility = useCallback(() => {
       // Only handle visibility for non-audio tracks (video, image, subtitle)
@@ -79,9 +110,22 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       }
     }, [tracks.length, removeTrackRow, rowDef.id]);
 
+    const handleDeleteAllTracks = useCallback(() => {
+      tracks.forEach((track) => {
+        deleteTrack(track.id);
+      });
+    }, [tracks, deleteTrack]);
+
+    const handleGenerateKaraokeSubtitles = useCallback(() => {
+      // TODO: Implement karaoke subtitle generation
+      console.log('Generate karaoke subtitles for tracks:', tracks);
+    }, [tracks]);
+
     // Can only remove non-essential rows (not video or audio) and only if they have no tracks
     const canRemoveRow =
       rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
+
+    console.log(rowDef.id, hasLinkedAudioVideo);
 
     return (
       <div
@@ -157,6 +201,40 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               </TooltipContent>
             </Tooltip>
           )}
+
+          {/* Ellipsis dropdown menu for all track types */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                disabled={tracks.length === 0}
+              >
+                <MoreHorizontal className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="right" className="w-fit">
+              {/* Delete from timeline - always shown as first item */}
+              <DropdownMenuItem
+                onClick={handleDeleteAllTracks}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete from timeline
+              </DropdownMenuItem>
+
+              {/* Generate karaoke subtitles - only for video tracks with linked audio */}
+              {rowDef.id === 'video' && hasLinkedAudioVideo && (
+                <>
+                  <DropdownMenuItem onClick={handleGenerateKaraokeSubtitles}>
+                    <KaraokeIcon className="h-3 w-3" />
+                    Generate karaoke subtitles
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Show remove button for non-essential rows when empty */}
           {canRemoveRow && (

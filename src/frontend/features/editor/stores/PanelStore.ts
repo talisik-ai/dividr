@@ -8,6 +8,7 @@ export type PanelType =
   | 'images' // Image tools and adjustments (custom component)
   | 'audio-tools' // Audio editing tools (custom component)
   | 'settings' // Project settings (custom component)
+  | 'captions' // Captions (custom component)
   | null; // No panel shown
 
 // Metadata for panels
@@ -89,6 +90,13 @@ const panelMetadata: Record<Exclude<PanelType, null>, PanelMetadata> = {
     title: 'Project Settings',
     description: 'Configure project and export',
     icon: '⚙️',
+    hasCustomComponent: true,
+    width: 'w-80',
+  },
+  captions: {
+    title: 'Captions',
+    description: 'Add and edit captions',
+    icon: '🎤',
     hasCustomComponent: true,
     width: 'w-80',
   },
