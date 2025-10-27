@@ -1355,8 +1355,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         const responsiveFontSize = baseFontSize * preview.previewScale;
 
         // Scale padding and effects with zoom level
-        const scaledPaddingVertical = 2 * preview.previewScale;
-        const scaledPaddingHorizontal = 8 * preview.previewScale;
+        const scaledPaddingVertical = 7 * preview.previewScale;
+        const scaledPaddingHorizontal = 9 * preview.previewScale;
 
         // Calculate responsive horizontal padding based on actual width (5% of actual width)
         const videoWidth = activeVideoTrack?.width || preview.canvasWidth;

@@ -1,5 +1,6 @@
 // This file registers all custom panel components
 import { AudioToolsPanel } from './components/audioToolsPanel';
+import { CaptionsPanel } from './components/captionsPanel';
 import { ImageToolsPanel } from './components/imageToolsPanel';
 import { MediaImportPanel } from './components/mediaImportPanel';
 import { SettingsPanel } from './components/settingsPanel';
@@ -15,4 +16,5 @@ export const initializePanelRegistry = () => {
   registerPanelComponent('images', ImageToolsPanel);
   registerPanelComponent('audio-tools', AudioToolsPanel);
   registerPanelComponent('settings', SettingsPanel);
+  registerPanelComponent('captions', CaptionsPanel);
 };
