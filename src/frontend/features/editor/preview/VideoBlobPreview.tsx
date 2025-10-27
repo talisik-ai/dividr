@@ -2007,6 +2007,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           )}
           onClick={async () => {
             const result = await importMediaFromDialog();
+            if (!result || (!result.success && !result.error)) return;
+
             if (result.success && result.importedFiles.length > 0) {
               console.log(
                 `✅ Successfully imported ${result.importedFiles.length} files via upload button`,

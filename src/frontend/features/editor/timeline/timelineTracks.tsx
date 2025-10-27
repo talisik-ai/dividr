@@ -1252,17 +1252,16 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handlePlaceholderClick = useCallback(async () => {
       const result = await importMediaFromDialog();
+      if (!result || (!result.success && !result.error)) return;
+
       if (result.success && result.importedFiles.length > 0) {
         console.log(
           'Files imported successfully from timeline placeholder:',
           result.importedFiles,
         );
-      } else {
-        // Use the actual error message from validation results
-        const errorMessage =
-          result.error ||
-          'All files were rejected due to corruption or invalid format';
-        toast.error(errorMessage);
+      } else if (result.error) {
+        // Only show error if there's an actual error (not on cancel)
+        toast.error(result.error);
       }
     }, [importMediaFromDialog]);
 
