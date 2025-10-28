@@ -19,7 +19,7 @@ import {
   transcribeAudio,
   WhisperProgress,
   WhisperResult,
-} from './backend/whisper/whisperRunner';
+} from './backend/frontend_use/whisper/whisperRunner';
 
 // Import Vite dev server URL
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
