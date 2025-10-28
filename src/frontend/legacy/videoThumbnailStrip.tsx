@@ -1,7 +1,7 @@
 import {
   VideoThumbnail,
   VideoThumbnailGenerator,
-} from '@/backend/ffmpeg/videoThumbnailGenerator';
+} from '@/backend/frontend_use/videoThumbnailGenerator';
 import {
   useVideoEditorStore,
   VideoTrack,

@@ -1,4 +1,4 @@
-import AudioWaveformGenerator from '@/backend/ffmpeg/audioWaveformGenerator';
+import AudioWaveformGenerator from '@/backend/frontend_use/audioWaveformGenerator';
 import { Loader2 } from 'lucide-react';
 import React, {
   useCallback,

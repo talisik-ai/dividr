@@ -2,7 +2,7 @@ import {
   SpriteSheet,
   SpriteSheetThumbnail,
   default as VideoSpriteSheetGenerator,
-} from '@/backend/ffmpeg/videoSpriteSheetGenerator';
+} from '@/backend/frontend_use/videoSpriteSheetGenerator';
 import { Loader2 } from 'lucide-react';
 import React, {
   useCallback,

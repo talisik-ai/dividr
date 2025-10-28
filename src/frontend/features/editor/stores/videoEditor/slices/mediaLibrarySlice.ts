@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import AudioWaveformGenerator from '@/backend/ffmpeg/audioWaveformGenerator';
-import { VideoSpriteSheetGenerator } from '@/backend/ffmpeg/videoSpriteSheetGenerator';
-import { VideoThumbnailGenerator } from '@/backend/ffmpeg/videoThumbnailGenerator';
+import AudioWaveformGenerator from '@/backend/frontend_use/audioWaveformGenerator';
+import { VideoSpriteSheetGenerator } from '@/backend/frontend_use/videoSpriteSheetGenerator';
+import { VideoThumbnailGenerator } from '@/backend/frontend_use/videoThumbnailGenerator';
 import { projectService } from '@/backend/services/projectService';
 import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
