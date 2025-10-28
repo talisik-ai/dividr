@@ -739,6 +739,12 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       return false;
     }
 
+    const mutedChanged = prevProps.track.muted !== nextProps.track.muted;
+
+    if (mutedChanged) {
+      return false;
+    }
+
     const dimensionsChanged =
       prevProps.frameWidth !== nextProps.frameWidth ||
       prevProps.height !== nextProps.height;

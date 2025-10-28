@@ -19,7 +19,7 @@ import {
 } from '@/frontend/components/ui/popover';
 import { cn } from '@/frontend/utils/utils';
 import { Check, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   AVAILABLE_FONTS,
   FontOption,
@@ -37,7 +37,7 @@ interface FontSelectorProps {
   className?: string;
 }
 
-export function FontSelector({
+const FontSelectorComponent = ({
   value,
   onValueChange,
   disabled = false,
@@ -45,23 +45,34 @@ export function FontSelector({
   onFontUsed,
   size = 'sm',
   className,
-}: FontSelectorProps) {
+}: FontSelectorProps) => {
   const [open, setOpen] = useState(false);
 
-  // Get the selected font label
-  const selectedFont = AVAILABLE_FONTS.find((font) => font.value === value);
+  // Memoize the selected font to prevent recalculation
+  const selectedFont = useMemo(
+    () => AVAILABLE_FONTS.find((font) => font.value === value),
+    [value],
+  );
 
-  // Filter recent fonts that exist in our font list
-  const recentFontOptions = recentFonts
-    .map((fontValue) => AVAILABLE_FONTS.find((f) => f.value === fontValue))
-    .filter((font): font is FontOption => font !== undefined)
-    .slice(0, 5); // Limit to 5 recent fonts
+  // Memoize recent font options to prevent recalculation
+  const recentFontOptions = useMemo(
+    () =>
+      recentFonts
+        .map((fontValue) => AVAILABLE_FONTS.find((f) => f.value === fontValue))
+        .filter((font): font is FontOption => font !== undefined)
+        .slice(0, 5), // Limit to 5 recent fonts
+    [recentFonts],
+  );
 
-  const handleSelect = (fontValue: string) => {
-    onValueChange(fontValue);
-    onFontUsed?.(fontValue);
-    setOpen(false);
-  };
+  // Memoize the select handler to prevent re-creation
+  const handleSelect = useCallback(
+    (fontValue: string) => {
+      onValueChange(fontValue);
+      onFontUsed?.(fontValue);
+      setOpen(false);
+    },
+    [onValueChange, onFontUsed],
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -175,4 +186,9 @@ export function FontSelector({
       </PopoverContent>
     </Popover>
   );
-}
+};
+
+FontSelectorComponent.displayName = 'FontSelector';
+
+// Memoize the component to prevent unnecessary re-renders
+export const FontSelector = React.memo(FontSelectorComponent);

@@ -43,13 +43,17 @@ const findAdjacentClips = (
 /**
  * CapCut-style non-destructive trimming helper with adjacent clip boundary checking
  * Clamps track resizing within:
- * 1. Original source media boundaries
+ * 1. Original source media boundaries (VIDEO/AUDIO ONLY)
  * 2. Adjacent clip boundaries (prevents overlapping)
+ *
+ * TRACK TYPE BEHAVIOR:
+ * - Video/Audio: Strict source duration limits (fixed media length)
+ * - Text/Subtitle/Image: Free extension allowed (no source duration limits)
  *
  * FIXED: Proper trimming that maintains timeline position when trimming back and forth
  * - Left trim: adjusts startFrame and sourceStartTime, endFrame stays fixed
  * - Right trim: adjusts endFrame, startFrame and sourceStartTime stay fixed
- * - Boundaries: prevents trimming beyond source media limits AND neighboring clips
+ * - Boundaries: prevents trimming beyond source media limits (media only) AND neighboring clips
  */
 const resizeTrackWithTrimming = (
   track: VideoTrack,
@@ -64,7 +68,15 @@ const resizeTrackWithTrimming = (
   const currentEndFrame = track.endFrame;
   const currentSourceStartTime = track.sourceStartTime || 0;
 
+  // Determine if this track type has fixed media duration constraints
+  const isMediaTrack = track.type === 'video' || track.type === 'audio';
+  const isExtensibleTrack =
+    track.type === 'text' ||
+    track.type === 'subtitle' ||
+    track.type === 'image';
+
   // Use sourceDuration if available, otherwise fall back to current duration
+  // For extensible tracks, this will be dynamically updated
   const sourceDurationFrames = track.sourceDuration || track.duration;
   const sourceDurationSeconds = sourceDurationFrames / fps;
 
@@ -107,30 +119,49 @@ const resizeTrackWithTrimming = (
     const frameDelta = boundedNewStartFrame - currentStartFrame;
     const timeDelta = frameDelta / fps;
 
-    // Calculate new source start time (trimming right moves in-point forward)
-    const proposedSourceStartTime = currentSourceStartTime + timeDelta;
+    // MEDIA TRACKS: Apply source duration constraints
+    if (isMediaTrack) {
+      // Calculate new source start time (trimming right moves in-point forward)
+      const proposedSourceStartTime = currentSourceStartTime + timeDelta;
 
-    // Clamp to source boundaries [0, sourceDuration]
-    finalSourceStartTime = Math.max(
-      0,
-      Math.min(sourceDurationSeconds, proposedSourceStartTime),
-    );
+      // Clamp to source boundaries [0, sourceDuration]
+      finalSourceStartTime = Math.max(
+        0,
+        Math.min(sourceDurationSeconds, proposedSourceStartTime),
+      );
 
-    // Calculate the actual frame delta after clamping
-    const clampedTimeDelta = finalSourceStartTime - currentSourceStartTime;
-    const clampedFrameDelta = Math.round(clampedTimeDelta * fps);
+      // Calculate the actual frame delta after clamping
+      const clampedTimeDelta = finalSourceStartTime - currentSourceStartTime;
+      const clampedFrameDelta = Math.round(clampedTimeDelta * fps);
 
-    // Apply the clamped delta to the start frame
-    finalStartFrame = currentStartFrame + clampedFrameDelta;
+      // Apply the clamped delta to the start frame
+      finalStartFrame = currentStartFrame + clampedFrameDelta;
 
-    // End frame stays the same (this is key for proper left trim)
-    finalEndFrame = currentEndFrame;
+      // End frame stays the same (this is key for proper left trim)
+      finalEndFrame = currentEndFrame;
 
-    // Ensure we don't exceed the end frame (minimum 1 frame duration)
-    if (finalStartFrame >= finalEndFrame) {
-      finalStartFrame = finalEndFrame - 1;
-      finalSourceStartTime =
-        currentSourceStartTime + (finalStartFrame - currentStartFrame) / fps;
+      // Ensure we don't exceed the end frame (minimum 1 frame duration)
+      if (finalStartFrame >= finalEndFrame) {
+        finalStartFrame = finalEndFrame - 1;
+        finalSourceStartTime =
+          currentSourceStartTime + (finalStartFrame - currentStartFrame) / fps;
+      }
+    }
+    // EXTENSIBLE TRACKS: No source duration limits, free extension
+    else if (isExtensibleTrack) {
+      // Apply the movement directly without source duration clamping
+      finalStartFrame = boundedNewStartFrame;
+
+      // End frame stays the same (this is key for proper left trim)
+      finalEndFrame = currentEndFrame;
+
+      // Ensure minimum 1 frame duration
+      if (finalStartFrame >= finalEndFrame) {
+        finalStartFrame = finalEndFrame - 1;
+      }
+
+      // For extensible tracks, sourceStartTime remains 0 (they don't have media in-points)
+      finalSourceStartTime = 0;
     }
   }
   // Handle RIGHT trim (dragging right edge)
@@ -157,34 +188,56 @@ const resizeTrackWithTrimming = (
       }
     }
 
-    // Calculate how many frames we're trimming from the right
-    const frameDelta = boundedNewEndFrame - currentEndFrame;
-    const timeDelta = frameDelta / fps;
+    // MEDIA TRACKS: Apply source duration constraints
+    if (isMediaTrack) {
+      // Calculate how many frames we're trimming from the right
+      const frameDelta = boundedNewEndFrame - currentEndFrame;
+      const timeDelta = frameDelta / fps;
 
-    // Calculate new source end time
-    const proposedSourceEndTime = currentSourceEndTime + timeDelta;
+      // Calculate new source end time
+      const proposedSourceEndTime = currentSourceEndTime + timeDelta;
 
-    // Clamp to source boundaries [sourceStartTime, sourceDuration]
-    const clampedSourceEndTime = Math.max(
-      finalSourceStartTime + 1 / fps, // Minimum 1 frame
-      Math.min(sourceDurationSeconds, proposedSourceEndTime),
-    );
+      // Clamp to source boundaries [sourceStartTime, sourceDuration]
+      const clampedSourceEndTime = Math.max(
+        finalSourceStartTime + 1 / fps, // Minimum 1 frame
+        Math.min(sourceDurationSeconds, proposedSourceEndTime),
+      );
 
-    // Calculate the new duration based on clamped source end time
-    const newDurationSeconds = clampedSourceEndTime - finalSourceStartTime;
-    const newDurationFrames = Math.round(newDurationSeconds * fps);
+      // Calculate the new duration based on clamped source end time
+      const newDurationSeconds = clampedSourceEndTime - finalSourceStartTime;
+      const newDurationFrames = Math.round(newDurationSeconds * fps);
 
-    // Apply the new end frame
-    finalEndFrame = finalStartFrame + newDurationFrames;
+      // Apply the new end frame
+      finalEndFrame = finalStartFrame + newDurationFrames;
 
-    // Ensure minimum 1 frame duration
-    if (finalEndFrame <= finalStartFrame) {
-      finalEndFrame = finalStartFrame + 1;
+      // Ensure minimum 1 frame duration
+      if (finalEndFrame <= finalStartFrame) {
+        finalEndFrame = finalStartFrame + 1;
+      }
+    }
+    // EXTENSIBLE TRACKS: No source duration limits, free extension
+    else if (isExtensibleTrack) {
+      // Apply the movement directly without source duration clamping
+      finalEndFrame = boundedNewEndFrame;
+
+      // Ensure minimum 1 frame duration
+      if (finalEndFrame <= finalStartFrame) {
+        finalEndFrame = finalStartFrame + 1;
+      }
+
+      // For extensible tracks, sourceStartTime remains 0 (they don't have media in-points)
+      finalSourceStartTime = 0;
     }
   }
 
   // Calculate final duration
   const finalDurationFrames = finalEndFrame - finalStartFrame;
+
+  // For extensible tracks, update sourceDuration to match the new duration
+  // This allows them to be extended indefinitely without artificial limits
+  const finalSourceDuration = isExtensibleTrack
+    ? finalDurationFrames
+    : track.sourceDuration;
 
   return {
     ...track,
@@ -192,12 +245,14 @@ const resizeTrackWithTrimming = (
     endFrame: finalEndFrame,
     duration: finalDurationFrames,
     sourceStartTime: finalSourceStartTime,
+    sourceDuration: finalSourceDuration,
   };
 };
 
 export interface TracksSlice {
   tracks: VideoTrack[];
   addTrack: (track: Omit<VideoTrack, 'id'>) => Promise<string>;
+  addTracks: (tracks: Omit<VideoTrack, 'id'>[]) => Promise<string[]>;
   addTrackFromMediaLibrary: (
     mediaId: string,
     startFrame?: number,
@@ -335,15 +390,56 @@ export const createTracksSlice: StateCreator<
         existingTracks,
       );
 
+      // Determine if this is an extensible track type (text, subtitle, image)
+      const isExtensibleTrack =
+        trackData.type === 'text' ||
+        trackData.type === 'subtitle' ||
+        trackData.type === 'image';
+
+      // Calculate auto-fit dimensions for image tracks
+      let imageTransform = trackData.textTransform;
+      if (trackData.type === 'image' && trackData.width && trackData.height) {
+        const canvasWidth = state.preview?.canvasWidth || 1920;
+        const canvasHeight = state.preview?.canvasHeight || 1080;
+        const imageAspectRatio = trackData.width / trackData.height;
+        const canvasAspectRatio = canvasWidth / canvasHeight;
+
+        let fitWidth = canvasWidth;
+        let fitHeight = canvasHeight;
+
+        if (imageAspectRatio > canvasAspectRatio) {
+          // Image is wider than canvas - fit to width
+          fitWidth = canvasWidth;
+          fitHeight = canvasWidth / imageAspectRatio;
+        } else {
+          // Image is taller than canvas - fit to height
+          fitHeight = canvasHeight;
+          fitWidth = canvasHeight * imageAspectRatio;
+        }
+
+        imageTransform = {
+          x: 0, // Centered
+          y: 0, // Centered
+          scale: 1, // 100% scale
+          rotation: 0, // No rotation
+          width: fitWidth, // Auto-fit widthx
+          height: fitHeight, // Auto-fit height
+        };
+      }
+
       const track: VideoTrack = {
         ...trackData,
         id,
         startFrame,
         endFrame: startFrame + duration,
         sourceStartTime: trackData.sourceStartTime || 0,
-        sourceDuration: duration, // Store original duration for trimming boundaries
+        // For extensible tracks, set sourceDuration to match duration (will be updated dynamically)
+        // For audio tracks, store original duration for trimming boundaries
+        sourceDuration: isExtensibleTrack ? duration : duration,
         color: getTrackColor(state.tracks.length),
         muted: trackData.type === 'audio' ? false : undefined,
+        // Apply auto-fit transform for images
+        ...(imageTransform && { textTransform: imageTransform }),
       };
 
       set((state: any) => ({
@@ -361,7 +457,7 @@ export const createTracksSlice: StateCreator<
       } else if (trackData.type === 'image') {
         setTimeout(() => {
           const currentState = get() as any;
-          currentState.ensureTrackRowVisible?.('logo');
+          currentState.ensureTrackRowVisible?.('image');
           console.log('🖼️ Auto-created Image/Overlay track row');
         }, 0);
       }
@@ -371,6 +467,112 @@ export const createTracksSlice: StateCreator<
       state.markUnsavedChanges?.();
       return id;
     }
+  },
+
+  addTracks: async (tracksData) => {
+    const state = get() as any;
+    const trackIds: string[] = [];
+
+    // Begin grouped transaction for batch track addition
+    state.beginGroup?.('Add Multiple Tracks');
+
+    try {
+      // Process all tracks in a single state update for better performance
+      const newTracks: VideoTrack[] = [];
+
+      for (const trackData of tracksData) {
+        const id = uuidv4();
+
+        // For video tracks (which create video+audio pairs)
+        if (trackData.type === 'video') {
+          const audioId = uuidv4();
+          const duration = trackData.endFrame - trackData.startFrame;
+          const existingVideoTracks = state.tracks.filter(
+            (t: VideoTrack) => t.type === 'video',
+          );
+          const existingAudioTracks = state.tracks.filter(
+            (t: VideoTrack) => t.type === 'audio',
+          );
+
+          const videoStartFrame = findNearestAvailablePosition(
+            trackData.startFrame,
+            duration,
+            existingVideoTracks,
+          );
+          const audioStartFrame = findNearestAvailablePosition(
+            trackData.startFrame,
+            duration,
+            existingAudioTracks,
+          );
+
+          const mediaItem = state.mediaLibrary?.find(
+            (item: any) =>
+              item.source === trackData.source && item.type === 'video',
+          );
+          const extractedAudio = mediaItem?.extractedAudio;
+
+          const videoTrack: VideoTrack = {
+            ...trackData,
+            id,
+            type: 'video',
+            startFrame: videoStartFrame,
+            endFrame: videoStartFrame + duration,
+            sourceStartTime: trackData.sourceStartTime || 0,
+            sourceDuration: duration,
+            color: getTrackColor(state.tracks.length + newTracks.length),
+            muted: false,
+            linkedTrackId: audioId,
+            isLinked: true,
+          };
+
+          const audioTrack: VideoTrack = {
+            ...trackData,
+            id: audioId,
+            type: 'audio',
+            startFrame: audioStartFrame,
+            endFrame: audioStartFrame + duration,
+            sourceStartTime: trackData.sourceStartTime || 0,
+            sourceDuration: duration,
+            color: getTrackColor(state.tracks.length + newTracks.length + 1),
+            muted: false,
+            linkedTrackId: id,
+            isLinked: true,
+            source: extractedAudio?.audioPath || trackData.source,
+            previewUrl: extractedAudio?.previewUrl || trackData.previewUrl,
+          };
+
+          newTracks.push(videoTrack);
+          newTracks.push(audioTrack);
+          trackIds.push(id, audioId);
+        } else {
+          // For non-video tracks
+          const newTrack: VideoTrack = {
+            ...trackData,
+            id,
+            color: getTrackColor(state.tracks.length + newTracks.length),
+          };
+
+          newTracks.push(newTrack);
+          trackIds.push(id);
+        }
+      }
+
+      // Single state update for all tracks
+      set((state) => ({
+        tracks: [...state.tracks, ...newTracks],
+      }));
+
+      // Refresh state reference
+      const currentState = get() as any;
+      currentState.markUnsavedChanges?.();
+
+      console.log(`✅ Added ${newTracks.length} tracks in batch`);
+    } finally {
+      // End grouped transaction
+      state.endGroup?.();
+    }
+
+    return trackIds;
   },
 
   addTrackFromMediaLibrary: async (mediaId, startFrame = 0) => {
@@ -414,23 +616,14 @@ export const createTracksSlice: StateCreator<
             mediaItem.previewUrl,
           );
 
-          // Begin grouped transaction for all subtitle segments
-          state.beginGroup?.(`Import Subtitle File: ${mediaItem.name}`);
-
-          // Add each subtitle segment as a track preserving original timing
-          const addedIds: string[] = [];
-
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          for (const [_index, track] of subtitleTracks.entries()) {
-            const trackId = await get().addTrack(track);
-            addedIds.push(trackId);
-          }
-
-          // End grouped transaction - all subtitle segments as one atomic action
-          state.endGroup?.();
+          // Use batch addTracks for better performance
+          console.log(
+            `🚀 Adding ${subtitleTracks.length} subtitle tracks in batch...`,
+          );
+          const addedIds = await get().addTracks(subtitleTracks);
 
           console.log(
-            `✅ Imported ${subtitleTracks.length} subtitle segments as grouped transaction`,
+            `✅ Imported ${subtitleTracks.length} subtitle segments using batch operation`,
           );
 
           return addedIds[0] || ''; // Return first track ID for consistency
@@ -660,27 +853,40 @@ export const createTracksSlice: StateCreator<
           }
         }
 
-        // Standard boundary collision (no bypass or bypass not possible)
+        // Standard boundary collision: only block if we would actually overlap
         if (movementDelta > 0) {
-          // Moving RIGHT: find the nearest obstacle and stop when we touch it
+          // Moving RIGHT: find obstacles we would actually hit
           let safeDelta = movementDelta;
           conflicts.forEach((conflict) => {
-            // Distance we can move before our END touches the conflict's START
-            const spaceBeforeConflict = conflict.startFrame - originalEnd;
-            if (spaceBeforeConflict >= 0 && spaceBeforeConflict < safeDelta) {
-              safeDelta = spaceBeforeConflict;
+            // Check if we would overlap with this conflict at the proposed position
+            const wouldOverlap =
+              proposedStart < conflict.endFrame &&
+              proposedEnd > conflict.startFrame;
+
+            if (wouldOverlap) {
+              // Distance we can move before our END touches the conflict's START
+              const spaceBeforeConflict = conflict.startFrame - originalEnd;
+              if (spaceBeforeConflict >= 0 && spaceBeforeConflict < safeDelta) {
+                safeDelta = spaceBeforeConflict;
+              }
             }
           });
           return safeDelta;
         } else {
-          // Moving LEFT: find the nearest obstacle and stop when we touch it
+          // Moving LEFT: find obstacles we would actually hit
           let safeDelta = movementDelta; // negative value
           conflicts.forEach((conflict) => {
-            // Distance we can move before our START touches the conflict's END
-            const spaceAfterConflict = conflict.endFrame - trackStart;
+            // Check if we would overlap with this conflict at the proposed position
+            const wouldOverlap =
+              proposedStart < conflict.endFrame &&
+              proposedEnd > conflict.startFrame;
 
-            if (spaceAfterConflict <= 0 && spaceAfterConflict > safeDelta) {
-              safeDelta = spaceAfterConflict;
+            if (wouldOverlap) {
+              // Distance we can move before our START touches the conflict's END
+              const spaceAfterConflict = conflict.endFrame - trackStart;
+              if (spaceAfterConflict <= 0 && spaceAfterConflict > safeDelta) {
+                safeDelta = spaceAfterConflict;
+              }
             }
           });
           return safeDelta;
@@ -874,35 +1080,52 @@ export const createTracksSlice: StateCreator<
 
           const trackStart = track.startFrame;
           const trackEnd = track.endFrame;
+          const trackDuration = trackEnd - trackStart;
 
-          // Check all conflicts in the direction of movement
-          // Don't use hasOverlap check - we need to find the nearest boundary regardless
           if (movementDelta > 0) {
             // Moving RIGHT: find nearest obstacle and stop when our END touches their START
             conflicts.forEach((conflict) => {
-              const spaceBeforeConflict = conflict.startFrame - trackEnd;
-              // Only consider conflicts ahead of us (in our path)
-              if (
-                spaceBeforeConflict >= 0 &&
-                spaceBeforeConflict < minSafeDelta
-              ) {
-                minSafeDelta = spaceBeforeConflict;
-                hasAnyCollision = true;
+              const proposedStart = trackStart + movementDelta;
+              const proposedEnd = proposedStart + trackDuration;
+
+              // Only consider conflicts that we would actually overlap with
+              const wouldOverlap =
+                proposedStart < conflict.endFrame &&
+                proposedEnd > conflict.startFrame;
+
+              if (wouldOverlap) {
+                // Calculate how much we can move before touching this conflict
+                const spaceBeforeConflict = conflict.startFrame - trackEnd;
+                if (
+                  spaceBeforeConflict >= 0 &&
+                  spaceBeforeConflict < minSafeDelta
+                ) {
+                  minSafeDelta = spaceBeforeConflict;
+                  hasAnyCollision = true;
+                }
               }
             });
           } else if (movementDelta < 0) {
             // Moving LEFT: find nearest obstacle and stop when our START touches their END
             conflicts.forEach((conflict) => {
-              const spaceAfterConflict = conflict.endFrame - trackStart;
-              // Only consider conflicts behind us (in our path)
-              // spaceAfterConflict should be negative or zero (conflict is behind/at us)
-              // We want the one closest to zero (least negative = nearest obstacle)
-              if (
-                spaceAfterConflict <= 0 &&
-                spaceAfterConflict > minSafeDelta
-              ) {
-                minSafeDelta = spaceAfterConflict;
-                hasAnyCollision = true;
+              const proposedStart = trackStart + movementDelta;
+              const proposedEnd = proposedStart + trackDuration;
+
+              // Only consider conflicts that we would actually overlap with
+              const wouldOverlap =
+                proposedStart < conflict.endFrame &&
+                proposedEnd > conflict.startFrame;
+
+              if (wouldOverlap) {
+                // Calculate how much we can move before touching this conflict
+                const spaceAfterConflict = conflict.endFrame - trackStart;
+                if (
+                  spaceAfterConflict <= 0 &&
+                  spaceAfterConflict > minSafeDelta
+                ) {
+                  minSafeDelta = spaceAfterConflict;
+                  hasAnyCollision = true;
+                }
               }
             });
           }

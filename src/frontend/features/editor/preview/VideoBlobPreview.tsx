@@ -4,8 +4,10 @@ import New from '@/frontend/assets/logo/New-Light.svg';
 import { useTheme } from '@/frontend/providers/ThemeProvider';
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { usePreviewShortcuts } from '../stores/videoEditor/hooks/usePreviewShortcuts';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
+import { AlignmentGuide, DragGuides } from './components/DragGuides';
 import { TextTransformBoundary } from './components/TextTransformBoundary';
 
 interface VideoBlobPreviewProps {
@@ -21,6 +23,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragActive, setDragActive] = useState(false);
   const [isPreviewFocused, setIsPreviewFocused] = useState(false);
+  const [isRotating, setIsRotating] = useState(false);
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
+  const [isDraggingText, setIsDraggingText] = useState(false);
 
   // Initialize preview shortcuts
   usePreviewShortcuts(isPreviewFocused);
@@ -344,6 +349,50 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     return activeTexts;
   }, [tracks, timeline.currentFrame]);
 
+  // Image tracks
+  const getActiveImageTracks = useCallback(() => {
+    const currentFrame = timeline.currentFrame;
+    const activeImages = tracks.filter(
+      (track) =>
+        track.type === 'image' &&
+        track.visible &&
+        currentFrame >= track.startFrame &&
+        currentFrame < track.endFrame &&
+        (track.previewUrl || track.source),
+    );
+
+    return activeImages;
+  }, [tracks, timeline.currentFrame]);
+
+  // Helper function to get z-index based on timeline track order
+  // Lower index in timeline = rendered first = lower z-index (appears behind)
+  // Fallback order: Audio (0) → Video (100) → Image (200) → Subtitles (300) → Text (400)
+  const getTrackZIndex = useCallback(
+    (track: VideoTrack): number => {
+      // Find the track's position in the timeline tracks array
+      const trackIndex = tracks.findIndex((t) => t.id === track.id);
+
+      // Base z-index by type (fallback if track not found in array)
+      const typeBaseZIndex: Record<VideoTrack['type'], number> = {
+        audio: 0,
+        video: 100,
+        image: 200,
+        subtitle: 300,
+        text: 400,
+      };
+
+      // If track found in timeline, use its index for fine-grained ordering
+      // Add type base to ensure type separation, then add track index for within-type ordering
+      if (trackIndex !== -1) {
+        return typeBaseZIndex[track.type] + trackIndex;
+      }
+
+      // Fallback to type-based ordering if track not found
+      return typeBaseZIndex[track.type];
+    },
+    [tracks],
+  );
+
   // Helper function to convert text track style to CSS
   const getTextStyleForTextClip = useCallback((track: VideoTrack) => {
     const style = track.textStyle || {};
@@ -402,7 +451,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const handleTextTransformUpdate = useCallback(
     (
       trackId: string,
-      transform: { x?: number; y?: number; scale?: number; rotation?: number },
+      transform: {
+        x?: number;
+        y?: number;
+        scale?: number;
+        rotation?: number;
+        width?: number;
+        height?: number;
+      },
     ) => {
       const track = tracks.find((t) => t.id === trackId);
       if (!track || track.type !== 'text') return;
@@ -412,6 +468,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         y: 0,
         scale: 1,
         rotation: 0,
+        width: 0,
+        height: 0,
       };
 
       updateTrack(trackId, {
@@ -438,6 +496,84 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       updateTrack(trackId, { textContent: newText });
     },
     [updateTrack],
+  );
+
+  // Handle drag state changes for guide rendering
+  const handleDragStateChange = useCallback(
+    (
+      isDragging: boolean,
+      position?: { x: number; y: number; width: number; height: number },
+    ) => {
+      setIsDraggingText(isDragging);
+
+      if (!isDragging || !position) {
+        setAlignmentGuides([]);
+        return;
+      }
+
+      const guides: AlignmentGuide[] = [];
+      const centerTolerance = 1; // Strict tolerance for center alignment (±1px)
+
+      // Use ORIGINAL video dimensions (not scaled)
+      const baseVideoWidth = activeVideoTrack?.width || preview.canvasWidth;
+      const baseVideoHeight = activeVideoTrack?.height || preview.canvasHeight;
+
+      // Calculate element center in video pixel coordinates (centered at 0,0)
+      // position.x and position.y represent the CENTER of the text element
+      const elementCenterX = position.x;
+      const elementCenterY = position.y;
+
+      // Video frame center (in video pixel coordinates, centered at 0,0)
+      const frameCenterX = 0; // Video center X in our coordinate system
+      const frameCenterY = 0; // Video center Y in our coordinate system
+
+      // CENTER ALIGNMENT - Check if element's CENTER aligns with video frame's CENTER
+      // Horizontal center guide (appears when text's Y center aligns with video's Y center)
+      const isHorizontallyCentered =
+        Math.abs(elementCenterY - frameCenterY) < centerTolerance;
+      if (isHorizontallyCentered) {
+        guides.push({
+          type: 'horizontal',
+          position: baseVideoHeight / 2, // Convert from centered coords (0) to top-left coords
+          label: 'Center',
+        });
+      }
+
+      // Vertical center guide (appears when text's X center aligns with video's X center)
+      const isVerticallyCentered =
+        Math.abs(elementCenterX - frameCenterX) < centerTolerance;
+      if (isVerticallyCentered) {
+        guides.push({
+          type: 'vertical',
+          position: baseVideoWidth / 2, // Convert from centered coords (0) to top-left coords
+          label: 'Center',
+        });
+      }
+
+      // Debug logging (development mode only)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Drag Guides Debug]', {
+          textCenter: { x: elementCenterX, y: elementCenterY },
+          videoCenter: { x: frameCenterX, y: frameCenterY },
+          alignment: {
+            horizontallyCentered: isHorizontallyCentered,
+            verticallyCentered: isVerticallyCentered,
+            deltaX: Math.abs(elementCenterX - frameCenterX),
+            deltaY: Math.abs(elementCenterY - frameCenterY),
+          },
+          tolerance: centerTolerance,
+          guidesActive: guides.map((g) => `${g.type}-${g.label}`),
+        });
+      }
+
+      setAlignmentGuides(guides);
+    },
+    [
+      activeVideoTrack?.width,
+      activeVideoTrack?.height,
+      preview.canvasWidth,
+      preview.canvasHeight,
+    ],
   );
 
   // Handle click outside to deselect
@@ -837,8 +973,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Check if this is an external file drag (not internal media)
+    const hasMediaId = e.dataTransfer.types.includes('text/plain');
+    const hasFiles = e.dataTransfer.types.includes('Files');
+
     if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
+      // Only activate for external file drops
+      if (hasFiles && !hasMediaId) {
+        setDragActive(true);
+      }
     } else if (e.type === 'dragleave') {
       setDragActive(false);
     }
@@ -849,9 +993,52 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       e.preventDefault();
       e.stopPropagation();
       setDragActive(false);
+
+      // Check if this is an internal media drag (not a file drop)
+      const mediaId = e.dataTransfer.getData('text/plain');
+      if (mediaId) {
+        // This is an internal drag from media library, ignore it
+        return;
+      }
+
+      // Handle external file drops with validation
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
-        await importMediaToTimeline(files);
+        // Show immediate loading toast with promise
+        const importPromise = importMediaToTimeline(files);
+
+        toast.promise(importPromise, {
+          loading: `Adding ${files.length} ${files.length === 1 ? 'file' : 'files'} to timeline...`,
+          success: (result) => {
+            const importedCount = result.importedFiles.length;
+            const rejectedCount = result.rejectedFiles?.length || 0;
+
+            // Return success message
+            if (importedCount > 0) {
+              return (
+                `Added ${importedCount} ${importedCount === 1 ? 'file' : 'files'} to timeline` +
+                (rejectedCount > 0 ? ` (${rejectedCount} rejected)` : '')
+              );
+            } else {
+              throw new Error(
+                'All files were rejected due to corruption or invalid format',
+              );
+            }
+          },
+          error: (error) => {
+            // Use the actual error message from validation results
+            const errorMessage =
+              error?.error ||
+              'All files were rejected due to corruption or invalid format';
+            return errorMessage;
+          },
+        });
+
+        try {
+          await importPromise;
+        } catch (error) {
+          console.error('❌ Error importing files to preview:', error);
+        }
       }
     },
     [importMediaToTimeline],
@@ -1113,7 +1300,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       {/* Video */}
       {(activeVideoTrack || activeAudioTrack) && (
         <div
-          className="absolute inset-0 flex items-center justify-center transition-[width,height,left,top] duration-150 ease-out"
+          className="absolute inset-0 flex items-center justify-center"
           style={{
             width: actualWidth,
             height: actualHeight,
@@ -1123,6 +1310,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             // Hide video visually if track is not visible, but keep element for audio
             opacity: activeVideoTrack ? 1 : 0,
             pointerEvents: activeVideoTrack ? 'auto' : 'none',
+            zIndex: activeVideoTrack ? getTrackZIndex(activeVideoTrack) : 0,
           }}
         >
           <video
@@ -1167,8 +1355,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         const responsiveFontSize = baseFontSize * preview.previewScale;
 
         // Scale padding and effects with zoom level
-        const scaledPaddingVertical = 2 * preview.previewScale;
-        const scaledPaddingHorizontal = 8 * preview.previewScale;
+        const scaledPaddingVertical = 7 * preview.previewScale;
+        const scaledPaddingHorizontal = 9 * preview.previewScale;
 
         // Calculate responsive horizontal padding based on actual width (5% of actual width)
         const videoWidth = activeVideoTrack?.width || preview.canvasWidth;
@@ -1177,7 +1365,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
         return (
           <div
-            className="absolute inset-0 pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
+            className="absolute inset-0 pointer-events-none"
             style={{
               width: actualWidth,
               height: actualHeight,
@@ -1196,18 +1384,13 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               paddingBottom: `${20 * preview.previewScale}px`,
               paddingLeft: `${scaledHorizontalPadding}px`,
               paddingRight: `${scaledHorizontalPadding}px`,
+              zIndex:
+                activeSubs.length > 0
+                  ? Math.max(...activeSubs.map((t) => getTrackZIndex(t)))
+                  : 300,
             }}
           >
             {activeSubs.map((track) => {
-              // Build glow filter if enabled - scale glow with zoom level
-              const glowRadius1 = 5 * preview.previewScale;
-              const glowRadius2 = 10 * preview.previewScale;
-              const glowStyle = (appliedStyle as any).hasGlow
-                ? {
-                    filter: `drop-shadow(0 0 ${glowRadius1}px ${appliedStyle.color}) drop-shadow(0 0 ${glowRadius2}px ${appliedStyle.color})`,
-                  }
-                : {};
-
               // Scale text shadow with zoom level if present
               let scaledTextShadow = appliedStyle.textShadow;
               if (scaledTextShadow && preview.previewScale !== 1) {
@@ -1220,34 +1403,282 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 );
               }
 
+              // Check if has actual background (not transparent)
+              const hasActualBackground =
+                appliedStyle.backgroundColor &&
+                appliedStyle.backgroundColor !== 'transparent' &&
+                appliedStyle.backgroundColor !== 'rgba(0,0,0,0)' &&
+                appliedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)';
+
+              // Base text style shared across all layers
+              const baseTextStyle: React.CSSProperties = {
+                fontSize: `${responsiveFontSize}px`,
+                fontFamily: appliedStyle.fontFamily,
+                fontWeight: appliedStyle.fontWeight,
+                fontStyle: appliedStyle.fontStyle,
+                textTransform: appliedStyle.textTransform as any,
+                textDecoration: appliedStyle.textDecoration,
+                textAlign: appliedStyle.textAlign as any,
+                lineHeight: appliedStyle.lineHeight,
+                letterSpacing: appliedStyle.letterSpacing
+                  ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
+                  : appliedStyle.letterSpacing,
+                whiteSpace: 'pre-line',
+                wordBreak: 'keep-all',
+                overflowWrap: 'normal',
+                padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+              };
+
+              // Multi-layer rendering for glow effect (matching export implementation)
+              if ((appliedStyle as any).hasGlow) {
+                // Calculate glow parameters - balanced for spread and subtlety
+                const glowBlurAmount = 8 * preview.previewScale; // Moderate blur for soft spread
+                const glowSpread = 8 * preview.previewScale; // Good spread distance
+
+                if (hasActualBackground) {
+                  // Triple-layer mode: glow + background box + text
+                  return (
+                    <div
+                      key={track.id}
+                      style={{
+                        position: 'relative',
+                        display: 'inline-block',
+                      }}
+                    >
+                      {/* Layer 0: Blurred glow layer behind background box */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          color: appliedStyle.color, // Glow uses text color
+                          backgroundColor: hasActualBackground
+                            ? appliedStyle.backgroundColor
+                            : 'transparent',
+                          opacity: 0.75,
+                          filter: `blur(${glowBlurAmount}px)`,
+                          boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                          zIndex: 0,
+                        }}
+                        aria-hidden="true"
+                      >
+                        {track.subtitleText}
+                      </div>
+
+                      {/* Layer 1: Background box (crisp, no blur) */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          color: 'transparent', // Invisible text, just the box
+                          backgroundColor: appliedStyle.backgroundColor,
+                          opacity: appliedStyle.opacity,
+                          zIndex: 1,
+                        }}
+                        aria-hidden="true"
+                      >
+                        {track.subtitleText}
+                      </div>
+
+                      {/* Layer 2: Text with outline on top (crisp, no blur) */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'relative',
+                          color: appliedStyle.color,
+                          backgroundColor: 'transparent',
+                          opacity: appliedStyle.opacity,
+                          textShadow: scaledTextShadow,
+                          zIndex: 2,
+                        }}
+                      >
+                        {track.subtitleText}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Double-layer mode: glow + text (no background)
+                return (
+                  <div
+                    key={track.id}
+                    style={{
+                      position: 'relative',
+                      display: 'inline-block',
+                    }}
+                  >
+                    {/* Layer 0: Blurred glow layer (furthest back) */}
+                    <div
+                      style={{
+                        ...baseTextStyle,
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        color: appliedStyle.color, // Glow uses text color
+                        backgroundColor: 'transparent',
+                        opacity: 0.75, // Slightly more visible for better spread
+                        filter: `blur(${glowBlurAmount}px)`,
+                        textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                        WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
+                        zIndex: 0,
+                      }}
+                      aria-hidden="true"
+                    >
+                      {track.subtitleText}
+                    </div>
+
+                    {/* Layer 1: Main text with outline */}
+                    <div
+                      style={{
+                        ...baseTextStyle,
+                        position: 'relative',
+                        color: appliedStyle.color,
+                        backgroundColor: 'transparent',
+                        opacity: appliedStyle.opacity,
+                        textShadow: scaledTextShadow,
+                        zIndex: 1,
+                      }}
+                    >
+                      {track.subtitleText}
+                    </div>
+                  </div>
+                );
+              }
+
+              // No glow - simple single layer rendering
               return (
                 <div
                   key={track.id}
                   style={{
-                    // Apply all text styles from getTextStyleForSubtitle with zoom responsiveness
-                    fontSize: `${responsiveFontSize}px`,
-                    fontFamily: appliedStyle.fontFamily,
-                    fontWeight: appliedStyle.fontWeight,
-                    fontStyle: appliedStyle.fontStyle,
-                    textTransform: appliedStyle.textTransform as any,
-                    textDecoration: appliedStyle.textDecoration,
-                    textAlign: appliedStyle.textAlign as any,
-                    lineHeight: appliedStyle.lineHeight,
-                    letterSpacing: appliedStyle.letterSpacing
-                      ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
-                      : appliedStyle.letterSpacing,
+                    ...baseTextStyle,
                     textShadow: scaledTextShadow,
-                    whiteSpace: 'pre-line', // Always preserve original line breaks from subtitle text
-                    wordBreak: 'keep-all', // Prevent breaking words unnecessarily
-                    overflowWrap: 'normal', // Don't force wrapping
                     color: appliedStyle.color,
                     backgroundColor: appliedStyle.backgroundColor,
                     opacity: appliedStyle.opacity,
-                    padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-                    ...glowStyle,
                   }}
                 >
                   {track.subtitleText}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* Image Tracks */}
+      {(() => {
+        const activeImages = getActiveImageTracks();
+        if (activeImages.length === 0) return null;
+
+        // Use ORIGINAL video dimensions (not scaled) for coordinate normalization
+        const baseVideoHeight =
+          activeVideoTrack?.height || preview.canvasHeight;
+        const baseVideoWidth = activeVideoTrack?.width || preview.canvasWidth;
+
+        // Sort images by their index in the tracks array to maintain layer order
+        // Lower index = rendered first = appears behind higher index tracks
+        const sortedImages = [...activeImages].sort((a, b) => {
+          const indexA = tracks.findIndex((t) => t.id === a.id);
+          const indexB = tracks.findIndex((t) => t.id === b.id);
+          return indexA - indexB;
+        });
+
+        return (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              width: actualWidth,
+              height: actualHeight,
+              left: `calc(50% + ${preview.panX}px)`,
+              top: `calc(50% + ${preview.panY}px)`,
+              transform: 'translate(-50%, -50%)',
+              overflow: 'hidden', // Clip images that go outside video canvas
+              zIndex:
+                sortedImages.length > 0
+                  ? Math.max(...sortedImages.map((t) => getTrackZIndex(t)))
+                  : 200,
+            }}
+          >
+            {sortedImages.map((track) => {
+              const imageUrl = track.previewUrl || track.source;
+
+              // Calculate adaptive image dimensions that fit canvas while preserving aspect ratio
+              // Priority: preserve width, adjust height to maintain aspect ratio
+              let defaultWidth = baseVideoWidth;
+              let defaultHeight = baseVideoHeight;
+
+              if (track.width && track.height) {
+                const imageAspectRatio = track.width / track.height;
+                const canvasAspectRatio = baseVideoWidth / baseVideoHeight;
+
+                if (imageAspectRatio > canvasAspectRatio) {
+                  // Image is wider than canvas - fit to width
+                  defaultWidth = baseVideoWidth;
+                  defaultHeight = baseVideoWidth / imageAspectRatio;
+                } else {
+                  // Image is taller than canvas - fit to height
+                  defaultHeight = baseVideoHeight;
+                  defaultWidth = baseVideoHeight * imageAspectRatio;
+                }
+              }
+
+              // Get image transform properties (default to centered, adaptive-fit if not set)
+              const imageTransform = track.textTransform || {
+                x: 0, // Centered
+                y: 0, // Centered
+                scale: 1, // 100% scale
+                rotation: 0, // No rotation
+                width: defaultWidth, // Adaptive width
+                height: defaultHeight, // Adaptive height
+              };
+
+              // Calculate position in pixels (from normalized coordinates)
+              // x and y are normalized (-1 to 1, where 0 is center)
+              const pixelX = imageTransform.x * (baseVideoWidth / 2);
+              const pixelY = imageTransform.y * (baseVideoHeight / 2);
+
+              // Calculate scaled dimensions
+              const scaledWidth =
+                (imageTransform.width || defaultWidth) * imageTransform.scale;
+              const scaledHeight =
+                (imageTransform.height || defaultHeight) * imageTransform.scale;
+
+              // Apply preview scale for zoom responsiveness
+              const displayWidth = scaledWidth * preview.previewScale;
+              const displayHeight = scaledHeight * preview.previewScale;
+              const displayX = pixelX * preview.previewScale;
+              const displayY = pixelY * preview.previewScale;
+
+              return (
+                <div
+                  key={track.id}
+                  className="absolute pointer-events-auto"
+                  style={{
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(-50%, -50%) translate(${displayX}px, ${displayY}px) rotate(${imageTransform.rotation}deg)`,
+                    width: `${displayWidth}px`,
+                    height: `${displayHeight}px`,
+                    opacity:
+                      track.textStyle?.opacity !== undefined
+                        ? track.textStyle.opacity / 100
+                        : 1,
+                    zIndex: getTrackZIndex(track), // Use timeline-based z-index
+                  }}
+                >
+                  <img
+                    src={imageUrl}
+                    alt={track.name}
+                    className="w-full h-full object-contain"
+                    style={{
+                      userSelect: 'none',
+                      pointerEvents: 'none',
+                    }}
+                    draggable={false}
+                  />
                 </div>
               );
             })}
@@ -1268,13 +1699,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
         return (
           <div
-            className="absolute inset-0 pointer-events-none transition-[width,height,left,top] duration-150 ease-out"
+            className="absolute inset-0 pointer-events-none"
             style={{
               width: actualWidth,
               height: actualHeight,
               left: `calc(50% + ${preview.panX}px)`,
               top: `calc(50% + ${preview.panY}px)`,
               transform: 'translate(-50%, -50%)',
+              overflow: 'hidden', // Clip text elements that go outside video canvas
+              zIndex:
+                activeTexts.length > 0
+                  ? Math.max(...activeTexts.map((t) => getTrackZIndex(t)))
+                  : 400,
             }}
           >
             {activeTexts.map((track) => {
@@ -1289,15 +1725,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               const scaledPaddingVertical = 2 * preview.previewScale;
               const scaledPaddingHorizontal = 8 * preview.previewScale;
 
-              // Build glow filter if enabled
-              const glowRadius1 = 5 * preview.previewScale;
-              const glowRadius2 = 10 * preview.previewScale;
-              const glowStyle = appliedStyle.hasGlow
-                ? {
-                    filter: `drop-shadow(0 0 ${glowRadius1}px ${appliedStyle.color}) drop-shadow(0 0 ${glowRadius2}px ${appliedStyle.color})`,
-                  }
-                : {};
-
               // Scale text shadow with zoom level
               let scaledTextShadow = appliedStyle.textShadow;
               if (scaledTextShadow && preview.previewScale !== 1) {
@@ -1309,8 +1736,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 );
               }
 
-              // Create the complete style object for both display and editing
-              const completeStyle: React.CSSProperties = {
+              // Check if has actual background (not transparent)
+              const hasActualBackground =
+                appliedStyle.backgroundColor &&
+                appliedStyle.backgroundColor !== 'transparent' &&
+                appliedStyle.backgroundColor !== 'rgba(0,0,0,0)' &&
+                appliedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)';
+
+              // Base text style shared across all layers
+              const baseTextStyle: React.CSSProperties = {
                 fontSize: `${responsiveFontSize}px`,
                 fontFamily: appliedStyle.fontFamily,
                 fontWeight: appliedStyle.fontWeight,
@@ -1322,15 +1756,175 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 letterSpacing: appliedStyle.letterSpacing
                   ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
                   : appliedStyle.letterSpacing,
-                textShadow: scaledTextShadow,
                 whiteSpace: 'pre-line',
                 wordBreak: 'keep-all',
                 overflowWrap: 'normal',
+                padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+              };
+
+              // Multi-layer rendering for glow effect (matching export implementation)
+              if (appliedStyle.hasGlow) {
+                // Calculate glow parameters - balanced for spread and subtlety
+                const glowBlurAmount = 8 * preview.previewScale; // Moderate blur for soft spread
+                const glowSpread = 8 * preview.previewScale; // Good spread distance
+
+                // Create the complete style for the boundary wrapper
+                const completeStyle: React.CSSProperties = {
+                  ...baseTextStyle,
+                  color: appliedStyle.color,
+                  backgroundColor: hasActualBackground
+                    ? appliedStyle.backgroundColor
+                    : 'transparent',
+                  opacity: appliedStyle.opacity,
+                  textShadow: scaledTextShadow,
+                };
+
+                if (hasActualBackground) {
+                  // Triple-layer mode: glow + background box + text
+                  return (
+                    <TextTransformBoundary
+                      key={track.id}
+                      track={track}
+                      isSelected={isSelected}
+                      previewScale={preview.previewScale}
+                      videoWidth={baseVideoWidth}
+                      videoHeight={baseVideoHeight}
+                      onTransformUpdate={handleTextTransformUpdate}
+                      onSelect={handleTextSelect}
+                      onTextUpdate={handleTextUpdate}
+                      onRotationStateChange={setIsRotating}
+                      onDragStateChange={handleDragStateChange}
+                      appliedStyle={completeStyle}
+                    >
+                      <div
+                        style={{
+                          position: 'relative',
+                          display: 'inline-block',
+                        }}
+                      >
+                        {/* Layer 0: Blurred glow layer behind background box */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            color: appliedStyle.color, // Glow uses text color
+                            backgroundColor: appliedStyle.backgroundColor,
+                            opacity: 0.75,
+                            filter: `blur(${glowBlurAmount}px)`,
+                            boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                            zIndex: 0,
+                          }}
+                          aria-hidden="true"
+                        >
+                          {track.textContent}
+                        </div>
+
+                        {/* Layer 1: Background box (crisp, no blur) */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            color: 'transparent', // Invisible text, just the box
+                            backgroundColor: appliedStyle.backgroundColor,
+                            opacity: appliedStyle.opacity,
+                            zIndex: 1,
+                          }}
+                          aria-hidden="true"
+                        >
+                          {track.textContent}
+                        </div>
+
+                        {/* Layer 2: Text with outline on top (crisp, no blur) */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'relative',
+                            color: appliedStyle.color,
+                            backgroundColor: 'transparent',
+                            opacity: appliedStyle.opacity,
+                            textShadow: scaledTextShadow,
+                            zIndex: 2,
+                          }}
+                        >
+                          {track.textContent}
+                        </div>
+                      </div>
+                    </TextTransformBoundary>
+                  );
+                }
+
+                // Double-layer mode: glow + text (no background)
+                return (
+                  <TextTransformBoundary
+                    key={track.id}
+                    track={track}
+                    isSelected={isSelected}
+                    previewScale={preview.previewScale}
+                    videoWidth={baseVideoWidth}
+                    videoHeight={baseVideoHeight}
+                    onTransformUpdate={handleTextTransformUpdate}
+                    onSelect={handleTextSelect}
+                    onTextUpdate={handleTextUpdate}
+                    onRotationStateChange={setIsRotating}
+                    onDragStateChange={handleDragStateChange}
+                    appliedStyle={completeStyle}
+                  >
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-block',
+                      }}
+                    >
+                      {/* Layer 0: Blurred glow layer (furthest back) */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          color: appliedStyle.color, // Glow uses text color
+                          backgroundColor: 'transparent',
+                          opacity: 0.75, // Slightly more visible for better spread
+                          filter: `blur(${glowBlurAmount}px)`,
+                          textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                          WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
+                          zIndex: 0,
+                        }}
+                        aria-hidden="true"
+                      >
+                        {track.textContent}
+                      </div>
+
+                      {/* Layer 1: Main text with outline */}
+                      <div
+                        style={{
+                          ...baseTextStyle,
+                          position: 'relative',
+                          color: appliedStyle.color,
+                          backgroundColor: 'transparent',
+                          opacity: appliedStyle.opacity,
+                          textShadow: scaledTextShadow,
+                          zIndex: 1,
+                        }}
+                      >
+                        {track.textContent}
+                      </div>
+                    </div>
+                  </TextTransformBoundary>
+                );
+              }
+
+              // No glow - simple single layer rendering
+              const completeStyle: React.CSSProperties = {
+                ...baseTextStyle,
+                textShadow: scaledTextShadow,
                 color: appliedStyle.color,
                 backgroundColor: appliedStyle.backgroundColor,
                 opacity: appliedStyle.opacity,
-                padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-                ...glowStyle,
               };
 
               return (
@@ -1344,12 +1938,60 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                   onTransformUpdate={handleTextTransformUpdate}
                   onSelect={handleTextSelect}
                   onTextUpdate={handleTextUpdate}
+                  onRotationStateChange={setIsRotating}
+                  onDragStateChange={handleDragStateChange}
                   appliedStyle={completeStyle}
                 >
                   <div style={completeStyle}>{track.textContent}</div>
                 </TextTransformBoundary>
               );
             })}
+
+            {/* Drag Alignment Guides */}
+            {isDraggingText && alignmentGuides.length > 0 && (
+              <DragGuides
+                guides={alignmentGuides}
+                videoWidth={activeVideoTrack?.width || preview.canvasWidth}
+                videoHeight={activeVideoTrack?.height || preview.canvasHeight}
+                previewScale={preview.previewScale}
+                panX={preview.panX}
+                panY={preview.panY}
+                isBoundaryWarning={false}
+              />
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Rotation Info Badge - Only show during rotation */}
+      {(() => {
+        if (!isRotating) return null;
+
+        const selectedTextTrack = tracks.find(
+          (t) => t.type === 'text' && timeline.selectedTrackIds.includes(t.id),
+        );
+
+        if (!selectedTextTrack) return null;
+
+        const rotation = selectedTextTrack.textTransform?.rotation || 0;
+        const fullRotations = Math.floor(rotation / 360);
+        const normalizedDegrees = ((rotation % 360) + 360) % 360;
+        const displayDegrees =
+          normalizedDegrees > 180 ? normalizedDegrees - 360 : normalizedDegrees;
+
+        return (
+          <div className="absolute top-4 left-4 dark:bg-black/80 bg-white/80 dark:text-white backdrop-blur-sm text-black px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-2 z-[1002]">
+            <span className="text-[#F45513]">Rotation:</span>
+            {fullRotations !== 0 && (
+              <span className="font-bold">
+                {fullRotations > 0 ? '+' : ''}
+                {fullRotations}
+              </span>
+            )}
+            <span>
+              {displayDegrees > 0 ? '+' : displayDegrees < 0 ? '' : ''}
+              {displayDegrees.toFixed(0)}°
+            </span>
           </div>
         );
       })()}
@@ -1364,7 +2006,20 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
               : 'border-accent hover:!border-secondary hover:bg-secondary/10',
           )}
           onClick={async () => {
-            await importMediaFromDialog();
+            const result = await importMediaFromDialog();
+            if (!result || (!result.success && !result.error)) return;
+
+            if (result.success && result.importedFiles.length > 0) {
+              console.log(
+                `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
+              );
+            } else {
+              // Use the actual error message from validation results
+              const errorMessage =
+                result.error ||
+                'All files were rejected due to corruption or invalid format';
+              toast.error(errorMessage);
+            }
           }}
         >
           <img src={theme === 'dark' ? NewDark : New} alt="New Project" />

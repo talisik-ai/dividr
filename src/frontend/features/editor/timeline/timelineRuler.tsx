@@ -1,6 +1,7 @@
 import { VideoTrack } from '@/frontend/features/editor/stores/videoEditor/index';
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useMemo } from 'react';
+import { TIMELINE_HEADER_HEIGHT_CLASSES } from './utils/timelineConstants';
 
 interface TimelineRulerProps {
   frameWidth: number;
@@ -164,7 +165,8 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     return (
       <div
         className={cn(
-          'h-[36px] lg:h-[40px] border-t border-accent relative overflow-hidden',
+          'border-t border-accent relative',
+          TIMELINE_HEADER_HEIGHT_CLASSES,
           className,
         )}
         onClick={onClick}
@@ -208,7 +210,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
           const pixelsPerSecond = frameWidth * fps;
           const getTickHeight = () => {
             if (isHour) {
-              return pixelsPerSecond >= 50 ? 24 : 20;
+              return 14;
             }
             if (isMinute) {
               return pixelsPerSecond >= 100
@@ -317,7 +319,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
 
                       // Larger font sizes for higher zoom levels
                       if (isHour) {
-                        return pixelsPerSecond >= 50 ? '13px' : '12px';
+                        return '12px';
                       }
                       if (isMinute) {
                         return pixelsPerSecond >= 100

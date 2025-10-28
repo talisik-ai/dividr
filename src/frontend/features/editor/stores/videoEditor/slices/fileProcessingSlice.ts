@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { FileIntegrityValidator } from '@/frontend/utils/fileValidator';
 import { StateCreator } from 'zustand';
 import {
   FileProcessingSlice,
@@ -236,15 +237,23 @@ const processImportedFile = async (
   ) => void,
 ) => {
   // Get accurate duration using FFprobe
+  // Note: For images, we use a default duration since images are static and extensible
   let actualDurationSeconds: number;
-  try {
-    actualDurationSeconds = await window.electronAPI.getDuration(fileInfo.path);
-  } catch (error) {
-    console.warn(
-      `⚠️ Failed to get duration for ${fileInfo.name}, using fallback:`,
-      error,
-    );
-    actualDurationSeconds = fileInfo.type === 'image' ? 5 : 30;
+  if (fileInfo.type === 'image') {
+    // Images are extensible - use a default starting duration of 5 seconds
+    actualDurationSeconds = 5;
+  } else {
+    try {
+      actualDurationSeconds = await window.electronAPI.getDuration(
+        fileInfo.path,
+      );
+    } catch (error) {
+      console.warn(
+        `⚠️ Failed to get duration for ${fileInfo.name}, using fallback:`,
+        error,
+      );
+      actualDurationSeconds = fileInfo.type === 'audio' ? 30 : 30;
+    }
   }
   // Get video dimensions
   let videoDimensions: { width: number; height: number };
@@ -523,6 +532,8 @@ export const createFileProcessingSlice: StateCreator<
 > = (set, get) => ({
   importMediaFromDialog: async (): Promise<ImportResult> => {
     try {
+      console.log('🔍 Opening file dialog for media selection...');
+
       // Use Electron's native file dialog
       const result = await window.electronAPI.openFileDialog({
         title: 'Select Media Files',
@@ -564,6 +575,95 @@ export const createFileProcessingSlice: StateCreator<
         return { success: false, importedFiles: [] };
       }
 
+      console.log(
+        `🔍 Validating ${result.files.length} selected files from dialog...`,
+      );
+
+      // STEP 1: Validate files BEFORE any processing
+      // Convert file paths to File objects for validation
+      const fileObjects = await Promise.all(
+        result.files.map(async (fileInfo) => {
+          try {
+            // Read file from disk as ArrayBuffer
+            const fileBuffer = await window.electronAPI.readFileAsBuffer(
+              fileInfo.path,
+            );
+            // Create File object from buffer for validation
+            return new File([fileBuffer], fileInfo.name, {
+              type: fileInfo.type || 'application/octet-stream',
+            });
+          } catch (error) {
+            console.error(
+              `❌ Failed to read file ${fileInfo.name} for validation:`,
+              error,
+            );
+            return null;
+          }
+        }),
+      );
+
+      // Filter out null values (files that couldn't be read)
+      const validFileObjects = fileObjects.filter(
+        (file): file is File => file !== null,
+      );
+
+      if (validFileObjects.length === 0) {
+        console.error('❌ No files could be read for validation');
+        return {
+          success: false,
+          importedFiles: [],
+          error: 'Failed to read selected files',
+        };
+      }
+
+      // Validate all files
+      const validationResults = await FileIntegrityValidator.validateFiles(
+        validFileObjects,
+        (completed, total) => {
+          console.log(`Validation progress: ${completed}/${total}`);
+        },
+      );
+
+      // Separate valid and invalid files
+      const validFileIndices: number[] = [];
+      const rejectedFiles: Array<{
+        name: string;
+        reason: string;
+        error?: string;
+      }> = [];
+
+      validationResults.forEach((validationResult, file) => {
+        const originalIndex = validFileObjects.indexOf(file);
+        if (validationResult.isValid) {
+          validFileIndices.push(originalIndex);
+          console.log(`✅ Valid: ${file.name}`);
+        } else {
+          const reason = validationResult.error || 'File validation failed';
+          rejectedFiles.push({
+            name: file.name,
+            reason,
+            error: reason,
+          });
+          console.warn(`🚫 Rejected: ${file.name} - ${reason}`);
+        }
+      });
+
+      // If no valid files, return early with rejection info
+      if (validFileIndices.length === 0) {
+        console.warn('❌ No valid files to import (all rejected)');
+        return {
+          success: false,
+          importedFiles: [],
+          rejectedFiles,
+          error: 'All files were rejected due to corruption or invalid format',
+        };
+      }
+
+      // STEP 2: Process only valid files
+      console.log(
+        `📦 Processing ${validFileIndices.length} valid files from dialog...`,
+      );
+
       const importedFiles: Array<{
         id: string;
         name: string;
@@ -573,34 +673,84 @@ export const createFileProcessingSlice: StateCreator<
         thumbnail?: string;
       }> = [];
 
-      // Process files and add to media library only (no timeline)
+      // Process only valid files and add to media library
       await Promise.all(
-        result.files.map(async (fileInfo) => {
-          const fileData = await processImportedFile(
-            fileInfo,
-            (get() as any).addToMediaLibrary,
-            undefined, // No timeline addition
-            () => (get() as any).timeline.fps,
-            (get() as any).generateSpriteSheetForMedia, // Generate sprite sheets on import
-            (get() as any).generateThumbnailForMedia, // Generate thumbnails on import
-            (get() as any).generateWaveformForMedia, // Generate waveforms on import
-            (get() as any).updateMediaLibraryItem, // Update media library items with extracted audio
-          );
-          importedFiles.push(fileData);
+        validFileIndices.map(async (index) => {
+          const fileInfo = result.files[index];
+          try {
+            const fileData = await processImportedFile(
+              fileInfo,
+              (get() as any).addToMediaLibrary,
+              undefined, // No timeline addition
+              () => (get() as any).timeline.fps,
+              (get() as any).generateSpriteSheetForMedia,
+              (get() as any).generateThumbnailForMedia,
+              (get() as any).generateWaveformForMedia,
+              (get() as any).updateMediaLibraryItem,
+            );
+            importedFiles.push(fileData);
+          } catch (error: any) {
+            console.error(`❌ Failed to import ${fileInfo.name}:`, error);
+            rejectedFiles.push({
+              name: fileInfo.name,
+              reason: error.message || 'Failed to process file',
+              error: error.toString(),
+            });
+          }
         }),
       );
 
-      return { success: true, importedFiles };
-    } catch (error) {
+      console.log(
+        `✅ Successfully imported ${importedFiles.length} files from dialog`,
+      );
+      if (rejectedFiles.length > 0) {
+        console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
+      }
+
+      return {
+        success: true,
+        importedFiles,
+        rejectedFiles: rejectedFiles.length > 0 ? rejectedFiles : undefined,
+      };
+    } catch (error: any) {
       console.error('Failed to import media from dialog:', error);
-      return { success: false, importedFiles: [] };
+      return {
+        success: false,
+        importedFiles: [],
+        error: error.message || 'Unknown error occurred',
+      };
     }
   },
 
   importMediaFromFiles: async (files: File[]): Promise<void> => {
-    // Legacy method for web File objects - fallback for drag & drop
+    // Validate files before processing
+    const validationResults = await FileIntegrityValidator.validateFiles(files);
+    const validFiles: File[] = [];
+    const rejectedFiles: Array<{ name: string; reason: string }> = [];
+
+    validationResults.forEach((result, file) => {
+      if (result.isValid) {
+        validFiles.push(file);
+      } else {
+        rejectedFiles.push({
+          name: file.name,
+          reason: result.error || 'File validation failed',
+        });
+      }
+    });
+
+    if (rejectedFiles.length > 0) {
+      console.warn('🚫 Rejected corrupted/invalid files:', rejectedFiles);
+    }
+
+    if (validFiles.length === 0) {
+      console.warn('No valid files to import');
+      return;
+    }
+
+    // Continue with existing implementation for valid files only
     const newTracks = await Promise.all(
-      files.map(async (file, index) => {
+      validFiles.map(async (file, index) => {
         // Check if this is a subtitle file
         if (isSubtitleFile(file.name)) {
           try {
@@ -676,16 +826,68 @@ export const createFileProcessingSlice: StateCreator<
 
     // Flatten tracks array (subtitle files return arrays of tracks) and filter out null/undefined
     const validTracks = newTracks.flat().filter(Boolean);
-    await Promise.all(
-      validTracks.map((track) => (get() as any).addTrack(track)),
-    );
+
+    // Use batch addTracks for better performance when adding multiple tracks
+    if (validTracks.length > 1) {
+      console.log(`🚀 Adding ${validTracks.length} tracks in batch...`);
+      await (get() as any).addTracks(validTracks);
+    } else if (validTracks.length === 1) {
+      await (get() as any).addTrack(validTracks[0]);
+    }
   },
 
   importMediaFromDrop: async (files: File[]): Promise<ImportResult> => {
     try {
+      console.log(`🔍 Validating ${files.length} dropped files...`);
+
+      // STEP 1: Validate files BEFORE any processing
+      const validationResults = await FileIntegrityValidator.validateFiles(
+        files,
+        (completed, total) => {
+          console.log(`Validation progress: ${completed}/${total}`);
+        },
+      );
+
+      // Separate valid and invalid files
+      const validFiles: File[] = [];
+      const rejectedFiles: Array<{
+        name: string;
+        reason: string;
+        error?: string;
+      }> = [];
+
+      validationResults.forEach((result, file) => {
+        if (result.isValid) {
+          validFiles.push(file);
+          console.log(`✅ Valid: ${file.name}`);
+        } else {
+          const reason = result.error || 'File validation failed';
+          rejectedFiles.push({
+            name: file.name,
+            reason,
+            error: reason,
+          });
+          console.warn(`🚫 Rejected: ${file.name} - ${reason}`);
+        }
+      });
+
+      // If no valid files, return early with rejection info
+      if (validFiles.length === 0) {
+        console.warn('❌ No valid files to import (all rejected)');
+        return {
+          success: false,
+          importedFiles: [],
+          rejectedFiles,
+          error: 'All files were rejected due to corruption or invalid format',
+        };
+      }
+
+      // STEP 2: Process only valid files
+      console.log(`📦 Processing ${validFiles.length} valid files...`);
+
       // Convert File objects to ArrayBuffers for IPC transfer
       const fileBuffers = await Promise.all(
-        files.map(async (file) => {
+        validFiles.map(async (file) => {
           const buffer = await file.arrayBuffer();
           return {
             name: file.name,
@@ -704,7 +906,12 @@ export const createFileProcessingSlice: StateCreator<
           '❌ Failed to process files in main process:',
           result.error,
         );
-        return { success: false, importedFiles: [] };
+        return {
+          success: false,
+          importedFiles: [],
+          rejectedFiles,
+          error: result.error || 'Failed to process files',
+        };
       }
 
       const importedFiles: Array<{
@@ -716,35 +923,106 @@ export const createFileProcessingSlice: StateCreator<
         thumbnail?: string;
       }> = [];
 
-      // Process files and add to media library only (no timeline)
+      // Process files and add to media library
       await Promise.all(
         result.files.map(async (fileInfo) => {
-          const fileData = await processImportedFile(
-            fileInfo,
-            (get() as any).addToMediaLibrary,
-            undefined, // No timeline addition
-            () => (get() as any).timeline.fps,
-            (get() as any).generateSpriteSheetForMedia, // Generate sprite sheets on import
-            (get() as any).generateThumbnailForMedia, // Generate thumbnails on import
-            (get() as any).generateWaveformForMedia, // Generate waveforms on import
-            (get() as any).updateMediaLibraryItem, // Update media library items with extracted audio
-          );
-          importedFiles.push(fileData);
+          try {
+            const fileData = await processImportedFile(
+              fileInfo,
+              (get() as any).addToMediaLibrary,
+              undefined, // No timeline addition
+              () => (get() as any).timeline.fps,
+              (get() as any).generateSpriteSheetForMedia,
+              (get() as any).generateThumbnailForMedia,
+              (get() as any).generateWaveformForMedia,
+              (get() as any).updateMediaLibraryItem,
+            );
+            importedFiles.push(fileData);
+          } catch (error: any) {
+            console.error(`❌ Failed to import ${fileInfo.name}:`, error);
+            rejectedFiles.push({
+              name: fileInfo.name,
+              reason: error.message || 'Failed to process file',
+              error: error.toString(),
+            });
+          }
         }),
       );
 
-      return { success: true, importedFiles };
-    } catch (error) {
+      console.log(`✅ Successfully imported ${importedFiles.length} files`);
+      if (rejectedFiles.length > 0) {
+        console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
+      }
+
+      return {
+        success: true,
+        importedFiles,
+        rejectedFiles: rejectedFiles.length > 0 ? rejectedFiles : undefined,
+      };
+    } catch (error: any) {
       console.error('Failed to import media from drop:', error);
-      return { success: false, importedFiles: [] };
+      return {
+        success: false,
+        importedFiles: [],
+        error: error.message || 'Unknown error occurred',
+      };
     }
   },
 
   importMediaToTimeline: async (files: File[]): Promise<ImportResult> => {
     try {
+      console.log(`🔍 Validating ${files.length} files for timeline import...`);
+
+      // STEP 1: Validate files BEFORE any processing
+      const validationResults = await FileIntegrityValidator.validateFiles(
+        files,
+        (completed, total) => {
+          console.log(`Validation progress: ${completed}/${total}`);
+        },
+      );
+
+      // Separate valid and invalid files
+      const validFiles: File[] = [];
+      const rejectedFiles: Array<{
+        name: string;
+        reason: string;
+        error?: string;
+      }> = [];
+
+      validationResults.forEach((result, file) => {
+        if (result.isValid) {
+          validFiles.push(file);
+          console.log(`✅ Valid: ${file.name}`);
+        } else {
+          const reason = result.error || 'File validation failed';
+          rejectedFiles.push({
+            name: file.name,
+            reason,
+            error: reason,
+          });
+          console.warn(`🚫 Rejected: ${file.name} - ${reason}`);
+        }
+      });
+
+      // If no valid files, return early
+      if (validFiles.length === 0) {
+        console.warn('❌ No valid files to import (all rejected)');
+        return {
+          success: false,
+          importedFiles: [],
+          rejectedFiles,
+          error: 'All files were rejected due to corruption or invalid format',
+        };
+      }
+
+      // STEP 2: Process only valid files
+      console.log(
+        `📦 Processing ${validFiles.length} valid files for timeline...`,
+      );
+
       // Convert File objects to ArrayBuffers for IPC transfer
       const fileBuffers = await Promise.all(
-        files.map(async (file) => {
+        validFiles.map(async (file) => {
           const buffer = await file.arrayBuffer();
           return {
             name: file.name,
@@ -755,7 +1033,7 @@ export const createFileProcessingSlice: StateCreator<
         }),
       );
 
-      // Process files in main process to get real file paths
+      // Process files in main process
       const result = await window.electronAPI.processDroppedFiles(fileBuffers);
 
       if (!result.success) {
@@ -763,7 +1041,12 @@ export const createFileProcessingSlice: StateCreator<
           '❌ Failed to process files in main process:',
           result.error,
         );
-        return { success: false, importedFiles: [] };
+        return {
+          success: false,
+          importedFiles: [],
+          rejectedFiles,
+          error: result.error || 'Failed to process files',
+        };
       }
 
       const importedFiles: Array<{
@@ -778,27 +1061,48 @@ export const createFileProcessingSlice: StateCreator<
       // Process files and add to both media library AND timeline
       await Promise.all(
         result.files.map(async (fileInfo) => {
-          const fileData = await processImportedFile(
-            fileInfo,
-            (get() as any).addToMediaLibrary,
-            (get() as any).addTrack, // Also add to timeline
-            () => (get() as any).timeline.fps,
-            (get() as any).generateSpriteSheetForMedia, // Generate sprite sheets on import
-            (get() as any).generateThumbnailForMedia, // Generate thumbnails on import
-            (get() as any).generateWaveformForMedia, // Generate waveforms on import
-            (get() as any).updateMediaLibraryItem, // Update media library items with extracted audio
-          );
-          importedFiles.push(fileData);
+          try {
+            const fileData = await processImportedFile(
+              fileInfo,
+              (get() as any).addToMediaLibrary,
+              (get() as any).addTrack, // Also add to timeline
+              () => (get() as any).timeline.fps,
+              (get() as any).generateSpriteSheetForMedia,
+              (get() as any).generateThumbnailForMedia,
+              (get() as any).generateWaveformForMedia,
+              (get() as any).updateMediaLibraryItem,
+            );
+            importedFiles.push(fileData);
+          } catch (error: any) {
+            console.error(`❌ Failed to import ${fileInfo.name}:`, error);
+            rejectedFiles.push({
+              name: fileInfo.name,
+              reason: error.message || 'Failed to process file',
+              error: error.toString(),
+            });
+          }
         }),
       );
 
       console.log(
         `✅ Added ${importedFiles.length} files to both media library and timeline`,
       );
-      return { success: true, importedFiles };
-    } catch (error) {
+      if (rejectedFiles.length > 0) {
+        console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
+      }
+
+      return {
+        success: true,
+        importedFiles,
+        rejectedFiles: rejectedFiles.length > 0 ? rejectedFiles : undefined,
+      };
+    } catch (error: any) {
       console.error('Failed to import media to timeline:', error);
-      return { success: false, importedFiles: [] };
+      return {
+        success: false,
+        importedFiles: [],
+        error: error.message || 'Unknown error occurred',
+      };
     }
   },
 });

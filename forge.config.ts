@@ -12,12 +12,17 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
-      unpack: '**/node_modules/{@ffmpeg-installer,ffmpeg-static,ffprobe-static}/**/*',
+      unpack:
+        '**/node_modules/{@ffmpeg-installer,ffmpeg-static,ffprobe-static,whisper-cpp}/**/*',
     },
     icon: './favicon.ico',
     name: 'Dividr',
     executableName: 'Dividr',
-    extraResource: ['./src/frontend/assets/logo'],
+    extraResource: [
+      './src/frontend/assets/logo',
+      './whisper-bin', // Whisper.cpp binaries
+      './whisper-models', // Whisper models
+    ],
     // Ensure native modules and ffmpeg binaries are included
     ignore: [/^\/\.gitignore$/, /^\/README\.md$/, /^\/docs\//],
   },

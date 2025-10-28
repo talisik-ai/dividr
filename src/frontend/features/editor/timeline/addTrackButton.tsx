@@ -10,6 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
+import { cn } from '@/frontend/utils/utils';
 import { Film, Image, Music, Plus, Type } from 'lucide-react';
 import React, { useCallback } from 'react';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
@@ -51,7 +52,7 @@ export const AddTrackButton: React.FC<AddTrackButtonProps> = React.memo(
           return <Music className="h-4 w-4" />;
         case 'subtitle':
           return <Type className="h-4 w-4" />;
-        case 'logo':
+        case 'image':
           return <Image className="h-4 w-4" />;
         default:
           return <Plus className="h-4 w-4" />;
@@ -66,7 +67,7 @@ export const AddTrackButton: React.FC<AddTrackButtonProps> = React.memo(
               <Button
                 variant="ghost"
                 size="sm"
-                className={`h-7 w-7 p-0 ${className || ''}`}
+                className={cn('h-6 w-6 p-0', className)}
               >
                 <Plus className="h-4 w-4" />
               </Button>

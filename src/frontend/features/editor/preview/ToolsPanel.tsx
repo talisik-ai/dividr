@@ -36,7 +36,9 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ className }) => {
             </div>
           }
         >
-          <CustomComponent className={className} />
+          <CustomComponent
+            className={`flex-1 min-h-0 flex flex-col ${className}`}
+          />
         </React.Suspense>
       );
     }
@@ -45,7 +47,7 @@ export const ToolsPanel: React.FC<ToolsPanelProps> = ({ className }) => {
   // Fallback message for panels without custom components
   return (
     <div
-      className={`w-80 flex items-center justify-center bg-background border-l border-border ${className}`}
+      className={`w-80 flex-1 min-h-0 flex items-center justify-center bg-background border-l border-border ${className}`}
     >
       <div className="text-muted-foreground text-sm">Panel not available</div>
     </div>

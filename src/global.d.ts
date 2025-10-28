@@ -104,6 +104,7 @@ declare global {
         error?: string;
       }>;
       readFile: (filePath: string) => Promise<string>;
+      readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
 
       // Subtitle file operations
       writeSubtitleFile: (options: {
@@ -222,6 +223,85 @@ declare global {
         callback: (data: { jobId: string; error: string }) => void,
       ) => void;
       removeSpriteSheetListeners: () => void;
+
+      // ========================================================================
+      // Whisper.cpp API
+      // ========================================================================
+
+      /**
+       * Transcribe audio file using Whisper.cpp
+       * @param audioPath - Path to audio file
+       * @param options - Transcription options
+       * @returns Transcription result with word-level timestamps
+       */
+      whisperTranscribe: (
+        audioPath: string,
+        options?: {
+          model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
+          language?: string;
+          translate?: boolean;
+          wordTimestamps?: boolean;
+        },
+      ) => Promise<{
+        success: boolean;
+        result?: {
+          segments: Array<{
+            start: number;
+            end: number;
+            text: string;
+            words?: Array<{
+              word: string;
+              start: number;
+              end: number;
+              confidence: number;
+            }>;
+          }>;
+          language: string;
+          duration: number;
+          text: string;
+        };
+        error?: string;
+      }>;
+
+      /**
+       * Cancel active transcription
+       */
+      whisperCancel: () => Promise<{ success: boolean; message: string }>;
+
+      /**
+       * Get Whisper status and available models
+       */
+      whisperStatus: () => Promise<{
+        available: boolean;
+        whisperPath: string | null;
+        modelsAvailable: string[];
+        isProcessing: boolean;
+      }>;
+
+      /**
+       * Listen for transcription progress updates
+       */
+      onWhisperProgress: (
+        callback: (progress: {
+          stage: 'loading' | 'processing' | 'complete' | 'error';
+          progress: number;
+          message?: string;
+        }) => void,
+      ) => void;
+
+      /**
+       * Remove progress listener
+       */
+      removeWhisperProgressListener: () => void;
+
+      /**
+       * Check if media file has audio
+       */
+      mediaHasAudio: (filePath: string) => Promise<{
+        success: boolean;
+        hasAudio: boolean;
+        error?: string;
+      }>;
     };
     appControl: {
       showWindow: () => Promise<boolean>;

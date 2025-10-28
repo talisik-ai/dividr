@@ -11,10 +11,22 @@ interface TextTransformBoundaryProps {
   videoHeight: number;
   onTransformUpdate: (
     trackId: string,
-    transform: { x?: number; y?: number; scale?: number; rotation?: number },
+    transform: {
+      x?: number;
+      y?: number;
+      scale?: number;
+      rotation?: number;
+      width?: number;
+      height?: number;
+    },
   ) => void;
   onSelect: (trackId: string) => void;
   onTextUpdate?: (trackId: string, newText: string) => void;
+  onRotationStateChange?: (isRotating: boolean) => void;
+  onDragStateChange?: (
+    isDragging: boolean,
+    position?: { x: number; y: number; width: number; height: number },
+  ) => void;
   children: React.ReactNode;
   appliedStyle?: React.CSSProperties;
 }
@@ -40,6 +52,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   onTransformUpdate,
   onSelect,
   onTextUpdate,
+  onRotationStateChange,
+  onDragStateChange,
   children,
   appliedStyle,
 }) => {
@@ -99,6 +113,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     y: 0,
     scale: 0.2,
     rotation: 0,
+    width: 0,
+    height: 0,
   };
 
   // Migration: If coordinates appear to be in pixel space, convert to normalized
@@ -111,6 +127,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       onTransformUpdate(track.id, {
         x: normalized.x,
         y: normalized.y,
+        width: rawTransform.width,
+        height: rawTransform.height,
       });
       return {
         ...rawTransform,
@@ -124,6 +142,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     rawTransform.y,
     rawTransform.scale,
     rawTransform.rotation,
+    rawTransform.width,
+    rawTransform.height,
     pixelsToNormalized,
     onTransformUpdate,
     track.id,
@@ -229,6 +249,35 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     }
   }, [transform.scale, transform.rotation, track.textContent, previewScale]);
 
+  // Update dimensions in the store when container size changes
+  useEffect(() => {
+    if (containerSize.width > 0 && containerSize.height > 0) {
+      const currentWidth = normalizedTransform.width || 0;
+      const currentHeight = normalizedTransform.height || 0;
+      const newWidth = containerSize.width * transform.scale;
+      const newHeight = containerSize.height * transform.scale;
+
+      // Only update if dimensions have changed significantly (avoid infinite loops)
+      if (
+        Math.abs(currentWidth - newWidth) > 1 ||
+        Math.abs(currentHeight - newHeight) > 1
+      ) {
+        onTransformUpdate(track.id, {
+          width: newWidth,
+          height: newHeight,
+        });
+      }
+    }
+  }, [
+    containerSize.width,
+    containerSize.height,
+    transform.scale,
+    normalizedTransform.width,
+    normalizedTransform.height,
+    track.id,
+    onTransformUpdate,
+  ]);
+
   // Handle mouse down on the text element (start dragging)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -278,8 +327,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setIsRotating(true);
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
+      onRotationStateChange?.(true);
     },
-    [isSelected, transform],
+    [isSelected, transform, onRotationStateChange],
   );
 
   // Handle mouse move for all interactions
@@ -297,8 +347,49 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         const normalizedDeltaY = deltaY / previewScale;
 
         // Add delta to initial position (already in screen pixels)
-        const newPixelX = initialTransform.x / previewScale + normalizedDeltaX;
-        const newPixelY = initialTransform.y / previewScale + normalizedDeltaY;
+        let newPixelX = initialTransform.x / previewScale + normalizedDeltaX;
+        let newPixelY = initialTransform.y / previewScale + normalizedDeltaY;
+
+        // Snapping logic - only when Shift or Ctrl is held
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+          const snapTolerance = e.ctrlKey || e.metaKey ? 2 : 10; // Strong snap (Ctrl) vs soft snap (Shift)
+
+          // Define snap points (in video pixel coordinates, centered at 0,0)
+          const snapPoints = {
+            horizontal: [0], // Center
+            vertical: [0], // Center
+          };
+
+          // Add edge snap points
+          const halfWidth = (containerSize.width * transform.scale) / 2;
+          const halfHeight = (containerSize.height * transform.scale) / 2;
+
+          // Video frame edges (in video pixel coordinates)
+          snapPoints.horizontal.push(
+            -videoHeight / 2 + halfHeight, // Top edge
+            videoHeight / 2 - halfHeight, // Bottom edge
+          );
+          snapPoints.vertical.push(
+            -videoWidth / 2 + halfWidth, // Left edge
+            videoWidth / 2 - halfWidth, // Right edge
+          );
+
+          // Snap to horizontal points
+          for (const snapY of snapPoints.horizontal) {
+            if (Math.abs(newPixelY - snapY) < snapTolerance) {
+              newPixelY = snapY;
+              break;
+            }
+          }
+
+          // Snap to vertical points
+          for (const snapX of snapPoints.vertical) {
+            if (Math.abs(newPixelX - snapX) < snapTolerance) {
+              newPixelX = snapX;
+              break;
+            }
+          }
+        }
 
         // Convert to normalized coordinates
         const normalizedPos = pixelsToNormalized({
@@ -307,9 +398,21 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         });
         const clampedPos = clampNormalized(normalizedPos);
 
+        // Notify parent of drag state for guide rendering
+        if (onDragStateChange && containerSize.width > 0) {
+          onDragStateChange(true, {
+            x: newPixelX,
+            y: newPixelY,
+            width: containerSize.width * transform.scale,
+            height: containerSize.height * transform.scale,
+          });
+        }
+
         onTransformUpdate(track.id, {
           x: clampedPos.x,
           y: clampedPos.y,
+          width: containerSize.width * transform.scale,
+          height: containerSize.height * transform.scale,
         });
       } else if (isScaling && activeHandle) {
         const scaleSensitivity = 200;
@@ -348,6 +451,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
         onTransformUpdate(track.id, {
           scale: newScale,
+          width: containerSize.width * newScale,
+          height: containerSize.height * newScale,
         });
       } else if (isRotating) {
         const boundaryRect = boundaryRef.current?.getBoundingClientRect();
@@ -368,15 +473,56 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
         // Calculate the angle delta and add to initial rotation
         const angleDelta = currentAngle - initialAngle;
-        const newRotation = initialTransform.rotation + angleDelta;
+        let newRotation = initialTransform.rotation + angleDelta;
+
+        // Snapping logic - only snap when Shift or Ctrl is held
+        // Snap to 0°, 90°, 180°, 270° (nearest angle only)
+        if (e.shiftKey || e.ctrlKey) {
+          const snapThreshold = 5; // degrees
+          const snapAngles = [0, 90, 180, 270];
+
+          // Normalize rotation to 0-360 range for comparison
+          const normalizedRotation = ((newRotation % 360) + 360) % 360;
+
+          // Find the nearest snap angle
+          let nearestAngle = null;
+          let minDistance = Infinity;
+
+          for (const snapAngle of snapAngles) {
+            // Calculate the shortest distance considering the circular nature (0° = 360°)
+            let distance = Math.abs(normalizedRotation - snapAngle);
+            if (distance > 180) {
+              distance = 360 - distance;
+            }
+
+            if (distance < minDistance) {
+              minDistance = distance;
+              nearestAngle = snapAngle;
+            }
+          }
+
+          // Only snap if within threshold of the nearest angle
+          if (nearestAngle !== null && minDistance <= snapThreshold) {
+            const rotationCount = Math.floor(newRotation / 360);
+            newRotation = rotationCount * 360 + nearestAngle;
+          }
+        }
 
         onTransformUpdate(track.id, {
           rotation: newRotation,
+          width: containerSize.width * transform.scale,
+          height: containerSize.height * transform.scale,
         });
       }
     };
 
     const handleMouseUp = () => {
+      if (isRotating) {
+        onRotationStateChange?.(false);
+      }
+      if (isDragging) {
+        onDragStateChange?.(false);
+      }
       setIsDragging(false);
       setIsScaling(false);
       setIsRotating(false);
@@ -402,8 +548,14 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     track.id,
     previewScale,
     onTransformUpdate,
+    onRotationStateChange,
+    onDragStateChange,
     pixelsToNormalized,
     clampNormalized,
+    containerSize,
+    transform.scale,
+    videoWidth,
+    videoHeight,
   ]);
 
   // Get cursor style based on interaction mode and active handle

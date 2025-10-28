@@ -35,7 +35,24 @@ export const createProjectSlice: StateCreator<
   hasUnsavedChanges: false,
 
   setCurrentProjectId: (projectId) => {
-    set({ currentProjectId: projectId, hasUnsavedChanges: false });
+    // If setting to null (exiting editor), clear all drag states
+    if (projectId === null) {
+      set((state: any) => ({
+        currentProjectId: projectId,
+        hasUnsavedChanges: false,
+        playback: {
+          ...state.playback,
+          isDraggingTrack: false,
+          wasPlayingBeforeDrag: false,
+          dragGhost: null,
+          magneticSnapFrame: null,
+          isDraggingPlayhead: false,
+          wasPlayingBeforePlayheadDrag: false,
+        },
+      }));
+    } else {
+      set({ currentProjectId: projectId, hasUnsavedChanges: false });
+    }
   },
 
   loadProjectData: async (projectId) => {
@@ -57,6 +74,10 @@ export const createProjectSlice: StateCreator<
           isPlaying: false, // Always start paused when loading a project
           isDraggingTrack: false, // Reset drag state when loading
           wasPlayingBeforeDrag: false,
+          dragGhost: null, // Clear any lingering drag ghost from previous session
+          magneticSnapFrame: null, // Clear snap indicators
+          isDraggingPlayhead: false, // Reset playhead drag state
+          wasPlayingBeforePlayheadDrag: false,
         },
         preview: { ...state.preview, ...videoEditor.preview },
         currentProjectId: projectId,
@@ -221,6 +242,7 @@ export const createProjectSlice: StateCreator<
       const projectStore = useProjectStore.getState();
       projectStore.setCurrentProject(updatedProject);
     } catch (error) {
+      console.log(error);
       throw error;
     }
   },

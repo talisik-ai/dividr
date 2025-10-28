@@ -1,0 +1,4 @@
+# This file ensures the whisper-models directory is tracked by git
+# Download models from: https://huggingface.co/ggerganov/whisper.cpp/tree/main
+# Place .bin files in this directory
+

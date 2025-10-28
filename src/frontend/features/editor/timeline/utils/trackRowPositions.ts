@@ -3,10 +3,12 @@
  * based on visible track rows in the timeline
  */
 
+import { getCurrentTrackRowHeight, getRowHeight } from './timelineConstants';
+
 export const TRACK_ROW_ORDER = [
   'text',
   'subtitle',
-  'logo',
+  'image',
   'video',
   'audio',
 ] as const;
@@ -30,21 +32,38 @@ export const getVisibleRowIndex = (
 
 /**
  * Get the top position (in pixels) of a track row
+ * Uses individual row heights for accurate positioning
  */
 export const getTrackRowTop = (
   trackType: string,
   visibleTrackRows: string[],
-  trackRowHeight = 48,
 ): number => {
-  const rowIndex = getVisibleRowIndex(trackType, visibleTrackRows);
-  return rowIndex >= 0 ? rowIndex * trackRowHeight : 0;
+  // Get all visible rows in order up to (but not including) the target row
+  const visibleRowsInOrder = TRACK_ROW_ORDER.filter((rowId) =>
+    visibleTrackRows.includes(rowId),
+  );
+
+  const rowIndex = visibleRowsInOrder.indexOf(
+    trackType as (typeof TRACK_ROW_ORDER)[number],
+  );
+
+  if (rowIndex === -1) return 0;
+
+  // Sum up the heights of all rows before this one
+  let topPosition = 0;
+  for (let i = 0; i < rowIndex; i++) {
+    topPosition += getRowHeight(visibleRowsInOrder[i]);
+  }
+
+  return topPosition;
 };
 
 /**
- * Get track row height (standard across all responsive breakpoints for calculations)
+ * Get track row height (responsive based on viewport width)
+ * This matches the actual rendered height using Tailwind responsive classes
  */
 export const getTrackRowHeight = (): number => {
-  return 48; // Standard track row height for calculations
+  return getCurrentTrackRowHeight();
 };
 
 /**

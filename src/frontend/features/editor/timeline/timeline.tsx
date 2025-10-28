@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { toast } from 'sonner';
 import { useTrackDragRecording } from '../stores/videoEditor/hooks/useTrackDragRecording';
 import { useUndoRedoShortcuts } from '../stores/videoEditor/hooks/useUndoRedoShortcuts';
 import {
@@ -16,12 +17,16 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../stores/videoEditor/index';
+import { DragGhost } from './dragGhost';
+import { DropZoneIndicator } from './dropZoneIndicator';
+import { useAutoScroll } from './hooks/useAutoScroll';
 import { ProjectThumbnailSetter } from './projectThumbnailSetter';
 import { TimelineControls } from './timelineControls';
 import { TimelinePlayhead } from './timelinePlayhead';
 import { TimelineRuler } from './timelineRuler';
 import { TimelineTrackControllers } from './timelineTrackControllers';
 import { TimelineTracks } from './timelineTracks';
+import { getRowHeight } from './utils/timelineConstants';
 import {
   calculateFrameFromPosition,
   handleTimelineMouseDown as centralizedHandleMouseDown,
@@ -30,11 +35,7 @@ import {
   isContextMenuClick,
   TimelineInteractionHandlers,
 } from './utils/timelineInteractionHandlers';
-import {
-  getTrackRowHeight,
-  getTrackRowTop,
-  getVisibleRowIndex,
-} from './utils/trackRowPositions';
+import { getTrackRowHeight, getTrackRowTop } from './utils/trackRowPositions';
 
 interface TimelineProps {
   className?: string;
@@ -58,6 +59,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [, setDropActive] = useState(false);
     const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
+    const [autoScrollMousePos, setAutoScrollMousePos] = useState<{
+      x: number;
+      y: number;
+    } | null>(null);
     const [splitIndicatorPosition, setSplitIndicatorPosition] = useState<
       number | null
     >(null);
@@ -81,6 +86,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const visibleTrackRows = useVideoEditorStore(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
     );
+    const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
     );
@@ -105,7 +111,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const importMediaToTimeline = useVideoEditorStore(
       (state) => state.importMediaToTimeline,
     );
-
+    const startDraggingPlayhead = useVideoEditorStore(
+      (state) => state.startDraggingPlayhead,
+    );
+    const endDraggingPlayhead = useVideoEditorStore(
+      (state) => state.endDraggingPlayhead,
+    );
+    const isDraggingPlayhead = useVideoEditorStore(
+      (state) => state.playback.isDraggingPlayhead,
+    );
+    const updateDragGhostPosition = useVideoEditorStore(
+      (state) => state.updateDragGhostPosition,
+    );
     // Calculate effective timeline duration based on actual track content - memoized
     const effectiveEndFrame = useMemo(() => {
       // When tracks exist, use the maximum track end frame
@@ -132,6 +149,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const handleDrop = useCallback(
       async (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         setDropActive(false);
 
         // Check if this is a media library item (internal drag)
@@ -150,26 +168,44 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           const files = Array.from(e.dataTransfer.files);
           console.log(`🎯 Dropping ${files.length} files onto timeline`);
 
+          // Show immediate loading toast with promise
+          const importPromise = importMediaToTimeline(files);
+
+          toast.promise(importPromise, {
+            loading: `Adding ${files.length} ${files.length === 1 ? 'file' : 'files'} to timeline...`,
+            success: (result) => {
+              const importedCount = result.importedFiles.length;
+              const rejectedCount = result.rejectedFiles?.length || 0;
+
+              // Return success message
+              if (importedCount > 0) {
+                return (
+                  `Added ${importedCount} ${importedCount === 1 ? 'file' : 'files'} to timeline` +
+                  (rejectedCount > 0 ? ` (${rejectedCount} rejected)` : '')
+                );
+              } else {
+                throw new Error(
+                  'All files were rejected due to corruption or invalid format',
+                );
+              }
+            },
+            error: (error) => {
+              // Use the actual error message from validation results
+              const errorMessage =
+                error?.error ||
+                'All files were rejected due to corruption or invalid format';
+              return errorMessage;
+            },
+          });
+
           try {
-            const result = await importMediaToTimeline(files);
-            if (result.success) {
-              console.log(
-                `✅ Successfully imported ${result.importedFiles.length} files to timeline`,
-              );
-            } else {
-              console.error('❌ Failed to import files to timeline');
-            }
+            await importPromise;
           } catch (error) {
             console.error('❌ Error importing files to timeline:', error);
           }
         }
       },
-      [
-        timeline.scrollX,
-        timeline.zoom,
-        addTrackFromMediaLibrary,
-        importMediaToTimeline,
-      ],
+      [addTrackFromMediaLibrary, importMediaToTimeline],
     );
 
     // Animation loop for playback
@@ -275,6 +311,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Record state when track drag operations complete
     useTrackDragRecording();
 
+    useAutoScroll({
+      enabled: !!dragGhost?.isActive,
+      mouseX: autoScrollMousePos?.x || 0,
+      mouseY: autoScrollMousePos?.y || 0,
+      scrollElement: tracksRef.current,
+      threshold: 50,
+      speed: 1.2,
+      onScroll: (newScrollX) => {
+        setScrollX(newScrollX);
+      },
+    });
+
     // Global keyboard event listener as fallback for Delete/Backspace
     // This ensures delete works even when react-hotkeys-hook might not catch it
     useEffect(() => {
@@ -319,19 +367,44 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Global safety net: Reset drag state if user releases mouse anywhere
     // Use capture phase to ensure this runs AFTER child handlers
     useEffect(() => {
-      const handleGlobalMouseUp = () => {
-        // Use setTimeout to ensure this runs after all other mouseup handlers
-        setTimeout(() => {
-          const { playback, endDraggingTrack } = useVideoEditorStore.getState();
-          if (playback.isDraggingTrack) {
-            endDraggingTrack();
-          }
-        }, 0);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const handleGlobalMouseUp = (e: MouseEvent) => {
+        const { playback, endDraggingTrack, clearDragGhost } =
+          useVideoEditorStore.getState();
+
+        if (playback.isDraggingTrack || playback.dragGhost?.isActive) {
+          console.log('🛡️ Global cleanup: Ending stuck drag operation');
+
+          // Clear all drag state
+          endDraggingTrack(true); // Record undo
+          clearDragGhost();
+
+          // Clear any local mouse tracking
+          setAutoScrollMousePos(null);
+        }
       };
 
-      document.addEventListener('mouseup', handleGlobalMouseUp);
+      const handleGlobalMouseLeave = (e: MouseEvent) => {
+        // Only trigger if we're actually leaving the window
+        if (
+          e.clientY <= 0 ||
+          e.clientX <= 0 ||
+          e.clientX >= window.innerWidth ||
+          e.clientY >= window.innerHeight
+        ) {
+          handleGlobalMouseUp(e);
+        }
+      };
+
+      // Listen on document AND window for maximum coverage
+      document.addEventListener('mouseup', handleGlobalMouseUp, true); // Capture phase
+      window.addEventListener('mouseup', handleGlobalMouseUp, true);
+      document.addEventListener('mouseleave', handleGlobalMouseLeave);
+
       return () => {
-        document.removeEventListener('mouseup', handleGlobalMouseUp);
+        document.removeEventListener('mouseup', handleGlobalMouseUp, true);
+        window.removeEventListener('mouseup', handleGlobalMouseUp, true);
+        document.removeEventListener('mouseleave', handleGlobalMouseLeave);
       };
     }, []);
 
@@ -377,18 +450,135 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Calculate frame width based on zoom - memoized
     const frameWidth = useMemo(() => 2 * timeline.zoom, [timeline.zoom]);
 
+    // track mouse position during drag for auto-scroll
+    useEffect(() => {
+      if (!dragGhost?.isActive) {
+        setAutoScrollMousePos(null);
+        return;
+      }
+
+      // Shared function to calculate and update drag ghost position
+      const updateDragGhostWithCurrentScroll = (
+        clientX: number,
+        clientY: number,
+      ) => {
+        if (!tracksRef.current) return;
+
+        const rect = tracksRef.current.getBoundingClientRect();
+        const currentScrollX = tracksRef.current.scrollLeft;
+        const mouseRelativeX = clientX - rect.left;
+
+        // Calculate target frame accounting for current scroll AND offset
+        const targetFrame = Math.max(
+          0,
+          Math.floor(
+            (mouseRelativeX + currentScrollX - (dragGhost.offsetX || 0)) /
+              frameWidth,
+          ),
+        );
+
+        // Find which row the cursor is over
+        const mouseRelativeY = clientY - rect.top;
+        let targetRow: string | null = null;
+
+        for (const rowType of visibleTrackRows) {
+          const rowTop = getTrackRowTop(rowType, visibleTrackRows);
+          const rowHeight = getRowHeight(rowType);
+          if (mouseRelativeY >= rowTop && mouseRelativeY < rowTop + rowHeight) {
+            targetRow = rowType;
+            break;
+          }
+        }
+
+        // Update drag ghost state
+        updateDragGhostPosition(clientX, clientY, targetRow, targetFrame);
+      };
+
+      const handleMouseMove = (e: MouseEvent) => {
+        setAutoScrollMousePos({ x: e.clientX, y: e.clientY });
+        updateDragGhostWithCurrentScroll(e.clientX, e.clientY);
+      };
+
+      document.addEventListener('mousemove', handleMouseMove, {
+        passive: true,
+      });
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+      };
+    }, [
+      dragGhost?.isActive,
+      dragGhost?.offsetX,
+      frameWidth,
+      visibleTrackRows,
+      updateDragGhostPosition,
+    ]);
+
+    // target frame when scroll changes (even if mouse doesn't move)
+    useEffect(() => {
+      if (!dragGhost?.isActive || !autoScrollMousePos || !tracksRef.current) {
+        return;
+      }
+
+      // Recalculate target frame based on current scroll
+      const rect = tracksRef.current.getBoundingClientRect();
+      const currentScrollX = tracksRef.current.scrollLeft;
+      const mouseRelativeX = autoScrollMousePos.x - rect.left;
+      const targetFrame = Math.max(
+        0,
+        Math.floor(
+          (mouseRelativeX + currentScrollX - (dragGhost.offsetX || 0)) /
+            frameWidth,
+        ),
+      );
+
+      // Only update if frame actually changed
+      if (dragGhost.targetFrame !== targetFrame) {
+        updateDragGhostPosition(
+          autoScrollMousePos.x,
+          autoScrollMousePos.y,
+          dragGhost.targetRow,
+          targetFrame,
+        );
+      }
+    }, [
+      timeline.scrollX, // Triggers when auto-scroll updates
+      dragGhost?.isActive,
+      dragGhost?.targetFrame,
+      dragGhost?.targetRow,
+      dragGhost?.offsetX,
+      autoScrollMousePos,
+      frameWidth,
+      updateDragGhostPosition,
+    ]);
+
     // Track viewport width for responsive timeline grid
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+    // Track row height changes for responsive alignment
+    // This state triggers re-renders when breakpoints change, ensuring all child components
+    // recalculate their heights using getCurrentTrackRowHeight()
+    const [layoutKey, setLayoutKey] = useState(0);
 
-    // Update viewport width on resize for responsive full-width grid
+    // Update viewport width and track row height on resize for responsive full-width grid and alignment
     useEffect(() => {
       const handleResize = () => {
-        setViewportWidth(window.innerWidth);
+        const newWidth = window.innerWidth;
+        const oldBreakpoint =
+          viewportWidth < 640 ? 'sm' : viewportWidth < 1024 ? 'md' : 'lg';
+        const newBreakpoint =
+          newWidth < 640 ? 'sm' : newWidth < 1024 ? 'md' : 'lg';
+
+        setViewportWidth(newWidth);
+
+        // Force re-render when breakpoint changes to ensure all heights recalculate
+        if (oldBreakpoint !== newBreakpoint) {
+          setLayoutKey((prev) => prev + 1);
+        }
       };
 
       window.addEventListener('resize', handleResize);
       return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    }, [viewportWidth]);
 
     // Calculate timeline width - always span at least the full viewport width
     // This ensures a professional full-width grid like Premiere Pro/DaVinci Resolve
@@ -474,20 +664,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const findTracksInMarquee = useCallback(
       (rect: { left: number; top: number; right: number; bottom: number }) => {
         const selectedIds: string[] = [];
-        const trackRowHeight = getTrackRowHeight();
 
         tracks.forEach((track) => {
           const trackLeft = track.startFrame * frameWidth;
           const trackRight = track.endFrame * frameWidth;
 
-          // Use dynamic row index based on visible tracks
-          const rowIndex = getVisibleRowIndex(track.type, visibleTrackRows);
+          // Use dynamic row positioning based on individual row heights
+          const trackTop = getTrackRowTop(track.type, visibleTrackRows);
 
           // Skip if track type is not visible
-          if (rowIndex === -1) return;
+          if (trackTop === 0 && !visibleTrackRows.includes(track.type)) return;
 
-          const trackTop = rowIndex * trackRowHeight;
-          const trackBottom = trackTop + trackRowHeight;
+          const trackBottom = trackTop + getRowHeight(track.type);
 
           // Check if track intersects with marquee
           const intersects =
@@ -652,8 +840,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Always listen for mouse events to ensure marquee can activate
     useEffect(() => {
       const handleGlobalMouseMove = (e: MouseEvent) => {
-        // Block marquee during track drag/resize or split mode
-        if (playback.isDraggingTrack || isSplitModeActive) {
+        // Block marquee during track drag/resize, playhead drag, or split mode
+        if (
+          playback.isDraggingTrack ||
+          isDraggingPlayhead ||
+          isSplitModeActive
+        ) {
           return;
         }
 
@@ -722,6 +914,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       handleMarqueeMouseMove,
       handleMarqueeMouseUp,
       playback.isDraggingTrack,
+      isDraggingPlayhead,
       isSplitModeActive,
     ]);
 
@@ -736,6 +929,49 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const getTrackRowHeightValue = useCallback(() => {
       return getTrackRowHeight();
     }, []);
+
+    // Playhead drag handler
+    const handlePlayheadDragStart = useCallback(() => {
+      if (!tracksRef.current) return;
+
+      // Start playhead drag mode
+      startDraggingPlayhead();
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        if (!tracksRef.current) return;
+
+        const rect = tracksRef.current.getBoundingClientRect();
+        const x = moveEvent.clientX - rect.left + tracksRef.current.scrollLeft;
+        const frame = Math.floor(x / frameWidth);
+        const clampedFrame = Math.max(
+          0,
+          Math.min(frame, effectiveEndFrame - 1),
+        );
+
+        // Update frame in real-time during drag
+        lastFrameUpdateRef.current = clampedFrame;
+        setCurrentFrame(clampedFrame);
+      };
+
+      const handleMouseUp = () => {
+        // End playhead drag mode
+        endDraggingPlayhead();
+
+        // Clean up listeners
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+
+      // Attach global listeners for smooth dragging
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }, [
+      frameWidth,
+      effectiveEndFrame,
+      setCurrentFrame,
+      startDraggingPlayhead,
+      endDraggingPlayhead,
+    ]);
 
     // Centralized interaction handlers
     const interactionHandlers: TimelineInteractionHandlers = useMemo(
@@ -840,6 +1076,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         onSplit: (frame: number, trackId: string) => {
           splitAtPosition(frame, trackId);
         },
+        onStartPlayheadDrag: () => {
+          startDraggingPlayhead();
+        },
       }),
       [
         effectiveEndFrame,
@@ -848,6 +1087,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         setSelectedTracks,
         splitAtPosition,
         marqueeSelection,
+        startDraggingPlayhead,
       ],
     );
 
@@ -856,8 +1096,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
 
-        // Block all timeline interactions during track drag/resize operations
-        if (playback.isDraggingTrack) {
+        // Block all timeline interactions during track drag/resize or playhead drag operations
+        if (playback.isDraggingTrack || isDraggingPlayhead) {
           return;
         }
 
@@ -923,12 +1163,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       },
       [
         playback.isDraggingTrack,
+        isDraggingPlayhead,
         tracksRef,
         frameWidth,
         tracks,
         effectiveEndFrame,
         isSplitModeActive,
         interactionHandlers,
+        visibleTrackRows,
       ],
     );
 
@@ -954,13 +1196,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         <div className="flex flex-1">
           {/* Timeline Track Controllers */}
           <TimelineTrackControllers
+            key={`controllers-${layoutKey}`}
             tracks={tracks}
             className="w-fit flex-shrink-0"
           />
 
           {/* Project Thumbnail Setter - Only show if there are video tracks */}
           {tracks.some((track) => track.type === 'video') && (
-            <ProjectThumbnailSetter />
+            <ProjectThumbnailSetter key={`thumbnail-${layoutKey}`} />
           )}
           {/* Timeline Content Area */}
           <div className="flex flex-col flex-1 relative overflow-hidden">
@@ -1062,6 +1305,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 }}
               >
                 <TimelineTracks
+                  key={`tracks-${layoutKey}`}
                   tracks={tracks}
                   frameWidth={frameWidth}
                   timelineWidth={timelineWidth}
@@ -1074,13 +1318,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               </div>
 
               {/* Global Playhead - spans across ruler and tracks */}
-              <div className="absolute top-0 left-0 right-0 bottom-0 pointer-events-none z-[999]">
+              <div className="absolute top-0 left-0 right-0 bottom-0 z-[999] pointer-events-none">
                 <TimelinePlayhead
                   currentFrame={timeline.currentFrame}
                   frameWidth={frameWidth}
                   scrollX={timeline.scrollX}
                   visible={timeline.playheadVisible}
                   timelineScrollElement={tracksRef.current}
+                  onStartDrag={handlePlayheadDragStart}
                 />
               </div>
 
@@ -1159,9 +1404,119 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   }}
                 />
               )}
+
+              {/* Drop Zone Indicator - shows where all clips will land */}
+              {dragGhost?.isActive &&
+                dragGhost.targetRow &&
+                dragGhost.targetFrame !== null &&
+                dragGhost.selectedTrackIds &&
+                tracksRef.current &&
+                (() => {
+                  // Get all tracks being dragged
+                  const draggedTracks = tracks.filter((t) =>
+                    dragGhost.selectedTrackIds.includes(t.id),
+                  );
+                  if (draggedTracks.length === 0) return null;
+
+                  // Find the primary track
+                  const primaryTrack = draggedTracks.find(
+                    (t) => t.id === dragGhost.trackId,
+                  );
+                  if (!primaryTrack) return null;
+
+                  // Calculate the offset for each track from the primary track
+                  const primaryTrackStartFrame = primaryTrack.startFrame;
+
+                  return (
+                    <>
+                      {draggedTracks.map((track) => {
+                        // Calculate where this track will land relative to primary
+                        const frameOffset =
+                          track.startFrame - primaryTrackStartFrame;
+                        const targetStartFrame =
+                          dragGhost.targetFrame + frameOffset;
+                        const targetEndFrame =
+                          targetStartFrame +
+                          (track.endFrame - track.startFrame);
+
+                        return (
+                          <DropZoneIndicator
+                            key={`drop-zone-${track.id}`}
+                            targetRow={track.type}
+                            startFrame={targetStartFrame}
+                            endFrame={targetEndFrame}
+                            frameWidth={frameWidth}
+                            scrollX={timeline.scrollX}
+                            visibleTrackRows={visibleTrackRows}
+                            isValidDrop={true}
+                          />
+                        );
+                      })}
+                    </>
+                  );
+                })()}
             </div>
           </div>
         </div>
+
+        {/* Drag Ghost - floating preview that follows cursor */}
+        {dragGhost?.isActive && dragGhost.selectedTrackIds && (
+          <>
+            {(() => {
+              // Get all tracks being dragged
+              const draggedTracks = tracks.filter((t) =>
+                dragGhost.selectedTrackIds.includes(t.id),
+              );
+              if (draggedTracks.length === 0) return null;
+
+              // Find the primary track (the one being clicked/dragged)
+              const primaryTrack = draggedTracks.find(
+                (t) => t.id === dragGhost.trackId,
+              );
+              if (!primaryTrack) return null;
+
+              // Calculate relative offsets for all tracks from the primary track
+              const primaryTrackStartFrame = primaryTrack.startFrame;
+              const primaryTrackRowTop = getTrackRowTop(
+                primaryTrack.type,
+                visibleTrackRows,
+              );
+
+              return (
+                <>
+                  {draggedTracks.map((track) => {
+                    // Calculate frame offset from primary track (preserve spacing)
+                    const frameOffset =
+                      track.startFrame - primaryTrackStartFrame;
+                    const horizontalOffset = frameOffset * frameWidth;
+
+                    // Calculate vertical offset from primary track row
+                    const trackRowTop = getTrackRowTop(
+                      track.type,
+                      visibleTrackRows,
+                    );
+                    const verticalOffset = trackRowTop - primaryTrackRowTop;
+
+                    // For non-primary tracks, adjust mouse position but keep offset the same
+                    // This preserves the spacing between clips
+                    return (
+                      <DragGhost
+                        key={`drag-ghost-${track.id}`}
+                        track={track}
+                        frameWidth={frameWidth}
+                        zoomLevel={timeline.zoom}
+                        mouseX={dragGhost.mouseX + horizontalOffset}
+                        mouseY={dragGhost.mouseY + verticalOffset}
+                        offsetX={dragGhost.offsetX}
+                        offsetY={dragGhost.offsetY}
+                      />
+                    );
+                  })}
+                </>
+              );
+            })()}
+          </>
+        )}
 
         {/* Project Shortcut Confirmation Dialog */}
         <ConfirmationDialog />

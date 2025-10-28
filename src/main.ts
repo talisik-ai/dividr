@@ -12,6 +12,14 @@ import {
   runFfmpegWithProgress,
 } from './backend/ffmpeg/ffmpegRunner';
 import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
+import {
+  cancelTranscription,
+  getWhisperStatus,
+  initializeWhisperPath,
+  transcribeAudio,
+  WhisperProgress,
+  WhisperResult,
+} from './backend/whisper/whisperRunner';
 
 // Import Vite dev server URL
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -1470,6 +1478,32 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
   }
 });
 
+// IPC Handler for reading file as ArrayBuffer (for validation)
+ipcMain.handle('read-file-as-buffer', async (event, filePath: string) => {
+  try {
+    console.log(`📖 Reading file as buffer from: ${filePath}`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    // Read file as Buffer
+    const buffer = fs.readFileSync(filePath);
+    console.log(
+      `📄 Successfully read file buffer, size: ${buffer.length} bytes`,
+    );
+
+    // Convert Node Buffer to ArrayBuffer for transfer to renderer
+    return buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength,
+    );
+  } catch (error) {
+    console.error(`❌ Failed to read file as buffer ${filePath}:`, error);
+    throw error;
+  }
+});
+
 // IPC Handler for creating preview URLs from file paths
 ipcMain.handle('create-preview-url', async (event, filePath: string) => {
   try {
@@ -1866,34 +1900,51 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
         // Check if this was a user cancellation:
         // 1. Signal is SIGTERM/SIGKILL (direct signal kill)
         // 2. Code 255 AND logs contain "received signal 15" (FFmpeg caught signal)
-        const wasCancelled = 
-          signal === 'SIGTERM' || 
-          signal === 'SIGKILL' || 
-          (code === 255 && (logs.includes('received signal 15') || logs.includes('Exiting normally, received signal')));
+        const wasCancelled =
+          signal === 'SIGTERM' ||
+          signal === 'SIGKILL' ||
+          (code === 255 &&
+            (logs.includes('received signal 15') ||
+              logs.includes('Exiting normally, received signal')));
 
         if (wasCancelled) {
           console.log('🛑 FFmpeg process was cancelled by user');
-          
+
           // Delete the incomplete output file
           const outputFilePath = path.join(absoluteLocation, job.output);
-          console.log('🔍 Checking for incomplete output file at:', outputFilePath);
-          
+          console.log(
+            '🔍 Checking for incomplete output file at:',
+            outputFilePath,
+          );
+
           if (fs.existsSync(outputFilePath)) {
             try {
               fs.unlinkSync(outputFilePath);
               console.log('🗑️ Deleted incomplete output file:', outputFilePath);
             } catch (deleteError) {
-              console.warn('⚠️ Failed to delete incomplete output file:', deleteError);
+              console.warn(
+                '⚠️ Failed to delete incomplete output file:',
+                deleteError,
+              );
             }
           } else {
-            console.log('ℹ️ No output file found to delete (may not have been created yet)');
+            console.log(
+              'ℹ️ No output file found to delete (may not have been created yet)',
+            );
           }
-          
-          resolve({ success: true, cancelled: true, logs, message: 'Export cancelled by user' });
+
+          resolve({
+            success: true,
+            cancelled: true,
+            logs,
+            message: 'Export cancelled by user',
+          });
           return;
         }
 
-        console.log(`🏁 FFmpeg process finished with code: ${code}, signal: ${signal}`);
+        console.log(
+          `🏁 FFmpeg process finished with code: ${code}, signal: ${signal}`,
+        );
 
         if (code === 0) {
           resolve({ success: true, logs });
@@ -1946,10 +1997,10 @@ ipcMain.handle('ffmpegRun', async (event, job: VideoEditJob) => {
 ipcMain.handle('ffmpeg:cancel', async () => {
   if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
     console.log('🛑 Cancelling FFmpeg process...');
-    
+
     // Send SIGTERM for graceful termination
     currentFfmpegProcess.kill('SIGTERM');
-    
+
     // Force kill after 2 seconds if still running
     setTimeout(() => {
       if (currentFfmpegProcess && !currentFfmpegProcess.killed) {
@@ -1957,11 +2008,11 @@ ipcMain.handle('ffmpeg:cancel', async () => {
         currentFfmpegProcess.kill('SIGKILL');
       }
     }, 2000);
-    
+
     currentFfmpegProcess = null;
     return { success: true, message: 'Export cancelled' };
   }
-  
+
   return { success: false, message: 'No export running' };
 });
 
@@ -1987,6 +2038,138 @@ ipcMain.handle('ffmpeg:status', async () => {
   };
 });
 
+// ============================================================================
+// Whisper.cpp IPC Handlers
+// ============================================================================
+
+// IPC Handler for Whisper transcription
+ipcMain.handle(
+  'whisper:transcribe',
+  async (
+    event,
+    audioPath: string,
+    options?: {
+      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
+      language?: string;
+      translate?: boolean;
+      wordTimestamps?: boolean;
+    },
+  ) => {
+    console.log('🎤 MAIN PROCESS: whisper:transcribe handler called');
+    console.log('   Audio path:', audioPath);
+    console.log('   Options:', options);
+
+    try {
+      const result: WhisperResult = await transcribeAudio(audioPath, {
+        ...options,
+        onProgress: (progress: WhisperProgress) => {
+          // Send progress updates to renderer process
+          event.sender.send('whisper:progress', progress);
+        },
+      });
+
+      console.log('✅ Transcription successful');
+      return { success: true, result };
+    } catch (error) {
+      console.error('❌ Whisper transcription failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  },
+);
+
+// IPC Handler to cancel transcription
+ipcMain.handle('whisper:cancel', async () => {
+  console.log('🛑 MAIN PROCESS: whisper:cancel handler called');
+
+  const cancelled = cancelTranscription();
+  return {
+    success: cancelled,
+    message: cancelled
+      ? 'Transcription cancelled successfully'
+      : 'No active transcription to cancel',
+  };
+});
+
+// IPC Handler to check Whisper status
+ipcMain.handle('whisper:status', async () => {
+  console.log('📊 MAIN PROCESS: whisper:status handler called');
+
+  const status = getWhisperStatus();
+  console.log('   Status:', status);
+
+  return status;
+});
+
+// IPC Handler to check if a media file has audio
+ipcMain.handle('media:has-audio', async (event, filePath: string) => {
+  console.log('🔊 MAIN PROCESS: media:has-audio handler called');
+  console.log('   File path:', filePath);
+
+  if (!ffmpegPath) {
+    return {
+      success: false,
+      hasAudio: false,
+      error: 'FFmpeg binary not available',
+    };
+  }
+
+  try {
+    return new Promise((resolve) => {
+      const ffprobe = spawn(ffmpegPath, [
+        '-i',
+        filePath,
+        '-show_streams',
+        '-select_streams',
+        'a',
+        '-loglevel',
+        'error',
+      ]);
+
+      let stdout = '';
+      let stderr = '';
+
+      ffprobe.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      ffprobe.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      ffprobe.on('close', (code) => {
+        // If there's audio stream info in stdout, the file has audio
+        const hasAudio = stdout.includes('[STREAM]');
+
+        console.log(`   Has audio: ${hasAudio} (exit code: ${code})`);
+
+        resolve({
+          success: true,
+          hasAudio,
+        });
+      });
+
+      ffprobe.on('error', (error) => {
+        console.error('   FFprobe error:', error);
+        resolve({
+          success: false,
+          hasAudio: false,
+          error: error.message,
+        });
+      });
+    });
+  } catch (error) {
+    console.error('❌ Error checking audio:', error);
+    return {
+      success: false,
+      hasAudio: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
 const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -1995,6 +2178,8 @@ const createWindow = () => {
     autoHideMenuBar: true,
     minWidth: 750,
     minHeight: 500,
+    show: false, // Don't show immediately - wait for ready-to-show
+    backgroundColor: '#09090b', // Match loader background to prevent flash
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
@@ -2005,6 +2190,11 @@ const createWindow = () => {
   });
 
   if (mainWindow) {
+    // Show window only when ready to prevent white flash
+    mainWindow.once('ready-to-show', () => {
+      mainWindow?.show();
+    });
+
     if (
       process.env.NODE_ENV === 'development' &&
       MAIN_WINDOW_VITE_DEV_SERVER_URL
@@ -2104,9 +2294,20 @@ async function getRunInBackgroundSetting(): Promise<boolean> {
 }
 
 app.on('ready', async () => {
-  // Initialize FFmpeg paths before creating the window (now async)
-  await initializeFfmpegPaths();
+  // Create window first to show loader immediately
   createWindow();
+
+  // Initialize FFmpeg paths in background (non-blocking)
+  // This can happen after window is shown
+  initializeFfmpegPaths().catch(() => {
+    // App can still function without FFmpeg for project management
+  });
+
+  // Initialize Whisper.cpp paths in background (non-blocking)
+  initializeWhisperPath().catch((error) => {
+    console.error('⚠️ Whisper.cpp initialization failed:', error);
+    // App can still function without Whisper for transcription
+  });
 });
 
 app.on('window-all-closed', () => {

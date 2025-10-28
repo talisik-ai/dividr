@@ -7,7 +7,7 @@ export interface VideoTrack {
   originalFile?: File;
   tempFilePath?: string;
   duration: number; // Current visible duration in frames (timeline length)
-  sourceDuration?: number; // Original source media duration in frames (for trimming boundaries)
+  sourceDuration?: number; // Original source media duration in frames (for trimming boundaries - video/audio only; dynamically updated for text/subtitle/image)
   startFrame: number;
   endFrame: number;
   sourceStartTime?: number; // in seconds - where in the source file this track segment starts (trim in-point)
@@ -55,5 +55,7 @@ export interface VideoTrack {
     y: number; // Y position normalized (-1 to 1, relative to video center, 0 = center)
     scale: number; // Scale factor (1 = 100%)
     rotation: number; // Rotation in degrees
+    width: number; // Width in pixels (actual rendered width)
+    height: number; // Height in pixels (actual rendered height)
   };
 }

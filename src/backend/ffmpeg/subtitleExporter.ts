@@ -256,12 +256,15 @@ function convertColorToASS(color: string, opacity?: number): string {
   // Handle hex colors (#RRGGBB, #RRGGBBAA, or #RGB)
   if (color.startsWith('#')) {
     let hex = color.substring(1);
-    
+
     // Expand shorthand hex (#RGB -> #RRGGBB)
     if (hex.length === 3) {
-      hex = hex.split('').map(c => c + c).join('');
+      hex = hex
+        .split('')
+        .map((c) => c + c)
+        .join('');
     }
-    
+
     if (hex.length === 6) {
       r = parseInt(hex.substring(0, 2), 16);
       g = parseInt(hex.substring(2, 4), 16);
@@ -440,11 +443,12 @@ function computeASSStyleParams(
     effectiveStrokeColor = style?.color || '#FFFFFF';
   }
 
-  const isTransparentStroke = !effectiveStrokeColor ||
-                              effectiveStrokeColor === 'transparent' ||
-                              effectiveStrokeColor.includes('rgba(0, 0, 0, 0)') ||
-                              effectiveStrokeColor.match(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)/);
-  
+  const isTransparentStroke =
+    !effectiveStrokeColor ||
+    effectiveStrokeColor === 'transparent' ||
+    effectiveStrokeColor.includes('rgba(0, 0, 0, 0)') ||
+    effectiveStrokeColor.match(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)/);
+
   const hasOutline = !isTransparentStroke;
   const outlineWidth = hasOutline ? 1.5 : 0;
   
@@ -825,8 +829,8 @@ function convertTextStyleToASS(textStyle?: TextStyleOptions): {
 
   // Convert underline to ASS underline value
   // Check both textDecoration and isUnderline for compatibility
-  const hasUnderline = 
-    textStyle.textDecoration?.includes('underline') || 
+  const hasUnderline =
+    textStyle.textDecoration?.includes('underline') ||
     textStyle.isUnderline === true;
   const underline = hasUnderline ? -1 : 0;
 
@@ -834,14 +838,19 @@ function convertTextStyleToASS(textStyle?: TextStyleOptions): {
   let fontFamily = 'Arial';
   if (textStyle.fontFamily) {
     // Extract first font from font stack
-    const requestedFont = textStyle.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
-    
+    const requestedFont = textStyle.fontFamily
+      .split(',')[0]
+      .replace(/['"]/g, '')
+      .trim();
+
     // Check if the requested font is available
     if (isFontAvailable(requestedFont)) {
       fontFamily = requestedFont;
       //console.log(`✅ Using available font for ASS subtitles: ${fontFamily}`);
     } else {
-      console.warn(`⚠️ Font "${requestedFont}" not available, falling back to Arial`);
+      console.warn(
+        `⚠️ Font "${requestedFont}" not available, falling back to Arial`,
+      );
       fontFamily = 'Arial';
     }
   }

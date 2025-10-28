@@ -1,3 +1,4 @@
+import { cn } from '@/frontend/utils/utils';
 import { Film } from 'lucide-react';
 import React, {
   useCallback,
@@ -6,11 +7,21 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { toast } from 'sonner';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
+import { ImageTrackStrip } from './imageTrackStrip';
+import {
+  getRowHeightClasses,
+  getTrackItemHeight,
+  getTrackItemHeightClasses,
+} from './utils/timelineConstants';
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 // Define track row types - easy to extend in the future
+
+// Drag activation threshold in pixels - prevents accidental drags during clicks
+const DRAG_ACTIVATION_THRESHOLD = 5;
 
 interface TimelineTracksProps {
   tracks: VideoTrack[];
@@ -47,7 +58,7 @@ export const TRACK_ROWS: TrackRowDefinition[] = [
     icon: '💬',
   },
   {
-    id: 'logo',
+    id: 'image',
     name: 'Images/Overlays',
     trackTypes: ['image'],
     color: '#e67e22',
@@ -109,6 +120,15 @@ const TrackItemWrapper: React.FC<{
     const left = track.startFrame * frameWidth;
     const width = Math.max(1, (track.endFrame - track.startFrame) * frameWidth);
 
+    // Check if this track is being dragged (has active drag ghost)
+    const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
+
+    // Check if this track is in the current drag selection
+    const isBeingDragged =
+      dragGhost?.isActive &&
+      dragGhost.selectedTrackIds &&
+      dragGhost.selectedTrackIds.includes(track.id);
+
     const getTrackGradient = (type: VideoTrack['type']) => {
       switch (type) {
         case 'text':
@@ -120,7 +140,7 @@ const TrackItemWrapper: React.FC<{
         case 'audio':
           return 'hsl(var(--secondary) / 0.3)';
         case 'image':
-          return 'linear-gradient(135deg, #e67e22, #f39c12)';
+          return 'transparent';
         default:
           return 'linear-gradient(135deg, #34495e, #7f8c8d)';
       }
@@ -137,14 +157,17 @@ const TrackItemWrapper: React.FC<{
 
     return (
       <div
-        className={`
-          absolute sm:h-[24px] md:h-[26px] lg:h-[40px] rounded flex items-center select-none
-          ${isDuplicationFeedback ? 'overflow-visible' : 'overflow-hidden'}
-          ${isSelected ? 'border-2 border-secondary' : ''}
-          ${getCursorClass()}
-          ${track.visible ? 'opacity-100' : 'opacity-50'}
-          ${isDuplicationFeedback ? 'track-duplicate-feedback z-50' : 'z-10'}
-        `}
+        className={cn(
+          'absolute rounded flex items-center select-none transition-opacity duration-150',
+          getTrackItemHeightClasses(track.type),
+          isDuplicationFeedback ? 'overflow-visible' : 'overflow-hidden',
+          isSelected ? 'border-2 border-secondary' : '',
+          getCursorClass(),
+          track.visible ? 'opacity-100' : 'opacity-50',
+          isDuplicationFeedback ? 'track-duplicate-feedback z-50' : 'z-10',
+          // Hide the original track completely when drag ghost is active
+          isBeingDragged ? 'opacity-0' : '',
+        )}
         style={{
           transform: `translate3d(${left}px, 0, 0)`,
           width: `${width}px`,
@@ -178,16 +201,28 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({
       x: 0,
+      y: 0,
       startFrame: 0,
       endFrame: 0,
     });
     const rafRef = useRef<number | null>(null);
     const hasAutoSelectedRef = useRef(false);
+    const dragThresholdMetRef = useRef(false); // Track if drag threshold has been exceeded
+    const dragOffsetRef = useRef({ offsetX: 0, offsetY: 0 }); // Store offset at mouseDown
 
     // Subscribe to duplication feedback state
     const isDuplicationFeedback = useVideoEditorStore((state) =>
       state.duplicationFeedbackTrackIds.has(track.id),
     );
+
+    // Check if this track is in the current drag selection (for hiding resize handles)
+    const dragGhostForHandles = useVideoEditorStore(
+      (state) => state.playback.dragGhost,
+    );
+    const isThisOrLinkedTrackBeingDragged =
+      dragGhostForHandles?.isActive &&
+      dragGhostForHandles.selectedTrackIds &&
+      dragGhostForHandles.selectedTrackIds.includes(track.id);
 
     // Apply global cursor override during resize/drag to prevent flickering
     useEffect(() => {
@@ -236,14 +271,35 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         const { startDraggingTrack } = useVideoEditorStore.getState();
         startDraggingTrack(track.startFrame); // Pass initial frame for force drag tracking
 
+        // Calculate and store offset from track's left edge to cursor
+        const trackElement = e.currentTarget as HTMLElement;
+        const trackRect = trackElement.getBoundingClientRect();
+        dragOffsetRef.current = {
+          offsetX: e.clientX - trackRect.left,
+          offsetY: e.clientY - trackRect.top,
+        };
+
+        // Store initial drag state but DON'T activate drag ghost yet
+        // Wait for movement threshold to be exceeded
         setIsDragging(true);
         setDragStart({
           x: e.clientX,
+          y: e.clientY,
           startFrame: track.startFrame,
           endFrame: track.endFrame,
         });
+
+        // Reset threshold tracking
+        dragThresholdMetRef.current = false;
       },
-      [track.locked, track.startFrame, track.endFrame, isSplitModeActive],
+      [
+        track.locked,
+        track.startFrame,
+        track.endFrame,
+        track.id,
+        track.type,
+        isSplitModeActive,
+      ],
     );
 
     const handleResizeMouseDown = useCallback(
@@ -262,9 +318,13 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         const { startDraggingTrack } = useVideoEditorStore.getState();
         startDraggingTrack(track.startFrame); // Pass initial frame for tracking
 
+        // DON'T initialize drag ghost for resize operations
+        // Resizing should not show drop zones
+
         setIsResizing(side);
         setDragStart({
           x: e.clientX,
+          y: e.clientY,
           startFrame: track.startFrame,
           endFrame: track.endFrame,
         });
@@ -395,12 +455,87 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       (e: MouseEvent) => {
         if (!isResizing && !isDragging) return;
 
+        // Check if drag threshold has been met (only for dragging, not resizing)
+        if (isDragging && !dragThresholdMetRef.current) {
+          const deltaX = Math.abs(e.clientX - dragStart.x);
+          const deltaY = Math.abs(e.clientY - dragStart.y);
+          const totalMovement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+          if (totalMovement >= DRAG_ACTIVATION_THRESHOLD) {
+            // Threshold exceeded - activate drag ghost now
+            dragThresholdMetRef.current = true;
+
+            const { setDragGhost, timeline } = useVideoEditorStore.getState();
+
+            // Check if this is a multi-selection drag
+            const selectedTrackIds = timeline.selectedTrackIds;
+            const isMultiSelectionDrag =
+              selectedTrackIds.length > 1 &&
+              selectedTrackIds.includes(track.id);
+
+            // Get all selected tracks (including linked tracks)
+            const allSelectedTrackIds = isMultiSelectionDrag
+              ? [...selectedTrackIds]
+              : [track.id];
+
+            // Add linked track if not already in selection
+            if (track.isLinked && track.linkedTrackId) {
+              if (!allSelectedTrackIds.includes(track.linkedTrackId)) {
+                allSelectedTrackIds.push(track.linkedTrackId);
+              }
+            }
+
+            // Multi-selection detection (for UI/UX purposes)
+            const isMultiSelection = allSelectedTrackIds.length > 1;
+
+            // Calculate target frame using live scroll position
+            // Find the scroll container (the tracks scrollable area)
+            const scrollContainer = (e.target as HTMLElement).closest(
+              '.overflow-auto',
+            ) as HTMLElement | null;
+            const currentScrollX = scrollContainer?.scrollLeft || 0;
+            const scrollContainerRect =
+              scrollContainer?.getBoundingClientRect();
+            const mouseRelativeX = scrollContainerRect
+              ? e.clientX - scrollContainerRect.left
+              : e.clientX;
+
+            // Calculate target frame accounting for current scroll AND offset
+            const targetFrame = Math.max(
+              0,
+              Math.floor(
+                (mouseRelativeX +
+                  currentScrollX -
+                  dragOffsetRef.current.offsetX) /
+                  frameWidth,
+              ),
+            );
+
+            // Initialize drag ghost with stored offset from mouseDown
+            setDragGhost({
+              isActive: true,
+              trackId: track.id,
+              selectedTrackIds: allSelectedTrackIds,
+              mouseX: e.clientX,
+              mouseY: e.clientY,
+              offsetX: dragOffsetRef.current.offsetX,
+              offsetY: dragOffsetRef.current.offsetY,
+              targetRow: track.type,
+              targetFrame, // Use calculated target frame with live scroll
+              isMultiSelection,
+            });
+          } else {
+            // Threshold not met yet - don't process drag movement
+            return;
+          }
+        }
+
         // Auto-select unselected track on first actual drag movement
         if (
           isDragging &&
           !isSelected &&
           !hasAutoSelectedRef.current &&
-          Math.abs(e.clientX - dragStart.x) > 3
+          dragThresholdMetRef.current
         ) {
           onSelect(e.shiftKey);
           hasAutoSelectedRef.current = true;
@@ -409,6 +544,14 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
         rafRef.current = requestAnimationFrame(() => {
+          // Find the scroll container for live scroll position
+          const scrollContainer = (e.target as HTMLElement).closest(
+            '.overflow-auto',
+          ) as HTMLElement | null;
+          const currentScrollX = scrollContainer?.scrollLeft || 0;
+          const scrollContainerRect = scrollContainer?.getBoundingClientRect();
+
+          // For resize operations, use delta-based calculation (scroll doesn't affect resize)
           const deltaX = e.clientX - dragStart.x;
           const deltaFrames = Math.round(deltaX / frameWidth);
 
@@ -497,13 +640,39 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             }
 
             onResize(undefined, newEndFrame);
-          } else if (isDragging) {
-            let newStartFrame = Math.max(0, dragStart.startFrame + deltaFrames);
+          } else if (isDragging && dragThresholdMetRef.current) {
+            // DRAG: Use absolute position calculation with live scroll
+            // This ensures drop location matches visual indicator during auto-scroll
+            if (!scrollContainerRect) {
+              // Fallback to delta-based if we can't find scroll container
+              const newStartFrame = Math.max(
+                0,
+                dragStart.startFrame + deltaFrames,
+              );
+              onMove(newStartFrame);
+              return;
+            }
+
+            const mouseRelativeX = e.clientX - scrollContainerRect.left;
+
+            // Calculate target frame accounting for current scroll AND drag offset
+            // This matches the dropzone indicator calculation in timeline.tsx
+            let newStartFrame = Math.max(
+              0,
+              Math.floor(
+                (mouseRelativeX +
+                  currentScrollX -
+                  dragOffsetRef.current.offsetX) /
+                  frameWidth,
+              ),
+            );
+
             const duration = dragStart.endFrame - dragStart.startFrame;
             const newEndFrame = newStartFrame + duration;
 
             // Check if snapping should be active (either Shift held OR snapEnabled toggle)
-            const { timeline } = useVideoEditorStore.getState();
+            const { timeline, updateDragGhostPosition } =
+              useVideoEditorStore.getState();
             const shouldSnap = e.shiftKey || timeline.snapEnabled;
 
             if (shouldSnap) {
@@ -536,6 +705,15 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               useVideoEditorStore.getState().setMagneticSnapFrame(null);
             }
 
+            // Update drag ghost position with target row detection
+            // For now, keep it in the same row (cross-row will be added in Timeline component)
+            updateDragGhostPosition(
+              e.clientX,
+              e.clientY,
+              track.type,
+              newStartFrame,
+            );
+
             onMove(newStartFrame);
           }
         });
@@ -551,16 +729,23 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         onSelect,
         findMagneticSnapPoint,
         track.id,
+        track.type,
+        track.linkedTrackId,
+        track.isLinked,
+        track.startFrame,
       ],
     );
 
     const handleMouseUp = useCallback(() => {
-      const { endDraggingTrack } = useVideoEditorStore.getState();
+      const { endDraggingTrack, clearDragGhost } =
+        useVideoEditorStore.getState();
       endDraggingTrack();
+      clearDragGhost();
 
       setIsResizing(false);
       setIsDragging(false);
       hasAutoSelectedRef.current = false;
+      dragThresholdMetRef.current = false;
 
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
@@ -595,8 +780,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
     // Render appropriate content based on track type
     const trackContent = useMemo(() => {
-      const contentHeight =
-        window.innerWidth <= 640 ? 24 : window.innerWidth <= 768 ? 26 : 40;
+      // Get the dynamic content height based on track type
+      const contentHeight = getTrackItemHeight(track.type);
 
       if (track.type === 'video') {
         return (
@@ -626,7 +811,19 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         );
       }
 
-      // Text content for other track types
+      if (track.type === 'image') {
+        return (
+          <ImageTrackStrip
+            track={track}
+            frameWidth={frameWidth}
+            width={width}
+            height={contentHeight}
+            zoomLevel={zoomLevel}
+          />
+        );
+      }
+
+      // Text content for other track types (text, subtitle)
       return (
         <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
@@ -636,7 +833,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               : track.name}
         </div>
       );
-    }, [track, frameWidth, width, zoomLevel]);
+    }, [track, track.muted, frameWidth, width, zoomLevel]);
 
     return (
       <>
@@ -676,28 +873,44 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           )}
         </TrackItemWrapper>
 
-        {/* Resize handles */}
-        {!track.locked && isSelected && !isSplitModeActive && (
-          <>
-            <div
-              className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-trim z-20 lg:rounded-r flex items-center justify-center
-                ${isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary'}`}
-              style={{ left }}
-              onMouseDown={(e) => handleResizeMouseDown('left', e)}
-            >
-              <div className="w-0.5 h-3/4 bg-primary-foreground rounded-full" />
-            </div>
+        {/* Resize handles - smaller and dynamically sized based on track type */}
+        {!track.locked &&
+          isSelected &&
+          !isSplitModeActive &&
+          !isDragging &&
+          !isThisOrLinkedTrackBeingDragged && (
+            <>
+              <div
+                className={cn(
+                  'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-r flex items-center justify-center',
+                  // Smaller resize handles based on track type
+                  track.type === 'text' || track.type === 'subtitle'
+                    ? 'sm:h-3 md:h-4 lg:h-5'
+                    : 'sm:h-3 md:h-7 lg:h-8',
+                  isResizing === 'left' ? 'bg-blue-500' : 'bg-secondary',
+                )}
+                style={{ left }}
+                onMouseDown={(e) => handleResizeMouseDown('left', e)}
+              >
+                <div className="w-0.5 h-2/3 bg-primary-foreground rounded-full" />
+              </div>
 
-            <div
-              className={`absolute top-[calc(50%+2px)] -translate-y-1/2 w-2 sm:h-[16px] md:h-[18px] lg:h-[32px] cursor-trim z-20 lg:rounded-l flex items-center justify-center
-                ${isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary'}`}
-              style={{ left: left + width - 8 }}
-              onMouseDown={(e) => handleResizeMouseDown('right', e)}
-            >
-              <div className="w-0.5 h-3/4 bg-primary-foreground rounded-full" />
-            </div>
-          </>
-        )}
+              <div
+                className={cn(
+                  'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-l flex items-center justify-center',
+                  // Smaller resize handles based on track type
+                  track.type === 'text' || track.type === 'subtitle'
+                    ? 'sm:h-3 md:h-4 lg:h-5'
+                    : 'sm:h-3 md:h-6 lg:h-8',
+                  isResizing === 'right' ? 'bg-blue-500' : 'bg-secondary',
+                )}
+                style={{ left: left + width - 6 }}
+                onMouseDown={(e) => handleResizeMouseDown('right', e)}
+              >
+                <div className="w-0.5 h-2/3 bg-primary-foreground rounded-full" />
+              </div>
+            </>
+          )}
       </>
     );
   },
@@ -709,6 +922,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.endFrame === nextProps.track.endFrame &&
       prevProps.track.visible === nextProps.track.visible &&
       prevProps.track.locked === nextProps.track.locked &&
+      prevProps.track.muted === nextProps.track.muted &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -801,8 +1015,13 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
 
     return (
       <div
-        className={`relative sm:h-6 md:h-8 lg:h-12 border-l-[3px]
-        ${isDragOver ? 'bg-secondary/10 border-l-secondary' : 'bg-transparent border-l-transparent'}`}
+        className={cn(
+          'relative border-l-[3px]',
+          getRowHeightClasses(rowDef.id),
+          isDragOver
+            ? 'bg-secondary/10 border-l-secondary'
+            : 'bg-transparent border-l-transparent',
+        )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -823,8 +1042,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           }}
         />
 
-        {/* Tracks in this row */}
-        <div className="py-1.5 h-full">
+        {/* Tracks in this row - centered vertically */}
+        <div className="h-full flex items-center">
           {visibleTracks.map((track) => (
             <TrackItem
               key={`${track.id}-${track.source}-${track.name}`}
@@ -967,15 +1186,23 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handleTrackMove = useCallback(
       (trackId: string, newStartFrame: number) => {
-        // Check if multiple tracks are selected
-        const { timeline } = useVideoEditorStore.getState();
+        // Check if multiple tracks are selected OR if we're dragging multiple tracks
+        const { timeline, playback } = useVideoEditorStore.getState();
         const selectedTrackIds = timeline.selectedTrackIds;
+        const dragGhost = playback.dragGhost;
 
-        // If the track being moved is part of a multi-selection, move all selected tracks
-        if (selectedTrackIds.length > 1 && selectedTrackIds.includes(trackId)) {
+        // Use drag ghost's selectedTrackIds if available (includes linked tracks)
+        const tracksBeingDragged =
+          dragGhost?.selectedTrackIds || selectedTrackIds;
+
+        // If multiple tracks are being dragged, use multi-track move logic
+        if (
+          tracksBeingDragged.length > 1 &&
+          tracksBeingDragged.includes(trackId)
+        ) {
           moveSelectedTracks(trackId, newStartFrame);
         } else {
-          // Single track movement (or dragged track not in selection)
+          // Single track movement
           moveTrack(trackId, newStartFrame);
         }
       },
@@ -1025,11 +1252,16 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handlePlaceholderClick = useCallback(async () => {
       const result = await importMediaFromDialog();
+      if (!result || (!result.success && !result.error)) return;
+
       if (result.success && result.importedFiles.length > 0) {
         console.log(
           'Files imported successfully from timeline placeholder:',
           result.importedFiles,
         );
+      } else if (result.error) {
+        // Only show error if there's an actual error (not on cancel)
+        toast.error(result.error);
       }
     }, [importMediaFromDialog]);
 

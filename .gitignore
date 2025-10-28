@@ -35,6 +35,7 @@ TEST*.xml
 
 # Applications
 *.app
+# Ignore all .exe files except whisper-bin/win32/main.exe
 *.exe
 *.war
 
@@ -141,3 +142,11 @@ typings/
 out/
 
 public/
+
+# Whisper models (large binary files - download separately)
+whisper-bin/win32/*
+whisper-bin/darwin/*
+whisper-bin/linux/*
+whisper-models/*.bin
+# Keep directory structure
+!whisper-models/.gitkeep

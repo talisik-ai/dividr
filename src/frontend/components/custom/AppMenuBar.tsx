@@ -35,17 +35,18 @@ import {
 import { useProjectShortcutDialog } from '@/frontend/features/editor/stores/videoEditor/shortcuts/hooks/useProjectShortcutDialog';
 import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
 import { Check } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { HotkeysDialog } from './HotkeysDialog';
 
-export const AppMenuBar = () => {
+const AppMenuBarComponent = () => {
   const [showHotkeys, setShowHotkeys] = useState(false);
   const navigate = useNavigate();
   const importMediaFromDialog = useVideoEditorStore(
     (state) => state.importMediaFromDialog,
   );
   const tracks = useVideoEditorStore((state) => state.tracks);
+  const tracksLength = tracks.length;
 
   // Undo/Redo state
   const undo = useVideoEditorStore((state) => state.undo);
@@ -60,6 +61,7 @@ export const AppMenuBar = () => {
   const selectedTrackIds = useVideoEditorStore(
     (state) => state.timeline.selectedTrackIds,
   );
+  const selectedTrackIdsLength = selectedTrackIds.length;
 
   // Clipboard state
   const copyTracks = useVideoEditorStore((state) => state.copyTracks);
@@ -86,84 +88,88 @@ export const AppMenuBar = () => {
   // Setup confirmation dialog for close project
   const { showConfirmation, ConfirmationDialog } = useProjectShortcutDialog();
 
-  const handleOpenHotkeys = () => {
+  const handleOpenHotkeys = useCallback(() => {
     setShowHotkeys(true);
-  };
+  }, []);
 
-  // Project action handlers
-  const handleNewProject = () => {
+  const handleCloseHotkeys = useCallback((open: boolean) => {
+    setShowHotkeys(open);
+  }, []);
+
+  // Project action handlers - memoized to prevent re-creation
+  const handleNewProject = useCallback(() => {
     newProjectAction(navigate).catch(console.error);
-  };
+  }, [navigate]);
 
-  const handleOpenProject = () => {
+  const handleOpenProject = useCallback(() => {
     openProjectAction(navigate).catch(console.error);
-  };
+  }, [navigate]);
 
-  const handleSaveProject = () => {
+  const handleSaveProject = useCallback(() => {
     saveProjectAction().catch(console.error);
-  };
+  }, []);
 
-  const handleSaveProjectAs = () => {
+  const handleSaveProjectAs = useCallback(() => {
     saveProjectAsAction().catch(console.error);
-  };
+  }, []);
 
-  const handleImportMedia = () => {
+  const handleImportMedia = useCallback(() => {
     importMediaAction(importMediaFromDialog).catch(console.error);
-  };
+  }, [importMediaFromDialog]);
 
-  const handleExportVideo = () => {
-    exportVideoAction(tracks.length);
-  };
+  const handleExportVideo = useCallback(() => {
+    exportVideoAction(tracksLength);
+  }, [tracksLength]);
 
-  const handleCloseProject = () => {
+  const handleCloseProject = useCallback(() => {
     closeProjectAction(navigate, showConfirmation).catch(console.error);
-  };
+  }, [navigate, showConfirmation]);
 
-  // Edit action handlers
-  const handleUndo = () => {
+  // Edit action handlers - memoized to prevent re-creation
+  const handleUndo = useCallback(() => {
     undoAction(undo, canUndo);
-  };
+  }, [undo, canUndo]);
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     redoAction(redo, canRedo);
-  };
+  }, [redo, canRedo]);
 
-  const handleSelectAll = () => {
+  const handleSelectAll = useCallback(() => {
     selectAllTracksAction(tracks, setSelectedTracks);
-  };
+  }, [tracks, setSelectedTracks]);
 
-  const handleDeselectAll = () => {
+  const handleDeselectAll = useCallback(() => {
     deselectAllTracksAction(setSelectedTracks, selectedTrackIds);
-  };
+  }, [setSelectedTracks, selectedTrackIds]);
 
-  // Clipboard action handlers
-  const handleCopy = () => {
+  // Clipboard action handlers - memoized to prevent re-creation
+  const handleCopy = useCallback(() => {
     copyTracksAction(selectedTrackIds, copyTracks);
-  };
+  }, [selectedTrackIds, copyTracks]);
 
-  const handleCut = () => {
+  const handleCut = useCallback(() => {
     cutTracksAction(selectedTrackIds, cutTracks);
-  };
+  }, [selectedTrackIds, cutTracks]);
 
-  const handlePaste = () => {
+  const handlePaste = useCallback(() => {
     pasteTracksAction(hasClipboardData, pasteTracks);
-  };
+  }, [hasClipboardData, pasteTracks]);
 
-  const handleDuplicate = () => {
+  const handleDuplicate = useCallback(() => {
     duplicateTracksAction(
       selectedTrackIds,
       tracks,
       duplicateTrack,
       setSelectedTracks,
     );
-  };
+  }, [selectedTrackIds, tracks, duplicateTrack, setSelectedTracks]);
 
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     if (selectedTrackIds.length === 0) {
       return;
     }
     removeSelectedTracks();
-  };
+  }, [selectedTrackIds.length, removeSelectedTracks]);
 
   return (
     <div className="flex items-center my-1">
@@ -282,7 +288,7 @@ export const AppMenuBar = () => {
             <MenubarSeparator />
             <MenubarItem
               onClick={handleCut}
-              disabled={selectedTrackIds.length === 0}
+              disabled={selectedTrackIdsLength === 0}
             >
               Cut{' '}
               <MenubarShortcut>
@@ -294,7 +300,7 @@ export const AppMenuBar = () => {
             </MenubarItem>
             <MenubarItem
               onClick={handleCopy}
-              disabled={selectedTrackIds.length === 0}
+              disabled={selectedTrackIdsLength === 0}
             >
               Copy{' '}
               <MenubarShortcut>
@@ -315,7 +321,7 @@ export const AppMenuBar = () => {
             </MenubarItem>
             <MenubarItem
               onClick={handleDuplicate}
-              disabled={selectedTrackIds.length === 0}
+              disabled={selectedTrackIdsLength === 0}
             >
               Duplicate{' '}
               <MenubarShortcut>
@@ -328,7 +334,7 @@ export const AppMenuBar = () => {
             <MenubarSeparator />
             <MenubarItem
               onClick={handleDelete}
-              disabled={selectedTrackIds.length === 0}
+              disabled={selectedTrackIdsLength === 0}
             >
               Delete{' '}
               <MenubarShortcut>
@@ -340,7 +346,7 @@ export const AppMenuBar = () => {
             <MenubarSeparator />
             <MenubarItem
               onClick={handleSelectAll}
-              disabled={tracks.length === 0}
+              disabled={tracksLength === 0}
             >
               Select All{' '}
               <MenubarShortcut>
@@ -352,7 +358,7 @@ export const AppMenuBar = () => {
             </MenubarItem>
             <MenubarItem
               onClick={handleDeselectAll}
-              disabled={selectedTrackIds.length === 0}
+              disabled={selectedTrackIdsLength === 0}
             >
               Deselect All
             </MenubarItem>
@@ -421,8 +427,12 @@ export const AppMenuBar = () => {
         </MenubarMenu>
       </Menubar>
 
-      <HotkeysDialog open={showHotkeys} onOpenChange={setShowHotkeys} />
+      <HotkeysDialog open={showHotkeys} onOpenChange={handleCloseHotkeys} />
       <ConfirmationDialog />
     </div>
   );
 };
+
+AppMenuBarComponent.displayName = 'AppMenuBar';
+
+export const AppMenuBar = AppMenuBarComponent;
