@@ -4,8 +4,8 @@ import { useState } from 'react';
 
 interface WhisperStatus {
   available: boolean;
-  whisperPath: string | null;
-  modelsAvailable: string[];
+  pythonPath: string | null;
+  pythonScriptPath: string | null;
   isProcessing: boolean;
 }
 
@@ -22,12 +22,19 @@ interface WhisperResult {
     }>;
   }>;
   language: string;
+  language_probability: number;
   duration: number;
   text: string;
+  processing_time: number;
+  model: string;
+  device: string;
+  segment_count: number;
+  real_time_factor?: number;
+  faster_than_realtime?: boolean;
 }
 
 /**
- * Test component for Whisper.cpp transcription
+ * Test component for Python Faster-Whisper transcription
  * This is a development/testing component to verify the Whisper integration
  */
 export const WhisperTest = () => {
@@ -105,9 +112,12 @@ export const WhisperTest = () => {
       const transcriptionResult = await window.electronAPI.whisperTranscribe(
         selectedFile,
         {
-          model: 'base', // Use 'tiny' for faster testing
-          language: 'en', // or omit for auto-detect
-          wordTimestamps: true,
+          model: 'base', // Options: 'tiny', 'base', 'small', 'medium', 'large', 'large-v2', 'large-v3'
+          // language: 'en', // Omit for auto-detect (recommended)
+          device: 'cpu', // 'cpu' or 'cuda' (if GPU available)
+          computeType: 'int8', // 'int8', 'int16', 'float16', 'float32'
+          beamSize: 5, // Higher = more accurate but slower
+          vad: true, // Voice Activity Detection to skip silence
         },
       );
 
@@ -142,9 +152,12 @@ export const WhisperTest = () => {
     <div className="p-6 space-y-6 max-w-4xl mx-auto min-h-0 flex-1 overflow-y-auto">
       <div className="rounded-lg border border-border bg-card p-6">
         <div className="space-y-2 mb-6">
-          <h2 className="text-2xl font-bold">Whisper.cpp Test Interface</h2>
+          <h2 className="text-2xl font-bold">
+            Python Faster-Whisper Test Interface
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Test audio transcription with word-level timestamps
+            Test audio transcription with word-level timestamps using Python
+            Faster-Whisper
           </p>
         </div>
 
@@ -162,14 +175,14 @@ export const WhisperTest = () => {
                     {status.available ? '✅ Yes' : '❌ No'}
                   </div>
                   <div>
-                    <strong>Binary Path:</strong>{' '}
-                    {status.whisperPath || 'Not found'}
+                    <strong>Python Path:</strong>{' '}
+                    {status.pythonPath || 'Not found'}
                   </div>
                   <div>
-                    <strong>Models Available:</strong>{' '}
-                    {status.modelsAvailable?.length > 0
-                      ? status.modelsAvailable.join(', ')
-                      : 'None'}
+                    <strong>Script Path:</strong>{' '}
+                    <span className="break-all">
+                      {status.pythonScriptPath || 'Not found'}
+                    </span>
                   </div>
                   <div>
                     <strong>Processing:</strong>{' '}
@@ -229,16 +242,36 @@ export const WhisperTest = () => {
             <div className="rounded-lg border border-border bg-card p-6 space-y-4">
               <h3 className="text-xl font-semibold">Transcription Result</h3>
 
-              <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="text-sm">
                   <strong>Language:</strong> {result.language}
+                </div>
+                <div className="text-sm">
+                  <strong>Confidence:</strong>{' '}
+                  {(result.language_probability * 100).toFixed(1)}%
                 </div>
                 <div className="text-sm">
                   <strong>Duration:</strong> {result.duration.toFixed(2)}s
                 </div>
                 <div className="text-sm">
-                  <strong>Segments:</strong> {result.segments?.length || 0}
+                  <strong>Processing Time:</strong>{' '}
+                  {result.processing_time.toFixed(2)}s
                 </div>
+                <div className="text-sm">
+                  <strong>Segments:</strong> {result.segment_count}
+                </div>
+                <div className="text-sm">
+                  <strong>Model:</strong> {result.model}
+                </div>
+                <div className="text-sm">
+                  <strong>Device:</strong> {result.device}
+                </div>
+                {result.real_time_factor && (
+                  <div className="text-sm">
+                    <strong>Speed:</strong> {result.real_time_factor.toFixed(2)}
+                    x {result.faster_than_realtime && '🚀'}
+                  </div>
+                )}
               </div>
 
               {/* Full Text */}

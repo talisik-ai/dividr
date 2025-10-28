@@ -20,8 +20,9 @@ const config: ForgeConfig = {
     executableName: 'Dividr',
     extraResource: [
       './src/frontend/assets/logo',
-      './whisper-bin', // Whisper.cpp binaries
-      './whisper-models', // Whisper models
+      './whisper-bin', // Whisper.cpp binaries (legacy, can be removed if not needed)
+      './whisper-models', // Whisper models (legacy, can be removed if not needed)
+      './src/backend/scripts', // Python transcription scripts
     ],
     // Ensure native modules and ffmpeg binaries are included
     ignore: [/^\/\.gitignore$/, /^\/README\.md$/, /^\/docs\//],

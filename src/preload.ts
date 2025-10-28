@@ -180,17 +180,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
 
   // ============================================================================
-  // Whisper.cpp API
+  // Python Faster-Whisper API
   // ============================================================================
 
-  // Transcribe audio file
+  // Transcribe audio file (Python Faster-Whisper)
   whisperTranscribe: (
     audioPath: string,
     options?: {
-      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
+      model?:
+        | 'tiny'
+        | 'base'
+        | 'small'
+        | 'medium'
+        | 'large'
+        | 'large-v2'
+        | 'large-v3';
       language?: string;
       translate?: boolean;
-      wordTimestamps?: boolean;
+      device?: 'cpu' | 'cuda';
+      computeType?: 'int8' | 'int16' | 'float16' | 'float32';
+      beamSize?: number;
+      vad?: boolean;
     },
   ) => ipcRenderer.invoke('whisper:transcribe', audioPath, options),
 

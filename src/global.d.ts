@@ -225,11 +225,11 @@ declare global {
       removeSpriteSheetListeners: () => void;
 
       // ========================================================================
-      // Whisper.cpp API
+      // Python Faster-Whisper API
       // ========================================================================
 
       /**
-       * Transcribe audio file using Whisper.cpp
+       * Transcribe audio file using Python Faster-Whisper
        * @param audioPath - Path to audio file
        * @param options - Transcription options
        * @returns Transcription result with word-level timestamps
@@ -237,10 +237,20 @@ declare global {
       whisperTranscribe: (
         audioPath: string,
         options?: {
-          model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
+          model?:
+            | 'tiny'
+            | 'base'
+            | 'small'
+            | 'medium'
+            | 'large'
+            | 'large-v2'
+            | 'large-v3';
           language?: string;
           translate?: boolean;
-          wordTimestamps?: boolean;
+          device?: 'cpu' | 'cuda';
+          computeType?: 'int8' | 'int16' | 'float16' | 'float32';
+          beamSize?: number;
+          vad?: boolean;
         },
       ) => Promise<{
         success: boolean;
@@ -257,8 +267,15 @@ declare global {
             }>;
           }>;
           language: string;
+          language_probability: number;
           duration: number;
           text: string;
+          processing_time: number;
+          model: string;
+          device: string;
+          segment_count: number;
+          real_time_factor?: number;
+          faster_than_realtime?: boolean;
         };
         error?: string;
       }>;
@@ -269,12 +286,12 @@ declare global {
       whisperCancel: () => Promise<{ success: boolean; message: string }>;
 
       /**
-       * Get Whisper status and available models
+       * Get Python Whisper status
        */
       whisperStatus: () => Promise<{
         available: boolean;
-        whisperPath: string | null;
-        modelsAvailable: string[];
+        pythonPath: string | null;
+        pythonScriptPath: string | null;
         isProcessing: boolean;
       }>;
 
