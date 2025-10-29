@@ -160,6 +160,8 @@ ENV/
 env.bak/
 venv.bak/
 pythonenv*/
+src/backend/scripts/build/
+src/backend/scripts/dist/
 
 # FFmpeg binaries (bundled via npm packages)
 ffmpeg-bin/
