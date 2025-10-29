@@ -601,9 +601,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
               </Badge>
             )}
             {file.hasGeneratedKaraoke && (
-              <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm rounded-md p-1.5 group-hover:opacity-0 transition-opacity duration-200">
-                <KaraokeIcon className="w-4 h-4 text-white" />
-              </div>
+              <Badge className="p-[5px] absolute top-2 right-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+                <KaraokeIcon />
+              </Badge>
             )}
           </div>
         );
@@ -643,9 +643,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
             </Badge>
           )}
           {file.hasGeneratedKaraoke && (
-            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm rounded-md p-1.5 group-hover:opacity-0 transition-opacity duration-200">
-              <KaraokeIcon className="w-4 h-4 text-white" />
-            </div>
+            <Badge className="p-[5px] absolute top-2 right-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+              <KaraokeIcon />
+            </Badge>
           )}
         </div>
       );
@@ -665,9 +665,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           </Badge>
         )}
         {file.hasGeneratedKaraoke && (
-          <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm rounded-md p-1.5 group-hover:opacity-0 transition-opacity duration-200">
-            <KaraokeIcon className="w-4 h-4 text-white" />
-          </div>
+          <Badge className="p-[5px] absolute top-2 right-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+            <KaraokeIcon />
+          </Badge>
         )}
       </div>
     );
@@ -746,36 +746,29 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
               )}
               {file.isGeneratingSubtitles && (
                 <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center">
-                  <div className="relative w-16 h-16">
-                    <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
-                      <circle
-                        cx="32"
-                        cy="32"
-                        r="28"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                        className="text-white/20"
-                      />
-                      <circle
-                        cx="32"
-                        cy="32"
-                        r="28"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                        strokeDasharray={`${2 * Math.PI * 28}`}
-                        strokeDashoffset={`${2 * Math.PI * 28 * (1 - (file.subtitleProgress || 0) / 100)}`}
-                        className="text-white transition-all duration-300"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-white text-sm font-semibold drop-shadow-lg">
-                        {Math.round(file.subtitleProgress || 0)}%
-                      </span>
-                    </div>
-                  </div>
+                  <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      fill="none"
+                      className="text-white/20"
+                    />
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      fill="none"
+                      strokeDasharray={`${2 * Math.PI * 16}`}
+                      strokeDashoffset={`${2 * Math.PI * 16 * (1 - (file.subtitleProgress || 0) / 100)}`}
+                      className="text-white transition-all duration-300"
+                      strokeLinecap="round"
+                    />
+                  </svg>
                 </div>
               )}
               <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">

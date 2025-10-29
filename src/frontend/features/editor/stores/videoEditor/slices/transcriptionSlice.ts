@@ -214,69 +214,99 @@ export const createTranscriptionSlice: StateCreator<
     });
 
     try {
-      console.log('🎤 Starting Whisper transcription...');
-      console.log('   Audio path:', audioPath);
-      console.log('   Model:', options.model);
+      let transcriptionResult;
 
-      // Setup progress listener
-      const progressListener = (progress: {
-        stage: 'loading' | 'processing' | 'complete' | 'error';
-        progress: number;
-        message?: string;
-      }) => {
-        set({ transcriptionProgress: progress });
-        if (options.onProgress) {
-          options.onProgress(progress);
-        }
-      };
+      // Check if we have cached karaoke subtitles
+      if (mediaItem.cachedKaraokeSubtitles) {
+        console.log('✨ Using cached karaoke subtitles for:', mediaItem.name);
+        transcriptionResult =
+          mediaItem.cachedKaraokeSubtitles.transcriptionResult;
 
-      window.electronAPI.onWhisperProgress(progressListener);
-
-      // Call Python Faster-Whisper transcription
-      const result = await window.electronAPI.whisperTranscribe(audioPath, {
-        model: options.model || 'base',
-        language: options.language, // Omit for auto-detect
-        device: options.device || 'cpu',
-        computeType: options.computeType || 'int8',
-        beamSize: options.beamSize || 5,
-        vad: options.vad !== false, // Enable VAD by default
-      });
-
-      // Remove progress listener
-      window.electronAPI.removeWhisperProgressListener();
-
-      if (!result.success || !result.result) {
+        // Simulate progress for UX consistency
         set({
-          isTranscribing: false,
-          currentTranscribingMediaId: null,
-          transcriptionProgress: null,
+          transcriptionProgress: {
+            stage: 'loading',
+            progress: 100,
+            message: 'Loading from cache...',
+          },
         });
-        return {
-          success: false,
-          error: result.error || 'Transcription failed',
-        };
-      }
+      } else {
+        console.log('🎤 Starting Whisper transcription...');
+        console.log('   Audio path:', audioPath);
+        console.log('   Model:', options.model);
 
-      console.log('✅ Transcription successful');
-      console.log('   Segments:', result.result.segments.length);
-      console.log('   Language:', result.result.language);
-      console.log(
-        '   Language Confidence:',
-        result.result.language_probability,
-      );
-      console.log('   Duration:', result.result.duration);
-      console.log('   Processing Time:', result.result.processing_time);
-      console.log('   Model:', result.result.model);
-      console.log('   Device:', result.result.device);
-      if (result.result.real_time_factor) {
+        // Setup progress listener
+        const progressListener = (progress: {
+          stage: 'loading' | 'processing' | 'complete' | 'error';
+          progress: number;
+          message?: string;
+        }) => {
+          set({ transcriptionProgress: progress });
+          if (options.onProgress) {
+            options.onProgress(progress);
+          }
+        };
+
+        window.electronAPI.onWhisperProgress(progressListener);
+
+        // Call Python Faster-Whisper transcription
+        const result = await window.electronAPI.whisperTranscribe(audioPath, {
+          model: options.model || 'base',
+          language: options.language, // Omit for auto-detect
+          device: options.device || 'cpu',
+          computeType: options.computeType || 'int8',
+          beamSize: options.beamSize || 5,
+          vad: options.vad !== false, // Enable VAD by default
+        });
+
+        // Remove progress listener
+        window.electronAPI.removeWhisperProgressListener();
+
+        if (!result.success || !result.result) {
+          set({
+            isTranscribing: false,
+            currentTranscribingMediaId: null,
+            transcriptionProgress: null,
+          });
+          return {
+            success: false,
+            error: result.error || 'Transcription failed',
+          };
+        }
+
+        transcriptionResult = result.result;
+
+        console.log('✅ Transcription successful');
+        console.log('   Segments:', transcriptionResult.segments.length);
+        console.log('   Language:', transcriptionResult.language);
         console.log(
-          '   Speed:',
-          result.result.real_time_factor.toFixed(2) + 'x',
-          result.result.faster_than_realtime ? '🚀' : '',
+          '   Language Confidence:',
+          transcriptionResult.language_probability,
         );
+        console.log('   Duration:', transcriptionResult.duration);
+        console.log('   Processing Time:', transcriptionResult.processing_time);
+        console.log('   Model:', transcriptionResult.model);
+        console.log('   Device:', transcriptionResult.device);
+        if (transcriptionResult.real_time_factor) {
+          console.log(
+            '   Speed:',
+            transcriptionResult.real_time_factor.toFixed(2) + 'x',
+            transcriptionResult.faster_than_realtime ? '🚀' : '',
+          );
+        }
+        console.log('\n📝 Full Transcription Result:');
+        console.log(JSON.stringify(transcriptionResult, null, 2));
+
+        // Cache the transcription result
+        if (state.updateMediaLibraryItem) {
+          state.updateMediaLibraryItem(mediaId, {
+            cachedKaraokeSubtitles: {
+              transcriptionResult,
+              generatedAt: Date.now(),
+            },
+          });
+        }
       }
-      console.log('\n📝 Full Transcription Result:');
-      console.log(JSON.stringify(result.result, null, 2));
 
       // Convert Whisper segments to subtitle tracks (word-level karaoke)
       const fps = state.timeline?.fps || 30;
@@ -285,10 +315,10 @@ export const createTranscriptionSlice: StateCreator<
       const subtitleTracks: Omit<VideoTrack, 'id'>[] = [];
 
       // Process each segment and create word-level subtitle tracks
-      result.result.segments.forEach((segment) => {
+      transcriptionResult.segments.forEach((segment: any) => {
         if (segment.words && segment.words.length > 0) {
           // Create a track for each word (karaoke style)
-          segment.words.forEach((word) => {
+          segment.words.forEach((word: any) => {
             // Use Math.round for both to prevent overlaps at exact boundaries (e.g., 9.24 → 9.24)
             // This ensures exclusive end frames: [start, end) interval
             const startFrame = Math.round(word.start * fps);
@@ -366,7 +396,7 @@ export const createTranscriptionSlice: StateCreator<
       return {
         success: true,
         trackIds,
-        transcriptionResult: result.result, // Include full transcription result
+        transcriptionResult, // Include full transcription result
       };
     } catch (error) {
       console.error('❌ Karaoke subtitle generation failed:', error);
