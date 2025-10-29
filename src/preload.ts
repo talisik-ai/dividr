@@ -180,6 +180,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteFile: (filePath: string) => ipcRenderer.invoke('delete-file', filePath),
 
   // ============================================================================
+
   // Python Faster-Whisper API
   // ============================================================================
 

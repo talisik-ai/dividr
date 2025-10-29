@@ -112,12 +112,13 @@ export const useExportJob = () => {
       );
 
       // Generate subtitle content if needed
-      const { subtitleContent, currentTextStyle } = generateSubtitleContent(
+      const { subtitleContent, currentTextStyle, fontFamilies } = generateSubtitleContent(
         subtitleTracks,
         textStyle,
         getTextStyleForSubtitle,
         videoDimensions,
       );
+
 
       // Generate text clip data for export
       const { textClips, textClipsContent } = generateTextClipContent(
@@ -144,6 +145,7 @@ export const useExportJob = () => {
         },
         subtitleContent,
         subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+        subtitleFontFamilies: fontFamilies, // Pass font families, main process will resolve paths
         videoDimensions,
         textClips: textClips.length > 0 ? textClips : undefined,
         textClipsContent,
@@ -218,18 +220,6 @@ function processLinkedTracks(
     } else {
       processedTracks.push(videoTrack);
       processedTrackIds.add(videoTrack.id);
-    }
-  }
-
-  // Fallback to image dimensions if no video dimensions found
-  if (videoWidth === 1920 && videoHeight === 1080 && imageTracks.length > 0) {
-    const firstVisibleImage = imageTracks.find((track) => track.visible);
-    if (firstVisibleImage?.width && firstVisibleImage?.height) {
-      videoWidth = firstVisibleImage.width;
-      videoHeight = firstVisibleImage.height;
-      console.log(
-        `📐 Using image dimensions from track "${firstVisibleImage.name}": ${videoWidth}x${videoHeight}`,
-      );
     }
   }
 

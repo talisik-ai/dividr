@@ -209,7 +209,6 @@ export const createTranscriptionSlice: StateCreator<
 
     return result;
   },
-
   generateKaraokeSubtitles: async (mediaId, options = {}) => {
     const state = get() as any;
 
@@ -648,7 +647,6 @@ export const createTranscriptionSlice: StateCreator<
       console.log(
         `✅ Added ${trackIds.length} karaoke subtitle tracks to timeline`,
       );
-
       // Ensure subtitle track row is visible
       if (state.ensureTrackRowVisible) {
         state.ensureTrackRowVisible('subtitle');
@@ -681,7 +679,6 @@ export const createTranscriptionSlice: StateCreator<
         currentTranscribingMediaId: null,
         transcriptionProgress: null,
       });
-
       return {
         success: false,
         error:

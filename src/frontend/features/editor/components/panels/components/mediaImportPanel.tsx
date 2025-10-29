@@ -44,7 +44,6 @@ import { BasePanel } from '../../../components/panels/basePanel';
 import { CustomPanelProps } from '../../../components/panels/panelRegistry';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
-
 interface MediaItem {
   id: string;
   name: string;
@@ -1115,6 +1114,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
 
       <KaraokeConfirmationDialog
         open={karaokeConfirmation.show}

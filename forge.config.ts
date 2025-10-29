@@ -18,6 +18,7 @@ const config: ForgeConfig = {
     executableName: 'Dividr',
     extraResource: [
       './src/frontend/assets/logo',
+
       './src/backend/scripts',
       './transcribe-bin',
     ],

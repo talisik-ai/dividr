@@ -72,7 +72,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       mediaName: '',
       existingSubtitleCount: 0,
     });
-
     // Check if any non-audio tracks in this row are visible
     const hasVisibleTracks = tracks.some(
       (track) => track.type !== 'audio' && track.visible,
@@ -208,10 +207,11 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         });
       }
     }, []);
-
     // Can only remove non-essential rows (not video or audio) and only if they have no tracks
     const canRemoveRow =
       rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
+
+    console.log(rowDef.id, hasLinkedAudioVideo);
 
     return (
       <div

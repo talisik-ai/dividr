@@ -227,7 +227,6 @@ declare global {
       // ========================================================================
       // Python Faster-Whisper API
       // ========================================================================
-
       /**
        * Transcribe audio file using Python Faster-Whisper
        * @param audioPath - Path to audio file

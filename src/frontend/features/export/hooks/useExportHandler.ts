@@ -67,7 +67,7 @@ export const useExportHandler = () => {
           },
           onStatus: (status) => {
             updateRenderProgress(render.progress, status, latestCurrentTime);
-            console.log(render.progress);
+            //console.log(render.progress);
           },
           onLog: () => {
             // Logging disabled
