@@ -51,9 +51,15 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const currentTranscribingTrackId = useVideoEditorStore(
       (state) => state.currentTranscribingTrackId,
     );
+    const currentTranscribingMediaId = useVideoEditorStore(
+      (state) => state.currentTranscribingMediaId,
+    );
+
+    // Check if this row's video track is being transcribed OR if any transcription is in progress
     const isTranscribing =
       currentTranscribingTrackId ===
-      tracks.find((track) => track.type === 'video')?.id;
+        tracks.find((track) => track.type === 'video')?.id ||
+      !!(currentTranscribingMediaId || currentTranscribingTrackId);
 
     const [karaokeConfirmation, setKaraokeConfirmation] = useState<{
       show: boolean;

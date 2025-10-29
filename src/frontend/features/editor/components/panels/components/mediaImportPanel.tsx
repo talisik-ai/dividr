@@ -100,8 +100,16 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const currentTranscribingMediaId = useVideoEditorStore(
     (state) => state.currentTranscribingMediaId,
   );
+  const currentTranscribingTrackId = useVideoEditorStore(
+    (state) => state.currentTranscribingTrackId,
+  );
   const transcriptionProgress = useVideoEditorStore(
     (state) => state.transcriptionProgress,
+  );
+
+  // Check if any transcription is in progress (from media library or timeline)
+  const isAnyTranscribing = !!(
+    currentTranscribingMediaId || currentTranscribingTrackId
   );
 
   const [dragActive, setDragActive] = useState(false);
@@ -674,8 +682,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     );
   });
 
-  const FileItem: React.FC<{ file: MediaItem }> = React.memo(
-    ({ file }) => (
+  const FileItem: React.FC<{
+    file: MediaItem;
+    isAnyTranscribing: boolean;
+  }> = React.memo(
+    ({ file, isAnyTranscribing }) => (
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div className="flex flex-col space-y-2">
@@ -850,7 +861,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           {(file.type.startsWith('video/') ||
             file.type.startsWith('audio/')) && (
             <ContextMenuItem
-              disabled={file.isGeneratingSubtitles}
+              disabled={file.isGeneratingSubtitles || isAnyTranscribing}
               onClick={() => handleGenerateKaraokeSubtitles(file.id)}
             >
               <KaraokeIcon className="h-4 w-4" />
@@ -875,7 +886,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           nextProps.file.isGeneratingSubtitles &&
         prevProps.file.subtitleProgress === nextProps.file.subtitleProgress &&
         prevProps.file.hasGeneratedKaraoke ===
-          nextProps.file.hasGeneratedKaraoke
+          nextProps.file.hasGeneratedKaraoke &&
+        prevProps.isAnyTranscribing === nextProps.isAnyTranscribing
       );
     },
   );
@@ -894,7 +906,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         </h4>
         <div className="grid grid-cols-2 gap-3">
           {files.map((file) => (
-            <FileItem key={file.id} file={file} />
+            <FileItem
+              key={file.id}
+              file={file}
+              isAnyTranscribing={isAnyTranscribing}
+            />
           ))}
         </div>
       </div>
