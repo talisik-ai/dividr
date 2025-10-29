@@ -6,7 +6,7 @@
 import {
   extractSubtitleSegments,
   generateASSContent,
-} from '@/backend/ffmpeg/subtitleExporter';
+} from '@/backend/ffmpeg/subtitles/subtitleExporter';
 import {
   useVideoEditorStore,
   VideoTrack,

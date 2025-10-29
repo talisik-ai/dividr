@@ -14,6 +14,7 @@ export interface TrackInfo {
   width?: number;
   height?: number;
   isImage?: boolean; // Internal flag to mark image layers for overlay processing
+  layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
 }
 
 export interface TextStyleConfig {
@@ -167,6 +168,7 @@ export interface ProcessedTimelineSegment {
   duration: number;
   endTime: number;
   timelineType: 'video' | 'audio';
+  layer?: number; // Layer index for video/image segments (0 = base, higher = overlay priority)
 }
 
 export interface ProcessedTimeline {

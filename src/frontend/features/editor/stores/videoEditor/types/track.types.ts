@@ -23,6 +23,7 @@ export interface VideoTrack {
   subtitleText?: string;
   linkedTrackId?: string;
   isLinked?: boolean;
+  layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
   // Precise subtitle timing from original SRT file (in seconds with millisecond precision)
   subtitleStartTime?: number; // Original start time from SRT (seconds)
   subtitleEndTime?: number; // Original end time from SRT (seconds)
