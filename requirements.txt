@@ -1,5 +1,6 @@
 # Python Dependencies for Dividr Transcription
 # Install with: pip install -r requirements.txt
+# py -3.13 -m pip install -r requirements.txt
 
 # Faster-Whisper - Optimized Whisper implementation
 faster-whisper>=1.0.0

@@ -319,20 +319,43 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     preview.previewScale,
   ]);
 
-  // Subtitle tracks
+  // Subtitle tracks - with timeline-based alignment
   const getActiveSubtitleTracks = useCallback(() => {
     const currentFrame = timeline.currentFrame;
-    const activeSubtitles = tracks.filter(
-      (track) =>
-        track.type === 'subtitle' &&
-        track.visible &&
-        currentFrame >= track.startFrame &&
-        currentFrame < track.endFrame && // Use < for exclusive end (standard interval logic)
-        track.subtitleText,
-    );
+    const activeSubtitles = tracks.filter((track) => {
+      if (track.type !== 'subtitle' || !track.visible || !track.subtitleText) {
+        return false;
+      }
+
+      // Check if current frame is within the track's timeline range
+      // Use exclusive end check to prevent overlap at boundaries
+      const isInTrackRange =
+        currentFrame >= track.startFrame && currentFrame < track.endFrame;
+
+      if (!isInTrackRange) {
+        return false;
+      }
+
+      // Calculate the relative time within the track
+      const relativeFrame = currentFrame - track.startFrame;
+      const relativeTime = relativeFrame / timeline.fps;
+
+      // Get the subtitle's original timestamps (if available)
+      // These are stored when the subtitle is created from transcription
+      const subtitleStartTime = track.sourceStartTime || 0;
+      const subtitleDuration = track.sourceDuration || Infinity;
+      const subtitleEndTime = subtitleStartTime + subtitleDuration;
+
+      // Check if the relative playback time falls within the subtitle's original duration
+      // Use exclusive end to prevent flickering at boundaries (9.24 → 9.24 case)
+      const isInSubtitleDuration =
+        relativeTime >= subtitleStartTime && relativeTime < subtitleEndTime;
+
+      return isInSubtitleDuration;
+    });
 
     return activeSubtitles;
-  }, [tracks, timeline.currentFrame]);
+  }, [tracks, timeline.currentFrame, timeline.fps]);
 
   // Text tracks (heading and body)
   const getActiveTextTracks = useCallback(() => {

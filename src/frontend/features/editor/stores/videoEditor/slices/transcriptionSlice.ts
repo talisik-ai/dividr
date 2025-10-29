@@ -279,8 +279,10 @@ export const createTranscriptionSlice: StateCreator<
         if (segment.words && segment.words.length > 0) {
           // Create a track for each word (karaoke style)
           segment.words.forEach((word) => {
-            const startFrame = Math.floor(word.start * fps);
-            const endFrame = Math.ceil(word.end * fps);
+            // Use Math.round for both to prevent overlaps at exact boundaries (e.g., 9.24 → 9.24)
+            // This ensures exclusive end frames: [start, end) interval
+            const startFrame = Math.round(word.start * fps);
+            const endFrame = Math.round(word.end * fps);
 
             subtitleTracks.push({
               type: 'subtitle',

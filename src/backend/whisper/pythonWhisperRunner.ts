@@ -66,46 +66,85 @@ export interface TranscriptionOptions {
 // ============================================================================
 
 let pythonPath: string | null = null;
+let pythonArgs: string[] = [];
 let pythonScriptPath: string | null = null;
 let currentTranscriptionProcess: ChildProcess | null = null;
 
 /**
- * Detect Python executable path
- * Tries common Python installations in order
+ * Detect transcribe executable path
+ * In production: use bundled standalone executable
+ * In development: use Python script with system Python
  */
-const detectPythonPath = (): string | null => {
+const detectTranscribeExecutable = (): {
+  executable: string;
+  executableArgs: string[];
+  isPythonScript: boolean;
+} | null => {
   const isWindows = process.platform === 'win32';
+  const platform = process.platform;
 
-  // Common Python executable names
-  const pythonCommands = isWindows
-    ? ['python', 'python3', 'py']
-    : ['python3', 'python'];
+  // In packaged app, try bundled standalone executable first
+  if (app.isPackaged) {
+    const exeName = isWindows ? 'transcribe.exe' : 'transcribe';
+    const bundledExePaths = [
+      path.join(process.resourcesPath, 'transcribe-bin', platform, exeName),
+      path.join(process.resourcesPath, 'transcribe-bin', exeName),
+    ];
 
-  // Try each command
-  for (const cmd of pythonCommands) {
+    for (const exePath of bundledExePaths) {
+      if (fs.existsSync(exePath)) {
+        console.log(`✅ Found bundled transcribe executable at: ${exePath}`);
+        return {
+          executable: exePath,
+          executableArgs: [],
+          isPythonScript: false,
+        };
+      }
+    }
+
+    console.log('⚠️ Bundled executable not found, trying system Python');
+  }
+
+  // Fall back to system Python (development mode)
+  // Format: [command, args[]]
+  const pythonCommands: Array<[string, string[]]> = isWindows
+    ? [
+        ['py', ['-3.13']],
+        ['py', ['-3.11']],
+        ['python', []],
+        ['python3', []],
+        ['py', []],
+      ]
+    : [
+        ['python3', []],
+        ['python', []],
+      ];
+
+  for (const [cmd, cmdArgs] of pythonCommands) {
     try {
-      const result = execSync(`${cmd} --version`, {
+      const fullArgs = [...cmdArgs, '--version'];
+      const result = execSync(`${cmd} ${fullArgs.join(' ')}`, {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      // Check if version is >= 3.9
       const versionMatch = result.match(/Python (\d+)\.(\d+)/);
       if (versionMatch) {
         const major = parseInt(versionMatch[1], 10);
         const minor = parseInt(versionMatch[2], 10);
 
         if (major === 3 && minor >= 9) {
-          console.log(`✅ Found Python ${major}.${minor} at: ${cmd}`);
-          return cmd;
-        } else {
           console.log(
-            `⚠️ Python ${major}.${minor} found but version >= 3.9 required`,
+            `✅ Found system Python ${major}.${minor} at: ${cmd} ${cmdArgs.join(' ')}`,
           );
+          return {
+            executable: cmd,
+            executableArgs: cmdArgs,
+            isPythonScript: true,
+          };
         }
       }
     } catch (error) {
-      // Command not found, continue to next
       continue;
     }
   }
@@ -117,64 +156,85 @@ const detectPythonPath = (): string | null => {
  * Initialize Python environment and script paths
  */
 export const initializePythonWhisper = async (): Promise<void> => {
-  console.log('🐍 Initializing Python Whisper environment...');
+  console.log('🐍 Initializing transcription environment...');
   console.log('📦 Is packaged:', app.isPackaged);
   console.log('🖥️ Platform:', process.platform);
 
-  // Detect Python
-  pythonPath = detectPythonPath();
+  // Detect transcribe executable or Python
+  const transcribeInfo = detectTranscribeExecutable();
 
-  if (!pythonPath) {
-    console.error('❌ Python 3.9+ not found!');
+  if (!transcribeInfo) {
+    console.error('❌ Transcribe executable or Python 3.9+ not found!');
     console.error(
-      '📋 Please install Python 3.9 or higher from https://www.python.org/',
+      '📋 Please install Python 3.9+ and faster-whisper from https://www.python.org/',
     );
     throw new Error(
-      'Python 3.9+ is required. Please install from https://www.python.org/',
+      'Transcription unavailable: Python 3.9+ required or bundled executable missing',
     );
   }
 
-  // Resolve script path
-  if (app.isPackaged) {
-    // Production: script is in resources/scripts/
-    const resourcesPath = process.resourcesPath;
-    pythonScriptPath = path.join(resourcesPath, 'scripts', 'transcribe.py');
+  pythonPath = transcribeInfo.executable;
+  pythonArgs = transcribeInfo.executableArgs;
+
+  // If using standalone executable, no script path or dependency check needed
+  if (!transcribeInfo.isPythonScript) {
+    pythonScriptPath = null;
+    console.log(
+      '✅ Using standalone transcribe executable - no dependencies needed',
+    );
   } else {
-    // Development: script is in src/backend/scripts/
-    pythonScriptPath = path.join(
-      process.cwd(),
-      'src',
-      'backend',
-      'scripts',
-      'transcribe.py',
-    );
-  }
+    // Resolve script path for Python mode
+    if (app.isPackaged) {
+      const resourcesPath = process.resourcesPath;
+      const possiblePaths = [
+        path.join(resourcesPath, 'backend', 'scripts', 'transcribe.py'),
+        path.join(resourcesPath, 'scripts', 'transcribe.py'),
+      ];
 
-  console.log('🔍 Checking Python script path:', pythonScriptPath);
+      for (const possiblePath of possiblePaths) {
+        if (fs.existsSync(possiblePath)) {
+          pythonScriptPath = possiblePath;
+          break;
+        }
+      }
 
-  if (!fs.existsSync(pythonScriptPath)) {
-    console.error('❌ Python transcription script not found!');
-    console.error('📋 Expected at:', pythonScriptPath);
-    throw new Error('Python transcription script not found');
-  }
+      if (!pythonScriptPath) {
+        throw new Error(
+          'Python transcription script not found in production build',
+        );
+      }
+    } else {
+      pythonScriptPath = path.join(
+        process.cwd(),
+        'src',
+        'backend',
+        'scripts',
+        'transcribe.py',
+      );
 
-  // Verify Python dependencies
-  try {
-    execSync(`${pythonPath} -c "import faster_whisper"`, {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    console.log('✅ faster-whisper package found');
-  } catch (error) {
-    console.error('❌ faster-whisper package not installed!');
-    console.error('📋 Install with: pip install faster-whisper');
-    throw new Error(
-      'faster-whisper not installed. Run: pip install faster-whisper',
-    );
+      if (!fs.existsSync(pythonScriptPath)) {
+        throw new Error('Python transcription script not found');
+      }
+    }
+
+    // Verify Python dependencies (only for Python mode)
+    try {
+      const checkCmd = `${pythonPath} ${pythonArgs.join(' ')} -c "import faster_whisper"`;
+      execSync(checkCmd, {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      console.log('✅ faster-whisper package found');
+    } catch (error) {
+      console.error('❌ faster-whisper package not installed!');
+      throw new Error(
+        'faster-whisper not installed. Run: pip install faster-whisper',
+      );
+    }
   }
 
   console.log('🎯 Python Whisper initialization complete');
-  console.log('   Python:', pythonPath);
+  console.log('   Python:', pythonPath, pythonArgs.join(' '));
   console.log('   Script:', pythonScriptPath);
 };
 
@@ -227,9 +287,9 @@ export const transcribeAudio = async (
   audioPath: string,
   options: TranscriptionOptions = {},
 ): Promise<WhisperResult> => {
-  if (!pythonPath || !pythonScriptPath) {
+  if (!pythonPath) {
     throw new Error(
-      'Python Whisper not initialized. Call initializePythonWhisper() first.',
+      'Transcription not initialized. Call initializePythonWhisper() first.',
     );
   }
 
@@ -247,8 +307,16 @@ export const transcribeAudio = async (
   } = options;
 
   // Build command arguments
-  const args: string[] = [
-    pythonScriptPath,
+  const isStandalone = !pythonScriptPath;
+  const args: string[] = [...pythonArgs]; // Start with python args (e.g., ['-3.13'])
+
+  if (!isStandalone) {
+    // Python mode: add the script path
+    args.push(pythonScriptPath);
+  }
+
+  // Common arguments
+  args.push(
     audioPath,
     '--model',
     model,
@@ -258,7 +326,7 @@ export const transcribeAudio = async (
     computeType,
     '--beam-size',
     beamSize.toString(),
-  ];
+  );
 
   if (language) {
     args.push('--language', language);
@@ -272,9 +340,9 @@ export const transcribeAudio = async (
     args.push('--no-vad');
   }
 
-  console.log('🎤 Running Python Whisper transcription:');
-  console.log('   Python:', pythonPath);
-  console.log('   Script:', pythonScriptPath);
+  console.log('🎤 Running transcription:');
+  console.log('   Executable:', pythonPath);
+  console.log('   Mode:', isStandalone ? 'Standalone' : 'Python Script');
   console.log('   Audio:', audioPath);
   console.log('   Model:', model);
   console.log('   Command:', [pythonPath, ...args].join(' '));
@@ -469,7 +537,7 @@ export const cancelTranscription = (): boolean => {
  */
 export const getPythonWhisperStatus = () => {
   return {
-    available: pythonPath !== null && pythonScriptPath !== null,
+    available: pythonPath !== null,
     pythonPath,
     pythonScriptPath,
     isProcessing:
@@ -485,7 +553,8 @@ export const checkFasterWhisperInstalled = async (): Promise<boolean> => {
   if (!pythonPath) return false;
 
   try {
-    execSync(`${pythonPath} -c "import faster_whisper"`, {
+    const checkCmd = `${pythonPath} ${pythonArgs.join(' ')} -c "import faster_whisper"`;
+    execSync(checkCmd, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
