@@ -22,6 +22,7 @@ export interface TranscriptionSlice {
   // State
   isTranscribing: boolean;
   currentTranscribingMediaId: string | null;
+  currentTranscribingTrackId: string | null;
   transcriptionProgress: {
     stage: 'loading' | 'processing' | 'complete' | 'error';
     progress: number;
@@ -29,6 +30,56 @@ export interface TranscriptionSlice {
   } | null;
 
   // Actions
+  generateKaraokeSubtitlesFromTrack: (
+    trackId: string,
+    options?: {
+      model?:
+        | 'tiny'
+        | 'base'
+        | 'small'
+        | 'medium'
+        | 'large'
+        | 'large-v2'
+        | 'large-v3';
+      language?: string;
+      device?: 'cpu' | 'cuda';
+      computeType?: 'int8' | 'int16' | 'float16' | 'float32';
+      beamSize?: number;
+      vad?: boolean;
+      onProgress?: (progress: {
+        stage: 'loading' | 'processing' | 'complete' | 'error';
+        progress: number;
+        message?: string;
+      }) => void;
+    },
+  ) => Promise<{
+    success: boolean;
+    trackIds?: string[];
+    transcriptionResult?: {
+      segments: Array<{
+        start: number;
+        end: number;
+        text: string;
+        words?: Array<{
+          word: string;
+          start: number;
+          end: number;
+          confidence: number;
+        }>;
+      }>;
+      language: string;
+      language_probability: number;
+      duration: number;
+      text: string;
+      processing_time: number;
+      model: string;
+      device: string;
+      segment_count: number;
+      real_time_factor?: number;
+      faster_than_realtime?: boolean;
+    };
+    error?: string;
+  }>;
   generateKaraokeSubtitles: (
     mediaId: string,
     options?: {
@@ -99,10 +150,60 @@ export const createTranscriptionSlice: StateCreator<
 > = (set, get) => ({
   isTranscribing: false,
   currentTranscribingMediaId: null,
+  currentTranscribingTrackId: null,
   transcriptionProgress: null,
 
   setTranscriptionProgress: (progress) => {
     set({ transcriptionProgress: progress });
+  },
+
+  generateKaraokeSubtitlesFromTrack: async (trackId, options = {}) => {
+    const state = get() as any;
+
+    // Find the track
+    const track = state.tracks?.find((t: any) => t.id === trackId);
+    if (!track) {
+      return {
+        success: false,
+        error: 'Track not found',
+      };
+    }
+
+    // Only video and audio tracks can generate subtitles
+    if (track.type !== 'video' && track.type !== 'audio') {
+      return {
+        success: false,
+        error: 'Only video and audio tracks can generate karaoke subtitles',
+      };
+    }
+
+    // Find the corresponding media library item
+    const mediaItem = state.mediaLibrary?.find(
+      (item: any) => item.source === track.source,
+    );
+
+    if (!mediaItem) {
+      return {
+        success: false,
+        error: 'Media item not found in library',
+      };
+    }
+
+    // Ensure subtitle track row is visible before starting transcription
+    if (state.ensureTrackRowVisible) {
+      state.ensureTrackRowVisible('subtitle');
+    }
+
+    // Use the existing generateKaraokeSubtitles method with the media ID
+    // But track that this is from a track
+    set({ currentTranscribingTrackId: trackId });
+
+    const result = await state.generateKaraokeSubtitles(mediaItem.id, options);
+
+    // Clear the track ID after completion
+    set({ currentTranscribingTrackId: null });
+
+    return result;
   },
 
   generateKaraokeSubtitles: async (mediaId, options = {}) => {
@@ -380,6 +481,12 @@ export const createTranscriptionSlice: StateCreator<
         `✅ Added ${trackIds.length} karaoke subtitle tracks to timeline`,
       );
 
+      // Ensure subtitle track row is visible
+      if (state.ensureTrackRowVisible) {
+        state.ensureTrackRowVisible('subtitle');
+        console.log('📝 Auto-showed Subtitle track row');
+      }
+
       // Mark media as having generated karaoke subtitles
       if (state.updateMediaLibraryItem) {
         state.updateMediaLibraryItem(mediaId, {
@@ -424,6 +531,7 @@ export const createTranscriptionSlice: StateCreator<
       set({
         isTranscribing: false,
         currentTranscribingMediaId: null,
+        currentTranscribingTrackId: null,
         transcriptionProgress: null,
       });
     } catch (error) {

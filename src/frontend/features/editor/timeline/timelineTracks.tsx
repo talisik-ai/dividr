@@ -1,3 +1,4 @@
+import { Skeleton } from '@/frontend/components/ui/skeleton';
 import { cn } from '@/frontend/utils/utils';
 import { Film } from 'lucide-react';
 import React, {
@@ -971,6 +972,13 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
+    // Check if subtitle row is being transcribed
+    const currentTranscribingTrackId = useVideoEditorStore(
+      (state) => state.currentTranscribingTrackId,
+    );
+    const isSubtitleRowTranscribing =
+      rowDef.id === 'subtitle' && !!currentTranscribingTrackId;
+
     // Viewport culling for performance optimization
     const visibleTracks = useMemo(() => {
       if (!window || tracks.length === 0) return tracks;
@@ -1044,21 +1052,34 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
 
         {/* Tracks in this row - centered vertically */}
         <div className="h-full flex items-center">
-          {visibleTracks.map((track) => (
-            <TrackItem
-              key={`${track.id}-${track.source}-${track.name}`}
-              track={track}
-              frameWidth={frameWidth}
-              zoomLevel={zoomLevel}
-              isSelected={selectedTrackIds.includes(track.id)}
-              onSelect={(multiSelect) => onTrackSelect(track.id, multiSelect)}
-              onMove={(newStartFrame) => onTrackMove(track.id, newStartFrame)}
-              onResize={(newStartFrame, newEndFrame) =>
-                onTrackResize(track.id, newStartFrame, newEndFrame)
-              }
-              isSplitModeActive={isSplitModeActive}
-            />
-          ))}
+          {isSubtitleRowTranscribing ? (
+            // Show skeleton loaders when transcribing - using subtitle track item height
+            <div className="h-full w-full flex items-center gap-2 px-2">
+              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[120px] rounded" />
+              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[80px] rounded" />
+              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[150px] rounded" />
+              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[100px] rounded" />
+              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[90px] rounded" />
+              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[110px] rounded" />
+              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[130px] rounded" />
+            </div>
+          ) : (
+            visibleTracks.map((track) => (
+              <TrackItem
+                key={`${track.id}-${track.source}-${track.name}`}
+                track={track}
+                frameWidth={frameWidth}
+                zoomLevel={zoomLevel}
+                isSelected={selectedTrackIds.includes(track.id)}
+                onSelect={(multiSelect) => onTrackSelect(track.id, multiSelect)}
+                onMove={(newStartFrame) => onTrackMove(track.id, newStartFrame)}
+                onResize={(newStartFrame, newEndFrame) =>
+                  onTrackResize(track.id, newStartFrame, newEndFrame)
+                }
+                isSplitModeActive={isSplitModeActive}
+              />
+            ))
+          )}
         </div>
 
         {/* Drop hint */}

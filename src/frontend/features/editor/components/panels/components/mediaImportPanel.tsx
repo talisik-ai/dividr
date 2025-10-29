@@ -43,6 +43,7 @@ import { toast } from 'sonner';
 import { BasePanel } from '../../../components/panels/basePanel';
 import { CustomPanelProps } from '../../../components/panels/panelRegistry';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
+import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
 
 interface MediaItem {
   id: string;
@@ -1099,77 +1100,20 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
+      <KaraokeConfirmationDialog
         open={karaokeConfirmation.show}
         onOpenChange={handleKaraokeDialogOpenChange}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Generate Karaoke Subtitles for{' '}
-              <span className="font-normal text-foreground">
-                "{karaokeConfirmation.mediaName}"
-              </span>
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              {karaokeConfirmation.existingSubtitleCount > 0 && (
-                <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-3">
-                  <p className="text-amber-600 dark:text-amber-400 font-medium text-sm">
-                    ⚠️ You have {karaokeConfirmation.existingSubtitleCount}{' '}
-                    existing subtitle track
-                    {karaokeConfirmation.existingSubtitleCount !== 1
-                      ? 's'
-                      : ''}{' '}
-                    on the timeline.
-                  </p>
-                  <p className="text-amber-600/80 dark:text-amber-400/80 text-xs mt-1">
-                    Do you want to delete them before generating new karaoke
-                    subtitles?
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                This will use Whisper AI to transcribe the audio and create
-                word-level subtitle tracks for karaoke-style animations.
-              </p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            {karaokeConfirmation.existingSubtitleCount > 0 && (
-              <AlertDialogAction
-                onClick={() => {
-                  if (karaokeConfirmation.mediaId) {
-                    handleConfirmKaraokeGeneration(
-                      karaokeConfirmation.mediaId,
-                      true,
-                    );
-                    handleKaraokeDialogOpenChange(false);
-                  }
-                }}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                Delete & Generate
-              </AlertDialogAction>
-            )}
-            <AlertDialogAction
-              onClick={() => {
-                if (karaokeConfirmation.mediaId) {
-                  handleConfirmKaraokeGeneration(
-                    karaokeConfirmation.mediaId,
-                    false,
-                  );
-                  handleKaraokeDialogOpenChange(false);
-                }
-              }}
-            >
-              {karaokeConfirmation.existingSubtitleCount > 0
-                ? 'Keep & Generate'
-                : 'Generate'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        mediaName={karaokeConfirmation.mediaName}
+        existingSubtitleCount={karaokeConfirmation.existingSubtitleCount}
+        onConfirm={(deleteExisting) => {
+          if (karaokeConfirmation.mediaId) {
+            handleConfirmKaraokeGeneration(
+              karaokeConfirmation.mediaId,
+              deleteExisting,
+            );
+          }
+        }}
+      />
     </>
   );
 };

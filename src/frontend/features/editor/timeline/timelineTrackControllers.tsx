@@ -21,7 +21,8 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AddTrackButton } from './addTrackButton';
 import { TRACK_ROWS, TrackRowDefinition } from './timelineTracks';
@@ -47,6 +48,24 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const removeTrackRow = useVideoEditorStore((state) => state.removeTrackRow);
     const deleteTrack = useVideoEditorStore((state) => state.removeTrack);
     const allTracks = useVideoEditorStore((state) => state.tracks);
+    const currentTranscribingTrackId = useVideoEditorStore(
+      (state) => state.currentTranscribingTrackId,
+    );
+    const isTranscribing =
+      currentTranscribingTrackId ===
+      tracks.find((track) => track.type === 'video')?.id;
+
+    const [karaokeConfirmation, setKaraokeConfirmation] = useState<{
+      show: boolean;
+      trackId: string | null;
+      mediaName: string;
+      existingSubtitleCount: number;
+    }>({
+      show: false,
+      trackId: null,
+      mediaName: '',
+      existingSubtitleCount: 0,
+    });
 
     // Check if any non-audio tracks in this row are visible
     const hasVisibleTracks = tracks.some(
@@ -61,10 +80,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         }
         return false;
       });
-      console.log(
-        `🎵 Has audible tracks: ${audible}`,
-        tracks.map((t) => ({ name: t.name, muted: t.muted })),
-      );
       return audible;
     }, [tracks]);
 
@@ -87,9 +102,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       tracks.forEach((track) => {
         if (track.type !== 'audio') {
           toggleTrackVisibility(track.id);
-          console.log(
-            `📹 Toggling ${track.type} track visibility: ${track.id}`,
-          );
         }
       });
     }, [tracks, toggleTrackVisibility]);
@@ -116,16 +128,84 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       });
     }, [tracks, deleteTrack]);
 
+    const generateKaraokeSubtitlesFromTrack = useVideoEditorStore(
+      (state) => state.generateKaraokeSubtitlesFromTrack,
+    );
+
     const handleGenerateKaraokeSubtitles = useCallback(() => {
-      // TODO: Implement karaoke subtitle generation
-      console.log('Generate karaoke subtitles for tracks:', tracks);
-    }, [tracks]);
+      // Find the first video track with linked audio
+      const videoTrack = tracks.find((t) => t.type === 'video' && t.isLinked);
+      if (!videoTrack) {
+        console.warn('No video track with linked audio found');
+        return;
+      }
+
+      // Check if there are existing subtitle tracks
+      const existingSubtitles = allTracks.filter(
+        (track) => track.type === 'subtitle',
+      );
+
+      if (existingSubtitles.length > 0) {
+        // Show confirmation dialog
+        setKaraokeConfirmation({
+          show: true,
+          trackId: videoTrack.id,
+          mediaName: videoTrack.name,
+          existingSubtitleCount: existingSubtitles.length,
+        });
+      } else {
+        // No existing subtitles, proceed directly
+        handleConfirmKaraokeGeneration(videoTrack.id, false);
+      }
+    }, [tracks, allTracks]);
+
+    const handleConfirmKaraokeGeneration = useCallback(
+      async (trackId: string, deleteExisting: boolean) => {
+        // Delete existing subtitles if requested
+        if (deleteExisting) {
+          const existingSubtitles = allTracks.filter(
+            (track) => track.type === 'subtitle',
+          );
+          for (const track of existingSubtitles) {
+            deleteTrack(track.id);
+          }
+        }
+
+        try {
+          const result = await generateKaraokeSubtitlesFromTrack(trackId, {
+            model: 'base',
+            onProgress: (progress) => {
+              console.log('📊 Transcription progress:', progress);
+            },
+          });
+
+          if (!result.success) {
+            console.error(
+              'Failed to generate karaoke subtitles:',
+              result.error,
+            );
+          }
+        } catch (error) {
+          console.error('Error generating karaoke subtitles:', error);
+        }
+      },
+      [allTracks, deleteTrack, generateKaraokeSubtitlesFromTrack],
+    );
+
+    const handleKaraokeDialogOpenChange = useCallback((open: boolean) => {
+      if (!open) {
+        setKaraokeConfirmation({
+          show: false,
+          trackId: null,
+          mediaName: '',
+          existingSubtitleCount: 0,
+        });
+      }
+    }, []);
 
     // Can only remove non-essential rows (not video or audio) and only if they have no tracks
     const canRemoveRow =
       rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
-
-    console.log(rowDef.id, hasLinkedAudioVideo);
 
     return (
       <div
@@ -227,7 +307,10 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               {/* Generate karaoke subtitles - only for video tracks with linked audio */}
               {rowDef.id === 'video' && hasLinkedAudioVideo && (
                 <>
-                  <DropdownMenuItem onClick={handleGenerateKaraokeSubtitles}>
+                  <DropdownMenuItem
+                    onClick={handleGenerateKaraokeSubtitles}
+                    disabled={isTranscribing}
+                  >
                     <KaraokeIcon className="h-3 w-3" />
                     Generate karaoke subtitles
                   </DropdownMenuItem>
@@ -253,6 +336,24 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
             </Tooltip>
           )}
         </div>
+
+        {/* Karaoke Confirmation Dialog */}
+        {karaokeConfirmation.show && (
+          <KaraokeConfirmationDialog
+            open={karaokeConfirmation.show}
+            onOpenChange={handleKaraokeDialogOpenChange}
+            mediaName={karaokeConfirmation.mediaName}
+            existingSubtitleCount={karaokeConfirmation.existingSubtitleCount}
+            onConfirm={(deleteExisting: boolean) => {
+              if (karaokeConfirmation.trackId) {
+                handleConfirmKaraokeGeneration(
+                  karaokeConfirmation.trackId,
+                  deleteExisting,
+                );
+              }
+            }}
+          />
+        )}
       </div>
     );
   },
