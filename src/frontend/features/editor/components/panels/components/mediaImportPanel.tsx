@@ -43,7 +43,7 @@ import { toast } from 'sonner';
 import { BasePanel } from '../../../components/panels/basePanel';
 import { CustomPanelProps } from '../../../components/panels/panelRegistry';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
-
+import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
 interface MediaItem {
   id: string;
   name: string;
@@ -55,6 +55,9 @@ interface MediaItem {
   trackId?: string;
   isGeneratingSprites?: boolean;
   isGeneratingWaveform?: boolean;
+  isGeneratingSubtitles?: boolean;
+  subtitleProgress?: number;
+  hasGeneratedKaraoke?: boolean;
 }
 
 const getTabLabel = (tabType: string, count: number) => {
@@ -92,6 +95,20 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   );
   const isGeneratingWaveform = useVideoEditorStore(
     (state) => state.isGeneratingWaveform,
+  );
+  const currentTranscribingMediaId = useVideoEditorStore(
+    (state) => state.currentTranscribingMediaId,
+  );
+  const currentTranscribingTrackId = useVideoEditorStore(
+    (state) => state.currentTranscribingTrackId,
+  );
+  const transcriptionProgress = useVideoEditorStore(
+    (state) => state.transcriptionProgress,
+  );
+
+  // Check if any transcription is in progress (from media library or timeline)
+  const isAnyTranscribing = !!(
+    currentTranscribingMediaId || currentTranscribingTrackId
   );
 
   const [dragActive, setDragActive] = useState(false);
@@ -358,20 +375,59 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         }
       }
 
-      // Show loading toast
-      const loadingToast = toast.loading(
-        `Generating karaoke subtitles for "${mediaItem.name}"...`,
-      );
-
       try {
         const result = await generateKaraokeSubtitles(fileId, {
           model: 'base',
           onProgress: (progress) => {
-            console.log('Transcription progress:', progress);
+            console.log('📊 Transcription progress:', progress);
           },
         });
 
-        toast.dismiss(loadingToast);
+        console.log('🎤 Karaoke Generation Result:', result);
+
+        // Log detailed transcription info if available
+        if (result.transcriptionResult) {
+          console.log('\n📝 Transcription Details:');
+          console.log('   Language:', result.transcriptionResult.language);
+          console.log(
+            '   Confidence:',
+            (result.transcriptionResult.language_probability * 100).toFixed(1) +
+              '%',
+          );
+          console.log(
+            '   Duration:',
+            result.transcriptionResult.duration.toFixed(2) + 's',
+          );
+          console.log(
+            '   Processing Time:',
+            result.transcriptionResult.processing_time.toFixed(2) + 's',
+          );
+          console.log('   Model:', result.transcriptionResult.model);
+          console.log('   Device:', result.transcriptionResult.device);
+          console.log('   Segments:', result.transcriptionResult.segment_count);
+          if (result.transcriptionResult.real_time_factor) {
+            console.log(
+              '   Speed:',
+              result.transcriptionResult.real_time_factor.toFixed(2) + 'x',
+              result.transcriptionResult.faster_than_realtime ? '🚀' : '',
+            );
+          }
+          console.log('\n📄 Full Text:', result.transcriptionResult.text);
+          console.log('\n🎯 Word Timestamps:');
+          result.transcriptionResult.segments.forEach((segment, idx) => {
+            console.log(
+              `\n  Segment ${idx + 1} [${segment.start.toFixed(2)}s - ${segment.end.toFixed(2)}s]:`,
+              segment.text,
+            );
+            if (segment.words) {
+              segment.words.forEach((word) => {
+                console.log(
+                  `    [${word.start.toFixed(2)}s - ${word.end.toFixed(2)}s] "${word.word}" (confidence: ${(word.confidence * 100).toFixed(1)}%)`,
+                );
+              });
+            }
+          });
+        }
 
         if (result.success && result.trackIds) {
           toast.success(
@@ -381,7 +437,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           toast.error(result.error || 'Failed to generate karaoke subtitles');
         }
       } catch (error) {
-        toast.dismiss(loadingToast);
         console.error('Error generating karaoke subtitles:', error);
         toast.error(
           error instanceof Error
@@ -519,13 +574,18 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
               onError={() => setHasError(true)}
             />
             {file.duration && (
-              <Badge className="absolute bottom-2 left-2 bg-black/50 text-white group-hover:opacity-0 transition-opacity duration-200">
+              <Badge className="absolute bottom-2 left-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
                 <Clock
                   className="-ms-0.5 opacity-60"
                   size={12}
                   aria-hidden="true"
                 />
                 {formatDuration(file.duration)}
+              </Badge>
+            )}
+            {file.hasGeneratedKaraoke && (
+              <Badge className="p-[5px] absolute top-2 right-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+                <KaraokeIcon />
               </Badge>
             )}
           </div>
@@ -539,13 +599,18 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           <div className="w-full h-full bg-gradient-to-br from-secondary via-blue-300/50 to-secondary rounded-md flex items-center justify-center text-muted-foreground relative">
             {getFileIcon(file.type, file.name)}
             {file.duration && (
-              <Badge className="absolute bottom-2 left-2 bg-black/50 text-white group-hover:opacity-0 transition-opacity duration-200">
+              <Badge className="absolute bottom-2 left-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
                 <Clock
                   className="-ms-0.5 opacity-60"
                   size={12}
                   aria-hidden="true"
                 />
                 {formatDuration(file.duration)}
+              </Badge>
+            )}
+            {file.hasGeneratedKaraoke && (
+              <Badge className="p-[5px] absolute top-2 right-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+                <KaraokeIcon />
               </Badge>
             )}
           </div>
@@ -576,13 +641,18 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
             />
           )}
           {file.duration && (
-            <Badge className="absolute bottom-2 left-2 bg-black/50 text-white group-hover:opacity-0 transition-opacity duration-200">
+            <Badge className="absolute bottom-2 left-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
               <Clock
                 className="-ms-0.5 opacity-60"
                 size={12}
                 aria-hidden="true"
               />
               {formatDuration(file.duration)}
+            </Badge>
+          )}
+          {file.hasGeneratedKaraoke && (
+            <Badge className="p-[5px] absolute top-2 right-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+              <KaraokeIcon />
             </Badge>
           )}
         </div>
@@ -593,7 +663,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       <div className="w-full h-full bg-gradient-to-br from-secondary via-blue-300/50 to-secondary rounded-md flex items-center justify-center text-muted-foreground relative">
         {getFileIcon(file.type, file.name)}
         {file.duration && (
-          <Badge className="absolute bottom-2 left-2 bg-black/50 text-white group-hover:opacity-0 transition-opacity duration-200">
+          <Badge className="absolute bottom-2 left-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
             <Clock
               className="-ms-0.5 opacity-60"
               size={12}
@@ -602,12 +672,20 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
             {formatDuration(file.duration)}
           </Badge>
         )}
+        {file.hasGeneratedKaraoke && (
+          <Badge className="p-[5px] absolute top-2 right-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+            <KaraokeIcon />
+          </Badge>
+        )}
       </div>
     );
   });
 
-  const FileItem: React.FC<{ file: MediaItem }> = React.memo(
-    ({ file }) => (
+  const FileItem: React.FC<{
+    file: MediaItem;
+    isAnyTranscribing: boolean;
+  }> = React.memo(
+    ({ file, isAnyTranscribing }) => (
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div className="flex flex-col space-y-2">
@@ -615,13 +693,15 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
               draggable={
                 !file.isOnTimeline &&
                 !file.isGeneratingSprites &&
-                !file.isGeneratingWaveform
+                !file.isGeneratingWaveform &&
+                !file.isGeneratingSubtitles
               }
               onDragStart={(e) => {
                 if (
                   !file.isOnTimeline &&
                   !file.isGeneratingSprites &&
-                  !file.isGeneratingWaveform
+                  !file.isGeneratingWaveform &&
+                  !file.isGeneratingSubtitles
                 ) {
                   handleMediaDragStart(e, file.id);
                 } else {
@@ -634,20 +714,25 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 !file.isOnTimeline &&
                   !file.isGeneratingSprites &&
                   !file.isGeneratingWaveform &&
+                  !file.isGeneratingSubtitles &&
                   'cursor-grab active:cursor-grabbing',
                 (file.isOnTimeline ||
                   file.isGeneratingSprites ||
-                  file.isGeneratingWaveform) &&
+                  file.isGeneratingWaveform ||
+                  file.isGeneratingSubtitles) &&
                   'cursor-default',
                 draggedMediaId === file.id && 'opacity-50',
-                (file.isGeneratingSprites || file.isGeneratingWaveform) &&
+                (file.isGeneratingSprites ||
+                  file.isGeneratingWaveform ||
+                  file.isGeneratingSubtitles) &&
                   'opacity-60 pointer-events-none',
               )}
               onClick={async () => {
                 if (
                   !file.isOnTimeline &&
                   !file.isGeneratingSprites &&
-                  !file.isGeneratingWaveform
+                  !file.isGeneratingWaveform &&
+                  !file.isGeneratingSubtitles
                 ) {
                   await addTrackFromMediaLibrary(file.id, 0);
                 }
@@ -657,9 +742,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                   ? 'Generating sprite sheets...'
                   : file.isGeneratingWaveform
                     ? 'Generating waveform...'
-                    : file.isOnTimeline
-                      ? 'Already on timeline'
-                      : 'Click or drag to add to timeline (starts at frame 0)'
+                    : file.isGeneratingSubtitles
+                      ? 'Generating subtitles...'
+                      : file.isOnTimeline
+                        ? 'Already on timeline'
+                        : 'Click or drag to add to timeline (starts at frame 0)'
               }
             >
               <MediaCover file={file} />
@@ -668,7 +755,34 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                   <Loader2 className="w-5 h-5 animate-spin text-white drop-shadow-lg" />
                 </div>
               )}
-              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              {file.isGeneratingSubtitles && (
+                <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center">
+                  <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      fill="none"
+                      className="text-white/20"
+                    />
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      fill="none"
+                      strokeDasharray={`${2 * Math.PI * 16}`}
+                      strokeDashoffset={`${2 * Math.PI * 16 * (1 - (file.subtitleProgress || 0) / 100)}`}
+                      className="text-white transition-all duration-300"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                 <div className="absolute top-2 right-2 flex items-center space-x-1">
                   <Button
                     onClick={(e) => {
@@ -711,7 +825,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 </div>
               </div>
               {file.isOnTimeline && (
-                <div className="absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full"></div>
+                <Badge className="absolute top-2 left-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+                  Added
+                </Badge>
               )}
             </div>
             <div className="px-1">
@@ -733,7 +849,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
             disabled={
               file.isOnTimeline ||
               file.isGeneratingSprites ||
-              file.isGeneratingWaveform
+              file.isGeneratingWaveform ||
+              file.isGeneratingSubtitles
             }
             onClick={() => handleAddToTimeline(file.id)}
           >
@@ -743,6 +860,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           {(file.type.startsWith('video/') ||
             file.type.startsWith('audio/')) && (
             <ContextMenuItem
+              disabled={file.isGeneratingSubtitles || isAnyTranscribing}
               onClick={() => handleGenerateKaraokeSubtitles(file.id)}
             >
               <KaraokeIcon className="h-4 w-4" />
@@ -762,7 +880,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         prevProps.file.isGeneratingSprites ===
           nextProps.file.isGeneratingSprites &&
         prevProps.file.isGeneratingWaveform ===
-          nextProps.file.isGeneratingWaveform
+          nextProps.file.isGeneratingWaveform &&
+        prevProps.file.isGeneratingSubtitles ===
+          nextProps.file.isGeneratingSubtitles &&
+        prevProps.file.subtitleProgress === nextProps.file.subtitleProgress &&
+        prevProps.file.hasGeneratedKaraoke ===
+          nextProps.file.hasGeneratedKaraoke &&
+        prevProps.isAnyTranscribing === nextProps.isAnyTranscribing
       );
     },
   );
@@ -781,7 +905,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         </h4>
         <div className="grid grid-cols-2 gap-3">
           {files.map((file) => (
-            <FileItem key={file.id} file={file} />
+            <FileItem
+              key={file.id}
+              file={file}
+              isAnyTranscribing={isAnyTranscribing}
+            />
           ))}
         </div>
       </div>
@@ -810,6 +938,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     return mediaLibrary.map((item) => {
       const trackId = sourceToTrackMap.get(item.source);
       const isUsed = !!trackId;
+      const isTranscribing = currentTranscribingMediaId === item.id;
       return {
         id: item.id,
         name: item.name,
@@ -825,6 +954,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           item.type === 'audio' || item.type === 'video'
             ? isGeneratingWaveform(item.id)
             : false,
+        isGeneratingSubtitles: isTranscribing,
+        subtitleProgress: isTranscribing ? transcriptionProgress?.progress : 0,
+        hasGeneratedKaraoke: item.hasGeneratedKaraoke,
       };
     });
   }, [
@@ -832,6 +964,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     sourceToTrackMap,
     isGeneratingSpriteSheet,
     isGeneratingWaveform,
+    currentTranscribingMediaId,
+    transcriptionProgress,
   ]);
 
   const getFilteredFiles = useCallback(
@@ -981,79 +1115,21 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
+
+      <KaraokeConfirmationDialog
         open={karaokeConfirmation.show}
         onOpenChange={handleKaraokeDialogOpenChange}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Generate Karaoke Subtitles</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <p>
-                Generate karaoke subtitles for{' '}
-                <span className="font-semibold text-foreground">
-                  "{karaokeConfirmation.mediaName}"
-                </span>
-                ?
-              </p>
-              {karaokeConfirmation.existingSubtitleCount > 0 && (
-                <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-3">
-                  <p className="text-amber-600 dark:text-amber-400 font-medium text-sm">
-                    ⚠️ You have {karaokeConfirmation.existingSubtitleCount}{' '}
-                    existing subtitle track
-                    {karaokeConfirmation.existingSubtitleCount !== 1
-                      ? 's'
-                      : ''}{' '}
-                    on the timeline.
-                  </p>
-                  <p className="text-amber-600/80 dark:text-amber-400/80 text-xs mt-1">
-                    Do you want to delete them before generating new karaoke
-                    subtitles?
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                This will use Whisper AI to transcribe the audio and create
-                word-level subtitle tracks for karaoke-style animations.
-              </p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            {karaokeConfirmation.existingSubtitleCount > 0 && (
-              <AlertDialogAction
-                onClick={() => {
-                  if (karaokeConfirmation.mediaId) {
-                    handleConfirmKaraokeGeneration(
-                      karaokeConfirmation.mediaId,
-                      true,
-                    );
-                    handleKaraokeDialogOpenChange(false);
-                  }
-                }}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                Delete & Generate
-              </AlertDialogAction>
-            )}
-            <AlertDialogAction
-              onClick={() => {
-                if (karaokeConfirmation.mediaId) {
-                  handleConfirmKaraokeGeneration(
-                    karaokeConfirmation.mediaId,
-                    false,
-                  );
-                  handleKaraokeDialogOpenChange(false);
-                }
-              }}
-            >
-              {karaokeConfirmation.existingSubtitleCount > 0
-                ? 'Keep & Generate'
-                : 'Generate'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        mediaName={karaokeConfirmation.mediaName}
+        existingSubtitleCount={karaokeConfirmation.existingSubtitleCount}
+        onConfirm={(deleteExisting) => {
+          if (karaokeConfirmation.mediaId) {
+            handleConfirmKaraokeGeneration(
+              karaokeConfirmation.mediaId,
+              deleteExisting,
+            );
+          }
+        }}
+      />
     </>
   );
 };

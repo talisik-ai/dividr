@@ -6,25 +6,54 @@ import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
-// import fs from 'fs/promises';
-// import path from 'path';
 
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
       unpack:
-        '**/node_modules/{@ffmpeg-installer,ffmpeg-static,ffprobe-static,whisper-cpp}/**/*',
+        '**/node_modules/{@ffmpeg-installer,ffmpeg-static,ffprobe-static}/**/*',
     },
     icon: './favicon.ico',
     name: 'Dividr',
     executableName: 'Dividr',
     extraResource: [
       './src/frontend/assets/logo',
-      './whisper-bin', // Whisper.cpp binaries
-      './whisper-models', // Whisper models
+
+      './src/backend/scripts',
+      './transcribe-bin',
     ],
-    // Ensure native modules and ffmpeg binaries are included
-    ignore: [/^\/\.gitignore$/, /^\/README\.md$/, /^\/docs\//],
+    ignore: [
+      // Git and docs
+      /^\/\.gitignore$/,
+      /^\/\.git\//,
+      /^\/README\.md$/,
+      /^\/docs\//,
+
+      // Large binary directories (user must install separately)
+      /^\/whisper-bin\//,
+      /^\/whisper-models\//,
+      /^\/ffmpeg-bin\//,
+
+      // Python environment (user must install separately)
+      /^\/venv\//,
+      /^\/\.venv\//,
+      /^\/env\//,
+      /^\/\.env\//,
+      /^\/requirements\.txt$/,
+      /^\/setup-python\.(bat|sh)$/,
+
+      // Public assets that aren't needed in production
+      /^\/public\/sprite-sheets\//,
+      /^\/public\/thumbnails\//,
+
+      // Test files
+      /\.test\.(ts|tsx|js|jsx)$/,
+      /\.spec\.(ts|tsx|js|jsx)$/,
+      /__tests__\//,
+
+      // Source maps in production
+      /\.map$/,
+    ],
   },
   rebuildConfig: {},
   makers: [
@@ -41,12 +70,14 @@ const config: ForgeConfig = {
 
     // Windows Squirrel installer
     new MakerSquirrel({
-      iconUrl: 'https://example.com/icon.ico', // Replace with your actual icon URL
+      // Remove iconUrl - this is what likely caused your original issue
       setupIcon: './favicon.ico',
-      name: 'Dividr',
+      name: 'dividr',
       authors: 'Dividr Team',
       description:
         'A powerful video editing application built with Electron and FFmpeg',
+      exe: 'Dividr.exe',
+      noMsi: true,
     }),
 
     // Cross-platform ZIP packages

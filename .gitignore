@@ -150,3 +150,18 @@ whisper-bin/linux/*
 whisper-models/*.bin
 # Keep directory structure
 !whisper-models/.gitkeep
+
+# Python virtual environments (user must install separately)
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+pythonenv*/
+src/backend/scripts/build/
+src/backend/scripts/dist/
+
+# FFmpeg binaries (bundled via npm packages)
+ffmpeg-bin/

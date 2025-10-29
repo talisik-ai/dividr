@@ -21,6 +21,8 @@ const getTrackColor = (index: number) =>
 export interface TranscriptionSlice {
   // State
   isTranscribing: boolean;
+  currentTranscribingMediaId: string | null;
+  currentTranscribingTrackId: string | null;
   transcriptionProgress: {
     stage: 'loading' | 'processing' | 'complete' | 'error';
     progress: number;
@@ -28,11 +30,22 @@ export interface TranscriptionSlice {
   } | null;
 
   // Actions
-  generateKaraokeSubtitles: (
-    mediaId: string,
+  generateKaraokeSubtitlesFromTrack: (
+    trackId: string,
     options?: {
-      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
+      model?:
+        | 'tiny'
+        | 'base'
+        | 'small'
+        | 'medium'
+        | 'large'
+        | 'large-v2'
+        | 'large-v3';
       language?: string;
+      device?: 'cpu' | 'cuda';
+      computeType?: 'int8' | 'int16' | 'float16' | 'float32';
+      beamSize?: number;
+      vad?: boolean;
       onProgress?: (progress: {
         stage: 'loading' | 'processing' | 'complete' | 'error';
         progress: number;
@@ -42,6 +55,79 @@ export interface TranscriptionSlice {
   ) => Promise<{
     success: boolean;
     trackIds?: string[];
+    transcriptionResult?: {
+      segments: Array<{
+        start: number;
+        end: number;
+        text: string;
+        words?: Array<{
+          word: string;
+          start: number;
+          end: number;
+          confidence: number;
+        }>;
+      }>;
+      language: string;
+      language_probability: number;
+      duration: number;
+      text: string;
+      processing_time: number;
+      model: string;
+      device: string;
+      segment_count: number;
+      real_time_factor?: number;
+      faster_than_realtime?: boolean;
+    };
+    error?: string;
+  }>;
+  generateKaraokeSubtitles: (
+    mediaId: string,
+    options?: {
+      model?:
+        | 'tiny'
+        | 'base'
+        | 'small'
+        | 'medium'
+        | 'large'
+        | 'large-v2'
+        | 'large-v3';
+      language?: string;
+      device?: 'cpu' | 'cuda';
+      computeType?: 'int8' | 'int16' | 'float16' | 'float32';
+      beamSize?: number;
+      vad?: boolean;
+      onProgress?: (progress: {
+        stage: 'loading' | 'processing' | 'complete' | 'error';
+        progress: number;
+        message?: string;
+      }) => void;
+    },
+  ) => Promise<{
+    success: boolean;
+    trackIds?: string[];
+    transcriptionResult?: {
+      segments: Array<{
+        start: number;
+        end: number;
+        text: string;
+        words?: Array<{
+          word: string;
+          start: number;
+          end: number;
+          confidence: number;
+        }>;
+      }>;
+      language: string;
+      language_probability: number;
+      duration: number;
+      text: string;
+      processing_time: number;
+      model: string;
+      device: string;
+      segment_count: number;
+      real_time_factor?: number;
+      faster_than_realtime?: boolean;
+    };
     error?: string;
   }>;
 
@@ -63,12 +149,62 @@ export const createTranscriptionSlice: StateCreator<
   TranscriptionSlice
 > = (set, get) => ({
   isTranscribing: false,
+  currentTranscribingMediaId: null,
+  currentTranscribingTrackId: null,
   transcriptionProgress: null,
 
   setTranscriptionProgress: (progress) => {
     set({ transcriptionProgress: progress });
   },
 
+  generateKaraokeSubtitlesFromTrack: async (trackId, options = {}) => {
+    const state = get() as any;
+
+    // Find the track
+    const track = state.tracks?.find((t: any) => t.id === trackId);
+    if (!track) {
+      return {
+        success: false,
+        error: 'Track not found',
+      };
+    }
+
+    // Only video and audio tracks can generate subtitles
+    if (track.type !== 'video' && track.type !== 'audio') {
+      return {
+        success: false,
+        error: 'Only video and audio tracks can generate karaoke subtitles',
+      };
+    }
+
+    // Find the corresponding media library item
+    const mediaItem = state.mediaLibrary?.find(
+      (item: any) => item.source === track.source,
+    );
+
+    if (!mediaItem) {
+      return {
+        success: false,
+        error: 'Media item not found in library',
+      };
+    }
+
+    // Ensure subtitle track row is visible before starting transcription
+    if (state.ensureTrackRowVisible) {
+      state.ensureTrackRowVisible('subtitle');
+    }
+
+    // Use the existing generateKaraokeSubtitles method with the media ID
+    // But track that this is from a track
+    set({ currentTranscribingTrackId: trackId });
+
+    const result = await state.generateKaraokeSubtitles(mediaItem.id, options);
+
+    // Clear the track ID after completion
+    set({ currentTranscribingTrackId: null });
+
+    return result;
+  },
   generateKaraokeSubtitles: async (mediaId, options = {}) => {
     const state = get() as any;
 
@@ -171,49 +307,106 @@ export const createTranscriptionSlice: StateCreator<
     }
 
     // Start transcription
-    set({ isTranscribing: true, transcriptionProgress: null });
+    set({
+      isTranscribing: true,
+      currentTranscribingMediaId: mediaId,
+      transcriptionProgress: null,
+    });
 
     try {
-      console.log('🎤 Starting Whisper transcription...');
-      console.log('   Audio path:', audioPath);
-      console.log('   Model:', options.model);
+      let transcriptionResult;
 
-      // Setup progress listener
-      const progressListener = (progress: {
-        stage: 'loading' | 'processing' | 'complete' | 'error';
-        progress: number;
-        message?: string;
-      }) => {
-        set({ transcriptionProgress: progress });
-        if (options.onProgress) {
-          options.onProgress(progress);
-        }
-      };
+      // Check if we have cached karaoke subtitles
+      if (mediaItem.cachedKaraokeSubtitles) {
+        console.log('✨ Using cached karaoke subtitles for:', mediaItem.name);
+        transcriptionResult =
+          mediaItem.cachedKaraokeSubtitles.transcriptionResult;
 
-      window.electronAPI.onWhisperProgress(progressListener);
+        // Simulate progress for UX consistency
+        set({
+          transcriptionProgress: {
+            stage: 'loading',
+            progress: 100,
+            message: 'Loading from cache...',
+          },
+        });
+      } else {
+        console.log('🎤 Starting Whisper transcription...');
+        console.log('   Audio path:', audioPath);
+        console.log('   Model:', options.model);
 
-      // Call Whisper transcription
-      const result = await window.electronAPI.whisperTranscribe(audioPath, {
-        model: options.model || 'base',
-        language: options.language,
-        wordTimestamps: true, // Enable word-level timestamps for karaoke
-      });
-
-      // Remove progress listener
-      window.electronAPI.removeWhisperProgressListener();
-
-      if (!result.success || !result.result) {
-        set({ isTranscribing: false, transcriptionProgress: null });
-        return {
-          success: false,
-          error: result.error || 'Transcription failed',
+        // Setup progress listener
+        const progressListener = (progress: {
+          stage: 'loading' | 'processing' | 'complete' | 'error';
+          progress: number;
+          message?: string;
+        }) => {
+          set({ transcriptionProgress: progress });
+          if (options.onProgress) {
+            options.onProgress(progress);
+          }
         };
-      }
 
-      console.log('✅ Transcription successful');
-      console.log('   Segments:', result.result.segments.length);
-      console.log('   Language:', result.result.language);
-      console.log('   Duration:', result.result.duration);
+        window.electronAPI.onWhisperProgress(progressListener);
+
+        // Call Python Faster-Whisper transcription
+        const result = await window.electronAPI.whisperTranscribe(audioPath, {
+          model: options.model || 'base',
+          language: options.language, // Omit for auto-detect
+          device: options.device || 'cpu',
+          computeType: options.computeType || 'int8',
+          beamSize: options.beamSize || 5,
+          vad: options.vad !== false, // Enable VAD by default
+        });
+
+        // Remove progress listener
+        window.electronAPI.removeWhisperProgressListener();
+
+        if (!result.success || !result.result) {
+          set({
+            isTranscribing: false,
+            currentTranscribingMediaId: null,
+            transcriptionProgress: null,
+          });
+          return {
+            success: false,
+            error: result.error || 'Transcription failed',
+          };
+        }
+
+        transcriptionResult = result.result;
+
+        console.log('✅ Transcription successful');
+        console.log('   Segments:', transcriptionResult.segments.length);
+        console.log('   Language:', transcriptionResult.language);
+        console.log(
+          '   Language Confidence:',
+          transcriptionResult.language_probability,
+        );
+        console.log('   Duration:', transcriptionResult.duration);
+        console.log('   Processing Time:', transcriptionResult.processing_time);
+        console.log('   Model:', transcriptionResult.model);
+        console.log('   Device:', transcriptionResult.device);
+        if (transcriptionResult.real_time_factor) {
+          console.log(
+            '   Speed:',
+            transcriptionResult.real_time_factor.toFixed(2) + 'x',
+            transcriptionResult.faster_than_realtime ? '🚀' : '',
+          );
+        }
+        console.log('\n📝 Full Transcription Result:');
+        console.log(JSON.stringify(transcriptionResult, null, 2));
+
+        // Cache the transcription result
+        if (state.updateMediaLibraryItem) {
+          state.updateMediaLibraryItem(mediaId, {
+            cachedKaraokeSubtitles: {
+              transcriptionResult,
+              generatedAt: Date.now(),
+            },
+          });
+        }
+      }
 
       // Convert Whisper segments to subtitle tracks (word-level karaoke)
       const fps = state.timeline?.fps || 30;
@@ -222,13 +415,14 @@ export const createTranscriptionSlice: StateCreator<
       const subtitleTracks: Omit<VideoTrack, 'id'>[] = [];
 
       // Process each segment and create word-level subtitle tracks
-      result.result.segments.forEach((segment) => {
+      transcriptionResult.segments.forEach((segment: any) => {
         if (segment.words && segment.words.length > 0) {
           // Create a track for each word (karaoke style)
-          segment.words.forEach((word) => {
-            const startFrame = Math.floor(word.start * fps);
-            const endFrame = Math.ceil(word.end * fps);
-
+          segment.words.forEach((word: any) => {
+            // Use Math.round for both to prevent overlaps at exact boundaries (e.g., 9.24 → 9.24)
+            // This ensures exclusive end frames: [start, end) interval
+            const startFrame = Math.round(word.start * fps);
+            const endFrame = Math.round(word.end * fps);
             subtitleTracks.push({
               type: 'subtitle',
               name: word.word,
@@ -284,18 +478,38 @@ export const createTranscriptionSlice: StateCreator<
       console.log(
         `✅ Added ${trackIds.length} karaoke subtitle tracks to timeline`,
       );
+      // Ensure subtitle track row is visible
+      if (state.ensureTrackRowVisible) {
+        state.ensureTrackRowVisible('subtitle');
+        console.log('📝 Auto-showed Subtitle track row');
+      }
 
-      set({ isTranscribing: false, transcriptionProgress: null });
+      // Mark media as having generated karaoke subtitles
+      if (state.updateMediaLibraryItem) {
+        state.updateMediaLibraryItem(mediaId, {
+          hasGeneratedKaraoke: true,
+        });
+      }
+
+      set({
+        isTranscribing: false,
+        currentTranscribingMediaId: null,
+        transcriptionProgress: null,
+      });
 
       return {
         success: true,
         trackIds,
+        transcriptionResult, // Include full transcription result
       };
     } catch (error) {
       console.error('❌ Karaoke subtitle generation failed:', error);
       window.electronAPI.removeWhisperProgressListener();
-      set({ isTranscribing: false, transcriptionProgress: null });
-
+      set({
+        isTranscribing: false,
+        currentTranscribingMediaId: null,
+        transcriptionProgress: null,
+      });
       return {
         success: false,
         error:
@@ -310,7 +524,12 @@ export const createTranscriptionSlice: StateCreator<
     try {
       await window.electronAPI.whisperCancel();
       window.electronAPI.removeWhisperProgressListener();
-      set({ isTranscribing: false, transcriptionProgress: null });
+      set({
+        isTranscribing: false,
+        currentTranscribingMediaId: null,
+        currentTranscribingTrackId: null,
+        transcriptionProgress: null,
+      });
     } catch (error) {
       console.error('Failed to cancel transcription:', error);
     }

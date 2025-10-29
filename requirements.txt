@@ -1,0 +1,21 @@
+# Python Dependencies for Dividr Transcription
+# Install with: pip install -r requirements.txt
+# py -3.13 -m pip install -r requirements.txt
+
+# Faster-Whisper - Optimized Whisper implementation
+faster-whisper>=1.0.0
+
+# PyTorch (CPU version) - Required by Faster-Whisper
+# For GPU support, install: torch>=2.0.0+cu118 (CUDA 11.8) or torch>=2.0.0+cu121 (CUDA 12.1)
+torch>=2.0.0
+
+# FFmpeg Python bindings (optional, for audio preprocessing)
+# Note: System FFmpeg is already used by Electron, this is optional
+# ffmpeg-python>=0.2.0
+
+# Additional dependencies (automatically installed with faster-whisper)
+# - ctranslate2>=3.24.0
+# - huggingface-hub>=0.13
+# - tokenizers>=0.13
+# - onnxruntime>=1.14 (for some model formats)
+

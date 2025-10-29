@@ -77,6 +77,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     setPreviewInteractionMode,
     updateTrack,
     setSelectedTracks,
+    currentTranscribingTrackId,
+    transcriptionProgress,
   } = useVideoEditorStore();
 
   // Active video track for visual display (must be visible)
@@ -319,20 +321,43 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     preview.previewScale,
   ]);
 
-  // Subtitle tracks
+  // Subtitle tracks - with timeline-based alignment
   const getActiveSubtitleTracks = useCallback(() => {
     const currentFrame = timeline.currentFrame;
-    const activeSubtitles = tracks.filter(
-      (track) =>
-        track.type === 'subtitle' &&
-        track.visible &&
-        currentFrame >= track.startFrame &&
-        currentFrame < track.endFrame && // Use < for exclusive end (standard interval logic)
-        track.subtitleText,
-    );
+    const activeSubtitles = tracks.filter((track) => {
+      if (track.type !== 'subtitle' || !track.visible || !track.subtitleText) {
+        return false;
+      }
+
+      // Check if current frame is within the track's timeline range
+      // Use exclusive end check to prevent overlap at boundaries
+      const isInTrackRange =
+        currentFrame >= track.startFrame && currentFrame < track.endFrame;
+
+      if (!isInTrackRange) {
+        return false;
+      }
+
+      // Calculate the relative time within the track
+      const relativeFrame = currentFrame - track.startFrame;
+      const relativeTime = relativeFrame / timeline.fps;
+
+      // Get the subtitle's original timestamps (if available)
+      // These are stored when the subtitle is created from transcription
+      const subtitleStartTime = track.sourceStartTime || 0;
+      const subtitleDuration = track.sourceDuration || Infinity;
+      const subtitleEndTime = subtitleStartTime + subtitleDuration;
+
+      // Check if the relative playback time falls within the subtitle's original duration
+      // Use exclusive end to prevent flickering at boundaries (9.24 → 9.24 case)
+      const isInSubtitleDuration =
+        relativeTime >= subtitleStartTime && relativeTime < subtitleEndTime;
+
+      return isInSubtitleDuration;
+    });
 
     return activeSubtitles;
-  }, [tracks, timeline.currentFrame]);
+  }, [tracks, timeline.currentFrame, timeline.fps]);
 
   // Text tracks (heading and body)
   const getActiveTextTracks = useCallback(() => {
@@ -1962,6 +1987,35 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           </div>
         );
       })()}
+
+      {/* Transcription Progress Loader - Only show when transcribing from timeline */}
+      {currentTranscribingTrackId && transcriptionProgress && (
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-[1001]">
+          <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
+            <circle
+              cx="20"
+              cy="20"
+              r="16"
+              stroke="currentColor"
+              strokeWidth="3"
+              fill="none"
+              className="text-white/20"
+            />
+            <circle
+              cx="20"
+              cy="20"
+              r="16"
+              stroke="currentColor"
+              strokeWidth="3"
+              fill="none"
+              strokeDasharray={`${2 * Math.PI * 16}`}
+              strokeDashoffset={`${2 * Math.PI * 16 * (1 - transcriptionProgress.progress / 100)}`}
+              className="text-white transition-all duration-300"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+      )}
 
       {/* Rotation Info Badge - Only show during rotation */}
       {(() => {

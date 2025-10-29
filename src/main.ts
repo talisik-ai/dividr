@@ -12,14 +12,25 @@ import {
   runFfmpegWithProgress,
 } from './backend/ffmpeg/ffmpegRunner';
 import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
+// Import old Whisper.cpp runner (keeping for backward compatibility if needed)
+// import {
+//   cancelTranscription as cancelWhisperCpp,
+//   getWhisperStatus as getWhisperCppStatus,
+//   initializeWhisperPath,
+//   transcribeAudio as transcribeWithWhisperCpp,
+//   WhisperProgress,
+//   WhisperResult,
+// } from './backend/whisper/whisperRunner';
+
+// Import new Python-based Faster-Whisper runner
 import {
   cancelTranscription,
-  getWhisperStatus,
-  initializeWhisperPath,
+  getPythonWhisperStatus,
+  initializePythonWhisper,
   transcribeAudio,
   WhisperProgress,
   WhisperResult,
-} from './backend/frontend_use/whisper/whisperRunner';
+} from './backend/whisper/pythonWhisperRunner';
 
 // Import Vite dev server URL
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -2039,7 +2050,7 @@ ipcMain.handle('ffmpeg:status', async () => {
 });
 
 // ============================================================================
-// Whisper.cpp IPC Handlers
+// Python Faster-Whisper IPC Handlers
 // ============================================================================
 
 // IPC Handler for Whisper transcription
@@ -2049,13 +2060,23 @@ ipcMain.handle(
     event,
     audioPath: string,
     options?: {
-      model?: 'tiny' | 'base' | 'small' | 'medium' | 'large' | 'large-v3';
+      model?:
+        | 'tiny'
+        | 'base'
+        | 'small'
+        | 'medium'
+        | 'large'
+        | 'large-v2'
+        | 'large-v3';
       language?: string;
       translate?: boolean;
-      wordTimestamps?: boolean;
+      device?: 'cpu' | 'cuda';
+      computeType?: 'int8' | 'int16' | 'float16' | 'float32';
+      beamSize?: number;
+      vad?: boolean;
     },
   ) => {
-    console.log('🎤 MAIN PROCESS: whisper:transcribe handler called');
+    console.log('🎤 MAIN PROCESS: whisper:transcribe handler called (Python)');
     console.log('   Audio path:', audioPath);
     console.log('   Options:', options);
 
@@ -2097,7 +2118,7 @@ ipcMain.handle('whisper:cancel', async () => {
 ipcMain.handle('whisper:status', async () => {
   console.log('📊 MAIN PROCESS: whisper:status handler called');
 
-  const status = getWhisperStatus();
+  const status = getPythonWhisperStatus();
   console.log('   Status:', status);
 
   return status;
@@ -2303,9 +2324,12 @@ app.on('ready', async () => {
     // App can still function without FFmpeg for project management
   });
 
-  // Initialize Whisper.cpp paths in background (non-blocking)
-  initializeWhisperPath().catch((error) => {
-    console.error('⚠️ Whisper.cpp initialization failed:', error);
+  // Initialize Python Whisper in background (non-blocking)
+  initializePythonWhisper().catch((error) => {
+    console.error('⚠️ Python Whisper initialization failed:', error);
+    console.error(
+      '💡 Make sure Python 3.9+ is installed and faster-whisper is available',
+    );
     // App can still function without Whisper for transcription
   });
 });

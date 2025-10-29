@@ -56,4 +56,31 @@ export interface MediaLibraryItem {
     cacheKey: string;
     generatedAt?: number;
   };
+  hasGeneratedKaraoke?: boolean;
+  cachedKaraokeSubtitles?: {
+    transcriptionResult: {
+      segments: Array<{
+        start: number;
+        end: number;
+        text: string;
+        words?: Array<{
+          word: string;
+          start: number;
+          end: number;
+          confidence: number;
+        }>;
+      }>;
+      language: string;
+      language_probability: number;
+      duration: number;
+      text: string;
+      processing_time: number;
+      model: string;
+      device: string;
+      segment_count: number;
+      real_time_factor?: number;
+      faster_than_realtime?: boolean;
+    };
+    generatedAt: number;
+  };
 }
