@@ -21,6 +21,7 @@ const getTrackColor = (index: number) =>
 export interface TranscriptionSlice {
   // State
   isTranscribing: boolean;
+  currentTranscribingMediaId: string | null;
   transcriptionProgress: {
     stage: 'loading' | 'processing' | 'complete' | 'error';
     progress: number;
@@ -97,6 +98,7 @@ export const createTranscriptionSlice: StateCreator<
   TranscriptionSlice
 > = (set, get) => ({
   isTranscribing: false,
+  currentTranscribingMediaId: null,
   transcriptionProgress: null,
 
   setTranscriptionProgress: (progress) => {
@@ -205,7 +207,11 @@ export const createTranscriptionSlice: StateCreator<
     }
 
     // Start transcription
-    set({ isTranscribing: true, transcriptionProgress: null });
+    set({
+      isTranscribing: true,
+      currentTranscribingMediaId: mediaId,
+      transcriptionProgress: null,
+    });
 
     try {
       console.log('🎤 Starting Whisper transcription...');
@@ -240,7 +246,11 @@ export const createTranscriptionSlice: StateCreator<
       window.electronAPI.removeWhisperProgressListener();
 
       if (!result.success || !result.result) {
-        set({ isTranscribing: false, transcriptionProgress: null });
+        set({
+          isTranscribing: false,
+          currentTranscribingMediaId: null,
+          transcriptionProgress: null,
+        });
         return {
           success: false,
           error: result.error || 'Transcription failed',
@@ -340,7 +350,18 @@ export const createTranscriptionSlice: StateCreator<
         `✅ Added ${trackIds.length} karaoke subtitle tracks to timeline`,
       );
 
-      set({ isTranscribing: false, transcriptionProgress: null });
+      // Mark media as having generated karaoke subtitles
+      if (state.updateMediaLibraryItem) {
+        state.updateMediaLibraryItem(mediaId, {
+          hasGeneratedKaraoke: true,
+        });
+      }
+
+      set({
+        isTranscribing: false,
+        currentTranscribingMediaId: null,
+        transcriptionProgress: null,
+      });
 
       return {
         success: true,
@@ -350,7 +371,11 @@ export const createTranscriptionSlice: StateCreator<
     } catch (error) {
       console.error('❌ Karaoke subtitle generation failed:', error);
       window.electronAPI.removeWhisperProgressListener();
-      set({ isTranscribing: false, transcriptionProgress: null });
+      set({
+        isTranscribing: false,
+        currentTranscribingMediaId: null,
+        transcriptionProgress: null,
+      });
 
       return {
         success: false,
@@ -366,7 +391,11 @@ export const createTranscriptionSlice: StateCreator<
     try {
       await window.electronAPI.whisperCancel();
       window.electronAPI.removeWhisperProgressListener();
-      set({ isTranscribing: false, transcriptionProgress: null });
+      set({
+        isTranscribing: false,
+        currentTranscribingMediaId: null,
+        transcriptionProgress: null,
+      });
     } catch (error) {
       console.error('Failed to cancel transcription:', error);
     }

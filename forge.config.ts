@@ -69,16 +69,14 @@ const config: ForgeConfig = {
 
     // Windows Squirrel installer
     new MakerSquirrel({
-      iconUrl: 'https://example.com/icon.ico', // Replace with your actual icon URL
+      // Remove iconUrl - this is what likely caused your original issue
       setupIcon: './favicon.ico',
-      name: 'dividr', // Use lowercase for internal name
+      name: 'dividr',
       authors: 'Dividr Team',
       description:
         'A powerful video editing application built with Electron and FFmpeg',
       exe: 'Dividr.exe',
       noMsi: true,
-      setupExe: 'DividrSetup.exe',
-      loadingGif: undefined,
     }),
 
     // Cross-platform ZIP packages

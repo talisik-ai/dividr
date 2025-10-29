@@ -63,7 +63,7 @@ const ProjectCard = ({
             </div>
           )}
 
-          <Badge className="absolute bottom-2 left-2 bg-black/50 dark:bg-white/50">
+          <Badge className="absolute bottom-2 left-2 bg-black/20 dark:bg-white/20">
             <Clock
               className="-ms-0.5 opacity-60"
               size={12}
@@ -73,7 +73,7 @@ const ProjectCard = ({
           </Badge>
 
           {/* Hover overlay with play button */}
-          <div className="absolute inset-0 bg-black/50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/20 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
             <Button
               onClick={handleOpen}
               size="sm"

@@ -56,4 +56,5 @@ export interface MediaLibraryItem {
     cacheKey: string;
     generatedAt?: number;
   };
+  hasGeneratedKaraoke?: boolean;
 }
