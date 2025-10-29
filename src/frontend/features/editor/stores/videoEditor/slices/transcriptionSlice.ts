@@ -96,6 +96,7 @@ export interface TranscriptionSlice {
       computeType?: 'int8' | 'int16' | 'float16' | 'float32';
       beamSize?: number;
       vad?: boolean;
+      sourceTrack?: VideoTrack; // Optional source track for timeline-aware positioning
       onProgress?: (progress: {
         stage: 'loading' | 'processing' | 'complete' | 'error';
         progress: number;
@@ -195,10 +196,13 @@ export const createTranscriptionSlice: StateCreator<
     }
 
     // Use the existing generateKaraokeSubtitles method with the media ID
-    // But track that this is from a track
+    // But track that this is from a track and pass track context
     set({ currentTranscribingTrackId: trackId });
 
-    const result = await state.generateKaraokeSubtitles(mediaItem.id, options);
+    const result = await state.generateKaraokeSubtitles(mediaItem.id, {
+      ...options,
+      sourceTrack: track, // Pass track context for timeline-aware positioning
+    });
 
     // Clear the track ID after completion
     set({ currentTranscribingTrackId: null });
@@ -413,6 +417,39 @@ export const createTranscriptionSlice: StateCreator<
       const fps = state.timeline?.fps || 30;
       const currentTrackCount = state.tracks?.length || 0;
 
+      // Timeline-aware positioning: Calculate offset based on source track
+      const sourceTrack = options.sourceTrack; // Track context passed from generateKaraokeSubtitlesFromTrack
+
+      // Find ALL clips from the same source (handles sliced/split clips)
+      const allClipsFromSource = sourceTrack
+        ? state.tracks.filter(
+            (t: any) =>
+              t.source === sourceTrack.source &&
+              t.type === sourceTrack.type &&
+              (t.type === 'video' || t.type === 'audio') &&
+              !t.muted,
+          )
+        : [];
+
+      if (sourceTrack && allClipsFromSource.length > 0) {
+        console.log('🎯 Timeline-aware subtitle generation:', {
+          sourceTrackId: sourceTrack.id,
+          sourceTrackName: sourceTrack.name,
+          totalClipsFromSource: allClipsFromSource.length,
+          clips: allClipsFromSource.map((c: any) => ({
+            id: c.id,
+            startFrame: c.startFrame,
+            endFrame: c.endFrame,
+            sourceStartTime: c.sourceStartTime || 0,
+          })),
+        });
+      } else {
+        // LEGACY MODE: Media Library workflow - place at timeline start
+        console.log(
+          '📚 Media Library workflow - placing subtitles at timeline start',
+        );
+      }
+
       const subtitleTracks: Omit<VideoTrack, 'id'>[] = [];
 
       // Process each segment and create word-level subtitle tracks
@@ -420,50 +457,181 @@ export const createTranscriptionSlice: StateCreator<
         if (segment.words && segment.words.length > 0) {
           // Create a track for each word (karaoke style)
           segment.words.forEach((word: any) => {
-            // Use Math.round for both to prevent overlaps at exact boundaries (e.g., 9.24 → 9.24)
-            // This ensures exclusive end frames: [start, end) interval
-            const startFrame = Math.round(word.start * fps);
-            const endFrame = Math.round(word.end * fps);
+            // Calculate absolute timestamp in source media
+            const wordStartInSource = word.start; // Absolute time in source media
+            const wordEndInSource = word.end;
 
-            subtitleTracks.push({
-              type: 'subtitle',
-              name: word.word,
-              source: audioPath || mediaItem.source,
-              previewUrl: mediaItem.previewUrl,
-              duration: endFrame - startFrame,
-              startFrame,
-              endFrame,
-              visible: true,
-              locked: false,
-              color: getTrackColor(currentTrackCount + subtitleTracks.length),
-              subtitleText: word.word,
-              subtitleStartTime: word.start,
-              subtitleEndTime: word.end,
-            });
+            // Find which clip(s) this word belongs to (handles sliced clips)
+            if (sourceTrack && allClipsFromSource.length > 0) {
+              // Check each clip from the same source
+              allClipsFromSource.forEach((clip: any) => {
+                const clipSourceStart = clip.sourceStartTime || 0;
+                const clipDuration = (clip.endFrame - clip.startFrame) / fps;
+                const clipSourceEnd = clipSourceStart + clipDuration;
+
+                // Check if word falls within this clip's source range
+                if (
+                  wordStartInSource >= clipSourceStart &&
+                  wordStartInSource < clipSourceEnd
+                ) {
+                  // Calculate timeline position for this clip
+                  const relativeStartTime = wordStartInSource - clipSourceStart;
+                  const relativeEndTime = wordEndInSource - clipSourceStart;
+
+                  const startFrame =
+                    Math.round(relativeStartTime * fps) + clip.startFrame;
+                  const endFrame =
+                    Math.round(relativeEndTime * fps) + clip.startFrame;
+
+                  // Ensure valid frame range and within clip boundaries
+                  if (
+                    endFrame > startFrame &&
+                    startFrame >= clip.startFrame &&
+                    endFrame <= clip.endFrame
+                  ) {
+                    subtitleTracks.push({
+                      type: 'subtitle',
+                      name: word.word,
+                      source: audioPath || mediaItem.source,
+                      previewUrl: mediaItem.previewUrl,
+                      duration: endFrame - startFrame,
+                      startFrame,
+                      endFrame,
+                      visible: true,
+                      locked: false,
+                      color: getTrackColor(
+                        currentTrackCount + subtitleTracks.length,
+                      ),
+                      subtitleText: word.word,
+                      // Store RELATIVE timing (relative to clip start)
+                      sourceStartTime: relativeStartTime,
+                      sourceDuration: relativeEndTime - relativeStartTime,
+                      // Store original absolute timing for reference
+                      subtitleStartTime: wordStartInSource,
+                      subtitleEndTime: wordEndInSource,
+                      // NO LINKING - subtitles are independent
+                    });
+                  }
+                }
+              });
+            } else {
+              // LEGACY MODE: Media Library workflow - place at timeline start
+              const startFrame = Math.round(wordStartInSource * fps);
+              const endFrame = Math.round(wordEndInSource * fps);
+
+              if (endFrame > startFrame) {
+                subtitleTracks.push({
+                  type: 'subtitle',
+                  name: word.word,
+                  source: audioPath || mediaItem.source,
+                  previewUrl: mediaItem.previewUrl,
+                  duration: endFrame - startFrame,
+                  startFrame,
+                  endFrame,
+                  visible: true,
+                  locked: false,
+                  color: getTrackColor(
+                    currentTrackCount + subtitleTracks.length,
+                  ),
+                  subtitleText: word.word,
+                  sourceStartTime: wordStartInSource,
+                  sourceDuration: wordEndInSource - wordStartInSource,
+                  subtitleStartTime: wordStartInSource,
+                  subtitleEndTime: wordEndInSource,
+                  // NO LINKING - subtitles are independent
+                });
+              }
+            }
           });
         } else {
           // Fallback: create segment-level track if no word timestamps
-          const startFrame = Math.floor(segment.start * fps);
-          const endFrame = Math.ceil(segment.end * fps);
+          const segmentStartInSource = segment.start;
+          const segmentEndInSource = segment.end;
 
-          subtitleTracks.push({
-            type: 'subtitle',
-            name:
-              segment.text.length > 30
-                ? segment.text.substring(0, 30) + '...'
-                : segment.text,
-            source: audioPath || mediaItem.source,
-            previewUrl: mediaItem.previewUrl,
-            duration: endFrame - startFrame,
-            startFrame,
-            endFrame,
-            visible: true,
-            locked: false,
-            color: getTrackColor(currentTrackCount + subtitleTracks.length),
-            subtitleText: segment.text,
-            subtitleStartTime: segment.start,
-            subtitleEndTime: segment.end,
-          });
+          // Find which clip(s) this segment belongs to (handles sliced clips)
+          if (sourceTrack && allClipsFromSource.length > 0) {
+            // Check each clip from the same source
+            allClipsFromSource.forEach((clip: any) => {
+              const clipSourceStart = clip.sourceStartTime || 0;
+              const clipDuration = (clip.endFrame - clip.startFrame) / fps;
+              const clipSourceEnd = clipSourceStart + clipDuration;
+
+              // Check if segment falls within this clip's source range
+              if (
+                segmentStartInSource >= clipSourceStart &&
+                segmentStartInSource < clipSourceEnd
+              ) {
+                // Calculate timeline position for this clip
+                const relativeStartTime =
+                  segmentStartInSource - clipSourceStart;
+                const relativeEndTime = segmentEndInSource - clipSourceStart;
+
+                const startFrame =
+                  Math.floor(relativeStartTime * fps) + clip.startFrame;
+                const endFrame =
+                  Math.ceil(relativeEndTime * fps) + clip.startFrame;
+
+                // Ensure valid frame range and within clip boundaries
+                if (
+                  endFrame > startFrame &&
+                  startFrame >= clip.startFrame &&
+                  endFrame <= clip.endFrame
+                ) {
+                  subtitleTracks.push({
+                    type: 'subtitle',
+                    name:
+                      segment.text.length > 30
+                        ? segment.text.substring(0, 30) + '...'
+                        : segment.text,
+                    source: audioPath || mediaItem.source,
+                    previewUrl: mediaItem.previewUrl,
+                    duration: endFrame - startFrame,
+                    startFrame,
+                    endFrame,
+                    visible: true,
+                    locked: false,
+                    color: getTrackColor(
+                      currentTrackCount + subtitleTracks.length,
+                    ),
+                    subtitleText: segment.text,
+                    sourceStartTime: relativeStartTime,
+                    sourceDuration: relativeEndTime - relativeStartTime,
+                    subtitleStartTime: segmentStartInSource,
+                    subtitleEndTime: segmentEndInSource,
+                    // NO LINKING - subtitles are independent
+                  });
+                }
+              }
+            });
+          } else {
+            // LEGACY MODE: Media Library workflow - place at timeline start
+            const startFrame = Math.floor(segmentStartInSource * fps);
+            const endFrame = Math.ceil(segmentEndInSource * fps);
+
+            if (endFrame > startFrame) {
+              subtitleTracks.push({
+                type: 'subtitle',
+                name:
+                  segment.text.length > 30
+                    ? segment.text.substring(0, 30) + '...'
+                    : segment.text,
+                source: audioPath || mediaItem.source,
+                previewUrl: mediaItem.previewUrl,
+                duration: endFrame - startFrame,
+                startFrame,
+                endFrame,
+                visible: true,
+                locked: false,
+                color: getTrackColor(currentTrackCount + subtitleTracks.length),
+                subtitleText: segment.text,
+                sourceStartTime: segmentStartInSource,
+                sourceDuration: segmentEndInSource - segmentStartInSource,
+                subtitleStartTime: segmentStartInSource,
+                subtitleEndTime: segmentEndInSource,
+                // NO LINKING - subtitles are independent
+              });
+            }
+          }
         }
       });
 

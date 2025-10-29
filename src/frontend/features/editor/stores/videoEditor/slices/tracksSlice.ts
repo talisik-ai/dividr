@@ -979,6 +979,7 @@ export const createTracksSlice: StateCreator<
               endFrame: linkedFinalStart + linkedDuration,
             };
           }
+
           return track;
         }),
       };
@@ -1011,11 +1012,13 @@ export const createTracksSlice: StateCreator<
       const originalDraggedStart = draggedTrack.startFrame;
       const rawMovementDelta = newStartFrame - originalDraggedStart;
 
-      // Build a map of all tracks that need to move (including linked partners)
+      // Build a map of all tracks that need to move (including linked partners and subtitles)
       const tracksToMove = new Set<string>();
       selectedTrackIds.forEach((id: string) => {
         tracksToMove.add(id);
         const track = state.tracks.find((t: VideoTrack) => t.id === id);
+
+        // Add linked audio/video partner
         if (track?.isLinked && track.linkedTrackId) {
           tracksToMove.add(track.linkedTrackId);
         }
@@ -1317,6 +1320,10 @@ export const createTracksSlice: StateCreator<
               snapThreshold,
             );
           }
+
+          // NOTE: Subtitles are now INDEPENDENT - they don't trim with video tracks
+          // Users must trim subtitles manually for full editing control
+
           return track;
         }),
       };

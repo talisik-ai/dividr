@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { KaraokeIcon } from '@/frontend/assets/icons/karaoke';
 import { Button } from '@/frontend/components/ui/button';
 import {
   DropdownMenu,
@@ -41,6 +42,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { toast } from 'sonner';
+import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
 
 // Throttle utility for zoom operations to prevent lag
@@ -483,6 +486,231 @@ const LinkUnlinkButton: React.FC = React.memo(() => {
   );
 });
 
+// Generate Karaoke button component for Timeline Controller workflow
+const GenerateKaraokeButton: React.FC = React.memo(() => {
+  const tracks = useVideoEditorStore((state) => state.tracks);
+  const selectedTrackIds = useVideoEditorStore(
+    (state) => state.timeline.selectedTrackIds,
+  );
+  const generateKaraokeSubtitlesFromTrack = useVideoEditorStore(
+    (state) => state.generateKaraokeSubtitlesFromTrack,
+  );
+  const removeTrack = useVideoEditorStore((state) => state.removeTrack);
+  const currentTranscribingTrackId = useVideoEditorStore(
+    (state) => state.currentTranscribingTrackId,
+  );
+
+  const [karaokeConfirmation, setKaraokeConfirmation] = useState<{
+    show: boolean;
+    trackIds: string[];
+    trackNames: string[];
+    existingSubtitleCount: number;
+  }>({
+    show: false,
+    trackIds: [],
+    trackNames: [],
+    existingSubtitleCount: 0,
+  });
+
+  // Check if transcription is in progress
+  const isTranscribing = !!currentTranscribingTrackId;
+
+  // Determine which tracks to generate subtitles for based on selection
+  // IMPORTANT: Only process SELECTED tracks (no fallback to all tracks)
+  const targetTracks = useMemo(() => {
+    // Require explicit selection - don't process all tracks automatically
+    if (selectedTrackIds.length === 0) {
+      return []; // No selection = disabled
+    }
+
+    // Get video and audio tracks that can generate subtitles from selection
+    const selectedEligible = tracks.filter(
+      (t) =>
+        selectedTrackIds.includes(t.id) &&
+        (t.type === 'video' || t.type === 'audio') &&
+        !t.muted,
+    );
+
+    return selectedEligible;
+  }, [tracks, selectedTrackIds]);
+
+  const handleGenerateKaraoke = useCallback(() => {
+    if (targetTracks.length === 0) {
+      toast.error('No video or audio tracks found on timeline');
+      return;
+    }
+
+    // Check if there are existing subtitle tracks
+    const existingSubtitles = tracks.filter(
+      (track) => track.type === 'subtitle',
+    );
+
+    if (existingSubtitles.length > 0) {
+      // Show confirmation dialog
+      setKaraokeConfirmation({
+        show: true,
+        trackIds: targetTracks.map((t) => t.id),
+        trackNames: targetTracks.map((t) => t.name),
+        existingSubtitleCount: existingSubtitles.length,
+      });
+    } else {
+      // No existing subtitles, proceed directly
+      handleConfirmKaraokeGeneration(
+        targetTracks.map((t) => t.id),
+        false,
+      );
+    }
+  }, [targetTracks, tracks]);
+
+  const handleConfirmKaraokeGeneration = useCallback(
+    async (trackIds: string[], deleteExisting: boolean) => {
+      // Delete existing subtitles if requested
+      if (deleteExisting) {
+        const existingSubtitles = tracks.filter(
+          (track) => track.type === 'subtitle',
+        );
+        console.log(
+          `🗑️ Deleting ${existingSubtitles.length} existing subtitle tracks...`,
+        );
+        for (const track of existingSubtitles) {
+          removeTrack(track.id);
+        }
+      }
+
+      // Close dialog
+      setKaraokeConfirmation({
+        show: false,
+        trackIds: [],
+        trackNames: [],
+        existingSubtitleCount: 0,
+      });
+
+      // Generate karaoke subtitles for multiple tracks sequentially
+      let totalSubtitlesGenerated = 0;
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < trackIds.length; i++) {
+        const trackId = trackIds[i];
+        const track = tracks.find((t) => t.id === trackId);
+
+        if (!track) continue;
+
+        console.log(
+          `🎤 Generating subtitles for track ${i + 1}/${trackIds.length}: ${track.name}`,
+        );
+
+        try {
+          const result = await generateKaraokeSubtitlesFromTrack(trackId, {
+            model: 'base',
+          });
+
+          if (result.success) {
+            totalSubtitlesGenerated += result.trackIds?.length || 0;
+            successCount++;
+            console.log(
+              `✅ Generated ${result.trackIds?.length || 0} subtitles for ${track.name}`,
+            );
+          } else {
+            failCount++;
+            console.error(
+              `❌ Failed to generate subtitles for ${track.name}:`,
+              result.error,
+            );
+          }
+        } catch (error) {
+          failCount++;
+          console.error(
+            `❌ Error generating subtitles for ${track.name}:`,
+            error,
+          );
+        }
+      }
+
+      // Show summary toast
+      if (successCount > 0) {
+        const message =
+          trackIds.length === 1
+            ? `Generated ${totalSubtitlesGenerated} karaoke subtitle tracks`
+            : `Generated ${totalSubtitlesGenerated} karaoke subtitle tracks for ${successCount} video${successCount > 1 ? 's' : ''}${failCount > 0 ? ` (${failCount} failed)` : ''}`;
+        toast.success(message);
+      } else {
+        toast.error('Failed to generate karaoke subtitles for all tracks');
+      }
+    },
+    [tracks, removeTrack, generateKaraokeSubtitlesFromTrack],
+  );
+
+  const isDisabled = targetTracks.length === 0 || isTranscribing;
+
+  // Generate tooltip text based on selection state
+  const tooltipText = useMemo(() => {
+    if (isTranscribing) {
+      return 'Transcription in progress...';
+    }
+    if (selectedTrackIds.length === 0) {
+      return 'Select video or audio tracks to generate subtitles';
+    }
+    if (targetTracks.length === 0) {
+      return 'Selected tracks cannot generate subtitles (muted or wrong type)';
+    }
+    return `Generate Karaoke Subtitles for ${targetTracks.length} selected track${targetTracks.length > 1 ? 's' : ''}`;
+  }, [isTranscribing, targetTracks.length, selectedTrackIds.length]);
+
+  // Generate confirmation dialog message
+  const confirmationMessage = useMemo(() => {
+    if (karaokeConfirmation.trackNames.length === 0) return '';
+
+    if (karaokeConfirmation.trackNames.length === 1) {
+      return karaokeConfirmation.trackNames[0];
+    }
+
+    return `${karaokeConfirmation.trackNames.length} tracks`;
+  }, [karaokeConfirmation.trackNames]);
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="native"
+            onClick={handleGenerateKaraoke}
+            disabled={isDisabled}
+            className={isTranscribing ? 'opacity-50 cursor-not-allowed' : ''}
+          >
+            <KaraokeIcon className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{tooltipText}</TooltipContent>
+      </Tooltip>
+
+      <KaraokeConfirmationDialog
+        open={karaokeConfirmation.show}
+        onOpenChange={(open) => {
+          if (!open) {
+            setKaraokeConfirmation({
+              show: false,
+              trackIds: [],
+              trackNames: [],
+              existingSubtitleCount: 0,
+            });
+          }
+        }}
+        mediaName={confirmationMessage}
+        existingSubtitleCount={karaokeConfirmation.existingSubtitleCount}
+        onConfirm={(deleteExisting) => {
+          if (karaokeConfirmation.trackIds.length > 0) {
+            handleConfirmKaraokeGeneration(
+              karaokeConfirmation.trackIds,
+              deleteExisting,
+            );
+          }
+        }}
+      />
+    </>
+  );
+});
+
 // Mode Selector component for switching between Selection and Slice tools
 const ModeSelector: React.FC = React.memo(() => {
   const isSplitModeActive = useVideoEditorStore(
@@ -713,6 +941,7 @@ export const TimelineControls: React.FC = React.memo(
               </TooltipContent>
             </Tooltip>
             <LinkUnlinkButton />
+            <GenerateKaraokeButton />
           </div>
         </div>
 

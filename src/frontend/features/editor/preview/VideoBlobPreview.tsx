@@ -337,23 +337,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       if (!isInTrackRange) {
         return false;
       }
-
-      // Calculate the relative time within the track
-      const relativeFrame = currentFrame - track.startFrame;
-      const relativeTime = relativeFrame / timeline.fps;
-
-      // Get the subtitle's original timestamps (if available)
-      // These are stored when the subtitle is created from transcription
-      const subtitleStartTime = track.sourceStartTime || 0;
-      const subtitleDuration = track.sourceDuration || Infinity;
-      const subtitleEndTime = subtitleStartTime + subtitleDuration;
-
-      // Check if the relative playback time falls within the subtitle's original duration
-      // Use exclusive end to prevent flickering at boundaries (9.24 → 9.24 case)
-      const isInSubtitleDuration =
-        relativeTime >= subtitleStartTime && relativeTime < subtitleEndTime;
-
-      return isInSubtitleDuration;
+      return true;
     });
 
     return activeSubtitles;
