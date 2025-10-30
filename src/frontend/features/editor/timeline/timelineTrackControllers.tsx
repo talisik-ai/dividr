@@ -128,10 +128,26 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     }, [tracks.length, removeTrackRow, rowDef.id]);
 
     const handleDeleteAllTracks = useCallback(() => {
+      // Batch delete: collect all track IDs including linked tracks
+      const trackIdsToDelete = new Set<string>();
+
       tracks.forEach((track) => {
-        deleteTrack(track.id);
+        trackIdsToDelete.add(track.id);
+        // Include linked track if it exists
+        if (track.isLinked && track.linkedTrackId) {
+          trackIdsToDelete.add(track.linkedTrackId);
+        }
       });
-    }, [tracks, deleteTrack]);
+
+      // Use batch deletion by setting selection and calling removeSelectedTracks
+      const { setSelectedTracks, removeSelectedTracks } =
+        useVideoEditorStore.getState();
+
+      // Set selection to all tracks to delete
+      setSelectedTracks(Array.from(trackIdsToDelete));
+      // Execute batch delete
+      removeSelectedTracks();
+    }, [tracks]);
 
     const generateKaraokeSubtitlesFromTrack = useVideoEditorStore(
       (state) => state.generateKaraokeSubtitlesFromTrack,

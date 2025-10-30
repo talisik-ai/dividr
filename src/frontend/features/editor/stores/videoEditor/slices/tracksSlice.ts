@@ -676,31 +676,35 @@ export const createTracksSlice: StateCreator<
       (t: VideoTrack) => t.id === trackId,
     );
     const isVideoTrack = trackToRemove?.type === 'video';
-    let tracksToRemove = [trackId];
 
+    // Use Set for O(1) lookup performance
+    const tracksToRemove = new Set<string>([trackId]);
+
+    // Include linked track if exists
     if (trackToRemove?.isLinked && trackToRemove.linkedTrackId) {
-      tracksToRemove = [...tracksToRemove, trackToRemove.linkedTrackId];
+      tracksToRemove.add(trackToRemove.linkedTrackId);
     }
 
+    // Single batched state update
     set((state: any) => ({
-      tracks: state.tracks.filter(
-        (t: VideoTrack) => !tracksToRemove.includes(t.id),
-      ),
+      tracks: state.tracks.filter((t: VideoTrack) => !tracksToRemove.has(t.id)),
       timeline: {
         ...state.timeline,
         selectedTrackIds: state.timeline.selectedTrackIds.filter(
-          (id: string) => !tracksToRemove.includes(id),
+          (id: string) => !tracksToRemove.has(id),
         ),
       },
     }));
 
     state.markUnsavedChanges?.();
 
+    // Check if we still have video tracks after deletion
     const remainingTracks = (get() as any).tracks;
     const hasVideoTracks = remainingTracks.some(
       (track: VideoTrack) => track.type === 'video',
     );
 
+    // Update thumbnail if needed (async operation doesn't block UI)
     if (isVideoTrack || !hasVideoTracks) {
       state.updateProjectThumbnailFromTimeline?.();
     }
@@ -715,16 +719,27 @@ export const createTracksSlice: StateCreator<
     // Record action for undo/redo
     state.recordAction?.('Delete Selected Tracks');
 
-    const tracksToRemove = state.tracks.filter((track: VideoTrack) =>
-      selectedTrackIds.includes(track.id),
-    );
-    const hasVideoTracks = tracksToRemove.some(
-      (track: VideoTrack) => track.type === 'video',
+    // Batch collect all track IDs to delete (including linked partners)
+    const trackIdsToDelete = new Set<string>(selectedTrackIds);
+
+    // Add linked track partners to deletion set
+    selectedTrackIds.forEach((trackId: string) => {
+      const track = state.tracks.find((t: VideoTrack) => t.id === trackId);
+      if (track?.isLinked && track.linkedTrackId) {
+        trackIdsToDelete.add(track.linkedTrackId);
+      }
+    });
+
+    // Check if any video tracks will be deleted (for thumbnail update)
+    const hasVideoTracks = state.tracks.some(
+      (track: VideoTrack) =>
+        trackIdsToDelete.has(track.id) && track.type === 'video',
     );
 
+    // Single batched state update
     set((state: any) => ({
       tracks: state.tracks.filter(
-        (t: VideoTrack) => !selectedTrackIds.includes(t.id),
+        (t: VideoTrack) => !trackIdsToDelete.has(t.id),
       ),
       timeline: {
         ...state.timeline,
@@ -734,11 +749,13 @@ export const createTracksSlice: StateCreator<
 
     state.markUnsavedChanges?.();
 
+    // Check if we still have video tracks after deletion
     const remainingTracks = (get() as any).tracks;
     const remainingVideoTracks = remainingTracks.some(
       (track: VideoTrack) => track.type === 'video',
     );
 
+    // Update thumbnail if needed (async operation doesn't block UI)
     if (hasVideoTracks || !remainingVideoTracks) {
       state.updateProjectThumbnailFromTimeline?.();
     }

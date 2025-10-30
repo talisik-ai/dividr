@@ -362,7 +362,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         return;
       }
 
-      // Delete existing subtitles if requested
+      // Delete existing subtitles if requested (using batch delete)
       if (deleteExisting) {
         const existingSubtitles = tracks.filter(
           (track) => track.type === 'subtitle',
@@ -370,8 +370,12 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         console.log(
           `🗑️ Deleting ${existingSubtitles.length} existing subtitle tracks...`,
         );
-        for (const track of existingSubtitles) {
-          removeTrack(track.id);
+        // Batch delete for better performance
+        if (existingSubtitles.length > 0) {
+          const { setSelectedTracks, removeSelectedTracks } =
+            useVideoEditorStore.getState();
+          setSelectedTracks(existingSubtitles.map((t) => t.id));
+          removeSelectedTracks();
         }
       }
 

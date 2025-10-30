@@ -173,24 +173,16 @@ export const createClipboardSlice: StateCreator<
 
     console.log(`[Clipboard] Cut ${clonedTracks.length} track(s) to clipboard`);
 
-    // Begin grouped transaction for atomic undo of all cut operations
-    state.beginGroup?.(
-      `Cut ${clonedTracks.length} Track${clonedTracks.length > 1 ? 's' : ''}`,
-    );
+    // Use batch deletion by setting selection and calling removeSelectedTracks
+    // This is much faster than calling removeTrack in a loop
+    state.setSelectedTracks(tracksToRemove);
 
-    // Remove the cut tracks from timeline
-    tracksToRemove.forEach((trackId) => {
-      state.removeTrack(trackId);
-    });
-
-    // Clear selection
-    state.setSelectedTracks([]);
-
-    // Mark unsaved changes
-    state.markUnsavedChanges?.();
-
-    // End grouped transaction
-    state.endGroup?.();
+    // removeSelectedTracks already handles:
+    // - Recording undo action
+    // - Removing linked tracks
+    // - Clearing selection
+    // - Marking unsaved changes
+    state.removeSelectedTracks();
   },
 
   pasteTracks: () => {
