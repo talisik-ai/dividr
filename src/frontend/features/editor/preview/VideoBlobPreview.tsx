@@ -373,31 +373,35 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     return activeImages;
   }, [tracks, timeline.currentFrame]);
 
-  // Helper function to get z-index based on timeline track order
-  // Lower index in timeline = rendered first = lower z-index (appears behind)
-  // Fallback order: Audio (0) → Video (100) → Image (200) → Subtitles (300) → Text (400)
+  // Helper function to get z-index based on timeline track row positioning
+  // Timeline visual order (top to bottom): Text → Subtitle → Image → Video → Audio
+  // Rendering order (bottom to top): Audio → Video → Image → Subtitle → Text
+  // Topmost tracks should have HIGHEST z-index to render on top
   const getTrackZIndex = useCallback(
     (track: VideoTrack): number => {
-      // Find the track's position in the timeline tracks array
-      const trackIndex = tracks.findIndex((t) => t.id === track.id);
-
-      // Base z-index by type (fallback if track not found in array)
-      const typeBaseZIndex: Record<VideoTrack['type'], number> = {
-        audio: 0,
-        video: 100,
-        image: 200,
-        subtitle: 300,
-        text: 400,
+      // Timeline row order defines visual stacking (from TRACK_ROWS definition)
+      // Index 0 (text) should be highest z-index, index 4 (audio) should be lowest
+      const TRACK_ROW_ORDER: Record<VideoTrack['type'], number> = {
+        text: 4, // Top row in timeline → Highest z-index
+        subtitle: 3,
+        image: 2,
+        video: 1,
+        audio: 0, // Bottom row in timeline → Lowest z-index
       };
 
-      // If track found in timeline, use its index for fine-grained ordering
-      // Add type base to ensure type separation, then add track index for within-type ordering
-      if (trackIndex !== -1) {
-        return typeBaseZIndex[track.type] + trackIndex;
-      }
+      // Base z-index for each track type (500 units apart for fine-grained control)
+      const baseZIndex = TRACK_ROW_ORDER[track.type] * 500;
 
-      // Fallback to type-based ordering if track not found
-      return typeBaseZIndex[track.type];
+      // Find track position within all tracks of the same type
+      // Later tracks in the array (imported later) should render on top
+      const sameTypeTracks = tracks.filter((t) => t.type === track.type);
+      const indexWithinType = sameTypeTracks.findIndex(
+        (t) => t.id === track.id,
+      );
+
+      // Add the within-type index for fine-grained ordering
+      // This ensures tracks imported later appear on top of earlier tracks of the same type
+      return baseZIndex + (indexWithinType !== -1 ? indexWithinType : 0);
     },
     [tracks],
   );
@@ -1372,80 +1376,145 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         const scaledHorizontalPadding =
           videoWidth * 0.01 * preview.previewScale;
 
-        return (
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              width: actualWidth,
-              height: actualHeight,
-              left: `calc(50% + ${preview.panX}px)`,
-              top: `calc(50% + ${preview.panY}px)`,
-              transform: 'translate(-50%, -50%)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems:
-                appliedStyle.textAlign === 'left'
-                  ? 'flex-start'
-                  : appliedStyle.textAlign === 'right'
-                    ? 'flex-end'
-                    : 'center',
-              justifyContent: 'flex-end',
-              paddingBottom: `${20 * preview.previewScale}px`,
-              paddingLeft: `${scaledHorizontalPadding}px`,
-              paddingRight: `${scaledHorizontalPadding}px`,
-              zIndex:
-                activeSubs.length > 0
-                  ? Math.max(...activeSubs.map((t) => getTrackZIndex(t)))
-                  : 300,
-            }}
-          >
-            {activeSubs.map((track) => {
-              // Scale text shadow with zoom level if present
-              let scaledTextShadow = appliedStyle.textShadow;
-              if (scaledTextShadow && preview.previewScale !== 1) {
-                // Parse and scale text shadow values
-                scaledTextShadow = scaledTextShadow.replace(
-                  /(\d+\.?\d*)px/g,
-                  (match: string, value: string) => {
-                    return `${parseFloat(value) * preview.previewScale}px`;
-                  },
-                );
-              }
+        // Render each subtitle track independently with proper z-indexing
+        return activeSubs.map((track) => {
+          return (
+            <div
+              key={`subtitle-container-${track.id}`}
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                width: actualWidth,
+                height: actualHeight,
+                left: `calc(50% + ${preview.panX}px)`,
+                top: `calc(50% + ${preview.panY}px)`,
+                transform: 'translate(-50%, -50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems:
+                  appliedStyle.textAlign === 'left'
+                    ? 'flex-start'
+                    : appliedStyle.textAlign === 'right'
+                      ? 'flex-end'
+                      : 'center',
+                justifyContent: 'flex-end',
+                paddingBottom: `${20 * preview.previewScale}px`,
+                paddingLeft: `${scaledHorizontalPadding}px`,
+                paddingRight: `${scaledHorizontalPadding}px`,
+                zIndex: getTrackZIndex(track), // Each subtitle gets its own z-index
+              }}
+            >
+              {(() => {
+                // Scale text shadow with zoom level if present
+                let scaledTextShadow = appliedStyle.textShadow;
+                if (scaledTextShadow && preview.previewScale !== 1) {
+                  // Parse and scale text shadow values
+                  scaledTextShadow = scaledTextShadow.replace(
+                    /(\d+\.?\d*)px/g,
+                    (match: string, value: string) => {
+                      return `${parseFloat(value) * preview.previewScale}px`;
+                    },
+                  );
+                }
 
-              // Check if has actual background (not transparent)
-              const hasActualBackground =
-                appliedStyle.backgroundColor &&
-                appliedStyle.backgroundColor !== 'transparent' &&
-                appliedStyle.backgroundColor !== 'rgba(0,0,0,0)' &&
-                appliedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)';
+                // Check if has actual background (not transparent)
+                const hasActualBackground =
+                  appliedStyle.backgroundColor &&
+                  appliedStyle.backgroundColor !== 'transparent' &&
+                  appliedStyle.backgroundColor !== 'rgba(0,0,0,0)' &&
+                  appliedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)';
 
-              // Base text style shared across all layers
-              const baseTextStyle: React.CSSProperties = {
-                fontSize: `${responsiveFontSize}px`,
-                fontFamily: appliedStyle.fontFamily,
-                fontWeight: appliedStyle.fontWeight,
-                fontStyle: appliedStyle.fontStyle,
-                textTransform: appliedStyle.textTransform as any,
-                textDecoration: appliedStyle.textDecoration,
-                textAlign: appliedStyle.textAlign as any,
-                lineHeight: appliedStyle.lineHeight,
-                letterSpacing: appliedStyle.letterSpacing
-                  ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
-                  : appliedStyle.letterSpacing,
-                whiteSpace: 'pre-line',
-                wordBreak: 'keep-all',
-                overflowWrap: 'normal',
-                padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-              };
+                // Base text style shared across all layers
+                const baseTextStyle: React.CSSProperties = {
+                  fontSize: `${responsiveFontSize}px`,
+                  fontFamily: appliedStyle.fontFamily,
+                  fontWeight: appliedStyle.fontWeight,
+                  fontStyle: appliedStyle.fontStyle,
+                  textTransform: appliedStyle.textTransform as any,
+                  textDecoration: appliedStyle.textDecoration,
+                  textAlign: appliedStyle.textAlign as any,
+                  lineHeight: appliedStyle.lineHeight,
+                  letterSpacing: appliedStyle.letterSpacing
+                    ? `${parseFloat(String(appliedStyle.letterSpacing)) * preview.previewScale}px`
+                    : appliedStyle.letterSpacing,
+                  whiteSpace: 'pre-line',
+                  wordBreak: 'keep-all',
+                  overflowWrap: 'normal',
+                  padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+                };
 
-              // Multi-layer rendering for glow effect (matching export implementation)
-              if ((appliedStyle as any).hasGlow) {
-                // Calculate glow parameters - balanced for spread and subtlety
-                const glowBlurAmount = 8 * preview.previewScale; // Moderate blur for soft spread
-                const glowSpread = 8 * preview.previewScale; // Good spread distance
+                // Multi-layer rendering for glow effect (matching export implementation)
+                if ((appliedStyle as any).hasGlow) {
+                  // Calculate glow parameters - balanced for spread and subtlety
+                  const glowBlurAmount = 8 * preview.previewScale; // Moderate blur for soft spread
+                  const glowSpread = 8 * preview.previewScale; // Good spread distance
 
-                if (hasActualBackground) {
-                  // Triple-layer mode: glow + background box + text
+                  if (hasActualBackground) {
+                    // Triple-layer mode: glow + background box + text
+                    return (
+                      <div
+                        key={track.id}
+                        style={{
+                          position: 'relative',
+                          display: 'inline-block',
+                        }}
+                      >
+                        {/* Layer 0: Blurred glow layer behind background box */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            color: appliedStyle.color, // Glow uses text color
+                            backgroundColor: hasActualBackground
+                              ? appliedStyle.backgroundColor
+                              : 'transparent',
+                            opacity: 0.75,
+                            filter: `blur(${glowBlurAmount}px)`,
+                            boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                            zIndex: 0,
+                          }}
+                          aria-hidden="true"
+                        >
+                          {track.subtitleText}
+                        </div>
+
+                        {/* Layer 1: Background box (crisp, no blur) */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            color: 'transparent', // Invisible text, just the box
+                            backgroundColor: appliedStyle.backgroundColor,
+                            opacity: appliedStyle.opacity,
+                            zIndex: 1,
+                          }}
+                          aria-hidden="true"
+                        >
+                          {track.subtitleText}
+                        </div>
+
+                        {/* Layer 2: Text with outline on top (crisp, no blur) */}
+                        <div
+                          style={{
+                            ...baseTextStyle,
+                            position: 'relative',
+                            color: appliedStyle.color,
+                            backgroundColor: 'transparent',
+                            opacity: appliedStyle.opacity,
+                            textShadow: scaledTextShadow,
+                            zIndex: 2,
+                          }}
+                        >
+                          {track.subtitleText}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Double-layer mode: glow + text (no background)
                   return (
                     <div
                       key={track.id}
@@ -1454,7 +1523,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                         display: 'inline-block',
                       }}
                     >
-                      {/* Layer 0: Blurred glow layer behind background box */}
+                      {/* Layer 0: Blurred glow layer (furthest back) */}
                       <div
                         style={{
                           ...baseTextStyle,
@@ -1462,12 +1531,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                           top: 0,
                           left: 0,
                           color: appliedStyle.color, // Glow uses text color
-                          backgroundColor: hasActualBackground
-                            ? appliedStyle.backgroundColor
-                            : 'transparent',
-                          opacity: 0.75,
+                          backgroundColor: 'transparent',
+                          opacity: 0.75, // Slightly more visible for better spread
                           filter: `blur(${glowBlurAmount}px)`,
-                          boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                          textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                          WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
                           zIndex: 0,
                         }}
                         aria-hidden="true"
@@ -1475,24 +1543,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                         {track.subtitleText}
                       </div>
 
-                      {/* Layer 1: Background box (crisp, no blur) */}
-                      <div
-                        style={{
-                          ...baseTextStyle,
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          color: 'transparent', // Invisible text, just the box
-                          backgroundColor: appliedStyle.backgroundColor,
-                          opacity: appliedStyle.opacity,
-                          zIndex: 1,
-                        }}
-                        aria-hidden="true"
-                      >
-                        {track.subtitleText}
-                      </div>
-
-                      {/* Layer 2: Text with outline on top (crisp, no blur) */}
+                      {/* Layer 1: Main text with outline */}
                       <div
                         style={{
                           ...baseTextStyle,
@@ -1501,7 +1552,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                           backgroundColor: 'transparent',
                           opacity: appliedStyle.opacity,
                           textShadow: scaledTextShadow,
-                          zIndex: 2,
+                          zIndex: 1,
                         }}
                       >
                         {track.subtitleText}
@@ -1510,71 +1561,25 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                   );
                 }
 
-                // Double-layer mode: glow + text (no background)
+                // No glow - simple single layer rendering
                 return (
                   <div
                     key={track.id}
                     style={{
-                      position: 'relative',
-                      display: 'inline-block',
+                      ...baseTextStyle,
+                      textShadow: scaledTextShadow,
+                      color: appliedStyle.color,
+                      backgroundColor: appliedStyle.backgroundColor,
+                      opacity: appliedStyle.opacity,
                     }}
                   >
-                    {/* Layer 0: Blurred glow layer (furthest back) */}
-                    <div
-                      style={{
-                        ...baseTextStyle,
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        color: appliedStyle.color, // Glow uses text color
-                        backgroundColor: 'transparent',
-                        opacity: 0.75, // Slightly more visible for better spread
-                        filter: `blur(${glowBlurAmount}px)`,
-                        textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
-                        WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
-                        zIndex: 0,
-                      }}
-                      aria-hidden="true"
-                    >
-                      {track.subtitleText}
-                    </div>
-
-                    {/* Layer 1: Main text with outline */}
-                    <div
-                      style={{
-                        ...baseTextStyle,
-                        position: 'relative',
-                        color: appliedStyle.color,
-                        backgroundColor: 'transparent',
-                        opacity: appliedStyle.opacity,
-                        textShadow: scaledTextShadow,
-                        zIndex: 1,
-                      }}
-                    >
-                      {track.subtitleText}
-                    </div>
+                    {track.subtitleText}
                   </div>
                 );
-              }
-
-              // No glow - simple single layer rendering
-              return (
-                <div
-                  key={track.id}
-                  style={{
-                    ...baseTextStyle,
-                    textShadow: scaledTextShadow,
-                    color: appliedStyle.color,
-                    backgroundColor: appliedStyle.backgroundColor,
-                    opacity: appliedStyle.opacity,
-                  }}
-                >
-                  {track.subtitleText}
-                </div>
-              );
-            })}
-          </div>
-        );
+              })()}
+            </div>
+          );
+        });
       })()}
 
       {/* Image Tracks */}
