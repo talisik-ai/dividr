@@ -190,6 +190,7 @@ const processSubtitleFile = async (
           locked: false,
           color: getTrackColor(currentTrackCount + segmentIndex),
           subtitleText: segment.text,
+          subtitleType: 'regular' as const, // Mark as regular imported subtitle
           // Store original precise timing from SRT for reference
           subtitleStartTime: segment.startTime,
           subtitleEndTime: segment.endTime,
@@ -215,6 +216,7 @@ const processSubtitleFile = async (
       locked: false,
       color: getTrackColor(currentTrackCount),
       subtitleText: `Subtitle: ${fileInfo.name}`,
+      subtitleType: 'regular' as const, // Mark as regular imported subtitle
     },
   ];
 };
@@ -495,6 +497,7 @@ const processImportedFile = async (
           locked: false,
           color: getTrackColor(0),
           subtitleText: `Subtitle: ${fileInfo.name}`,
+          subtitleType: 'regular' as const, // Mark as regular imported subtitle
         });
       }
     } else {
@@ -793,6 +796,7 @@ export const createFileProcessingSlice: StateCreator<
               locked: false,
               color: getTrackColor((get() as any).tracks.length + index),
               subtitleText: `Subtitle: ${file.name}`,
+              subtitleType: 'regular' as const, // Mark as regular imported subtitle
             };
           }
         }

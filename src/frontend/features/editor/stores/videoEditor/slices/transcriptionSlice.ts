@@ -528,6 +528,7 @@ export const createTranscriptionSlice: StateCreator<
                         currentTrackCount + subtitleTracks.length,
                       ),
                       subtitleText: word.word,
+                      subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
                       // Store RELATIVE timing (relative to clip start)
                       sourceStartTime: relativeStartTime,
                       sourceDuration: relativeEndTime - relativeStartTime,
@@ -559,6 +560,7 @@ export const createTranscriptionSlice: StateCreator<
                     currentTrackCount + subtitleTracks.length,
                   ),
                   subtitleText: word.word,
+                  subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
                   sourceStartTime: wordStartInSource,
                   sourceDuration: wordEndInSource - wordStartInSource,
                   subtitleStartTime: wordStartInSource,
@@ -619,6 +621,7 @@ export const createTranscriptionSlice: StateCreator<
                       currentTrackCount + subtitleTracks.length,
                     ),
                     subtitleText: segment.text,
+                    subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
                     sourceStartTime: relativeStartTime,
                     sourceDuration: relativeEndTime - relativeStartTime,
                     subtitleStartTime: segmentStartInSource,
@@ -649,6 +652,7 @@ export const createTranscriptionSlice: StateCreator<
                 locked: false,
                 color: getTrackColor(currentTrackCount + subtitleTracks.length),
                 subtitleText: segment.text,
+                subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
                 sourceStartTime: segmentStartInSource,
                 sourceDuration: segmentEndInSource - segmentStartInSource,
                 subtitleStartTime: segmentStartInSource,

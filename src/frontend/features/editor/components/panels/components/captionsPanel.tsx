@@ -184,12 +184,14 @@ export const CaptionsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     const regular: VideoTrack[] = [];
 
     subtitles.forEach((track) => {
-      const text = track.subtitleText || '';
-      const wordCount = text.split(' ').length;
-
-      if (wordCount <= 3) {
+      // Use subtitleType field to distinguish between karaoke and regular subtitles
+      if (track.subtitleType === 'karaoke') {
         karaoke.push(track);
+      } else if (track.subtitleType === 'regular') {
+        regular.push(track);
       } else {
+        // Fallback for legacy tracks without subtitleType (shouldn't happen in new tracks)
+        // Default to regular if the subtitle type is not specified
         regular.push(track);
       }
     });
@@ -203,14 +205,16 @@ export const CaptionsPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   // Check if panel should be enabled
   const hasSubtitles = subtitleTracks.length > 0;
+  const hasKaraokeSubtitles = karaokeSubtitles.length > 0;
+  const hasRegularSubtitles = regularSubtitles.length > 0;
 
   // Get active subtitles based on mode
   const activeSubtitles = useMemo(() => {
     if (captionMode === 'karaoke') {
-      return karaokeSubtitles.length > 0 ? karaokeSubtitles : subtitleTracks;
+      return karaokeSubtitles;
     }
-    return regularSubtitles.length > 0 ? regularSubtitles : subtitleTracks;
-  }, [captionMode, karaokeSubtitles, regularSubtitles, subtitleTracks]);
+    return regularSubtitles;
+  }, [captionMode, karaokeSubtitles, regularSubtitles]);
 
   // Handle text double-click to edit
   const handleTextDoubleClick = useCallback(
@@ -343,6 +347,23 @@ export const CaptionsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
+  // Auto-switch to available tab if current mode has no subtitles
+  useEffect(() => {
+    if (
+      captionMode === 'karaoke' &&
+      !hasKaraokeSubtitles &&
+      hasRegularSubtitles
+    ) {
+      setCaptionMode('subtitle');
+    } else if (
+      captionMode === 'subtitle' &&
+      !hasRegularSubtitles &&
+      hasKaraokeSubtitles
+    ) {
+      setCaptionMode('karaoke');
+    }
+  }, [captionMode, hasKaraokeSubtitles, hasRegularSubtitles]);
+
   // Focus input when editing starts
   useEffect(() => {
     if (editingTrackId && editInputRef.current) {
@@ -402,10 +423,10 @@ export const CaptionsPanel: React.FC<CustomPanelProps> = ({ className }) => {
               variant={captionMode === 'karaoke' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setCaptionMode('karaoke')}
-              disabled={!hasSubtitles}
+              disabled={!hasKaraokeSubtitles}
               className={cn(
                 'text-xs py-1 h-fit',
-                !hasSubtitles && 'opacity-50 cursor-not-allowed',
+                !hasKaraokeSubtitles && 'opacity-50 cursor-not-allowed',
               )}
             >
               Karaoke
@@ -414,10 +435,10 @@ export const CaptionsPanel: React.FC<CustomPanelProps> = ({ className }) => {
               variant={captionMode === 'subtitle' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setCaptionMode('subtitle')}
-              disabled={!hasSubtitles}
+              disabled={!hasRegularSubtitles}
               className={cn(
                 'text-xs py-1 h-fit',
-                !hasSubtitles && 'opacity-50 cursor-not-allowed',
+                !hasRegularSubtitles && 'opacity-50 cursor-not-allowed',
               )}
             >
               Subtitle

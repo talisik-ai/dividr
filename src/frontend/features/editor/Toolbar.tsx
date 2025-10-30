@@ -14,12 +14,14 @@ import { cn } from '@/frontend/utils/utils';
 import { ClosedCaption, Music, Settings, Type, Upload } from 'lucide-react';
 import { useCallback, useRef } from 'react';
 import { Button } from '../../components/ui/button';
+import { useVideoEditorStore } from '@/frontend/features/editor/stores/videoEditor';
 
 interface ToolbarButtonProps {
   icon: React.ReactNode;
   title: string;
   onClick: () => void;
   isActive: boolean;
+  disabled?: boolean;
 }
 
 const ToolbarButton = ({
@@ -27,6 +29,7 @@ const ToolbarButton = ({
   title,
   onClick,
   isActive,
+  disabled = false,
 }: ToolbarButtonProps) => (
   <Button
     onClick={onClick}
@@ -34,6 +37,7 @@ const ToolbarButton = ({
     size="icon"
     variant="ghost"
     className={isActive && 'bg-accent'}
+    disabled={disabled}
   >
     {icon}
   </Button>
@@ -99,6 +103,10 @@ const Toolbar = ({
   toggleCollapse?: () => void;
 }) => {
   const { togglePanel, activePanelType } = usePanelStore();
+  const tracks = useVideoEditorStore((state) => state.tracks);
+
+  // Check if there are any subtitle tracks on the timeline
+  const hasSubtitles = tracks.some((track) => track.type === 'subtitle');
 
   /*
       // Add demo tracks for demonstration
@@ -208,6 +216,7 @@ const Toolbar = ({
               title={config.title}
               onClick={getClickHandler(config)}
               isActive={activePanelType === config.panelType}
+              disabled={config.panelType === 'captions' && !hasSubtitles}
             />
           ))}
         </div>

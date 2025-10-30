@@ -21,6 +21,7 @@ export interface VideoTrack {
   muted?: boolean;
   color: string;
   subtitleText?: string;
+  subtitleType?: 'karaoke' | 'regular'; // Distinguish between karaoke (generated) and regular (imported) subtitles
   linkedTrackId?: string;
   isLinked?: boolean;
   layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
