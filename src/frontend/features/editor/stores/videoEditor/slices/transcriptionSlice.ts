@@ -46,6 +46,7 @@ export interface TranscriptionSlice {
       computeType?: 'int8' | 'int16' | 'float16' | 'float32';
       beamSize?: number;
       vad?: boolean;
+      processOnlyThisSegment?: boolean; // If true, only process this specific track/segment; if false/undefined, process all clips from source
       onProgress?: (progress: {
         stage: 'loading' | 'processing' | 'complete' | 'error';
         progress: number;
@@ -97,6 +98,7 @@ export interface TranscriptionSlice {
       beamSize?: number;
       vad?: boolean;
       sourceTrack?: VideoTrack; // Optional source track for timeline-aware positioning
+      specificTrackId?: string; // Optional: only process this specific track/segment (for sliced clips)
       onProgress?: (progress: {
         stage: 'loading' | 'processing' | 'complete' | 'error';
         progress: number;
@@ -202,6 +204,10 @@ export const createTranscriptionSlice: StateCreator<
     const result = await state.generateKaraokeSubtitles(mediaItem.id, {
       ...options,
       sourceTrack: track, // Pass track context for timeline-aware positioning
+      // Only pass specificTrackId if explicitly requested via options
+      // This allows Track Controllers to process ALL clips (don't pass it)
+      // while Timeline Controllers can process specific selected segments (pass it)
+      specificTrackId: options.processOnlyThisSegment ? trackId : undefined,
     });
 
     // Clear the track ID after completion
@@ -418,31 +424,51 @@ export const createTranscriptionSlice: StateCreator<
 
       // Timeline-aware positioning: Calculate offset based on source track
       const sourceTrack = options.sourceTrack; // Track context passed from generateKaraokeSubtitlesFromTrack
+      const specificTrackId = options.specificTrackId; // Optional: only process this specific track/segment
 
-      // Find ALL clips from the same source (handles sliced/split clips)
-      const allClipsFromSource = sourceTrack
-        ? state.tracks.filter(
+      // Determine which clips to process
+      let clipsToProcess: any[] = [];
+
+      if (sourceTrack) {
+        if (specificTrackId) {
+          // SPECIFIC SEGMENT MODE: Only process the selected track/segment
+          // This is used when generating from a specific selected clip (including sliced segments)
+          const specificTrack = state.tracks.find(
+            (t: any) => t.id === specificTrackId,
+          );
+          if (specificTrack) {
+            clipsToProcess = [specificTrack];
+            console.log('🎯 Specific segment subtitle generation:', {
+              trackId: specificTrack.id,
+              trackName: specificTrack.name,
+              startFrame: specificTrack.startFrame,
+              endFrame: specificTrack.endFrame,
+              sourceStartTime: specificTrack.sourceStartTime || 0,
+            });
+          }
+        } else {
+          // ALL CLIPS MODE: Find all clips from the same source (for multi-track selection)
+          clipsToProcess = state.tracks.filter(
             (t: any) =>
               t.source === sourceTrack.source &&
               t.type === sourceTrack.type &&
               (t.type === 'video' || t.type === 'audio') &&
               !t.muted,
-          )
-        : [];
+          );
+          console.log('🎯 Multi-clip subtitle generation:', {
+            sourceTrackName: sourceTrack.name,
+            totalClipsFromSource: clipsToProcess.length,
+            clips: clipsToProcess.map((c: any) => ({
+              id: c.id,
+              startFrame: c.startFrame,
+              endFrame: c.endFrame,
+              sourceStartTime: c.sourceStartTime || 0,
+            })),
+          });
+        }
+      }
 
-      if (sourceTrack && allClipsFromSource.length > 0) {
-        console.log('🎯 Timeline-aware subtitle generation:', {
-          sourceTrackId: sourceTrack.id,
-          sourceTrackName: sourceTrack.name,
-          totalClipsFromSource: allClipsFromSource.length,
-          clips: allClipsFromSource.map((c: any) => ({
-            id: c.id,
-            startFrame: c.startFrame,
-            endFrame: c.endFrame,
-            sourceStartTime: c.sourceStartTime || 0,
-          })),
-        });
-      } else {
+      if (clipsToProcess.length === 0 && !sourceTrack) {
         // LEGACY MODE: Media Library workflow - place at timeline start
         console.log(
           '📚 Media Library workflow - placing subtitles at timeline start',
@@ -461,9 +487,9 @@ export const createTranscriptionSlice: StateCreator<
             const wordEndInSource = word.end;
 
             // Find which clip(s) this word belongs to (handles sliced clips)
-            if (sourceTrack && allClipsFromSource.length > 0) {
-              // Check each clip from the same source
-              allClipsFromSource.forEach((clip: any) => {
+            if (sourceTrack && clipsToProcess.length > 0) {
+              // Check each clip to process (either specific segment or all clips from source)
+              clipsToProcess.forEach((clip: any) => {
                 const clipSourceStart = clip.sourceStartTime || 0;
                 const clipDuration = (clip.endFrame - clip.startFrame) / fps;
                 const clipSourceEnd = clipSourceStart + clipDuration;
@@ -548,9 +574,9 @@ export const createTranscriptionSlice: StateCreator<
           const segmentEndInSource = segment.end;
 
           // Find which clip(s) this segment belongs to (handles sliced clips)
-          if (sourceTrack && allClipsFromSource.length > 0) {
-            // Check each clip from the same source
-            allClipsFromSource.forEach((clip: any) => {
+          if (sourceTrack && clipsToProcess.length > 0) {
+            // Check each clip to process (either specific segment or all clips from source)
+            clipsToProcess.forEach((clip: any) => {
               const clipSourceStart = clip.sourceStartTime || 0;
               const clipDuration = (clip.endFrame - clip.startFrame) / fps;
               const clipSourceEnd = clipSourceStart + clipDuration;

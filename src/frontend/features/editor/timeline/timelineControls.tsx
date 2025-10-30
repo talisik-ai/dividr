@@ -603,6 +603,7 @@ const GenerateKaraokeButton: React.FC = React.memo(() => {
         try {
           const result = await generateKaraokeSubtitlesFromTrack(trackId, {
             model: 'base',
+            processOnlyThisSegment: true, // Timeline Controller: only process the selected segment
           });
 
           if (result.success) {

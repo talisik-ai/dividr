@@ -63,12 +63,12 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
 
     const [karaokeConfirmation, setKaraokeConfirmation] = useState<{
       show: boolean;
-      trackId: string | null;
+      trackIds: string[];
       mediaName: string;
       existingSubtitleCount: number;
     }>({
       show: false,
-      trackId: null,
+      trackIds: [],
       mediaName: '',
       existingSubtitleCount: 0,
     });
@@ -88,7 +88,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       return audible;
     }, [tracks]);
 
-    // Check if video and audio tracks are linked
+    // Check if video and audio tracks are linked (NO selection requirement for row controllers)
     const hasLinkedAudioVideo = useMemo(() => {
       if (rowDef.id !== 'video') return false;
 
@@ -136,14 +136,31 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const generateKaraokeSubtitlesFromTrack = useVideoEditorStore(
       (state) => state.generateKaraokeSubtitlesFromTrack,
     );
+    const selectedTrackIds = useVideoEditorStore(
+      (state) => state.timeline.selectedTrackIds,
+    );
 
     const handleGenerateKaraokeSubtitles = useCallback(() => {
-      // Find the first video track with linked audio
-      const videoTrack = tracks.find((t) => t.type === 'video' && t.isLinked);
-      if (!videoTrack) {
-        console.warn('No video track with linked audio found');
+      // ROW CONTROLLER: Process video tracks with linked audio in this row
+      // If tracks are selected in this row, use only selected ones
+      // If no tracks are selected in this row, use all tracks in this row
+      const videoTracksInRow = tracks.filter(
+        (t) => t.type === 'video' && t.isLinked,
+      );
+
+      if (videoTracksInRow.length === 0) {
+        console.warn('No video track with linked audio found in this row');
         return;
       }
+
+      // Check if any tracks in this row are selected
+      const selectedInRow = videoTracksInRow.filter((t) =>
+        selectedTrackIds.includes(t.id),
+      );
+
+      // Use selected tracks if any, otherwise use all tracks in row
+      const tracksToProcess =
+        selectedInRow.length > 0 ? selectedInRow : videoTracksInRow;
 
       // Check if there are existing subtitle tracks
       const existingSubtitles = allTracks.filter(
@@ -154,18 +171,24 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         // Show confirmation dialog
         setKaraokeConfirmation({
           show: true,
-          trackId: videoTrack.id,
-          mediaName: videoTrack.name,
+          trackIds: tracksToProcess.map((t) => t.id),
+          mediaName:
+            tracksToProcess.length === 1
+              ? tracksToProcess[0].name
+              : `${tracksToProcess.length} tracks`,
           existingSubtitleCount: existingSubtitles.length,
         });
       } else {
         // No existing subtitles, proceed directly
-        handleConfirmKaraokeGeneration(videoTrack.id, false);
+        handleConfirmKaraokeGeneration(
+          tracksToProcess.map((t) => t.id),
+          false,
+        );
       }
-    }, [tracks, allTracks]);
+    }, [tracks, allTracks, selectedTrackIds]);
 
     const handleConfirmKaraokeGeneration = useCallback(
-      async (trackId: string, deleteExisting: boolean) => {
+      async (trackIds: string[], deleteExisting: boolean) => {
         // Delete existing subtitles if requested
         if (deleteExisting) {
           const existingSubtitles = allTracks.filter(
@@ -176,22 +199,38 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
           }
         }
 
-        try {
-          const result = await generateKaraokeSubtitlesFromTrack(trackId, {
-            model: 'base',
-            onProgress: (progress) => {
-              console.log('📊 Transcription progress:', progress);
-            },
-          });
+        // Process each track sequentially
+        for (const trackId of trackIds) {
+          const track = allTracks.find((t) => t.id === trackId);
+          if (!track) continue;
 
-          if (!result.success) {
+          console.log(`🎤 Generating subtitles for: ${track.name}`);
+
+          try {
+            const result = await generateKaraokeSubtitlesFromTrack(trackId, {
+              model: 'base',
+              processOnlyThisSegment: true, // Row Controller: process each segment individually
+              onProgress: (progress) => {
+                console.log('📊 Transcription progress:', progress);
+              },
+            });
+
+            if (!result.success) {
+              console.error(
+                `Failed to generate karaoke subtitles for ${track.name}:`,
+                result.error,
+              );
+            } else {
+              console.log(
+                `✅ Generated ${result.trackIds?.length || 0} subtitles for ${track.name}`,
+              );
+            }
+          } catch (error) {
             console.error(
-              'Failed to generate karaoke subtitles:',
-              result.error,
+              `Error generating karaoke subtitles for ${track.name}:`,
+              error,
             );
           }
-        } catch (error) {
-          console.error('Error generating karaoke subtitles:', error);
         }
       },
       [allTracks, deleteTrack, generateKaraokeSubtitlesFromTrack],
@@ -201,7 +240,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       if (!open) {
         setKaraokeConfirmation({
           show: false,
-          trackId: null,
+          trackIds: [],
           mediaName: '',
           existingSubtitleCount: 0,
         });
@@ -351,9 +390,9 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
             mediaName={karaokeConfirmation.mediaName}
             existingSubtitleCount={karaokeConfirmation.existingSubtitleCount}
             onConfirm={(deleteExisting: boolean) => {
-              if (karaokeConfirmation.trackId) {
+              if (karaokeConfirmation.trackIds.length > 0) {
                 handleConfirmKaraokeGeneration(
-                  karaokeConfirmation.trackId,
+                  karaokeConfirmation.trackIds,
                   deleteExisting,
                 );
               }
