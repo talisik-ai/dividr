@@ -414,37 +414,39 @@ export const CaptionsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   }, [activeSubtitles, currentFrame, selectedTrackIds, editingTrackId, fps]);
 
   return (
-    <BasePanel title="Captions" className={className}>
-      <div className="flex flex-col flex-1 min-h-0">
-        {/* Header with Mode Tabs */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex gap-2">
-            <Button
-              variant={captionMode === 'karaoke' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setCaptionMode('karaoke')}
-              disabled={!hasKaraokeSubtitles}
-              className={cn(
-                'text-xs py-1 h-fit',
-                !hasKaraokeSubtitles && 'opacity-50 cursor-not-allowed',
-              )}
-            >
-              Karaoke
-            </Button>
-            <Button
-              variant={captionMode === 'subtitle' ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setCaptionMode('subtitle')}
-              disabled={!hasRegularSubtitles}
-              className={cn(
-                'text-xs py-1 h-fit',
-                !hasRegularSubtitles && 'opacity-50 cursor-not-allowed',
-              )}
-            >
-              Subtitle
-            </Button>
-          </div>
+    <BasePanel
+      title="Captions"
+      className={className}
+      headerActions={
+        <div className="flex">
+          <Button
+            variant={captionMode === 'karaoke' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setCaptionMode('karaoke')}
+            disabled={!hasKaraokeSubtitles}
+            className={cn(
+              'text-xs py-1 h-fit',
+              !hasKaraokeSubtitles && 'opacity-50 cursor-not-allowed',
+            )}
+          >
+            Karaoke
+          </Button>
+          <Button
+            variant={captionMode === 'subtitle' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setCaptionMode('subtitle')}
+            disabled={!hasRegularSubtitles}
+            className={cn(
+              'text-xs py-1 h-fit',
+              !hasRegularSubtitles && 'opacity-50 cursor-not-allowed',
+            )}
+          >
+            Subtitle
+          </Button>
         </div>
+      }
+    >
+      <div className="flex flex-col flex-1 min-h-0">
         {/* Selection count and batch actions */}
         {selectedSubtitlesInView.length > 0 && (
           <div className="flex items-center justify-between gap-2 mb-3 px-1">

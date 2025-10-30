@@ -6,6 +6,7 @@ interface BasePanelProps {
   description?: string;
   children: React.ReactNode;
   className?: string;
+  headerActions?: React.ReactNode; // Custom component to render in the header (e.g., tabs, buttons)
 }
 
 /**
@@ -23,7 +24,7 @@ interface BasePanelProps {
  * across all panels in the video editor interface.
  */
 export const BasePanel: React.FC<BasePanelProps> = React.memo(
-  ({ title, description, children, className }) => {
+  ({ title, description, children, className, headerActions }) => {
     return (
       <div
         className={cn(
@@ -33,14 +34,19 @@ export const BasePanel: React.FC<BasePanelProps> = React.memo(
       >
         {/* Header */}
         <div className="px-4">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground text-sm truncate">
-              {title}
-            </h3>
-            {description && (
-              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                {description}
-              </p>
+          <div className="flex justify-between gap-2 flex-1 min-w-0">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-foreground text-sm truncate">
+                {title}
+              </h3>
+              {description && (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {description}
+                </p>
+              )}
+            </div>
+            {headerActions && (
+              <div className="flex-shrink-0">{headerActions}</div>
             )}
           </div>
         </div>
