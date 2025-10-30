@@ -332,17 +332,17 @@ export const ImageTrackStrip: React.FC<ImageTrackStripProps> = React.memo(
   },
   // Optimized memo comparison
   (prevProps, nextProps) => {
-    // Skip re-render for small changes
+    // Re-render on any significant change
     const significantChange =
       prevProps.track.id !== nextProps.track.id ||
       prevProps.track.source !== nextProps.track.source ||
       prevProps.track.previewUrl !== nextProps.track.previewUrl ||
       prevProps.track.startFrame !== nextProps.track.startFrame ||
       prevProps.track.endFrame !== nextProps.track.endFrame ||
-      Math.abs(prevProps.frameWidth - nextProps.frameWidth) > 0.5 ||
+      prevProps.frameWidth !== nextProps.frameWidth ||
       prevProps.height !== nextProps.height ||
-      Math.abs(prevProps.width - nextProps.width) > 100 ||
-      Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) > 2.0;
+      prevProps.width !== nextProps.width ||
+      prevProps.zoomLevel !== nextProps.zoomLevel;
 
     return !significantChange;
   },

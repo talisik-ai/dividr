@@ -28,7 +28,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
   ({ track, frameWidth, width, height, zoomLevel }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const progressOverlayRef = useRef<HTMLDivElement>(null);
-    const [lastRenderedZoom, setLastRenderedZoom] = useState<number>(0);
+    const lastRenderedZoomRef = useRef<number>(0);
     const lastRenderedWaveformRef = useRef<string | null>(null);
 
     // Cache resampled waveforms per zoom level
@@ -454,7 +454,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         resampledCache.current.clear();
       }
 
-      const zoomChanged = Math.abs(zoomLevel - lastRenderedZoom) > 0.01;
+      const zoomChanged = zoomLevel !== lastRenderedZoomRef.current;
       const shouldRedraw =
         zoomChanged ||
         waveformChanged ||
@@ -577,7 +577,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         }
       }
 
-      setLastRenderedZoom(zoomLevel);
+      lastRenderedZoomRef.current = zoomLevel;
       lastRenderedWaveformRef.current = waveformKey;
     }, [
       waveformData,
@@ -587,7 +587,6 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       track,
       trackMetrics.durationFrames,
       zoomLevel,
-      lastRenderedZoom,
       getResampledWaveform,
     ]);
 
@@ -747,23 +746,11 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
     const dimensionsChanged =
       prevProps.frameWidth !== nextProps.frameWidth ||
-      prevProps.height !== nextProps.height;
+      prevProps.height !== nextProps.height ||
+      prevProps.width !== nextProps.width ||
+      prevProps.zoomLevel !== nextProps.zoomLevel;
 
     if (dimensionsChanged) {
-      return false;
-    }
-
-    const significantWidthChange =
-      Math.abs(prevProps.width - nextProps.width) > 50;
-
-    if (significantWidthChange) {
-      return false;
-    }
-
-    const significantZoomChange =
-      Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) > 0.01;
-
-    if (significantZoomChange) {
       return false;
     }
 

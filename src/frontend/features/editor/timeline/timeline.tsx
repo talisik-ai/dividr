@@ -1523,8 +1523,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       </div>
     );
   },
-  (prevProps, nextProps) => {
-    // Custom equality check for Timeline component
-    return prevProps.className === nextProps.className;
-  },
+  // Use default shallow comparison - Timeline relies on Zustand subscriptions
+  // Custom comparison was preventing re-renders when store state changed
 );

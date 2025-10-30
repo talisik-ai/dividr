@@ -998,7 +998,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           trackStart <= viewportEnd + bufferSize
         );
       });
-    }, [tracks, scrollX, frameWidth]);
+    }, [tracks, scrollX, frameWidth, zoomLevel]);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
       e.preventDefault();
@@ -1128,6 +1128,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       prevProps.frameWidth === nextProps.frameWidth &&
       prevProps.timelineWidth === nextProps.timelineWidth &&
       prevProps.scrollX === nextProps.scrollX &&
+      prevProps.zoomLevel === nextProps.zoomLevel &&
       JSON.stringify(prevProps.selectedTrackIds) ===
         JSON.stringify(nextProps.selectedTrackIds) &&
       prevProps.allTracksCount === nextProps.allTracksCount &&
@@ -1384,8 +1385,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&
       prevProps.timelineWidth === nextProps.timelineWidth &&
-      Math.abs(prevProps.scrollX - nextProps.scrollX) < 50 && // Prevent re-render for small scroll changes
-      Math.abs(prevProps.zoomLevel - nextProps.zoomLevel) < 0.1 && // Prevent re-render for small zoom changes
+      prevProps.scrollX === nextProps.scrollX &&
+      prevProps.zoomLevel === nextProps.zoomLevel &&
       JSON.stringify(prevProps.selectedTrackIds) ===
         JSON.stringify(nextProps.selectedTrackIds) &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive
