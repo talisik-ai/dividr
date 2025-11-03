@@ -1,5 +1,4 @@
 // import { MakerPKG } from '@electron-forge/maker-pkg';
-import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
@@ -68,17 +67,32 @@ const config: ForgeConfig = {
       },
     }),*/
 
-    // Windows Squirrel installer
-    new MakerSquirrel({
-      // Remove iconUrl - this is what likely caused your original issue
-      setupIcon: './favicon.ico',
-      name: 'dividr',
-      authors: 'Dividr Team',
-      description:
-        'A powerful video editing application built with Electron and FFmpeg',
-      exe: 'Dividr.exe',
-      noMsi: true,
-    }),
+    // Windows NSIS installer
+    {
+      name: '@felixrieseberg/electron-forge-maker-nsis',
+      config: {
+        name: 'Dividr',
+        description:
+          'A powerful video editing application built with Electron and FFmpeg',
+        manufacturer: 'Talisik',
+        appDirectory: undefined,
+        outputDirectory: undefined,
+        installerIcon: './favicon.ico',
+        uninstallerIcon: './favicon.ico',
+        exe: 'Dividr.exe',
+        setupIcon: './favicon.ico',
+        oneClick: false,
+        perMachine: false,
+        allowToChangeInstallationDirectory: true,
+        runAfterFinish: true,
+        createDesktopShortcut: true,
+        createStartMenuShortcut: true,
+        shortcutName: 'Dividr',
+        deleteAppDataOnUninstall: false,
+        menuCategory: false,
+        language: 'English',
+      },
+    },
 
     // Cross-platform ZIP packages
     new MakerZIP({}, ['darwin', 'win32', 'linux']),
