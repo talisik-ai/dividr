@@ -9,6 +9,9 @@ faster-whisper>=1.0.0
 # For GPU support, install: torch>=2.0.0+cu118 (CUDA 11.8) or torch>=2.0.0+cu121 (CUDA 12.1)
 torch>=2.0.0
 
+# Requests - Required by faster-whisper for model downloads
+requests>=2.31.0
+
 # FFmpeg Python bindings (optional, for audio preprocessing)
 # Note: System FFmpeg is already used by Electron, this is optional
 # ffmpeg-python>=0.2.0

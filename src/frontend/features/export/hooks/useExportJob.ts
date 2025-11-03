@@ -111,20 +111,21 @@ export const useExportJob = () => {
         mediaLibrary,
       );
 
-      // Generate subtitle content if needed
+      // Calculate the earliest start frame across all tracks (for subtitle time offset)
+      const timelineStartFrame = sortedTracks.length > 0
+        ? Math.min(...sortedTracks.map((t) => t.startFrame))
+        : 0;
+      
+      console.log(`📍 Export timeline starts at frame ${timelineStartFrame} (${(timelineStartFrame / timelineFps).toFixed(3)}s)`);
+
+      // Generate subtitle content (now includes text clips bundled together)
       const { subtitleContent, currentTextStyle, fontFamilies } = generateSubtitleContent(
         subtitleTracks,
+        textTracks, // Pass text tracks to be bundled with subtitles
         textStyle,
         getTextStyleForSubtitle,
         videoDimensions,
-      );
-
-
-      // Generate text clip data for export
-      const { textClips, textClipsContent } = generateTextClipContent(
-        textTracks,
-        timelineFps,
-        videoDimensions,
+        timelineStartFrame, // Pass start frame for time offset adjustment
       );
 
       return {
@@ -143,12 +144,11 @@ export const useExportJob = () => {
           hwaccelType: 'auto', // Auto-detect best available hardware acceleration
           preferHEVC: false, // Use H.264 (set to true for H.265/HEVC)
         },
-        subtitleContent,
-        subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+        subtitleContent, // Now includes both subtitles and text clips
+        subtitleFormat: (subtitleTracks.length > 0 || textTracks.length > 0) ? 'ass' : undefined,
         subtitleFontFamilies: fontFamilies, // Pass font families, main process will resolve paths
         videoDimensions,
-        textClips: textClips.length > 0 ? textClips : undefined,
-        textClipsContent,
+        // textClips and textClipsContent removed - now bundled with subtitles
       };
     },
     [tracks, mediaLibrary, timelineFps, textStyle, getTextStyleForSubtitle],

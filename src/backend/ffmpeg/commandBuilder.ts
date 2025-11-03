@@ -1143,236 +1143,8 @@ function findFileIndexForSegment(
   return undefined;
 }
 
-/**
- * Generate drawtext filters for text clips as separate layers with rotation support
- * Creates text layers [txt0], [txt1], etc., applies rotation if needed, then overlays on video
- */
-function generateDrawtextFilters(
-  textClips: TextClipData[],
-  fps: number,
-  videoDimensions: { width: number; height: number },
-  totalDuration: number,
-  inputLabel: string = 'in',
-  outputLabel: string = 'out',
-): string {
-  
-  if (!textClips || textClips.length === 0) {
-    console.log('⚠️ No text clips provided to generateDrawtextFilters');
-    return '';
-  }
-
-  const filterChain: string[] = [];
-  const textLayers: Array<{ label: string; startTime: number; endTime: number; offsetX: number; offsetY: number }> = [];
-
-  for (let i = 0; i < textClips.length; i++) {
-    const clip = textClips[i];
-    const { content, startFrame, endFrame, style, transform } = clip;
-
-    // Convert frames to seconds and round to 3 decimals to avoid FFmpeg truncation issues
-    const startTime = Math.round((startFrame / fps) * 1000) / 1000;
-    const endTime = Math.round((endFrame / fps) * 1000) / 1000;
-
-    const centerX = videoDimensions.width / 2;
-    const centerY = videoDimensions.height / 2;
-    
-    // Calculate pixel offset from center
-    const offsetX = Math.round(transform.x * centerX);
-    const offsetY = Math.round(transform.y * centerY);
-    
-    // For rotated text, we need to position at canvas center and use overlay to position later
-    // For non-rotated text, we position directly
-    const hasRotation = transform.rotation !== 0 && !isNaN(transform.rotation);
-    const textAlign = style.textAlign || 'center';
-    let pixelX: string | number;
-    let pixelY: string | number;
-    
-    if (hasRotation) {
-      // For rotated text: center it on the canvas, we'll position via overlay later
-      if (textAlign === 'center') {
-        pixelX = `(w-text_w)/2`;
-        pixelY = `(h-text_h)/2`;
-      } else if (textAlign === 'right') {
-        pixelX = `w-text_w`;
-        pixelY = `(h-text_h)/2`;
-      } else {
-        // Left-align
-        pixelX = `0`;
-        pixelY = `(h-text_h)/2`;
-      }
-    } else {
-      // For non-rotated text: position directly with offset
-      if (textAlign === 'center') {
-        pixelX = `(w-text_w)/2+${offsetX}`;
-        pixelY = `(h-text_h)/2+${offsetY}`;
-      } else if (textAlign === 'right') {
-        pixelX = `w-text_w-(w/2-${offsetX})`;
-        pixelY = `(h-text_h)/2+${offsetY}`;
-      } else {
-        // Left-align
-        pixelX = `w/2+${offsetX}`;
-        pixelY = `(h-text_h)/2+${offsetY}`;
-      }
-    }
-
-    // Build font styling
-    const fontSize = style.fontSize * (videoDimensions.width / 1080);
-    const scaledFontSize = Math.round(fontSize * transform.scale);
-    const fontFamily = style.fontFamily?.replace(/['"]/g, '') || 'Arial';
-    
-    // Get font path using font mapper
-    const isBold = style.isBold || false;
-    const isItalic = style.isItalic || false;
-    const fontPath = getFontPathByStyle(fontFamily, isBold, isItalic);
-    
-    console.log(`🎨 Font mapping for "${fontFamily}" (bold: ${isBold}, italic: ${isItalic}): ${fontPath}`);
-
-    // Parse colors (convert hex/rgba to FFmpeg format with alpha)
-    const fillColorData = parseColorForFFmpeg(style.fillColor || '#FFFFFF');
-    const strokeColorData = parseColorForFFmpeg(style.strokeColor || '#000000');
-    const bgColorData = parseColorForFFmpeg(style.backgroundColor || 'rgba(0,0,0,0)');
-
-    // Calculate opacity (0-100 to 0.0-1.0) - applies to fill color
-    const opacity = (style.opacity !== undefined ? style.opacity : 100) / 100;
-
-    // Escape text for FFmpeg
-    const escapedText = content
-      .replace(/\\/g, '\\\\')
-      .replace(/'/g, "\\'")
-      .replace(/:/g, '\\:')
-      .replace(/\n/g, '\\n');
-
-    // Create a transparent canvas for the text layer with specified duration to prevent infinite streams
-    const textLayerLabel = `txt${i}`;
-    let textLayerFilter = `color=s=${videoDimensions.width}x${videoDimensions.height}:c=black@0.0:d=${totalDuration},format=rgba`;
-    
-    // Build drawtext filter
-    textLayerFilter += `,drawtext=text='${escapedText}'`;
-    
-    // Use the dynamic font path with proper escaping for FFmpeg filter syntax
-    const escapedFontPath = escapePathForFilter(fontPath);
-    textLayerFilter += `:fontfile='${escapedFontPath}'`;
-    
-    textLayerFilter += `:fontsize=${scaledFontSize}`;
-    textLayerFilter += `:fontcolor=${fillColorData.color}@${opacity}`;
-    
-    // Handle x,y as either numbers or expressions
-    if (typeof pixelX === 'string') {
-      textLayerFilter += `:x='${pixelX}'`;
-    } else {
-      textLayerFilter += `:x=${pixelX}`;
-    }
-    
-    if (typeof pixelY === 'string') {
-      textLayerFilter += `:y='${pixelY}'`;
-    } else {
-      textLayerFilter += `:y=${pixelY}`;
-    }
-    
-    // Add border/stroke if specified (scale border width with text scale)
-    if (style.strokeColor && style.strokeColor !== 'transparent') {
-      const scaledBorderWidth = Math.max(1, Math.round(2 * transform.scale));
-      textLayerFilter += `:borderw=${scaledBorderWidth}`;
-      textLayerFilter += `:bordercolor=${strokeColorData.color}@${strokeColorData.alpha}`;
-    }
-
-    // Add background box if specified (scale box border with text scale)
-    if (style.backgroundColor && style.backgroundColor !== 'transparent' && !style.backgroundColor.includes('rgba(0, 0, 0, 0)')) {
-      const scaledBoxBorder = Math.max(1, Math.round(5 * transform.scale));
-      textLayerFilter += `:box=1`;
-      textLayerFilter += `:boxcolor=${bgColorData.color}@${bgColorData.alpha}`;
-      textLayerFilter += `:boxborderw=${scaledBoxBorder}`;
-    }
-
-    // Add shadow if specified
-    if (style.hasShadow) {
-      textLayerFilter += `:shadowx=2`;
-      textLayerFilter += `:shadowy=2`;
-      textLayerFilter += `:shadowcolor=black@0.5`;
-    }
-
-    // Add timing enable expression to drawtext
-    textLayerFilter += `:enable='between(t,${startTime},${endTime})'`;
-    
-    // Output to text layer label
-    textLayerFilter += `[${textLayerLabel}]`;
-    filterChain.push(textLayerFilter);
-
-    // Apply rotation if needed
-    let finalTextLabel = textLayerLabel;
-    
-    if (hasRotation) {
-      const rotationRadians = (transform.rotation * Math.PI) / 180;
-      const rotatedLabel = `${textLayerLabel}_rot`;
-      
-      // Apply rotate filter with transparent background
-      // Rotate around canvas center (text is already centered on canvas)
-      const rotateFilter = `[${textLayerLabel}]rotate=angle=${rotationRadians}:c=none:ow=${videoDimensions.width}:oh=${videoDimensions.height}[${rotatedLabel}]`;
-      filterChain.push(rotateFilter);
-      
-      finalTextLabel = rotatedLabel;
-      console.log(`🔄 Applied rotation ${transform.rotation}° (${rotationRadians.toFixed(6)} rad) with fixed dimensions ${videoDimensions.width}x${videoDimensions.height} for text layer ${textLayerLabel}`);
-    }
-
-    // Store the final text layer label for overlay with position offsets
-    textLayers.push({
-      label: finalTextLabel,
-      startTime,
-      endTime,
-      offsetX: hasRotation ? offsetX : 0,
-      offsetY: hasRotation ? offsetY : 0,
-    });
-
-    console.log(`📝 Generated text layer [${finalTextLabel}] for "${content}": ${startTime}s - ${endTime}s`);
-  }
-
-  // Now create overlay chain
-  // Start with the input video and overlay each text layer
-  let currentLabel = inputLabel;
-  
-  for (let i = 0; i < textLayers.length; i++) {
-    const layer = textLayers[i];
-    const nextLabel = i === textLayers.length - 1 ? outputLabel : `overlay${i}`;
-    
-    // Overlay the text layer on the current video
-    // For rotated text, apply the position offset; for non-rotated text, it's already positioned
-    const overlayX = layer.offsetX;
-    const overlayY = layer.offsetY;
-    const overlayFilter = `[${currentLabel}][${layer.label}]overlay=x=${overlayX}:y=${overlayY}:enable='between(t,${layer.startTime},${layer.endTime})'[${nextLabel}]`;
-    filterChain.push(overlayFilter);
-    
-    currentLabel = nextLabel;
-  }
-
-  const result = filterChain.join(';');
-  console.log('🎨 Final text filter chain:', result);
-  return result;
-}
-
-/**
- * Parse color from hex/rgba format to FFmpeg format
- * Returns object with color and alpha for proper FFmpeg formatting
- */
-function parseColorForFFmpeg(color: string): { color: string; alpha: number } {
-  // Handle hex colors
-  if (color.startsWith('#')) {
-    return { color, alpha: 1.0 }; // FFmpeg supports hex colors directly
-  }
-
-  // Handle rgba colors
-  const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-  if (rgbaMatch) {
-    const [, r, g, b, a] = rgbaMatch;
-    // Convert to hex
-    const hexR = parseInt(r).toString(16).padStart(2, '0');
-    const hexG = parseInt(g).toString(16).padStart(2, '0');
-    const hexB = parseInt(b).toString(16).padStart(2, '0');
-    const alpha = a !== undefined ? parseFloat(a) : 1.0;
-    return { color: `#${hexR}${hexG}${hexB}`, alpha };
-  }
-
-  // Default to white
-  return { color: '#FFFFFF', alpha: 1.0 };
-}
+// NOTE: Text clip rendering has been moved to subtitleExporter.ts
+// Text clips are now processed as subtitle segments with ASS format
 
 /**
  * Builds image overlay filters with time-based enable/disable
@@ -1652,7 +1424,6 @@ function buildSeparateTimelineFilterComplex(
   const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
 
   console.log('🎬 Building filter complex with multi-layer support:');
-  console.log('📝 Text clips in job:', job.textClips?.length || 0);
   console.log(`📊 Video layers: ${videoLayers.size}, Image layers: ${imageLayers.size}`);
 
   // Collect all image segments for overlay processing (images are NOT concatenated like video)
@@ -1833,6 +1604,7 @@ function buildSeparateTimelineFilterComplex(
   }
 
   // Apply subtitles to video stream if needed (must be in filter_complex)
+  // Note: Text clips are now bundled with subtitles in ASS format
   let subtitleFilter = '';
   
   if (job.operations.subtitles && hasVideoContent) {
@@ -1849,74 +1621,23 @@ function buildSeparateTimelineFilterComplex(
     
     if (fileExtension === 'ass' || fileExtension === 'ssa') {
       // Use 'subtitles' filter for ASS files with fontsdir parameter
-      subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'${fontsDirParam}[video_subtitled]`;
-      console.log('📝 Added ASS subtitles filter with fontsdir');
+      subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'${fontsDirParam}[video]`;
+      console.log('📝 Added ASS subtitles filter (includes text clips) with fontsdir');
     } else {
       // Use 'subtitles' filter for other formats
-      subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'${fontsDirParam}[video_subtitled]`;
+      subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'${fontsDirParam}[video]`;
       console.log(`📝 Added subtitles filter (format: ${fileExtension})`);
     }
-    currentVideoLabel = 'video_subtitled';
-  }
-
-  // Apply text clips using drawtext filters (separate from subtitles)
-  let textClipFilter = '';
-  console.log('🔍 Text clip check:', {
-    hasTextClips: !!job.textClips,
-    textClipsLength: job.textClips?.length || 0,
-    hasVideoContent,
-    currentVideoLabel,
-  });
-  
-  if (job.textClips && job.textClips.length > 0 && hasVideoContent) {
-    // Calculate total duration from all layers
-    let totalDuration = audioTimeline.totalDuration;
-    for (const timeline of videoLayers.values()) {
-      totalDuration = Math.max(totalDuration, timeline.totalDuration);
-    }
-    for (const timeline of imageLayers.values()) {
-      totalDuration = Math.max(totalDuration, timeline.totalDuration);
-    }
-    
-    console.log('📝 Generating drawtext filters for text clips:', {
-      count: job.textClips.length,
-      fps: targetFps,
-      dimensions: targetDimensions,
-      totalDuration,
-      inputLabel: currentVideoLabel,
-    });
-    
-    const drawtextFilters = generateDrawtextFilters(
-      job.textClips, 
-      targetFps, 
-      targetDimensions,
-      totalDuration,
-      currentVideoLabel,
-      'video'
-    );
-    
-    console.log('📝 Generated drawtext filters:', drawtextFilters);
-    
-    if (drawtextFilters) {
-      textClipFilter = drawtextFilters;
-      console.log(`✅ Added ${job.textClips.length} text clip layers with rotation support to filter_complex`);
-    } else {
-      // No valid drawtext filters, just pass through
-      textClipFilter = `[${currentVideoLabel}]null[video]`;
-      console.log('⚠️ No valid drawtext filters generated, using null passthrough');
-    }
   } else if (hasVideoContent) {
-    // No text clips - just rename current label to video
-    textClipFilter = `[${currentVideoLabel}]null[video]`;
-    console.log('ℹ️ No text clips, using null passthrough');
+    // No subtitles - just rename current label to video
+    subtitleFilter = `[${currentVideoLabel}]null[video]`;
+    console.log('ℹ️ No subtitles, using null passthrough');
   }
 
   // Combine all filters
   const allFilters = [...videoFilters, ...audioFilters];
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
   if (subtitleFilter) allFilters.push(subtitleFilter);
-  if (textClipFilter) allFilters.push(textClipFilter);
-
   const filterComplex = allFilters.join(';');
 
   return filterComplex;
@@ -2080,19 +1801,6 @@ function handleTimelineProcessing(
     ),
   );
 
-  // Log text clips if present
-  if (job.textClips && job.textClips.length > 0) {
-    console.log('📝 Text Clips:');
-    job.textClips.forEach((clip, index) => {
-      const startTime = clip.startFrame / targetFrameRate;
-      const endTime = clip.endFrame / targetFrameRate;
-      console.log(
-        `  ${index + 1}. "${clip.content}" [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s] (${clip.type}) - pos: (${clip.transform.x.toFixed(2)}, ${clip.transform.y.toFixed(2)}), scale: ${clip.transform.scale}, rotation: ${clip.transform.rotation}°`,
-      );
-    });
-  } else {
-    console.log('📝 No text clips in this job');
-  }
 
   // Categorize inputs for file indexing
   const categorizedInputs = categorizeInputs(job.inputs);
