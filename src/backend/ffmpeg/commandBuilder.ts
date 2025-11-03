@@ -1143,12 +1143,10 @@ function findFileIndexForSegment(
   return undefined;
 }
 
-// NOTE: Text clip rendering has been moved to subtitleExporter.ts
-// Text clips are now processed as subtitle segments with ASS format
-
 /**
  * Builds image overlay filters with time-based enable/disable
  * Images are only rendered during their timeline presence, not rendered at all outside
+ * Supports transform settings: position (x, y), scale, and rotation
  */
 function buildImageOverlayFilters(
   imageSegments: ProcessedTimelineSegment[],
@@ -1178,12 +1176,32 @@ function buildImageOverlayFilters(
     
     console.log(`🖼️ Processing image overlay ${index}: ${trackInfo.path} [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s]`);
     
-    // Prepare the image: maintain original dimensions, no scaling
+    // Get transform settings (default to centered, no rotation, 100% scale)
+    const transform = trackInfo.imageTransform || {
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      width: trackInfo.width || targetDimensions.width,
+      height: trackInfo.height || targetDimensions.height,
+    };
+    
+    // Log transform settings
+    if (trackInfo.imageTransform) {
+      console.log(
+        `🎨 Image transform: pos=(${transform.x.toFixed(2)}, ${transform.y.toFixed(2)}), ` +
+        `scale=${transform.scale.toFixed(2)}, rotation=${transform.rotation.toFixed(1)}°, ` +
+        `size=${transform.width}x${transform.height}`
+      );
+    }
+    
     const imageInputRef = `[${fileIndex}:v]`;
     const imagePreparedRef = `[img${index}_prepared]`;
+    const imageScaledRef = `[img${index}_scaled]`;
+    const imageRotatedRef = `[img${index}_rotated]`;
     const overlayOutputRef = index === imageSegments.length - 1 ? `[video_with_images]` : `[overlay${index}]`;
     
-    // Step 1: Prepare image with original dimensions (no scaling)
+    // Step 1: Prepare image - trim to duration and reset timestamps
     // Static images don't need loop filter - trim alone will hold the frame for the duration
     // Add transparent padding at the start to align with timeline position
     filters.push(
@@ -1191,16 +1209,71 @@ function buildImageOverlayFilters(
       `tpad=start_duration=${startTime}:start_mode=add:color=black@0.0${imagePreparedRef}`
     );
     
-    // Step 2: Overlay the image onto the current video with time-based enable, centered
+    // Step 2: Apply scaling if needed
+    // Calculate scaled dimensions based on transform.scale
+    const scaledWidth = Math.round(transform.width * transform.scale);
+    const scaledHeight = Math.round(transform.height * transform.scale);
+    
+    let currentImageRef = imagePreparedRef;
+    let currentWidth = transform.width;
+    let currentHeight = transform.height;
+    
+    if (transform.scale !== 1.0) {
+      filters.push(
+        `${imagePreparedRef}scale=${scaledWidth}:${scaledHeight}${imageScaledRef}`
+      );
+      currentImageRef = imageScaledRef;
+      currentWidth = scaledWidth;
+      currentHeight = scaledHeight;
+      console.log(`📐 Scaled image to ${scaledWidth}x${scaledHeight} (scale factor: ${transform.scale.toFixed(2)})`);
+    }
+    
+    // Step 3: Apply rotation if needed
+    if (transform.rotation !== 0) {
+      const rotationRadians = (transform.rotation * Math.PI) / 180;
+      
+      // Calculate the bounding box size after rotation to prevent cropping
+      // When an image is rotated, its bounding box expands
+      // Formula: newWidth = |w*cos(θ)| + |h*sin(θ)|, newHeight = |w*sin(θ)| + |h*cos(θ)|
+      const absRotation = Math.abs(transform.rotation * Math.PI / 180);
+      const cosTheta = Math.abs(Math.cos(absRotation));
+      const sinTheta = Math.abs(Math.sin(absRotation));
+      const rotatedWidth = Math.ceil(currentWidth * cosTheta + currentHeight * sinTheta);
+      const rotatedHeight = Math.ceil(currentWidth * sinTheta + currentHeight * cosTheta);
+      
+      filters.push(
+        `${currentImageRef}rotate=${rotationRadians}:out_w=${rotatedWidth}:out_h=${rotatedHeight}:fillcolor=none${imageRotatedRef}`
+      );
+      currentImageRef = imageRotatedRef;
+      currentWidth = rotatedWidth;
+      currentHeight = rotatedHeight;
+      console.log(
+        `🔄 Rotated image by ${transform.rotation.toFixed(1)}° (clockwise) → ${rotationRadians.toFixed(3)} rad\n` +
+        `   Expanded canvas from ${scaledWidth}x${scaledHeight} to ${rotatedWidth}x${rotatedHeight} to prevent cropping`
+      );
+    }
+    
+    // Step 4: Calculate overlay position
+    
+    const overlayX = transform.x >= 0 
+      ? `(W-w)/2+${transform.x}*W/2`
+      : `(W-w)/2${transform.x}*W/2`; // Negative sign already in value
+    const overlayY = transform.y >= 0
+      ? `(H-h)/2-${transform.y}*H/2` // Subtract because positive y should move up
+      : `(H-h)/2-${transform.y}*H/2`; // Double negative becomes addition
+    
+    // Step 5: Overlay the image onto the current video with time-based enable
     // The overlay is only active between startTime and endTime
-    // Use (W-w)/2:(H-h)/2 to center the image on the video (W=video width, w=image width)
     filters.push(
-      `[${currentLabel}]${imagePreparedRef}overlay=(W-w)/2:(H-h)/2:enable='between(t,${startTime},${endTime})'${overlayOutputRef}`
+      `[${currentLabel}]${currentImageRef}overlay=${overlayX}:${overlayY}:enable='between(t,${startTime},${endTime})'${overlayOutputRef}`
     );
     
     currentLabel = overlayOutputRef.replace('[', '').replace(']', '');
     
-    console.log(`✅ Image overlay ${index} enabled only between ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s`);
+    console.log(
+      `✅ Image overlay ${index} at position (${transform.x.toFixed(2)}, ${transform.y.toFixed(2)}) ` +
+      `enabled between ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s`
+    );
   });
   
   return {
