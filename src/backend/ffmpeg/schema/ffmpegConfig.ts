@@ -1,3 +1,12 @@
+export interface ImageTransform {
+  x: number; // Normalized position (-1 to 1)
+  y: number; // Normalized position (-1 to 1)
+  scale: number; // Scale factor
+  rotation: number; // Rotation in degrees
+  width: number; // Width in pixels (base width before scale)
+  height: number; // Height in pixels (base height before scale)
+}
+
 export interface TrackInfo {
   path: string;
   audioPath?: string;
@@ -15,6 +24,7 @@ export interface TrackInfo {
   height?: number;
   isImage?: boolean; // Internal flag to mark image layers for overlay processing
   layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
+  imageTransform?: ImageTransform; // Transform data for image overlays (position, rotation, scale)
 }
 
 export interface TextStyleConfig {

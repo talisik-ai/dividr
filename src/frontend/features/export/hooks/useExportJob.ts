@@ -9,7 +9,6 @@ import {
   VideoTrack,
 } from '../../editor/stores/videoEditor/index';
 import { generateSubtitleContent } from '../utils/subtitleUtils';
-import { generateTextClipContent } from '../utils/textClipUtils';
 
 export const useExportJob = () => {
   const tracks = useVideoEditorStore((state) => state.tracks);
@@ -112,21 +111,25 @@ export const useExportJob = () => {
       );
 
       // Calculate the earliest start frame across all tracks (for subtitle time offset)
-      const timelineStartFrame = sortedTracks.length > 0
-        ? Math.min(...sortedTracks.map((t) => t.startFrame))
-        : 0;
-      
-      console.log(`📍 Export timeline starts at frame ${timelineStartFrame} (${(timelineStartFrame / timelineFps).toFixed(3)}s)`);
+      const timelineStartFrame =
+        sortedTracks.length > 0
+          ? Math.min(...sortedTracks.map((t) => t.startFrame))
+          : 0;
+
+      console.log(
+        `📍 Export timeline starts at frame ${timelineStartFrame} (${(timelineStartFrame / timelineFps).toFixed(3)}s)`,
+      );
 
       // Generate subtitle content (now includes text clips bundled together)
-      const { subtitleContent, currentTextStyle, fontFamilies } = generateSubtitleContent(
-        subtitleTracks,
-        textTracks, // Pass text tracks to be bundled with subtitles
-        textStyle,
-        getTextStyleForSubtitle,
-        videoDimensions,
-        timelineStartFrame, // Pass start frame for time offset adjustment
-      );
+      const { subtitleContent, currentTextStyle, fontFamilies } =
+        generateSubtitleContent(
+          subtitleTracks,
+          textTracks, // Pass text tracks to be bundled with subtitles
+          textStyle,
+          getTextStyleForSubtitle,
+          videoDimensions,
+          timelineStartFrame, // Pass start frame for time offset adjustment
+        );
 
       return {
         inputs: trackInfos,
@@ -145,7 +148,10 @@ export const useExportJob = () => {
           preferHEVC: false, // Use H.264 (set to true for H.265/HEVC)
         },
         subtitleContent, // Now includes both subtitles and text clips
-        subtitleFormat: (subtitleTracks.length > 0 || textTracks.length > 0) ? 'ass' : undefined,
+        subtitleFormat:
+          subtitleTracks.length > 0 || textTracks.length > 0
+            ? 'ass'
+            : undefined,
         subtitleFontFamilies: fontFamilies, // Pass font families, main process will resolve paths
         videoDimensions,
         // textClips and textClipsContent removed - now bundled with subtitles
@@ -289,6 +295,21 @@ function convertTracksToFFmpegInputs(
       width: track.width,
       height: track.height,
     };
+
+    // Add image transform for image tracks
+    if (track.type === 'image' && track.textTransform) {
+      trackInfo.imageTransform = {
+        x: track.textTransform.x,
+        y: track.textTransform.y,
+        scale: track.textTransform.scale,
+        rotation: track.textTransform.rotation,
+        width: track.textTransform.width,
+        height: track.textTransform.height,
+      };
+      console.log(
+        `🎨 Image transform for "${track.name}": pos=(${track.textTransform.x.toFixed(2)}, ${track.textTransform.y.toFixed(2)}), scale=${track.textTransform.scale.toFixed(2)}, rotation=${track.textTransform.rotation.toFixed(1)}°`,
+      );
+    }
 
     return trackInfo;
   });
