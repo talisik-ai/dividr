@@ -37,8 +37,11 @@ export interface SubtitleSegment {
   position?: {
     x?: number; // X coordinate (0-1 normalized, or pixel value if > 1)
     y?: number; // Y coordinate (0-1 normalized, or pixel value if > 1)
-    rotation?: number; // Rotation angle in degrees (clockwise)
+    rotation?: number; // Rotation angle in degrees (UI convention: clockwise)
+                       // Positive = clockwise, negative = counter-clockwise
+                       // Note: Negated when converted to ASS \frz tag (which uses counter-clockwise)
   };
+  isTextClip?: boolean; // Flag to identify text clips vs subtitles
 }
 
 export interface TextStyleOptions {
@@ -148,6 +151,7 @@ export function extractSubtitleSegments(
       text: track.subtitleText || '',
       index: index + 1,
       style: segmentStyle,
+      isTextClip: false,
     };
   });
 
@@ -157,6 +161,76 @@ export function extractSubtitleSegments(
   // Re-index after sorting
   segments.forEach((segment, index) => {
     segment.index = index + 1;
+  });
+
+  return segments;
+}
+
+/**
+ * Converts TextClipData to SubtitleSegment format
+ * This allows textclips to be processed alongside subtitles using ASS format
+ * 
+ * Transform handling:
+ * - Position: Converts from normalized coordinates [-1,1] (center=0) to [0,1] (center=0.5)
+ * - Rotation: Preserves rotation angle in degrees (clockwise)
+ * - Scale: Not directly supported in ASS subtitles (handled via font size)
+ */
+export function convertTextClipsToSubtitleSegments(
+  textClips: any[], // TextClipData[] from backend schema
+  fps: number,
+): SubtitleSegment[] {
+  if (!textClips || textClips.length === 0) {
+    return [];
+  }
+
+  const segments: SubtitleSegment[] = textClips.map((clip, index) => {
+    // Convert frames to seconds
+    const startTime = clip.startFrame / fps;
+    const endTime = clip.endFrame / fps;
+
+    // Convert TextClipStyle to TextStyleOptions
+    const style: TextStyleOptions = {
+      fontFamily: clip.style.fontFamily,
+      fontWeight: clip.style.isBold ? '700' : (clip.style.fontWeight || '400'),
+      fontStyle: clip.style.isItalic ? 'italic' : (clip.style.fontStyle || 'normal'),
+      isUnderline: clip.style.isUnderline,
+      textTransform: clip.style.textTransform,
+      textDecoration: clip.style.isUnderline ? 'underline' : undefined,
+      fontSize: clip.style.fontSize ? `${clip.style.fontSize}px` : undefined,
+      color: clip.style.fillColor,
+      strokeColor: clip.style.strokeColor,
+      backgroundColor: clip.style.backgroundColor,
+      hasShadow: clip.style.hasShadow,
+      hasGlow: clip.style.hasGlow,
+      opacity: clip.style.opacity,
+      letterSpacing: clip.style.letterSpacing ? `${clip.style.letterSpacing}px` : undefined,
+      lineHeight: clip.style.lineSpacing,
+      textAlign: clip.style.textAlign,
+    };
+
+    // Convert transform to position
+    // TextClip transform uses normalized coordinates (-1 to 1, where 0 is center)
+    // We need to convert to ASS coordinates (0-1, where 0.5 is center)
+    // Rotation is preserved as-is (degrees, clockwise)
+    const position = {
+      x: (clip.transform.x + 1) / 2, // Convert from [-1,1] to [0,1]
+      y: (clip.transform.y + 1) / 2, // Convert from [-1,1] to [0,1]
+      rotation: clip.transform.rotation || 0, // Degrees, clockwise (same as CSS)
+    };
+
+    console.log(
+      `[Export] Converting text clip "${clip.content}" to subtitle segment: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s, position: (${position.x.toFixed(3)}, ${position.y.toFixed(3)}), rotation: ${position.rotation}°`,
+    );
+
+    return {
+      startTime,
+      endTime,
+      text: clip.content,
+      index: index + 1,
+      style,
+      position,
+      isTextClip: true,
+    };
   });
 
   return segments;
@@ -555,6 +629,10 @@ export function generateASSContent(
 
   console.log(`📝 Generated ${styleMap.size} unique styles for ${segments.length} segments`);
 
+  // Calculate layer offsets to avoid conflicts when subtitles overlap
+  const layerOffsets = calculateLayerOffsets(segments);
+  console.log(`🎬 Calculated layer offsets for ${segments.length} segments to avoid overlap conflicts`);
+
   // Collect unique font families used in all styles
   const usedFontFamilies = new Set<string>();
   styleMap.forEach(({ params }) => {
@@ -616,6 +694,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const computedParams = computeASSStyleParams(mergedStyle, videoDimensions);
       const styleKey = createStyleKey(computedParams);
       const styleParams = styleMap.get(styleKey)?.params;
+      const layerOffset = layerOffsets[index];
 
       // Apply text transformations if specified
       let text = segment.text;
@@ -623,33 +702,33 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         text = applyTextTransform(text, mergedStyle.textTransform);
       }
 
-      // Convert newlines to ASS format
-      text = text.replace(/\n/g, '\\N');
+      // Convert newlines to ASS format and clean up trailing newlines
+      text = text.replace(/\n/g, '\\N').replace(/\\N\s*$/, '');
 
       // Generate position tags if custom position is specified
       const positionTags = generatePositionTags(segment.position, videoDimensions);
 
       // Handle glow effect with multi-layer rendering
       if (styleParams?.hasGlow) {
-        return generateGlowLayers(segment, text, styleName, mergedStyle, styleParams, startTime, endTime, videoDimensions);
+        return generateGlowLayers(segment, text, styleName, mergedStyle, styleParams, startTime, endTime, videoDimensions, layerOffset);
       }
 
       // Simple rendering without glow
       if (styleParams?.hasBackground && styleParams?.hasOutline) {
         // Double-layer: background + outlined text
         const { xbord, ybord } = calculateBackgroundBoxDimensions(styleParams.outlineWidth);
-        const backgroundLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
-        const textLayer = `Dialogue: 1,${startTime},${endTime},${styleName}Outline,,0,0,0,,${positionTags}${text}`;
+        const backgroundLayer = `Dialogue: ${layerOffset},${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
+        const textLayer = `Dialogue: ${layerOffset + 1},${startTime},${endTime},${styleName}Outline,,0,0,0,,${positionTags}${text}`;
         return `${backgroundLayer}\n${textLayer}`;
       }
 
       // For backgrounds without outline, also adjust box dimensions
       if (styleParams?.hasBackground) {
         const { xbord, ybord } = calculateBackgroundBoxDimensions(styleParams.outlineWidth);
-        return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
+        return `Dialogue: ${layerOffset},${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
       }
 
-      return `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${text}`;
+      return `Dialogue: ${layerOffset},${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${text}`;
     })
     .join('\n');
 
@@ -657,6 +736,48 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const fontFamilies = Array.from(usedFontFamilies);
   
   return { content, fontFamilies };
+}
+
+/**
+ * Calculates layer offsets for segments to avoid conflicts when they overlap in time
+ * Returns an array of layer offsets (one per segment)
+ */
+function calculateLayerOffsets(segments: SubtitleSegment[]): number[] {
+  const layerOffsets: number[] = new Array(segments.length).fill(0);
+  
+  // For each segment, check if it overlaps with any previous segments
+  for (let i = 0; i < segments.length; i++) {
+    const currentSegment = segments[i];
+    const overlappingSegments: number[] = [];
+    
+    // Find all segments that overlap with the current one
+    for (let j = 0; j < i; j++) {
+      const otherSegment = segments[j];
+      
+      // Check if segments overlap in time
+      const overlaps = 
+        (currentSegment.startTime < otherSegment.endTime) &&
+        (currentSegment.endTime > otherSegment.startTime);
+      
+      if (overlaps) {
+        overlappingSegments.push(j);
+      }
+    }
+    
+    // If there are overlapping segments, assign a layer offset that doesn't conflict
+    if (overlappingSegments.length > 0) {
+      // Find the maximum layer offset used by overlapping segments
+      const maxLayerOffset = Math.max(...overlappingSegments.map(idx => layerOffsets[idx]));
+      // Assign the next available layer offset (each segment can use up to 3 layers for glow effect)
+      layerOffsets[i] = maxLayerOffset + 3;
+      
+      console.log(
+        `  Segment ${i} "${currentSegment.text.substring(0, 20)}" overlaps with ${overlappingSegments.length} segments, assigned layer offset ${layerOffsets[i]}`
+      );
+    }
+  }
+  
+  return layerOffsets;
 }
 
 /**
@@ -689,6 +810,21 @@ function convertToASSCoordinate(value: number, resolution: number): number {
  * @param position - Position object with x, y, and rotation
  * @param videoDimensions - Video dimensions for coordinate conversion
  * @returns ASS override tags string (empty if no position specified)
+ * 
+ * Transform handling:
+ * - Position: Converts normalized coordinates (0-1) to pixel coordinates
+ * - Rotation: Converts from UI clockwise to ASS counter-clockwise (negated)
+ * - Alignment: Sets center alignment (5) when using custom position for proper rotation pivot
+ * 
+ * ASS rotation convention:
+ * - ASS uses counter-clockwise rotation (mathematical convention)
+ * - Our UI uses clockwise rotation (CSS convention)
+ * - We negate the rotation value to convert between conventions
+ * 
+ * ASS rotation tags:
+ * - \frz<angle>: Rotation around Z axis (2D rotation, counter-clockwise in ASS)
+ * - \frx<angle>: Rotation around X axis (3D rotation, pitch)
+ * - \fry<angle>: Rotation around Y axis (3D rotation, yaw)
  */
 function generatePositionTags(
   position?: SubtitleSegment['position'],
@@ -720,9 +856,19 @@ function generatePositionTags(
   }
 
   // Add rotation if specified
+  // Note: ASS uses counter-clockwise rotation (mathematical convention)
+  // But our UI uses clockwise rotation (CSS convention), so we need to negate
   if (position.rotation !== undefined && position.rotation !== 0) {
+    // Negate rotation to convert from clockwise (UI) to counter-clockwise (ASS)
+    // Round to 2 decimal places to avoid floating point precision issues
+    const assRotation = -Math.round(position.rotation * 100) / 100;
+    
     // \frz<angle> - rotation around Z axis (2D rotation)
-    tags.push(`\\frz${position.rotation}`);
+    // In ASS: Positive = counter-clockwise, Negative = clockwise
+    // We negate our clockwise rotation to match ASS convention
+    tags.push(`\\frz${assRotation}`);
+    
+    console.log(`🔄 Applied rotation: ${position.rotation}° (UI clockwise) → ${assRotation}° (ASS counter-clockwise) at position (${position.x?.toFixed(3)}, ${position.y?.toFixed(3)})`);
   }
 
   return tags.length > 0 ? `{${tags.join('')}}` : '';
@@ -740,6 +886,7 @@ function generateGlowLayers(
   startTime: string,
   endTime: string,
   videoDimensions?: { width: number; height: number },
+  layerOffset: number = 0,
 ): string {
   const layers: string[] = [];
   
@@ -750,7 +897,7 @@ function generateGlowLayers(
   const glowColor = style?.color || '#FFFFFF';
   const glowColorASS = convertColorToASS(glowColor, style?.opacity);
   
-  // Layer 0: Blurred glow/shadow layer (furthest back)
+  // Layer 0 + offset: Blurred glow/shadow layer (furthest back)
   const glowBlurAmount = (params.glowIntensity || 2) + 10;
   const glowOverrides: string[] = [];
   glowOverrides.push(`\\blur${glowBlurAmount}`);
@@ -761,29 +908,29 @@ function generateGlowLayers(
   glowOverrides.push('\\shad0');
   
   const glowTags = `{${glowOverrides.join('')}}`;
-  const glowLayer = `Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${glowTags}${text}`;
+  const glowLayer = `Dialogue: ${layerOffset},${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${glowTags}${text}`;
   layers.push(glowLayer);
   
   if (params.hasBackground && params.hasOutline) {
     // Triple-layer: glow + background + outlined text
     const { xbord, ybord } = calculateBackgroundBoxDimensions(params.outlineWidth);
-    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
+    const backgroundLayer = `Dialogue: ${layerOffset + 1},${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
     layers.push(backgroundLayer);
     
-    const textLayer = `Dialogue: 2,${startTime},${endTime},${styleName}Outline,,0,0,0,,${positionTags}${text}`;
+    const textLayer = `Dialogue: ${layerOffset + 2},${startTime},${endTime},${styleName}Outline,,0,0,0,,${positionTags}${text}`;
     layers.push(textLayer);
     
     console.log('✨ Triple-layer mode: glow + background + outlined text');
   } else if (params.hasBackground) {
     // Double-layer: glow + background (no outline)
     const { xbord, ybord } = calculateBackgroundBoxDimensions(params.outlineWidth);
-    const backgroundLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
+    const backgroundLayer = `Dialogue: ${layerOffset + 1},${startTime},${endTime},${styleName},,0,0,0,,${positionTags}{\\xbord${xbord}\\ybord${ybord}}${text}`;
     layers.push(backgroundLayer);
     
     console.log('✨ Double-layer mode: glow + background');
   } else {
     // Double-layer: glow + text (no background)
-    const mainLayer = `Dialogue: 1,${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${text}`;
+    const mainLayer = `Dialogue: ${layerOffset + 1},${startTime},${endTime},${styleName},,0,0,0,,${positionTags}${text}`;
     layers.push(mainLayer);
     
     console.log('✨ Double-layer mode: glow + text');

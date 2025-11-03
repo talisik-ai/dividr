@@ -28,106 +28,106 @@ export const FONT_MAPPINGS: Record<string, FontMapping> = {
   Cormorant: {
     family: 'Cormorant',
     variants: {
-      light: 'Cormorant/Cormorant-Light.ttf',
-      regular: 'Cormorant/Cormorant-Regular.ttf',
-      medium: 'Cormorant/Cormorant-Medium.ttf',
-      semibold: 'Cormorant/Cormorant-SemiBold.ttf',
-      bold: 'Cormorant/Cormorant-Bold.ttf',
-      italic: 'Cormorant/Cormorant-Italic.ttf',
-      boldItalic: 'Cormorant/Cormorant-BoldItalic.ttf',
+      light: 'Cormorant-Light.ttf',
+      regular: 'Cormorant-Regular.ttf',
+      medium: 'Cormorant-Medium.ttf',
+      semibold: 'Cormorant-SemiBold.ttf',
+      bold: 'Cormorant-Bold.ttf',
+      italic: 'Cormorant-Italic.ttf',
+      boldItalic: 'Cormorant-BoldItalic.ttf',
     },
   },
   Inter: {
     family: 'Inter',
     variants: {
-      light: 'Inter/Inter_18pt-Light.ttf',
-      regular: 'Inter/Inter_18pt-Regular.ttf',
-      medium: 'Inter/Inter_18pt-Medium.ttf',
-      semibold: 'Inter/Inter_18pt-SemiBold.ttf',
-      bold: 'Inter/Inter_18pt-Bold.ttf',
-      black: 'Inter/Inter_18pt-Black.ttf',
-      italic: 'Inter/Inter_18pt-Italic.ttf',
-      boldItalic: 'Inter/Inter_18pt-BoldItalic.ttf',
+      light: 'Inter_18pt-Light.ttf',
+      regular: 'Inter_18pt-Regular.ttf',
+      medium: 'Inter_18pt-Medium.ttf',
+      semibold: 'Inter_18pt-SemiBold.ttf',
+      bold: 'Inter_18pt-Bold.ttf',
+      black: 'Inter_18pt-Black.ttf',
+      italic: 'Inter_18pt-Italic.ttf',
+      boldItalic: 'Inter_18pt-BoldItalic.ttf',
     },
   },
   Lato: {
     family: 'Lato',
     variants: {
-      light: 'Lato/Lato-Light.ttf',
-      regular: 'Lato/Lato-Regular.ttf',
-      bold: 'Lato/Lato-Bold.ttf',
-      black: 'Lato/Lato-Black.ttf',
-      italic: 'Lato/Lato-Italic.ttf',
-      boldItalic: 'Lato/Lato-BoldItalic.ttf',
+      light: 'Lato-Light.ttf',
+      regular: 'Lato-Regular.ttf',
+      bold: 'Lato-Bold.ttf',
+      black: 'Lato-Black.ttf',
+      italic: 'Lato-Italic.ttf',
+      boldItalic: 'Lato-BoldItalic.ttf',
     },
   },
   'Libre Baskerville': {
     family: 'Libre Baskerville',
     variants: {
-      regular: 'Libre_Baskerville/LibreBaskerville-Regular.ttf',
-      bold: 'Libre_Baskerville/LibreBaskerville-Bold.ttf',
-      italic: 'Libre_Baskerville/LibreBaskerville-Italic.ttf',
+      regular: 'LibreBaskerville-Regular.ttf',
+      bold: 'LibreBaskerville-Bold.ttf',
+      italic: 'LibreBaskerville-Italic.ttf',
     },
   },
   Lora: {
     family: 'Lora',
     variants: {
-      regular: 'Lora/Lora-Regular.ttf',
-      medium: 'Lora/Lora-Medium.ttf',
-      semibold: 'Lora/Lora-SemiBold.ttf',
-      bold: 'Lora/Lora-Bold.ttf',
-      italic: 'Lora/Lora-Italic.ttf',
-      boldItalic: 'Lora/Lora-BoldItalic.ttf',
+      regular: 'Lora-Regular.ttf',
+      medium: 'Lora-Medium.ttf',
+      semibold: 'Lora-SemiBold.ttf',
+      bold: 'Lora-Bold.ttf',
+      italic: 'Lora-Italic.ttf',
+      boldItalic: 'Lora-BoldItalic.ttf',
     },
   },
   Montserrat: {
     family: 'Montserrat',
     variants: {
-      light: 'Montserrat/Montserrat-Light.ttf',
-      regular: 'Montserrat/Montserrat-Regular.ttf',
-      medium: 'Montserrat/Montserrat-Medium.ttf',
-      semibold: 'Montserrat/Montserrat-SemiBold.ttf',
-      bold: 'Montserrat/Montserrat-Bold.ttf',
-      black: 'Montserrat/Montserrat-Black.ttf',
-      italic: 'Montserrat/Montserrat-Italic.ttf',
-      boldItalic: 'Montserrat/Montserrat-BoldItalic.ttf',
+      light: 'Montserrat-Light.ttf',
+      regular: 'Montserrat-Regular.ttf',
+      medium: 'Montserrat-Medium.ttf',
+      semibold: 'Montserrat-SemiBold.ttf',
+      bold: 'Montserrat-Bold.ttf',
+      black: 'Montserrat-Black.ttf',
+      italic: 'Montserrat-Italic.ttf',
+      boldItalic: 'Montserrat-BoldItalic.ttf',
     },
   },
   'Playfair Display': {
     family: 'Playfair Display',
     variants: {
-      regular: 'Playfair_Display/PlayfairDisplay-Regular.ttf',
-      medium: 'Playfair_Display/PlayfairDisplay-Medium.ttf',
-      semibold: 'Playfair_Display/PlayfairDisplay-SemiBold.ttf',
-      bold: 'Playfair_Display/PlayfairDisplay-Bold.ttf',
-      black: 'Playfair_Display/PlayfairDisplay-Black.ttf',
-      italic: 'Playfair_Display/PlayfairDisplay-Italic.ttf',
-      boldItalic: 'Playfair_Display/PlayfairDisplay-BoldItalic.ttf',
+      regular: 'PlayfairDisplay-Regular.ttf',
+      medium: 'PlayfairDisplay-Medium.ttf',
+      semibold: 'PlayfairDisplay-SemiBold.ttf',
+      bold: 'PlayfairDisplay-Bold.ttf',
+      black: 'PlayfairDisplay-Black.ttf',
+      italic: 'PlayfairDisplay-Italic.ttf',
+      boldItalic: 'PlayfairDisplay-BoldItalic.ttf',
     },
   },
   Poppins: {
     family: 'Poppins',
     variants: {
-      light: 'Poppins/Poppins-Light.ttf',
-      regular: 'Poppins/Poppins-Regular.ttf',
-      medium: 'Poppins/Poppins-Medium.ttf',
-      semibold: 'Poppins/Poppins-SemiBold.ttf',
-      bold: 'Poppins/Poppins-Bold.ttf',
-      black: 'Poppins/Poppins-Black.ttf',
-      italic: 'Poppins/Poppins-Italic.ttf',
-      boldItalic: 'Poppins/Poppins-BoldItalic.ttf',
+      light: 'Poppins-Light.ttf',
+      regular: 'Poppins-Regular.ttf',
+      medium: 'Poppins-Medium.ttf',
+      semibold: 'Poppins-SemiBold.ttf',
+      bold: 'Poppins-Bold.ttf',
+      black: 'Poppins-Black.ttf',
+      italic: 'Poppins-Italic.ttf',
+      boldItalic: 'Poppins-BoldItalic.ttf',
     },
   },
   Roboto: {
     family: 'Roboto',
     variants: {
-      light: 'Roboto/Roboto-Light.ttf',
-      regular: 'Roboto/Roboto-Regular.ttf',
-      medium: 'Roboto/Roboto-Medium.ttf',
-      bold: 'Roboto/Roboto-Bold.ttf',
-      black: 'Roboto/Roboto-Black.ttf',
-      italic: 'Roboto/Roboto-Italic.ttf',
-      boldItalic: 'Roboto/Roboto-BoldItalic.ttf',
+      light: 'Roboto-Light.ttf',
+      regular: 'Roboto-Regular.ttf',
+      medium: 'Roboto-Medium.ttf',
+      bold: 'Roboto-Bold.ttf',
+      black: 'Roboto-Black.ttf',
+      italic: 'Roboto-Italic.ttf',
+      boldItalic: 'Roboto-BoldItalic.ttf',
     },
   },
   // Fallback to Arial (system font)
@@ -206,14 +206,14 @@ export function getFontPath(
   const fontFile =
     mapping.variants[variant] ||
     mapping.variants.regular ||
-    'Inter/Inter_18pt-Regular.ttf'; // Fallback to Inter regular
+    'Inter_18pt-Regular.ttf'; // Fallback to Inter regular
 
   // If it's a system font (like Arial), return the font name
-  if (!fontFile.includes('/') && !fontFile.includes('.ttf')) {
+  if (!fontFile.includes('.ttf')) {
     return fontFile;
   }
 
-  // Return absolute path
+  // Return absolute path (fonts are now in root directory)
   const fontsDir = getFontsDirectory();
   return path.join(fontsDir, fontFile);
 }
@@ -251,8 +251,9 @@ export function isFontAvailable(fontFamily: string): boolean {
 
 /**
  * Get the directory path for a specific font family
+ * Since all fonts are now in the root fonts/ directory, this returns the fonts directory
  * @param fontFamily - Font family name (e.g., 'Roboto', 'Montserrat')
- * @returns Absolute path to the font family directory
+ * @returns Absolute path to the fonts directory (all fonts are in root now)
  */
 export function getFontFamilyDirectory(fontFamily: string): string | null {
   const cleanFamily = fontFamily.replace(/['"]/g, '').trim();
@@ -262,25 +263,23 @@ export function getFontFamilyDirectory(fontFamily: string): string | null {
     return null;
   }
   
-  // Get any variant to extract the directory path
+  // Get any variant to check if it's a system font
   const variantPath = mapping.variants.regular || Object.values(mapping.variants)[0];
   
-  if (!variantPath || !variantPath.includes('/')) {
+  if (!variantPath || !variantPath.includes('.ttf')) {
     // System font, no directory
     return null;
   }
   
-  // Extract directory from path (e.g., "Montserrat/Montserrat-Regular.ttf" -> "Montserrat")
-  const directory = variantPath.split('/')[0];
-  const fontsDir = getFontsDirectory();
-  
-  return path.join(fontsDir, directory);
+  // All fonts are now in the root fonts directory
+  return getFontsDirectory();
 }
 
 /**
  * Get all font family directories used in a list of font names
+ * Since all fonts are now in the root fonts/ directory, this returns a single directory
  * @param fontFamilies - Array of font family names
- * @returns Array of unique directory paths
+ * @returns Array containing the fonts directory path (all fonts are in root now)
  */
 export function getFontDirectoriesForFamilies(fontFamilies: string[]): string[] {
   const directories = new Set<string>();
@@ -316,7 +315,8 @@ export function getFontPathsForFamilies(fontFamilies: string[]): string[] {
     
     // Get all variants for this font family
     for (const variant of Object.values(mapping.variants)) {
-      if (variant && variant.includes('/') && variant.includes('.ttf')) {
+      if (variant && variant.includes('.ttf')) {
+        // Fonts are now directly in the fonts directory (no subfolders)
         const fontPath = path.join(fontsDir, variant);
         fontPaths.add(fontPath);
       }
