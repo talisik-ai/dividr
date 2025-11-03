@@ -241,8 +241,51 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [tracks, updateTrack],
   );
 
+  // Handle image transform updates
+  const handleImageTransformUpdate = useCallback(
+    (
+      trackId: string,
+      transform: {
+        x?: number;
+        y?: number;
+        scale?: number;
+        rotation?: number;
+        width?: number;
+        height?: number;
+      },
+    ) => {
+      const track = tracks.find((t) => t.id === trackId);
+      if (!track || track.type !== 'image') return;
+
+      const currentTransform = track.textTransform || {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+        width: 0,
+        height: 0,
+      };
+
+      updateTrack(trackId, {
+        textTransform: {
+          ...currentTransform,
+          ...transform,
+        },
+      });
+    },
+    [tracks, updateTrack],
+  );
+
   // Handle text selection
   const handleTextSelect = useCallback(
+    (trackId: string) => {
+      setSelectedTracks([trackId]);
+    },
+    [setSelectedTracks],
+  );
+
+  // Handle image selection
+  const handleImageSelect = useCallback(
     (trackId: string) => {
       setSelectedTracks([trackId]);
     },
@@ -267,12 +310,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         target.classList.contains('preview-background') ||
         target.tagName === 'VIDEO'
       ) {
-        const hasTextSelected = timeline.selectedTrackIds.some((id) => {
+        const hasTextOrImageSelected = timeline.selectedTrackIds.some((id) => {
           const track = tracks.find((t) => t.id === id);
-          return track?.type === 'text';
+          return track?.type === 'text' || track?.type === 'image';
         });
 
-        if (hasTextSelected) {
+        if (hasTextOrImageSelected) {
           setSelectedTracks([]);
         }
       }
@@ -308,9 +351,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     baseVideoHeight,
   };
 
-  // Get rotation for rotation badge
+  // Get rotation for rotation badge (works for both text and image)
   const selectedTextTrack = tracks.find(
-    (t) => t.type === 'text' && timeline.selectedTrackIds.includes(t.id),
+    (t) =>
+      (t.type === 'text' || t.type === 'image') &&
+      timeline.selectedTrackIds.includes(t.id),
   );
 
   return (
@@ -387,6 +432,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         {...overlayProps}
         activeImages={activeImages}
         allTracks={tracks}
+        selectedTrackIds={timeline.selectedTrackIds}
+        onTransformUpdate={handleImageTransformUpdate}
+        onSelect={handleImageSelect}
+        onRotationStateChange={setIsRotating}
+        onDragStateChange={handleDragStateChange}
       />
 
       {/* Text Overlay */}

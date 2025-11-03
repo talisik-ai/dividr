@@ -1,20 +1,40 @@
 import React from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
+import { ImageTransformBoundary } from '../components/ImageTransformBoundary';
 import { OverlayRenderProps } from '../core/types';
 import { getTrackZIndex } from '../utils/trackUtils';
 
 /**
- * Image overlay component - renders all active image tracks
+ * Image overlay component - renders all active image tracks with transform controls
  */
 
 export interface ImageOverlayProps extends OverlayRenderProps {
   activeImages: VideoTrack[];
   allTracks: VideoTrack[];
+  selectedTrackIds: string[];
+  onTransformUpdate: (
+    trackId: string,
+    transform: {
+      x?: number;
+      y?: number;
+      scale?: number;
+      rotation?: number;
+      width?: number;
+      height?: number;
+    },
+  ) => void;
+  onSelect: (trackId: string) => void;
+  onRotationStateChange: (isRotating: boolean) => void;
+  onDragStateChange: (
+    isDragging: boolean,
+    position?: { x: number; y: number; width: number; height: number },
+  ) => void;
 }
 
 export const ImageOverlay: React.FC<ImageOverlayProps> = ({
   activeImages,
   allTracks,
+  selectedTrackIds,
   previewScale,
   panX,
   panY,
@@ -22,6 +42,10 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
   actualHeight,
   baseVideoWidth,
   baseVideoHeight,
+  onTransformUpdate,
+  onSelect,
+  onRotationStateChange,
+  onDragStateChange,
 }) => {
   if (activeImages.length === 0) return null;
 
@@ -51,6 +75,7 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
     >
       {sortedImages.map((track) => {
         const imageUrl = track.previewUrl || track.source;
+        const isSelected = selectedTrackIds.includes(track.id);
 
         // Calculate adaptive image dimensions that fit canvas while preserving aspect ratio
         let defaultWidth = baseVideoWidth;
@@ -81,50 +106,42 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
           height: defaultHeight, // Adaptive height
         };
 
-        // Calculate position in pixels (from normalized coordinates)
-        const pixelX = imageTransform.x * (baseVideoWidth / 2);
-        const pixelY = imageTransform.y * (baseVideoHeight / 2);
-
-        // Calculate scaled dimensions
-        const scaledWidth =
-          (imageTransform.width || defaultWidth) * imageTransform.scale;
-        const scaledHeight =
-          (imageTransform.height || defaultHeight) * imageTransform.scale;
-
-        // Apply preview scale for zoom responsiveness
-        const displayWidth = scaledWidth * previewScale;
-        const displayHeight = scaledHeight * previewScale;
-        const displayX = pixelX * previewScale;
-        const displayY = pixelY * previewScale;
-
         return (
-          <div
+          <ImageTransformBoundary
             key={track.id}
-            className="absolute pointer-events-auto"
-            style={{
-              left: '50%',
-              top: '50%',
-              transform: `translate(-50%, -50%) translate(${displayX}px, ${displayY}px) rotate(${imageTransform.rotation}deg)`,
-              width: `${displayWidth}px`,
-              height: `${displayHeight}px`,
-              opacity:
-                track.textStyle?.opacity !== undefined
-                  ? track.textStyle.opacity / 100
-                  : 1,
-              zIndex: getTrackZIndex(track, allTracks),
-            }}
+            track={track}
+            isSelected={isSelected}
+            previewScale={previewScale}
+            videoWidth={baseVideoWidth}
+            videoHeight={baseVideoHeight}
+            onTransformUpdate={onTransformUpdate}
+            onSelect={onSelect}
+            onRotationStateChange={onRotationStateChange}
+            onDragStateChange={onDragStateChange}
           >
-            <img
-              src={imageUrl}
-              alt={track.name}
-              className="w-full h-full object-contain"
+            <div
+              className="relative"
               style={{
-                userSelect: 'none',
-                pointerEvents: 'none',
+                width: `${imageTransform.width || defaultWidth}px`,
+                height: `${imageTransform.height || defaultHeight}px`,
+                opacity:
+                  track.textStyle?.opacity !== undefined
+                    ? track.textStyle.opacity / 100
+                    : 1,
               }}
-              draggable={false}
-            />
-          </div>
+            >
+              <img
+                src={imageUrl}
+                alt={track.name}
+                className="w-full h-full object-contain"
+                style={{
+                  userSelect: 'none',
+                  pointerEvents: 'none',
+                }}
+                draggable={false}
+              />
+            </div>
+          </ImageTransformBoundary>
         );
       })}
     </div>
