@@ -65,7 +65,7 @@ export function getTextStyleForTextClip(track: VideoTrack): TextStyleResult {
     textAlign: style.textAlign || 'center',
     fontSize: `${style.fontSize || 18}px`,
     color: style.fillColor || '#FFFFFF',
-    backgroundColor: style.backgroundColor || 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: style.backgroundColor || 'transparent',
     textDecoration: style.isUnderline ? 'underline' : 'none',
     textShadow: shadowEffects.join(', '),
     letterSpacing: `${style.letterSpacing || 0}px`,

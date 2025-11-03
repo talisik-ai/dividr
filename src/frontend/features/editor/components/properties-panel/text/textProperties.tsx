@@ -76,7 +76,7 @@ const DEFAULT_TEXT_STYLE: {
   fontSize: 18,
   fillColor: '#FFFFFF',
   strokeColor: '#000000',
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  backgroundColor: 'transparent',
   hasShadow: false,
   letterSpacing: 0,
   lineSpacing: 1.2,
