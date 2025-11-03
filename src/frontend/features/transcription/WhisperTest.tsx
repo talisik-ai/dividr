@@ -1,5 +1,12 @@
 import { Button } from '@/frontend/components/ui/button';
 import { Progress } from '@/frontend/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/frontend/components/ui/select';
 import { useState } from 'react';
 
 interface WhisperStatus {
@@ -37,6 +44,15 @@ interface WhisperResult {
  * Test component for Python Faster-Whisper transcription
  * This is a development/testing component to verify the Whisper integration
  */
+type WhisperModel =
+  | 'tiny'
+  | 'base'
+  | 'small'
+  | 'medium'
+  | 'large'
+  | 'large-v2'
+  | 'large-v3';
+
 export const WhisperTest = () => {
   const [status, setStatus] = useState<WhisperStatus | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -45,6 +61,7 @@ export const WhisperTest = () => {
   const [result, setResult] = useState<WhisperResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<WhisperModel>('base');
 
   // Check Whisper status
   const handleCheckStatus = async () => {
@@ -112,7 +129,7 @@ export const WhisperTest = () => {
       const transcriptionResult = await window.electronAPI.whisperTranscribe(
         selectedFile,
         {
-          model: 'base', // Options: 'tiny', 'base', 'small', 'medium', 'large', 'large-v2', 'large-v3'
+          model: selectedModel,
           // language: 'en', // Omit for auto-detect (recommended)
           device: 'cpu', // 'cpu' or 'cuda' (if GPU available)
           computeType: 'int8', // 'int8', 'int16', 'float16', 'float32'
@@ -203,6 +220,39 @@ export const WhisperTest = () => {
                 <strong>Selected:</strong> {selectedFile}
               </div>
             )}
+          </div>
+
+          {/* Model Selection */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium">Whisper Model</label>
+            <Select
+              value={selectedModel}
+              onValueChange={(value) => setSelectedModel(value as WhisperModel)}
+              disabled={isTranscribing}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select model" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="tiny">
+                  Tiny (fastest, least accurate)
+                </SelectItem>
+                <SelectItem value="base">Base (recommended)</SelectItem>
+                <SelectItem value="small">Small (good balance)</SelectItem>
+                <SelectItem value="medium">
+                  Medium (slower, accurate)
+                </SelectItem>
+                <SelectItem value="large">Large</SelectItem>
+                <SelectItem value="large-v2">Large v2</SelectItem>
+                <SelectItem value="large-v3">
+                  Large v3 (most accurate, slowest)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Larger models are more accurate but take longer to download and
+              process
+            </p>
           </div>
 
           {/* Transcription Controls */}
