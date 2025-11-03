@@ -101,6 +101,8 @@ export const createTextClipsSlice: StateCreator<
         y: textType === 'heading' ? -0.3 : 0, // Heading slightly above center, body at center (normalized: -1 to 1)
         scale: 1, // 100% scale
         rotation: 0, // No rotation
+        width: 800, // Default width in pixels
+        height: 100, // Default height in pixels
       },
     };
 

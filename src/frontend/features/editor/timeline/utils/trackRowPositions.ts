@@ -61,8 +61,12 @@ export const getTrackRowTop = (
 /**
  * Get track row height (responsive based on viewport width)
  * This matches the actual rendered height using Tailwind responsive classes
+ * @param trackType - Optional track type for type-specific heights
  */
-export const getTrackRowHeight = (): number => {
+export const getTrackRowHeight = (trackType?: string): number => {
+  if (trackType) {
+    return getRowHeight(trackType);
+  }
   return getCurrentTrackRowHeight();
 };
 

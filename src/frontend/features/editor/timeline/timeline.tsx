@@ -926,8 +926,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       [visibleTrackRows],
     );
 
-    const getTrackRowHeightValue = useCallback(() => {
-      return getTrackRowHeight();
+    const getTrackRowHeightValue = useCallback((trackType?: string) => {
+      return getTrackRowHeight(trackType);
     }, []);
 
     // Playhead drag handler
@@ -1338,7 +1338,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     style={{
                       left: `${splitIndicatorPosition}px`,
                       top: `${getTrackRowTopPosition(hoveredTrackRow)}px`,
-                      height: `${getTrackRowHeightValue()}px`,
+                      height: `${getTrackRowHeightValue(hoveredTrackRow)}px`,
                     }}
                   />
                 )}
@@ -1352,7 +1352,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     style={{
                       left: `${indicator.position}px`,
                       top: `${getTrackRowTopPosition(indicator.trackType)}px`,
-                      height: `${getTrackRowHeightValue()}px`,
+                      height: `${getTrackRowHeightValue(indicator.trackType)}px`,
                     }}
                   />
                 ))}
