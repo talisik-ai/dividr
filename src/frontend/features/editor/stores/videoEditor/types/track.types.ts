@@ -30,6 +30,11 @@ export interface VideoTrack {
   // Precise subtitle timing from original SRT file (in seconds with millisecond precision)
   subtitleStartTime?: number; // Original start time from SRT (seconds)
   subtitleEndTime?: number; // Original end time from SRT (seconds)
+  // Global subtitle transform (position only - applies to ALL subtitle tracks)
+  subtitleTransform?: {
+    x: number; // X position normalized (-1 to 1, relative to video center, 0 = center)
+    y: number; // Y position normalized (-1 to 1, relative to video center, default bottom-aligned)
+  };
   // Text clip properties (for type === 'text')
   textContent?: string; // The actual text content for text clips
   textType?: 'heading' | 'body'; // Type of text clip

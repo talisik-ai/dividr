@@ -47,3 +47,11 @@ export const TEXT_CLIP_PADDING_HORIZONTAL = 8;
 // Stroke outline
 export const STROKE_WIDTH = 2;
 export const STROKE_DIRECTIONS = 8; // 8-direction outline for smooth stroke effect
+
+// Z-index hierarchy for overlay layers
+// These ensure proper stacking order: Text > Subtitle > Image > Video > Audio
+export const Z_INDEX_SUBTITLE_OVERLAY =
+  TRACK_ROW_ORDER.subtitle * Z_INDEX_SPACING; // 1500
+export const Z_INDEX_SUBTITLE_CONTAINER = 100; // Within subtitle overlay for transform boundary
+export const Z_INDEX_SUBTITLE_SELECTION = 200; // Selection border on top
+export const Z_INDEX_SUBTITLE_CONTENT_BASE = 0; // Base for multi-layer subtitle rendering (glow layers)

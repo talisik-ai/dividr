@@ -1,15 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
+import { SubtitleTransformBoundary } from '../components/SubtitleTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
   GLOW_SPREAD_MULTIPLIER,
   SUBTITLE_BASE_SIZE_RATIO,
-  SUBTITLE_BOTTOM_PADDING,
-  SUBTITLE_HORIZONTAL_PADDING_RATIO,
   SUBTITLE_MIN_FONT_SIZE,
   SUBTITLE_PADDING_HORIZONTAL,
   SUBTITLE_PADDING_VERTICAL,
+  Z_INDEX_SUBTITLE_CONTENT_BASE,
+  Z_INDEX_SUBTITLE_OVERLAY,
 } from '../core/constants';
 import { OverlayRenderProps } from '../core/types';
 import {
@@ -17,24 +18,40 @@ import {
   scaleTextShadow,
 } from '../utils/scalingUtils';
 import { hasActualBackground } from '../utils/textStyleUtils';
-import { getTrackZIndex } from '../utils/trackUtils';
 
 /**
- * Subtitle overlay component - renders all active subtitle tracks
+ * Subtitle overlay component - renders all active subtitle tracks with transform support
  */
 
 export interface SubtitleOverlayProps extends OverlayRenderProps {
   activeSubtitles: VideoTrack[];
   allTracks: VideoTrack[];
+  selectedTrackIds: string[];
   getTextStyleForSubtitle: (style: any) => any;
   activeStyle: any;
+  globalSubtitlePosition: { x: number; y: number };
+  onTransformUpdate: (
+    trackId: string,
+    transform: {
+      x?: number;
+      y?: number;
+    },
+  ) => void;
+  onSelect: (trackId: string) => void;
+  onTextUpdate?: (trackId: string, newText: string) => void;
+  onDragStateChange?: (
+    isDragging: boolean,
+    position?: { x: number; y: number; width: number; height: number },
+  ) => void;
 }
 
 export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   activeSubtitles,
   allTracks,
+  selectedTrackIds,
   getTextStyleForSubtitle,
   activeStyle,
+  globalSubtitlePosition,
   previewScale,
   panX,
   panY,
@@ -42,10 +59,22 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   actualHeight,
   baseVideoWidth,
   baseVideoHeight,
+  onTransformUpdate,
+  onSelect,
+  onTextUpdate,
+  onDragStateChange,
 }) => {
   if (activeSubtitles.length === 0) return null;
 
-  // Get applied style for container alignment
+  // Check if any subtitle is selected
+  const hasSelectedSubtitle = activeSubtitles.some((track) =>
+    selectedTrackIds.includes(track.id),
+  );
+  const selectedSubtitle = activeSubtitles.find((track) =>
+    selectedTrackIds.includes(track.id),
+  );
+
+  // Get applied style for subtitle rendering
   const appliedStyle = getTextStyleForSubtitle(activeStyle);
 
   // Calculate responsive font size based on zoom level
@@ -60,37 +89,53 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   const scaledPaddingVertical = SUBTITLE_PADDING_VERTICAL * previewScale;
   const scaledPaddingHorizontal = SUBTITLE_PADDING_HORIZONTAL * previewScale;
 
-  // Calculate responsive horizontal padding based on actual width (5% of actual width)
-  const scaledHorizontalPadding =
-    baseVideoWidth * SUBTITLE_HORIZONTAL_PADDING_RATIO * previewScale;
+  // Create a fake track for the transform boundary (uses global position)
+  const globalTrack: VideoTrack = {
+    ...activeSubtitles[0],
+    id: 'global-subtitle-transform',
+    subtitleTransform: globalSubtitlePosition,
+  };
 
-  // Render each subtitle track independently with proper z-indexing
+  // Render all subtitles wrapped in ONE transform boundary with proper z-index
   return (
-    <>
+    <SubtitleTransformBoundary
+      key="global-subtitle-transform"
+      track={globalTrack}
+      isSelected={hasSelectedSubtitle}
+      isActive={true}
+      previewScale={previewScale}
+      videoWidth={baseVideoWidth}
+      videoHeight={baseVideoHeight}
+      actualWidth={actualWidth}
+      actualHeight={actualHeight}
+      panX={panX}
+      panY={panY}
+      zIndexOverlay={Z_INDEX_SUBTITLE_OVERLAY}
+      onTransformUpdate={(_, transform) => {
+        // Pass the first selected subtitle's ID (or first subtitle if none selected)
+        const trackId = selectedSubtitle?.id || activeSubtitles[0].id;
+        onTransformUpdate(trackId, transform);
+      }}
+      onSelect={() => {
+        // Select the first subtitle when clicking the boundary
+        if (activeSubtitles[0]) {
+          onSelect(activeSubtitles[0].id);
+        }
+      }}
+      onTextUpdate={
+        selectedSubtitle
+          ? (_, newText) => onTextUpdate?.(selectedSubtitle.id, newText)
+          : undefined
+      }
+      onDragStateChange={onDragStateChange}
+    >
       {activeSubtitles.map((track) => {
         return (
           <div
-            key={`subtitle-container-${track.id}`}
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              width: actualWidth,
-              height: actualHeight,
-              left: `calc(50% + ${panX}px)`,
-              top: `calc(50% + ${panY}px)`,
-              transform: 'translate(-50%, -50%)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems:
-                appliedStyle.textAlign === 'left'
-                  ? 'flex-start'
-                  : appliedStyle.textAlign === 'right'
-                    ? 'flex-end'
-                    : 'center',
-              justifyContent: 'flex-end',
-              paddingBottom: `${SUBTITLE_BOTTOM_PADDING * previewScale}px`,
-              paddingLeft: `${scaledHorizontalPadding}px`,
-              paddingRight: `${scaledHorizontalPadding}px`,
-              zIndex: getTrackZIndex(track, allTracks),
+            key={`subtitle-content-${track.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(track.id);
             }}
           >
             {(() => {
@@ -122,6 +167,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
                 wordBreak: 'keep-all',
                 overflowWrap: 'normal',
                 padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+                maxWidth: `${baseVideoWidth * previewScale * 0.9}px`, // 90% of video width - prevents wrapping on viewport resize
               };
 
               // Multi-layer rendering for glow effect
@@ -151,7 +197,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
                           opacity: 0.75,
                           filter: `blur(${glowBlurAmount}px)`,
                           boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
-                          zIndex: 0,
+                          zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE,
                         }}
                         aria-hidden="true"
                       >
@@ -168,7 +214,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
                           color: 'transparent',
                           backgroundColor: appliedStyle.backgroundColor,
                           opacity: appliedStyle.opacity,
-                          zIndex: 1,
+                          zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 1,
                         }}
                         aria-hidden="true"
                       >
@@ -184,7 +230,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
                           backgroundColor: 'transparent',
                           opacity: appliedStyle.opacity,
                           textShadow: scaledTextShadow,
-                          zIndex: 2,
+                          zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 2,
                         }}
                       >
                         {track.subtitleText}
@@ -215,7 +261,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
                         filter: `blur(${glowBlurAmount}px)`,
                         textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
                         WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
-                        zIndex: 0,
+                        zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE,
                       }}
                       aria-hidden="true"
                     >
@@ -231,7 +277,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
                         backgroundColor: 'transparent',
                         opacity: appliedStyle.opacity,
                         textShadow: scaledTextShadow,
-                        zIndex: 1,
+                        zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 1,
                       }}
                     >
                       {track.subtitleText}
@@ -259,6 +305,6 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
           </div>
         );
       })}
-    </>
+    </SubtitleTransformBoundary>
   );
 };

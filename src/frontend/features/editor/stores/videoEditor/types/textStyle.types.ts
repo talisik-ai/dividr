@@ -26,6 +26,11 @@ export interface TextStyleState {
     hasGlow: boolean;
     opacity: number;
   };
+  // Global subtitle position (affects all subtitle tracks)
+  globalSubtitlePosition: {
+    x: number; // Normalized X position (-1 to 1, 0 = center)
+    y: number; // Normalized Y position (-1 to 1, default 0.7 = bottom-aligned)
+  };
 }
 
 export interface TextStyleSlice {
@@ -54,4 +59,7 @@ export interface TextStyleSlice {
   toggleGlow: () => void;
   setOpacity: (opacity: number) => void;
   resetTextStyles: () => void;
+
+  // Global subtitle position
+  setGlobalSubtitlePosition: (position: { x: number; y: number }) => void;
 }

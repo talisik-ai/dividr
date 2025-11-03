@@ -54,6 +54,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     preview,
     textStyle,
     getTextStyleForSubtitle,
+    setGlobalSubtitlePosition,
     importMediaFromDialog,
     importMediaToTimeline,
     setCurrentFrame,
@@ -300,6 +301,41 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [updateTrack],
   );
 
+  // Handle subtitle transform updates (global - affects all subtitles)
+  const handleSubtitleTransformUpdate = useCallback(
+    (
+      trackId: string,
+      transform: {
+        x?: number;
+        y?: number;
+      },
+    ) => {
+      // Update global subtitle position (affects ALL subtitles)
+      const currentPosition = textStyle.globalSubtitlePosition;
+      setGlobalSubtitlePosition({
+        x: transform.x ?? currentPosition.x,
+        y: transform.y ?? currentPosition.y,
+      });
+    },
+    [textStyle.globalSubtitlePosition, setGlobalSubtitlePosition],
+  );
+
+  // Handle subtitle selection
+  const handleSubtitleSelect = useCallback(
+    (trackId: string) => {
+      setSelectedTracks([trackId]);
+    },
+    [setSelectedTracks],
+  );
+
+  // Handle subtitle text updates
+  const handleSubtitleTextUpdate = useCallback(
+    (trackId: string, newText: string) => {
+      updateTrack(trackId, { subtitleText: newText });
+    },
+    [updateTrack],
+  );
+
   // Handle click outside to deselect
   const handlePreviewClick = useCallback(
     (e: React.MouseEvent) => {
@@ -310,12 +346,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         target.classList.contains('preview-background') ||
         target.tagName === 'VIDEO'
       ) {
-        const hasTextOrImageSelected = timeline.selectedTrackIds.some((id) => {
-          const track = tracks.find((t) => t.id === id);
-          return track?.type === 'text' || track?.type === 'image';
-        });
+        const hasInteractiveLayerSelected = timeline.selectedTrackIds.some(
+          (id) => {
+            const track = tracks.find((t) => t.id === id);
+            return (
+              track?.type === 'text' ||
+              track?.type === 'image' ||
+              track?.type === 'subtitle'
+            );
+          },
+        );
 
-        if (hasTextOrImageSelected) {
+        if (hasInteractiveLayerSelected) {
           setSelectedTracks([]);
         }
       }
@@ -423,8 +465,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         {...overlayProps}
         activeSubtitles={activeSubtitles}
         allTracks={tracks}
+        selectedTrackIds={timeline.selectedTrackIds}
         getTextStyleForSubtitle={getTextStyleForSubtitle}
         activeStyle={textStyle.activeStyle}
+        globalSubtitlePosition={textStyle.globalSubtitlePosition}
+        onTransformUpdate={handleSubtitleTransformUpdate}
+        onSelect={handleSubtitleSelect}
+        onTextUpdate={handleSubtitleTextUpdate}
+        onDragStateChange={handleDragStateChange}
       />
 
       {/* Image Overlay */}

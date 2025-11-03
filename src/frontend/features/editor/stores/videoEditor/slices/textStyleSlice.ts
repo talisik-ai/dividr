@@ -19,6 +19,11 @@ const DEFAULT_GLOBAL_CONTROLS = {
   opacity: 100,
 };
 
+const DEFAULT_GLOBAL_SUBTITLE_POSITION = {
+  x: 0, // Centered horizontally
+  y: 0.7, // Bottom-aligned (70% down from center)
+};
+
 export const createTextStyleSlice: StateCreator<
   TextStyleSlice,
   [],
@@ -40,6 +45,7 @@ export const createTextStyleSlice: StateCreator<
       },
     },
     globalControls: DEFAULT_GLOBAL_CONTROLS,
+    globalSubtitlePosition: DEFAULT_GLOBAL_SUBTITLE_POSITION,
   },
 
   // Text Style Actions
@@ -114,10 +120,10 @@ export const createTextStyleSlice: StateCreator<
       textShadow: shadowEffects.join(', '),
       letterSpacing: `${controls.letterSpacing}px`,
       lineHeight: controls.lineSpacing,
-      opacity: controls.opacity / 100, 
-      hasGlow: controls.hasGlow, 
-      strokeColor: controls.strokeColor, 
-      hasShadow: controls.hasShadow, 
+      opacity: controls.opacity / 100,
+      hasGlow: controls.hasGlow,
+      strokeColor: controls.strokeColor,
+      hasShadow: controls.hasShadow,
     };
   },
 
@@ -295,6 +301,15 @@ export const createTextStyleSlice: StateCreator<
         ...state.textStyle,
         activeStyle: 'default',
         globalControls: DEFAULT_GLOBAL_CONTROLS,
+      },
+    })),
+
+  // Global subtitle position
+  setGlobalSubtitlePosition: (position: { x: number; y: number }) =>
+    set((state) => ({
+      textStyle: {
+        ...state.textStyle,
+        globalSubtitlePosition: position,
       },
     })),
 });
