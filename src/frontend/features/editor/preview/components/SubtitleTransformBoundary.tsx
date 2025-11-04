@@ -131,23 +131,13 @@ export const SubtitleTransformBoundary: React.FC<
     };
   }, [normalizedTransform, normalizedToPixels, previewScale]);
 
-  // Clamp normalized coordinates to keep subtitle within video bounds
-  const clampNormalized = useCallback(
-    (pos: { x: number; y: number }) => {
-      const halfWidth = containerSize.width / 2;
-      const halfHeight = containerSize.height / 2;
-
-      // Calculate max positions in normalized space
-      const maxX = (videoWidth / 2 - halfWidth) / (videoWidth / 2);
-      const maxY = (videoHeight / 2 - halfHeight) / (videoHeight / 2);
-
-      return {
-        x: Math.max(-maxX, Math.min(maxX, pos.x)),
-        y: Math.max(-maxY, Math.min(maxY, pos.y)),
-      };
-    },
-    [containerSize.width, containerSize.height, videoWidth, videoHeight],
-  );
+  // Allow positioning beyond video bounds for professional editing behavior
+  // Content will be clipped by the overlay container, but handles remain accessible
+  const clampNormalized = useCallback((pos: { x: number; y: number }) => {
+    // No clamping - allow elements to move outside the visible canvas
+    // This matches behavior of professional tools like CapCut, Premiere Pro, Figma
+    return pos;
+  }, []);
 
   // Measure container size
   useEffect(() => {
@@ -365,6 +355,42 @@ export const SubtitleTransformBoundary: React.FC<
     return 'pointer';
   };
 
+  // Content component
+  const contentComponent = (
+    <div
+      ref={containerRef}
+      className="absolute"
+      style={{
+        left: '50%',
+        top: '50%',
+        transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
+        transformOrigin: 'center center',
+        cursor: getCursor(),
+        pointerEvents: 'auto',
+        display: 'inline-block',
+        userSelect: isEditing ? 'text' : 'none',
+        WebkitUserSelect: isEditing ? 'text' : 'none',
+      }}
+      onMouseDown={handleMouseDown}
+      onDoubleClick={handleDoubleClick}
+    >
+      <div
+        ref={editableRef}
+        contentEditable={isEditing}
+        suppressContentEditableWarning
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        style={{
+          outline: 'none',
+          pointerEvents: isEditing ? 'auto' : 'none',
+          position: 'relative',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+
   return (
     <div
       className="absolute inset-0 pointer-events-none"
@@ -374,49 +400,32 @@ export const SubtitleTransformBoundary: React.FC<
         left: `calc(50% + ${panX}px)`,
         top: `calc(50% + ${panY}px)`,
         transform: 'translate(-50%, -50%)',
-        overflow: 'hidden',
+        overflow: 'visible', // Allow transform handles to extend beyond canvas
         zIndex: zIndexOverlay, // 1500 - ensures subtitles render above images but below text
       }}
     >
-      {/* Content Container */}
+      {/* Content clipping layer - clips subtitle content but not selection boundary */}
       <div
-        ref={containerRef}
-        className="absolute"
+        className="absolute pointer-events-none"
         style={{
+          width: actualWidth,
+          height: actualHeight,
           left: '50%',
           top: '50%',
-          transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
-          transformOrigin: 'center center',
-          cursor: getCursor(),
-          pointerEvents: 'auto',
-          display: 'inline-block',
-          userSelect: isEditing ? 'text' : 'none',
-          WebkitUserSelect: isEditing ? 'text' : 'none',
+          transform: 'translate(-50%, -50%)',
+          overflow: 'hidden', // Clip content outside canvas
+          pointerEvents: 'none',
         }}
-        onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClick}
       >
-        <div
-          ref={editableRef}
-          contentEditable={isEditing}
-          suppressContentEditableWarning
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          style={{
-            outline: 'none',
-            pointerEvents: isEditing ? 'auto' : 'none',
-            position: 'relative',
-          }}
-        >
-          {children}
-        </div>
+        {contentComponent}
       </div>
 
       {/* Selection Boundary - Rendered separately like TextTransformBoundary */}
+      {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
       {isSelected && !isEditing && containerSize.width > 0 && (
         <div
           ref={boundaryRef}
-          className="absolute pointer-events-none"
+          className="absolute"
           style={{
             left: '50%',
             top: '50%',
@@ -426,8 +435,11 @@ export const SubtitleTransformBoundary: React.FC<
             height: `${containerSize.height}px`,
             border: '2px solid #F45513',
             borderRadius: '4px',
-            zIndex: Z_INDEX_SUBTITLE_SELECTION,
+            zIndex: 10000, // Very high z-index to ensure boundary is always on top and interactive
+            pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
+            cursor: getCursor(), // Show appropriate cursor
           }}
+          onMouseDown={handleMouseDown}
         />
       )}
     </div>

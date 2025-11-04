@@ -66,7 +66,7 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
         left: `calc(50% + ${panX}px)`,
         top: `calc(50% + ${panY}px)`,
         transform: 'translate(-50%, -50%)',
-        overflow: 'hidden', // Clip images that go outside video canvas
+        overflow: 'visible', // Allow transform handles to extend beyond canvas
         zIndex:
           sortedImages.length > 0
             ? Math.max(...sortedImages.map((t) => getTrackZIndex(t, allTracks)))
@@ -118,6 +118,9 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
             onSelect={onSelect}
             onRotationStateChange={onRotationStateChange}
             onDragStateChange={onDragStateChange}
+            clipContent={true}
+            clipWidth={actualWidth}
+            clipHeight={actualHeight}
           >
             <div
               className="relative"

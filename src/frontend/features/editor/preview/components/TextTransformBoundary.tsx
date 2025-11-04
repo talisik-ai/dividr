@@ -29,6 +29,9 @@ interface TextTransformBoundaryProps {
   ) => void;
   children: React.ReactNode;
   appliedStyle?: React.CSSProperties;
+  clipContent?: boolean; // Whether to clip content to canvas bounds
+  clipWidth?: number; // Width of the clipping area
+  clipHeight?: number; // Height of the clipping area
 }
 
 type HandleType =
@@ -56,6 +59,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   onDragStateChange,
   children,
   appliedStyle,
+  clipContent = false,
+  clipWidth,
+  clipHeight,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const boundaryRef = useRef<HTMLDivElement>(null);
@@ -149,13 +155,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     track.id,
   ]);
 
-  // Clamp normalized coordinates to keep text within video bounds
+  // Allow positioning beyond video bounds for professional editing behavior
+  // Content will be clipped by the overlay container, but handles remain accessible
   const clampNormalized = useCallback(
     (normalized: { x: number; y: number }) => {
-      return {
-        x: Math.max(-1, Math.min(1, normalized.x)),
-        y: Math.max(-1, Math.min(1, normalized.y)),
-      };
+      // No clamping - allow elements to move outside the visible canvas
+      // This matches behavior of professional tools like CapCut, Premiere Pro, Figma
+      return normalized;
     },
     [],
   );
@@ -590,64 +596,87 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   // This keeps handles at reasonable size without over-scaling at normal zoom levels
   const handleScale = previewScale < 0.5 ? 0.5 : 1;
 
+  // Content component - may be wrapped in clipping layer
+  const contentComponent = (
+    <div
+      ref={containerRef}
+      className="absolute"
+      style={{
+        left: '50%',
+        top: '50%',
+        transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`,
+        transformOrigin: 'center center',
+        cursor: getCursorStyle(),
+        pointerEvents: 'auto',
+        zIndex: isSelected ? 1000 : 1,
+        userSelect: isEditing ? 'text' : 'none',
+        WebkitUserSelect: isEditing ? 'text' : 'none',
+      }}
+      onMouseDown={handleMouseDown}
+      onDoubleClick={handleDoubleClick}
+    >
+      {/* Content */}
+      <div
+        ref={contentRef}
+        className="relative"
+        style={{ pointerEvents: 'auto' }}
+      >
+        {isEditing ? (
+          <div
+            ref={editableRef}
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            style={{
+              outline: 'none',
+              minWidth: '20px',
+              minHeight: '20px',
+              // Preserve all existing text styles during editing
+              ...appliedStyle,
+              // Override specific properties for editing
+              cursor: 'text',
+              userSelect: 'text',
+              WebkitUserSelect: 'text',
+            }}
+          >
+            {track.textContent}
+          </div>
+        ) : (
+          children
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
-      {/* Text Content Container */}
-      <div
-        ref={containerRef}
-        className="absolute"
-        style={{
-          left: '50%',
-          top: '50%',
-          transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`,
-          transformOrigin: 'center center',
-          cursor: getCursorStyle(),
-          pointerEvents: 'auto',
-          zIndex: isSelected ? 1000 : 1,
-          userSelect: isEditing ? 'text' : 'none',
-          WebkitUserSelect: isEditing ? 'text' : 'none',
-        }}
-        onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClick}
-      >
-        {/* Content */}
+      {/* Text Content Container - with optional clipping wrapper */}
+      {clipContent && clipWidth && clipHeight ? (
         <div
-          ref={contentRef}
-          className="relative"
-          style={{ pointerEvents: 'auto' }}
+          className="absolute pointer-events-none"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: clipWidth,
+            height: clipHeight,
+            overflow: 'hidden', // Clip content outside canvas
+            zIndex: isSelected ? 999 : 1,
+          }}
         >
-          {isEditing ? (
-            <div
-              ref={editableRef}
-              contentEditable
-              suppressContentEditableWarning
-              onBlur={handleBlur}
-              onKeyDown={handleKeyDown}
-              style={{
-                outline: 'none',
-                minWidth: '20px',
-                minHeight: '20px',
-                // Preserve all existing text styles during editing
-                ...appliedStyle,
-                // Override specific properties for editing
-                cursor: 'text',
-                userSelect: 'text',
-                WebkitUserSelect: 'text',
-              }}
-            >
-              {track.textContent}
-            </div>
-          ) : (
-            children
-          )}
+          {contentComponent}
         </div>
-      </div>
+      ) : (
+        contentComponent
+      )}
 
       {/* Selection Boundary - Rendered separately to avoid scale transform */}
+      {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
       {isSelected && !isEditing && containerSize.width > 0 && (
         <div
           ref={boundaryRef}
-          className="absolute pointer-events-none"
+          className="absolute"
           style={{
             left: '50%',
             top: '50%',
@@ -657,8 +686,11 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
             height: `${containerSize.height * transform.scale}px`,
             border: `${2 * handleScale}px solid #F45513`,
             borderRadius: `${4 * handleScale}px`,
-            zIndex: isSelected ? 1001 : 2,
+            zIndex: 10000, // Very high z-index to ensure handles are always on top and interactive
+            pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
+            cursor: getCursorStyle(), // Show appropriate cursor
           }}
+          onMouseDown={handleMouseDown}
         >
           {/* Corner Handles */}
           {['tl', 'tr', 'bl', 'br'].map((handle) => {

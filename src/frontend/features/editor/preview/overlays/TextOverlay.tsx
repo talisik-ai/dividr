@@ -77,7 +77,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
         left: `calc(50% + ${panX}px)`,
         top: `calc(50% + ${panY}px)`,
         transform: 'translate(-50%, -50%)',
-        overflow: 'hidden', // Clip text elements that go outside video canvas
+        overflow: 'visible', // Allow transform handles to extend beyond canvas
         zIndex:
           activeTexts.length > 0
             ? Math.max(...activeTexts.map((t) => getTrackZIndex(t, allTracks)))
@@ -161,6 +161,9 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 onRotationStateChange={onRotationStateChange}
                 onDragStateChange={onDragStateChange}
                 appliedStyle={completeStyle}
+                clipContent={true}
+                clipWidth={actualWidth}
+                clipHeight={actualHeight}
               >
                 <div
                   style={{
@@ -238,6 +241,9 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
               onRotationStateChange={onRotationStateChange}
               onDragStateChange={onDragStateChange}
               appliedStyle={completeStyle}
+              clipContent={true}
+              clipWidth={actualWidth}
+              clipHeight={actualHeight}
             >
               <div
                 style={{
@@ -307,6 +313,9 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
             onRotationStateChange={onRotationStateChange}
             onDragStateChange={onDragStateChange}
             appliedStyle={completeStyle}
+            clipContent={true}
+            clipWidth={actualWidth}
+            clipHeight={actualHeight}
           >
             <div style={completeStyle}>{track.textContent}</div>
           </TextTransformBoundary>
