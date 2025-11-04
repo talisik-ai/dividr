@@ -9,6 +9,7 @@ interface ImageTransformBoundaryProps {
   previewScale: number;
   videoWidth: number;
   videoHeight: number;
+  renderScale?: number; // The actual render scale from coordinate system (baseScale)
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -50,6 +51,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   previewScale,
   videoWidth,
   videoHeight,
+  renderScale,
   onTransformUpdate,
   onSelect,
   onRotationStateChange,
@@ -59,6 +61,8 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   clipWidth,
   clipHeight,
 }) => {
+  // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
+  const effectiveRenderScale = renderScale ?? previewScale;
   const containerRef = useRef<HTMLDivElement>(null);
   const boundaryRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -166,13 +170,16 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   });
 
   const transform = {
-    x: pixelPosition.x * previewScale,
-    y: pixelPosition.y * previewScale,
+    x: pixelPosition.x * effectiveRenderScale,
+    y: pixelPosition.y * effectiveRenderScale,
     scale: normalizedTransform.scale,
     rotation: normalizedTransform.rotation,
   };
 
   // Track container size changes to update boundary dimensions
+  // Store the previous renderScale to detect when it changes
+  const prevRenderScaleRef = useRef(effectiveRenderScale);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -190,7 +197,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     };
   }, []);
 
-  // Also update on transform changes
+  // Also update on transform changes (but NOT on renderScale changes)
   useEffect(() => {
     if (containerRef.current) {
       setContainerSize({
@@ -198,25 +205,38 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
         height: containerRef.current.offsetHeight,
       });
     }
-  }, [transform.scale, transform.rotation, previewScale]);
+  }, [transform.scale, transform.rotation]);
 
   // Update dimensions in the store when container size changes
+  // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
   useEffect(() => {
+    // Detect if renderScale changed (e.g., entering/exiting fullscreen)
+    const renderScaleChanged =
+      prevRenderScaleRef.current !== effectiveRenderScale;
+    prevRenderScaleRef.current = effectiveRenderScale;
+
+    // Skip dimension updates when renderScale changes - this prevents auto-scaling on fullscreen toggle
+    if (renderScaleChanged) {
+      return;
+    }
+
     if (containerSize.width > 0 && containerSize.height > 0) {
       const currentWidth = normalizedTransform.width || 0;
       const currentHeight = normalizedTransform.height || 0;
-      // Store base dimensions (without previewScale) so they can be scaled at render time
-      const newWidth = containerSize.width / previewScale;
-      const newHeight = containerSize.height / previewScale;
 
-      // Only update if dimensions have changed significantly (avoid infinite loops)
+      // Calculate dimensions in video space (independent of container size)
+      const videoSpaceWidth = containerSize.width / effectiveRenderScale;
+      const videoSpaceHeight = containerSize.height / effectiveRenderScale;
+
+      // Only update if the video-space dimensions have changed significantly
+      const threshold = 1; // 1px tolerance in video space
       if (
-        Math.abs(currentWidth - newWidth) > 1 ||
-        Math.abs(currentHeight - newHeight) > 1
+        Math.abs(currentWidth - videoSpaceWidth) > threshold ||
+        Math.abs(currentHeight - videoSpaceHeight) > threshold
       ) {
         onTransformUpdate(track.id, {
-          width: newWidth,
-          height: newHeight,
+          width: videoSpaceWidth,
+          height: videoSpaceHeight,
         });
       }
     }
@@ -227,7 +247,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     normalizedTransform.height,
     track.id,
     onTransformUpdate,
-    previewScale,
+    effectiveRenderScale,
   ]);
 
   // Handle mouse down on the image element (start dragging)
@@ -294,13 +314,15 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       const deltaY = e.clientY - dragStart.y;
 
       if (isDragging) {
-        // Convert screen delta to video coordinate delta
-        const normalizedDeltaX = deltaX / previewScale;
-        const normalizedDeltaY = deltaY / previewScale;
+        // Convert screen delta to video coordinate delta using the effective render scale
+        const normalizedDeltaX = deltaX / effectiveRenderScale;
+        const normalizedDeltaY = deltaY / effectiveRenderScale;
 
         // Add delta to initial position (already in screen pixels)
-        let newPixelX = initialTransform.x / previewScale + normalizedDeltaX;
-        let newPixelY = initialTransform.y / previewScale + normalizedDeltaY;
+        let newPixelX =
+          initialTransform.x / effectiveRenderScale + normalizedDeltaX;
+        let newPixelY =
+          initialTransform.y / effectiveRenderScale + normalizedDeltaY;
 
         // Snapping logic - only when Shift or Ctrl is held
         if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -492,7 +514,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     initialTransform,
     activeHandle,
     track.id,
-    previewScale,
+    effectiveRenderScale,
     onTransformUpdate,
     onRotationStateChange,
     onDragStateChange,
@@ -590,6 +612,8 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
             top: '50%',
             transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
             transformOrigin: 'center center',
+            // Boundary must match the actual rendered size (containerSize * scale)
+            // containerSize is the base size before scale transform is applied
             width: `${containerSize.width * transform.scale}px`,
             height: `${containerSize.height * transform.scale}px`,
             border: `${2 * handleScale}px solid #F45513`,

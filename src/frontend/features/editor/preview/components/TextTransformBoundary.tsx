@@ -9,6 +9,7 @@ interface TextTransformBoundaryProps {
   previewScale: number;
   videoWidth: number;
   videoHeight: number;
+  renderScale?: number; // The actual render scale from coordinate system (baseScale)
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -52,6 +53,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   previewScale,
   videoWidth,
   videoHeight,
+  renderScale,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
@@ -63,6 +65,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   clipWidth,
   clipHeight,
 }) => {
+  // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
+  // This ensures consistent positioning across different container sizes
+  const effectiveRenderScale = renderScale ?? previewScale;
   const containerRef = useRef<HTMLDivElement>(null);
   const boundaryRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -167,14 +172,15 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   );
 
   // Get pixel-based transform for rendering
+  // Convert from normalized coordinates to video space, then scale to screen space
   const pixelPosition = normalizedToPixels({
     x: normalizedTransform.x,
     y: normalizedTransform.y,
   });
 
   const transform = {
-    x: pixelPosition.x * previewScale,
-    y: pixelPosition.y * previewScale,
+    x: pixelPosition.x * effectiveRenderScale,
+    y: pixelPosition.y * effectiveRenderScale,
     scale: normalizedTransform.scale,
     rotation: normalizedTransform.rotation,
   };
@@ -228,6 +234,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   }, []);
 
   // Track container size changes to update boundary dimensions
+  // Store the previous renderScale to detect when it changes
+  const prevRenderScaleRef = useRef(effectiveRenderScale);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -245,7 +254,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     };
   }, []);
 
-  // Also update on transform changes
+  // Also update on transform changes (but NOT on renderScale changes)
   useEffect(() => {
     if (containerRef.current) {
       setContainerSize({
@@ -253,24 +262,41 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         height: containerRef.current.offsetHeight,
       });
     }
-  }, [transform.scale, transform.rotation, track.textContent, previewScale]);
+  }, [transform.scale, transform.rotation, track.textContent]);
 
   // Update dimensions in the store when container size changes
+  // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
   useEffect(() => {
+    // Detect if renderScale changed (e.g., entering/exiting fullscreen)
+    const renderScaleChanged =
+      prevRenderScaleRef.current !== effectiveRenderScale;
+    prevRenderScaleRef.current = effectiveRenderScale;
+
+    // Skip dimension updates when renderScale changes - this prevents auto-scaling on fullscreen toggle
+    if (renderScaleChanged) {
+      return;
+    }
+
     if (containerSize.width > 0 && containerSize.height > 0) {
       const currentWidth = normalizedTransform.width || 0;
       const currentHeight = normalizedTransform.height || 0;
-      const newWidth = containerSize.width * transform.scale;
-      const newHeight = containerSize.height * transform.scale;
 
-      // Only update if dimensions have changed significantly (avoid infinite loops)
+      // Calculate dimensions in video space (independent of container size)
+      // Dimensions should be stored in video space, scaled by element's own scale
+      const videoSpaceWidth =
+        (containerSize.width / effectiveRenderScale) * transform.scale;
+      const videoSpaceHeight =
+        (containerSize.height / effectiveRenderScale) * transform.scale;
+
+      // Only update if the video-space dimensions have changed significantly
+      const threshold = 1; // 1px tolerance in video space
       if (
-        Math.abs(currentWidth - newWidth) > 1 ||
-        Math.abs(currentHeight - newHeight) > 1
+        Math.abs(currentWidth - videoSpaceWidth) > threshold ||
+        Math.abs(currentHeight - videoSpaceHeight) > threshold
       ) {
         onTransformUpdate(track.id, {
-          width: newWidth,
-          height: newHeight,
+          width: videoSpaceWidth,
+          height: videoSpaceHeight,
         });
       }
     }
@@ -282,6 +308,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     normalizedTransform.height,
     track.id,
     onTransformUpdate,
+    effectiveRenderScale,
   ]);
 
   // Handle mouse down on the text element (start dragging)
@@ -348,13 +375,15 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       const deltaY = e.clientY - dragStart.y;
 
       if (isDragging) {
-        // Convert screen delta to video coordinate delta
-        const normalizedDeltaX = deltaX / previewScale;
-        const normalizedDeltaY = deltaY / previewScale;
+        // Convert screen delta to video coordinate delta using the effective render scale
+        const normalizedDeltaX = deltaX / effectiveRenderScale;
+        const normalizedDeltaY = deltaY / effectiveRenderScale;
 
         // Add delta to initial position (already in screen pixels)
-        let newPixelX = initialTransform.x / previewScale + normalizedDeltaX;
-        let newPixelY = initialTransform.y / previewScale + normalizedDeltaY;
+        let newPixelX =
+          initialTransform.x / effectiveRenderScale + normalizedDeltaX;
+        let newPixelY =
+          initialTransform.y / effectiveRenderScale + normalizedDeltaY;
 
         // Snapping logic - only when Shift or Ctrl is held
         if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -414,11 +443,10 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
           });
         }
 
+        // Only update position during drag - width/height remain unchanged
         onTransformUpdate(track.id, {
           x: clampedPos.x,
           y: clampedPos.y,
-          width: containerSize.width * transform.scale,
-          height: containerSize.height * transform.scale,
         });
       } else if (isScaling && activeHandle) {
         const scaleSensitivity = 200;
@@ -455,10 +483,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         let newScale = initialTransform.scale * scaleFactor;
         newScale = Math.max(0.1, Math.min(5, newScale));
 
+        // Only update scale - width/height will be recalculated by the ResizeObserver effect
         onTransformUpdate(track.id, {
           scale: newScale,
-          width: containerSize.width * newScale,
-          height: containerSize.height * newScale,
         });
       } else if (isRotating) {
         const boundaryRect = boundaryRef.current?.getBoundingClientRect();
@@ -514,10 +541,10 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
           }
         }
 
+        // Only update rotation - width/height remain unchanged during rotation
+        // This prevents auto-scaling when rotating elements
         onTransformUpdate(track.id, {
           rotation: newRotation,
-          width: containerSize.width * transform.scale,
-          height: containerSize.height * transform.scale,
         });
       }
     };
@@ -552,7 +579,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     initialTransform,
     activeHandle,
     track.id,
-    previewScale,
+    effectiveRenderScale,
     onTransformUpdate,
     onRotationStateChange,
     onDragStateChange,

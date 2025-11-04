@@ -107,10 +107,10 @@ export const FullscreenPreview: React.FC = () => {
   if (!preview.isFullscreen) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex flex-col animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[9999] flex flex-col animate-in fade-in duration-300 bg-black">
       {/* Video Preview - Takes up most of the screen */}
-      <div className="flex-1 relative">
-        <VideoBlobPreview className="w-full h-full rounded-none" />
+      <div className="flex-1 relative overflow-hidden">
+        <VideoBlobPreview className="absolute inset-0 rounded-none" />
       </div>
 
       {/* Compact Control Bar at Bottom */}

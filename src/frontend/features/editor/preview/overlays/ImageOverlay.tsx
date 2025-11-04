@@ -42,12 +42,16 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
   actualHeight,
   baseVideoWidth,
   baseVideoHeight,
+  coordinateSystem,
   onTransformUpdate,
   onSelect,
   onRotationStateChange,
   onDragStateChange,
 }) => {
   if (activeImages.length === 0) return null;
+
+  // Use the coordinate system's baseScale for consistent rendering
+  const renderScale = coordinateSystem.baseScale;
 
   // Sort images by their index in the tracks array to maintain layer order
   // Lower index = rendered first = appears behind higher index tracks
@@ -77,33 +81,19 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
         const imageUrl = track.previewUrl || track.source;
         const isSelected = selectedTrackIds.includes(track.id);
 
-        // Calculate adaptive image dimensions that fit canvas while preserving aspect ratio
-        let defaultWidth = baseVideoWidth;
-        let defaultHeight = baseVideoHeight;
+        // Use original image dimensions - no automatic fit-to-canvas
+        // This preserves the image's intrinsic size as set during import
+        const defaultWidth = track.width || baseVideoWidth;
+        const defaultHeight = track.height || baseVideoHeight;
 
-        if (track.width && track.height) {
-          const imageAspectRatio = track.width / track.height;
-          const canvasAspectRatio = baseVideoWidth / baseVideoHeight;
-
-          if (imageAspectRatio > canvasAspectRatio) {
-            // Image is wider than canvas - fit to width
-            defaultWidth = baseVideoWidth;
-            defaultHeight = baseVideoWidth / imageAspectRatio;
-          } else {
-            // Image is taller than canvas - fit to height
-            defaultHeight = baseVideoHeight;
-            defaultWidth = baseVideoHeight * imageAspectRatio;
-          }
-        }
-
-        // Get image transform properties (default to centered, adaptive-fit if not set)
+        // Get image transform properties (use stored transform or defaults with original dimensions)
         const imageTransform = track.textTransform || {
           x: 0, // Centered
           y: 0, // Centered
           scale: 1, // 100% scale
           rotation: 0, // No rotation
-          width: defaultWidth, // Adaptive width
-          height: defaultHeight, // Adaptive height
+          width: defaultWidth, // Original width
+          height: defaultHeight, // Original height
         };
 
         return (
@@ -114,6 +104,7 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
             previewScale={previewScale}
             videoWidth={baseVideoWidth}
             videoHeight={baseVideoHeight}
+            renderScale={renderScale}
             onTransformUpdate={onTransformUpdate}
             onSelect={onSelect}
             onRotationStateChange={onRotationStateChange}
@@ -125,8 +116,8 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
             <div
               className="relative"
               style={{
-                width: `${(imageTransform.width || defaultWidth) * previewScale}px`,
-                height: `${(imageTransform.height || defaultHeight) * previewScale}px`,
+                width: `${(imageTransform.width || defaultWidth) * renderScale}px`,
+                height: `${(imageTransform.height || defaultHeight) * renderScale}px`,
                 opacity:
                   track.textStyle?.opacity !== undefined
                     ? track.textStyle.opacity / 100

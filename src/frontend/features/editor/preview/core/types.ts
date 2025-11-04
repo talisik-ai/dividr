@@ -1,4 +1,5 @@
 import { VideoTrack } from '../../stores/videoEditor/index';
+import { FixedCoordinateSystem } from '../utils/coordinateSystem';
 
 /**
  * Core types for the video preview system
@@ -81,4 +82,5 @@ export interface OverlayRenderProps {
   actualHeight: number;
   baseVideoWidth: number;
   baseVideoHeight: number;
+  coordinateSystem: FixedCoordinateSystem; // Fixed coordinate system for consistent positioning
 }

@@ -60,6 +60,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   actualHeight,
   baseVideoWidth,
   baseVideoHeight,
+  coordinateSystem,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
@@ -67,6 +68,9 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   onDragStateChange,
 }) => {
   if (activeTexts.length === 0) return null;
+
+  // Use the coordinate system's baseScale for consistent rendering
+  const renderScale = coordinateSystem.baseScale;
 
   return (
     <div
@@ -88,23 +92,24 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
         const appliedStyle = getTextStyleForTextClip(track);
         const isSelected = selectedTrackIds.includes(track.id);
 
-        // Calculate responsive font size based on zoom level
+        // Calculate responsive font size using the fixed coordinate system
+        // This ensures text size is consistent regardless of container size
         const responsiveFontSize = calculateResponsiveFontSize(
           baseVideoHeight,
           TEXT_CLIP_MIN_FONT_SIZE,
           TEXT_CLIP_BASE_SIZE_RATIO,
-          previewScale,
+          renderScale,
         );
 
-        // Scale padding and effects with zoom level
-        const scaledPaddingVertical = TEXT_CLIP_PADDING_VERTICAL * previewScale;
+        // Scale padding and effects using the render scale
+        const scaledPaddingVertical = TEXT_CLIP_PADDING_VERTICAL * renderScale;
         const scaledPaddingHorizontal =
-          TEXT_CLIP_PADDING_HORIZONTAL * previewScale;
+          TEXT_CLIP_PADDING_HORIZONTAL * renderScale;
 
-        // Scale text shadow with zoom level
+        // Scale text shadow using the render scale
         const scaledTextShadow = scaleTextShadow(
           appliedStyle.textShadow,
-          previewScale,
+          renderScale,
         );
 
         // Check if has actual background (not transparent)
@@ -131,8 +136,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
 
         // Multi-layer rendering for glow effect
         if (appliedStyle.hasGlow) {
-          const glowBlurAmount = GLOW_BLUR_MULTIPLIER * previewScale;
-          const glowSpread = GLOW_SPREAD_MULTIPLIER * previewScale;
+          const glowBlurAmount = GLOW_BLUR_MULTIPLIER * renderScale;
+          const glowSpread = GLOW_SPREAD_MULTIPLIER * renderScale;
 
           // Create the complete style for the boundary wrapper
           const completeStyle: React.CSSProperties = {
@@ -155,6 +160,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 previewScale={previewScale}
                 videoWidth={baseVideoWidth}
                 videoHeight={baseVideoHeight}
+                renderScale={renderScale}
                 onTransformUpdate={onTransformUpdate}
                 onSelect={onSelect}
                 onTextUpdate={onTextUpdate}
@@ -235,6 +241,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
               previewScale={previewScale}
               videoWidth={baseVideoWidth}
               videoHeight={baseVideoHeight}
+              renderScale={renderScale}
               onTransformUpdate={onTransformUpdate}
               onSelect={onSelect}
               onTextUpdate={onTextUpdate}
@@ -307,6 +314,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
             previewScale={previewScale}
             videoWidth={baseVideoWidth}
             videoHeight={baseVideoHeight}
+            renderScale={renderScale}
             onTransformUpdate={onTransformUpdate}
             onSelect={onSelect}
             onTextUpdate={onTextUpdate}

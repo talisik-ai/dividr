@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
-import { Z_INDEX_SUBTITLE_SELECTION } from '../core/constants';
 
 interface SubtitleTransformBoundaryProps {
   track: VideoTrack;
@@ -15,6 +14,7 @@ interface SubtitleTransformBoundaryProps {
   panX: number;
   panY: number;
   zIndexOverlay: number;
+  renderScale?: number; // The actual render scale from coordinate system (baseScale)
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -48,12 +48,15 @@ export const SubtitleTransformBoundary: React.FC<
   panX,
   panY,
   zIndexOverlay,
+  renderScale,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
   onDragStateChange,
   children,
 }) => {
+  // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
+  const effectiveRenderScale = renderScale ?? previewScale;
   const containerRef = useRef<HTMLDivElement>(null);
   const boundaryRef = useRef<HTMLDivElement>(null);
   const editableRef = useRef<HTMLDivElement>(null);
@@ -126,10 +129,10 @@ export const SubtitleTransformBoundary: React.FC<
   const transform = React.useMemo(() => {
     const pixels = normalizedToPixels(normalizedTransform);
     return {
-      x: pixels.x * previewScale,
-      y: pixels.y * previewScale,
+      x: pixels.x * effectiveRenderScale,
+      y: pixels.y * effectiveRenderScale,
     };
-  }, [normalizedTransform, normalizedToPixels, previewScale]);
+  }, [normalizedTransform, normalizedToPixels, effectiveRenderScale]);
 
   // Allow positioning beyond video bounds for professional editing behavior
   // Content will be clipped by the overlay container, but handles remain accessible
@@ -216,13 +219,15 @@ export const SubtitleTransformBoundary: React.FC<
       const deltaX = e.clientX - dragStart.x;
       const deltaY = e.clientY - dragStart.y;
 
-      // Convert screen delta to video coordinate delta
-      const normalizedDeltaX = deltaX / previewScale;
-      const normalizedDeltaY = deltaY / previewScale;
+      // Convert screen delta to video coordinate delta using the effective render scale
+      const normalizedDeltaX = deltaX / effectiveRenderScale;
+      const normalizedDeltaY = deltaY / effectiveRenderScale;
 
       // Add delta to initial position (already in screen pixels)
-      let newPixelX = initialTransform.x / previewScale + normalizedDeltaX;
-      let newPixelY = initialTransform.y / previewScale + normalizedDeltaY;
+      let newPixelX =
+        initialTransform.x / effectiveRenderScale + normalizedDeltaX;
+      let newPixelY =
+        initialTransform.y / effectiveRenderScale + normalizedDeltaY;
 
       // Snapping logic - only when Shift or Ctrl is held
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -306,7 +311,7 @@ export const SubtitleTransformBoundary: React.FC<
     isDragging,
     dragStart,
     initialTransform,
-    previewScale,
+    effectiveRenderScale,
     videoWidth,
     videoHeight,
     containerSize,
@@ -434,7 +439,6 @@ export const SubtitleTransformBoundary: React.FC<
             width: `${containerSize.width}px`,
             height: `${containerSize.height}px`,
             border: '2px solid #F45513',
-            borderRadius: '4px',
             zIndex: 10000, // Very high z-index to ensure boundary is always on top and interactive
             pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
             cursor: getCursor(), // Show appropriate cursor

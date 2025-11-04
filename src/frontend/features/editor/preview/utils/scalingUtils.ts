@@ -1,4 +1,8 @@
 import { PreviewDimensions } from '../core/types';
+import {
+  calculateFixedCoordinateSystem,
+  FixedCoordinateSystem,
+} from './coordinateSystem';
 
 /**
  * Utility functions for scaling and dimension calculations
@@ -14,10 +18,13 @@ export interface ScalingParams {
 
 /**
  * Calculate content scale - the preview size to fill the container while maintaining aspect ratio
+ *
+ * IMPORTANT: This function now uses the fixed coordinate system to ensure consistent
+ * positioning across different container sizes (normal vs fullscreen preview).
  */
 export function calculateContentScale(
   params: ScalingParams,
-): PreviewDimensions {
+): PreviewDimensions & { coordinateSystem: FixedCoordinateSystem } {
   const {
     containerWidth,
     containerHeight,
@@ -26,68 +33,59 @@ export function calculateContentScale(
     previewScale,
   } = params;
 
-  const containerAspect = containerWidth / containerHeight;
-  const videoAspect = videoWidth / videoHeight;
-
-  let actualWidth = videoWidth;
-  let actualHeight = videoHeight;
-
-  if (containerWidth > 0 && containerHeight > 0) {
-    // Calculate the maximum size that fits the container while maintaining aspect ratio
-    if (containerAspect > videoAspect) {
-      // Container is wider than video - fit to height
-      const scale = containerHeight / videoHeight;
-      actualWidth = videoWidth * scale;
-      actualHeight = containerHeight;
-    } else {
-      // Container is taller than video - fit to width
-      const scale = containerWidth / videoWidth;
-      actualWidth = containerWidth;
-      actualHeight = videoHeight * scale;
-    }
-
-    // Apply previewScale as a zoom multiplier on the fitted size
-    // previewScale = 1 means fill the container (default behavior)
-    // previewScale > 1 means zoom in
-    // previewScale < 1 means zoom out
-    actualWidth *= previewScale;
-    actualHeight *= previewScale;
-  }
+  // Use the new fixed coordinate system
+  const coordinateSystem = calculateFixedCoordinateSystem({
+    videoWidth,
+    videoHeight,
+    containerWidth,
+    containerHeight,
+    previewScale,
+  });
 
   return {
     width: containerWidth,
     height: containerHeight,
-    actualWidth,
-    actualHeight,
+    actualWidth: coordinateSystem.renderedWidth,
+    actualHeight: coordinateSystem.renderedHeight,
+    coordinateSystem,
   };
 }
 
 /**
  * Calculate responsive font size based on video height and zoom level
+ *
+ * This function calculates font size in the video's native resolution space,
+ * then scales it for rendering. This ensures text maintains consistent size
+ * relative to the video regardless of container size.
  */
 export function calculateResponsiveFontSize(
   baseVideoHeight: number,
   minSize: number,
   sizeRatio: number,
-  previewScale: number,
+  renderScale: number, // This should be coordinateSystem.baseScale
 ): number {
-  const baseFontSize = Math.max(minSize, baseVideoHeight * sizeRatio);
-  return baseFontSize * previewScale;
+  // Calculate font size in video space
+  const videoSpaceFontSize = Math.max(minSize, baseVideoHeight * sizeRatio);
+
+  // Scale to screen space for rendering
+  return videoSpaceFontSize * renderScale;
 }
 
 /**
- * Scale text shadow values based on preview scale
+ * Scale text shadow values based on render scale
+ *
+ * This scales text shadow from video space to screen space
  */
 export function scaleTextShadow(
   textShadow: string,
-  previewScale: number,
+  renderScale: number, // This should be coordinateSystem.baseScale
 ): string {
-  if (!textShadow || previewScale === 1) return textShadow;
+  if (!textShadow || renderScale === 1) return textShadow;
 
   return textShadow.replace(
     /(\\d+\\.?\\d*)px/g,
     (match: string, value: string) => {
-      return `${parseFloat(value) * previewScale}px`;
+      return `${parseFloat(value) * renderScale}px`;
     },
   );
 }

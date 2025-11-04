@@ -179,14 +179,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  // Content scale calculation
-  const { actualWidth, actualHeight } = calculateContentScale({
-    containerWidth: containerSize.width,
-    containerHeight: containerSize.height,
-    videoWidth: baseVideoWidth,
-    videoHeight: baseVideoHeight,
-    previewScale: preview.previewScale,
-  });
+  // Content scale calculation with fixed coordinate system
+  const { actualWidth, actualHeight, coordinateSystem } = calculateContentScale(
+    {
+      containerWidth: containerSize.width,
+      containerHeight: containerSize.height,
+      videoWidth: baseVideoWidth,
+      videoHeight: baseVideoHeight,
+      previewScale: preview.previewScale,
+    },
+  );
 
   // Get active tracks
   const activeSubtitles = getActiveTracksAtFrame(
@@ -382,7 +384,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
   }, [importMediaFromDialog]);
 
-  // Overlay render props
+  // Overlay render props with fixed coordinate system
   const overlayProps = {
     previewScale: preview.previewScale,
     panX: preview.panX,
@@ -391,6 +393,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     actualHeight,
     baseVideoWidth,
     baseVideoHeight,
+    coordinateSystem, // Pass the fixed coordinate system to all overlays
   };
 
   // Get rotation for rotation badge (works for both text and image)

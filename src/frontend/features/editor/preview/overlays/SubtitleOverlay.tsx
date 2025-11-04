@@ -47,7 +47,7 @@ export interface SubtitleOverlayProps extends OverlayRenderProps {
 
 export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   activeSubtitles,
-  allTracks,
+  // allTracks is required by interface but not used in this component
   selectedTrackIds,
   getTextStyleForSubtitle,
   activeStyle,
@@ -59,12 +59,16 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   actualHeight,
   baseVideoWidth,
   baseVideoHeight,
+  coordinateSystem,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
   onDragStateChange,
 }) => {
   if (activeSubtitles.length === 0) return null;
+
+  // Use the coordinate system's baseScale for consistent rendering
+  const renderScale = coordinateSystem.baseScale;
 
   // Check if any subtitle is selected
   const hasSelectedSubtitle = activeSubtitles.some((track) =>
@@ -77,17 +81,17 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   // Get applied style for subtitle rendering
   const appliedStyle = getTextStyleForSubtitle(activeStyle);
 
-  // Calculate responsive font size based on zoom level
+  // Calculate responsive font size using the fixed coordinate system
   const responsiveFontSize = calculateResponsiveFontSize(
     baseVideoHeight,
     SUBTITLE_MIN_FONT_SIZE,
     SUBTITLE_BASE_SIZE_RATIO,
-    previewScale,
+    renderScale,
   );
 
-  // Scale padding and effects with zoom level
-  const scaledPaddingVertical = SUBTITLE_PADDING_VERTICAL * previewScale;
-  const scaledPaddingHorizontal = SUBTITLE_PADDING_HORIZONTAL * previewScale;
+  // Scale padding and effects using the render scale
+  const scaledPaddingVertical = SUBTITLE_PADDING_VERTICAL * renderScale;
+  const scaledPaddingHorizontal = SUBTITLE_PADDING_HORIZONTAL * renderScale;
 
   // Create a fake track for the transform boundary (uses global position)
   const globalTrack: VideoTrack = {
@@ -111,6 +115,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
       panX={panX}
       panY={panY}
       zIndexOverlay={Z_INDEX_SUBTITLE_OVERLAY}
+      renderScale={renderScale}
       onTransformUpdate={(_, transform) => {
         // Pass the first selected subtitle's ID (or first subtitle if none selected)
         const trackId = selectedSubtitle?.id || activeSubtitles[0].id;
@@ -139,10 +144,10 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
             }}
           >
             {(() => {
-              // Scale text shadow with zoom level if present
+              // Scale text shadow using the render scale
               const scaledTextShadow = scaleTextShadow(
                 appliedStyle.textShadow,
-                previewScale,
+                renderScale,
               );
 
               // Check if has actual background (not transparent)
@@ -161,19 +166,19 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
                 textAlign: appliedStyle.textAlign as any,
                 lineHeight: appliedStyle.lineHeight,
                 letterSpacing: appliedStyle.letterSpacing
-                  ? `${parseFloat(String(appliedStyle.letterSpacing)) * previewScale}px`
+                  ? `${parseFloat(String(appliedStyle.letterSpacing)) * renderScale}px`
                   : appliedStyle.letterSpacing,
                 whiteSpace: 'pre-line',
                 wordBreak: 'keep-all',
                 overflowWrap: 'normal',
                 padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-                maxWidth: `${baseVideoWidth * previewScale * 0.9}px`, // 90% of video width - prevents wrapping on viewport resize
+                maxWidth: `${baseVideoWidth * renderScale * 0.9}px`, // 90% of video width - prevents wrapping on viewport resize
               };
 
               // Multi-layer rendering for glow effect
               if ((appliedStyle as any).hasGlow) {
-                const glowBlurAmount = GLOW_BLUR_MULTIPLIER * previewScale;
-                const glowSpread = GLOW_SPREAD_MULTIPLIER * previewScale;
+                const glowBlurAmount = GLOW_BLUR_MULTIPLIER * renderScale;
+                const glowSpread = GLOW_SPREAD_MULTIPLIER * renderScale;
 
                 if (hasBackground) {
                   // Triple-layer mode: glow + background box + text

@@ -396,34 +396,33 @@ export const createTracksSlice: StateCreator<
         trackData.type === 'subtitle' ||
         trackData.type === 'image';
 
-      // Calculate auto-fit dimensions for image tracks
+      // Set initial transform for image tracks using original dimensions
+      // Images maintain their intrinsic size - no automatic fit-to-canvas
       let imageTransform = trackData.textTransform;
       if (trackData.type === 'image' && trackData.width && trackData.height) {
         const canvasWidth = state.preview?.canvasWidth || 1920;
         const canvasHeight = state.preview?.canvasHeight || 1080;
-        const imageAspectRatio = trackData.width / trackData.height;
-        const canvasAspectRatio = canvasWidth / canvasHeight;
-
-        let fitWidth = canvasWidth;
-        let fitHeight = canvasHeight;
-
-        if (imageAspectRatio > canvasAspectRatio) {
-          // Image is wider than canvas - fit to width
-          fitWidth = canvasWidth;
-          fitHeight = canvasWidth / imageAspectRatio;
-        } else {
-          // Image is taller than canvas - fit to height
-          fitHeight = canvasHeight;
-          fitWidth = canvasHeight * imageAspectRatio;
+        
+        // Use original image dimensions
+        let imageWidth = trackData.width;
+        let imageHeight = trackData.height;
+        
+        // Only scale down if image is significantly larger than canvas
+        // This prevents massive images from being unmanageable, but preserves smaller images
+        const maxDimension = Math.max(canvasWidth, canvasHeight) * 1.5; // Allow 150% of canvas size
+        if (imageWidth > maxDimension || imageHeight > maxDimension) {
+          const scaleFactor = maxDimension / Math.max(imageWidth, imageHeight);
+          imageWidth *= scaleFactor;
+          imageHeight *= scaleFactor;
         }
 
         imageTransform = {
           x: 0, // Centered
           y: 0, // Centered
-          scale: 1, // 100% scale
+          scale: 1, // 100% scale (applied to the dimensions below)
           rotation: 0, // No rotation
-          width: fitWidth, // Auto-fit widthx
-          height: fitHeight, // Auto-fit height
+          width: imageWidth, // Original or capped width
+          height: imageHeight, // Original or capped height
         };
       }
 
