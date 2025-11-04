@@ -94,22 +94,28 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
 
         // Calculate responsive font size using the fixed coordinate system
         // This ensures text size is consistent regardless of container size
-        const responsiveFontSize = calculateResponsiveFontSize(
+        const baseFontSize = calculateResponsiveFontSize(
           baseVideoHeight,
           TEXT_CLIP_MIN_FONT_SIZE,
           TEXT_CLIP_BASE_SIZE_RATIO,
           renderScale,
         );
 
-        // Scale padding and effects using the render scale
-        const scaledPaddingVertical = TEXT_CLIP_PADDING_VERTICAL * renderScale;
-        const scaledPaddingHorizontal =
-          TEXT_CLIP_PADDING_HORIZONTAL * renderScale;
+        // CRITICAL: Apply the track's scale to the font size for resolution-independent rendering
+        // This ensures text is re-rendered at the actual target size, not bitmap-scaled
+        const actualFontSize = baseFontSize * (track.textTransform?.scale || 1);
 
-        // Scale text shadow using the render scale
+        // Scale padding and effects using both render scale AND track scale for consistency
+        const effectiveScale = renderScale * (track.textTransform?.scale || 1);
+        const scaledPaddingVertical =
+          TEXT_CLIP_PADDING_VERTICAL * effectiveScale;
+        const scaledPaddingHorizontal =
+          TEXT_CLIP_PADDING_HORIZONTAL * effectiveScale;
+
+        // Scale text shadow using the effective scale (render + track scale)
         const scaledTextShadow = scaleTextShadow(
           appliedStyle.textShadow,
-          renderScale,
+          effectiveScale,
         );
 
         // Check if has actual background (not transparent)
@@ -117,7 +123,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
 
         // Base text style shared across all layers
         const baseTextStyle: React.CSSProperties = {
-          fontSize: `${responsiveFontSize}px`,
+          fontSize: `${actualFontSize}px`,
           fontFamily: appliedStyle.fontFamily,
           fontWeight: appliedStyle.fontWeight,
           fontStyle: appliedStyle.fontStyle,
@@ -136,8 +142,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
 
         // Multi-layer rendering for glow effect
         if (appliedStyle.hasGlow) {
-          const glowBlurAmount = GLOW_BLUR_MULTIPLIER * renderScale;
-          const glowSpread = GLOW_SPREAD_MULTIPLIER * renderScale;
+          const glowBlurAmount = GLOW_BLUR_MULTIPLIER * effectiveScale;
+          const glowSpread = GLOW_SPREAD_MULTIPLIER * effectiveScale;
 
           // Create the complete style for the boundary wrapper
           const completeStyle: React.CSSProperties = {
@@ -170,6 +176,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 clipContent={true}
                 clipWidth={actualWidth}
                 clipHeight={actualHeight}
+                disableScaleTransform={true}
               >
                 <div
                   style={{
@@ -251,6 +258,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
               clipContent={true}
               clipWidth={actualWidth}
               clipHeight={actualHeight}
+              disableScaleTransform={true}
             >
               <div
                 style={{
@@ -324,6 +332,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
             clipContent={true}
             clipWidth={actualWidth}
             clipHeight={actualHeight}
+            disableScaleTransform={true}
           >
             <div style={completeStyle}>{track.textContent}</div>
           </TextTransformBoundary>

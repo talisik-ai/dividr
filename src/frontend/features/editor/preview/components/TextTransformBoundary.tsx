@@ -33,6 +33,7 @@ interface TextTransformBoundaryProps {
   clipContent?: boolean; // Whether to clip content to canvas bounds
   clipWidth?: number; // Width of the clipping area
   clipHeight?: number; // Height of the clipping area
+  disableScaleTransform?: boolean; // Whether to disable CSS scale transform (for vector-sharp text)
 }
 
 type HandleType =
@@ -64,6 +65,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   clipContent = false,
   clipWidth,
   clipHeight,
+  disableScaleTransform = false,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
   // This ensures consistent positioning across different container sizes
@@ -233,38 +235,41 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     }
   }, []);
 
-  // Track container size changes to update boundary dimensions
+  // Track content size changes to update boundary dimensions
+  // CRITICAL: We observe contentRef (the actual text), NOT containerRef (the transform wrapper)
+  // This gives us the intrinsic content size before scale transform is applied
   // Store the previous renderScale to detect when it changes
   const prevRenderScaleRef = useRef(effectiveRenderScale);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!contentRef.current) return;
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
+        // This is the intrinsic content size (before scale transform)
         setContainerSize({ width, height });
       }
     });
 
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(contentRef.current);
 
     return () => {
       resizeObserver.disconnect();
     };
   }, []);
 
-  // Also update on transform changes (but NOT on renderScale changes)
+  // Also update on content changes (but NOT on renderScale changes)
   useEffect(() => {
-    if (containerRef.current) {
+    if (contentRef.current) {
       setContainerSize({
-        width: containerRef.current.offsetWidth,
-        height: containerRef.current.offsetHeight,
+        width: contentRef.current.offsetWidth,
+        height: contentRef.current.offsetHeight,
       });
     }
-  }, [transform.scale, transform.rotation, track.textContent]);
+  }, [track.textContent]);
 
-  // Update dimensions in the store when container size changes
+  // Update dimensions in the store when content size changes
   // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
   useEffect(() => {
     // Detect if renderScale changed (e.g., entering/exiting fullscreen)
@@ -281,12 +286,11 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       const currentWidth = normalizedTransform.width || 0;
       const currentHeight = normalizedTransform.height || 0;
 
-      // Calculate dimensions in video space (independent of container size)
-      // Dimensions should be stored in video space, scaled by element's own scale
-      const videoSpaceWidth =
-        (containerSize.width / effectiveRenderScale) * transform.scale;
-      const videoSpaceHeight =
-        (containerSize.height / effectiveRenderScale) * transform.scale;
+      // Calculate dimensions in video space (independent of render scale)
+      // containerSize is now the INTRINSIC content size (from contentRef, not containerRef)
+      // So we don't need to divide by scale - just convert directly to video space
+      const videoSpaceWidth = containerSize.width / effectiveRenderScale;
+      const videoSpaceHeight = containerSize.height / effectiveRenderScale;
 
       // Only update if the video-space dimensions have changed significantly
       const threshold = 1; // 1px tolerance in video space
@@ -303,7 +307,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   }, [
     containerSize.width,
     containerSize.height,
-    transform.scale,
     normalizedTransform.width,
     normalizedTransform.height,
     track.id,
@@ -396,8 +399,14 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
           };
 
           // Add edge snap points
-          const halfWidth = (containerSize.width * transform.scale) / 2;
-          const halfHeight = (containerSize.height * transform.scale) / 2;
+          const actualWidth = disableScaleTransform
+            ? containerSize.width
+            : containerSize.width * transform.scale;
+          const actualHeight = disableScaleTransform
+            ? containerSize.height
+            : containerSize.height * transform.scale;
+          const halfWidth = actualWidth / 2;
+          const halfHeight = actualHeight / 2;
 
           // Video frame edges (in video pixel coordinates)
           snapPoints.horizontal.push(
@@ -435,11 +444,17 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
         // Notify parent of drag state for guide rendering
         if (onDragStateChange && containerSize.width > 0) {
+          const actualWidth = disableScaleTransform
+            ? containerSize.width
+            : containerSize.width * transform.scale;
+          const actualHeight = disableScaleTransform
+            ? containerSize.height
+            : containerSize.height * transform.scale;
           onDragStateChange(true, {
             x: newPixelX,
             y: newPixelY,
-            width: containerSize.width * transform.scale,
-            height: containerSize.height * transform.scale,
+            width: actualWidth,
+            height: actualHeight,
           });
         }
 
@@ -624,6 +639,12 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const handleScale = previewScale < 0.5 ? 0.5 : 1;
 
   // Content component - may be wrapped in clipping layer
+  // When disableScaleTransform is true, we omit scale() from the CSS transform
+  // This allows text to be re-rendered at actual size for vector-sharp rendering
+  const contentTransform = disableScaleTransform
+    ? `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`
+    : `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`;
+
   const contentComponent = (
     <div
       ref={containerRef}
@@ -631,7 +652,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       style={{
         left: '50%',
         top: '50%',
-        transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`,
+        transform: contentTransform,
         transformOrigin: 'center center',
         cursor: getCursorStyle(),
         pointerEvents: 'auto',
@@ -709,8 +730,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
             top: '50%',
             transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
             transformOrigin: 'center center',
-            width: `${containerSize.width * transform.scale}px`,
-            height: `${containerSize.height * transform.scale}px`,
+            // When disableScaleTransform is true, content is already scaled, so don't multiply again
+            width: disableScaleTransform
+              ? `${containerSize.width}px`
+              : `${containerSize.width * transform.scale}px`,
+            height: disableScaleTransform
+              ? `${containerSize.height}px`
+              : `${containerSize.height * transform.scale}px`,
             border: `${2 * handleScale}px solid #F45513`,
             borderRadius: `${4 * handleScale}px`,
             zIndex: 10000, // Very high z-index to ensure handles are always on top and interactive
