@@ -116,7 +116,7 @@ export const FullscreenPreview: React.FC = () => {
       {/* Compact Control Bar at Bottom */}
       <div>
         {/* Timeline Scrubber */}
-        <div className="bg-black">
+        <div className="bg-black relative z-[999]">
           <Slider
             value={[timeline.currentFrame]}
             min={0}

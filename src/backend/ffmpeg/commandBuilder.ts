@@ -12,12 +12,11 @@ import {
   InputCategory,
   ProcessedTimeline,
   ProcessedTimelineSegment,
-  TextClipData,
   TrackInfo,
   VideoEditJob,
   VideoProcessingContext,
 } from './schema/ffmpegConfig';
-import { getFontPathByStyle, getFontPathsForFamilies, getFontDirectoriesForFamilies } from './subtitles/fontMapper';
+import { getFontDirectoriesForFamilies } from './subtitles/fontMapper';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -81,11 +80,11 @@ function escapePathForFilter(filePath: string): string {
   // For filter syntax, we need to escape these characters in order:
   // 1. Backslashes first (escape to \\)
   escapedPath = escapedPath.replace(/\\/g, '\\\\');
-  
+
   // 2. Colons (including drive letters) - escape to \:
   // In filter context, colons separate parameters, so they must be escaped
   escapedPath = escapedPath.replace(/:/g, '\\:');
-  
+
   // 3. Single quotes - escape to \'
   escapedPath = escapedPath.replace(/'/g, "\\'");
 
@@ -240,7 +239,9 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
     const trackInfo = getTrackInfo(input);
     const isGap = isGapInput(path);
 
-    const isVideo = !isGap && (FILE_EXTENSIONS.VIDEO.test(path) || FILE_EXTENSIONS.IMAGE.test(path));
+    const isVideo =
+      !isGap &&
+      (FILE_EXTENSIONS.VIDEO.test(path) || FILE_EXTENSIONS.IMAGE.test(path));
     const isAudio = !isGap && FILE_EXTENSIONS.AUDIO.test(path);
 
     if (isVideo) {
@@ -280,9 +281,10 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
       }
 
       // Create a modified trackInfo with the audio file index stored
-      const modifiedTrackInfo = audioFileIndex !== undefined 
-        ? { ...trackInfo, audioFileIndex }
-        : trackInfo;
+      const modifiedTrackInfo =
+        audioFileIndex !== undefined
+          ? { ...trackInfo, audioFileIndex }
+          : trackInfo;
 
       videoInputs.push({
         originalIndex,
@@ -355,7 +357,7 @@ function createVideoTrimFilters(
   const { trackInfo, originalIndex, inputStreamRef } = context;
 
   // Check if this is an image
-  const isImage = trackInfo.isImage || (trackInfo.trackType === 'image');
+  const isImage = trackInfo.isImage || trackInfo.trackType === 'image';
 
   if (isImage && trackInfo.duration !== undefined) {
     // For images, treat them like gaps but with the actual image content
@@ -364,9 +366,11 @@ function createVideoTrimFilters(
     const fps = 30; // Default FPS, will be normalized later
     const duration = trackInfo.duration;
     const totalFrames = Math.round(duration * fps); // Round to nearest frame for exact timing
-    
-    console.log(`🖼️ Image input detected: generating ${duration}s (${totalFrames} frames) at ${fps}fps from static image`);
-    
+
+    console.log(
+      `🖼️ Image input detected: generating ${duration}s (${totalFrames} frames) at ${fps}fps from static image`,
+    );
+
     // Use trim with exact duration instead of loop filter to avoid segfaults in FFmpeg 6.0
     // Static images don't need loop filter - trim alone will hold the frame for the duration
     return {
@@ -540,17 +544,24 @@ function createSilentAudioFilters(
 function buildSeparateTimelines(
   inputs: (string | TrackInfo)[],
   targetFrameRate: number = VIDEO_DEFAULTS.FPS,
-): { 
-  videoLayers: Map<number, ProcessedTimeline>; 
-  imageLayers: Map<number, ProcessedTimeline>; 
+): {
+  videoLayers: Map<number, ProcessedTimeline>;
+  imageLayers: Map<number, ProcessedTimeline>;
   audio: ProcessedTimeline;
 } {
   console.log('🎬 Building timelines with multi-layer support');
-  
+
   // Separate inputs by type and organize by layer
-  const videoInputsByLayer = new Map<number, Array<{ trackInfo: TrackInfo; originalIndex: number }>>();
-  const imageInputsByLayer = new Map<number, Array<{ trackInfo: TrackInfo; originalIndex: number }>>();
-  const audioInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> = [];
+  const videoInputsByLayer = new Map<
+    number,
+    Array<{ trackInfo: TrackInfo; originalIndex: number }>
+  >();
+  const imageInputsByLayer = new Map<
+    number,
+    Array<{ trackInfo: TrackInfo; originalIndex: number }>
+  >();
+  const audioInputs: Array<{ trackInfo: TrackInfo; originalIndex: number }> =
+    [];
 
   inputs.forEach((input, originalIndex) => {
     const trackInfo = getTrackInfo(input);
@@ -564,13 +575,17 @@ function buildSeparateTimelines(
     const layer = trackInfo.layer ?? 0; // Default to layer 0
 
     if (FILE_EXTENSIONS.VIDEO.test(path)) {
-      console.log(`📹 Adding video input ${originalIndex} to layer ${layer}: ${path}`);
+      console.log(
+        `📹 Adding video input ${originalIndex} to layer ${layer}: ${path}`,
+      );
       if (!videoInputsByLayer.has(layer)) {
         videoInputsByLayer.set(layer, []);
       }
       videoInputsByLayer.get(layer)!.push({ trackInfo, originalIndex });
     } else if (FILE_EXTENSIONS.IMAGE.test(path)) {
-      console.log(`🖼️ Adding image input ${originalIndex} to layer ${layer}: ${path} (timeline: ${trackInfo.timelineStartFrame}-${trackInfo.timelineEndFrame})`);
+      console.log(
+        `🖼️ Adding image input ${originalIndex} to layer ${layer}: ${path} (timeline: ${trackInfo.timelineStartFrame}-${trackInfo.timelineEndFrame})`,
+      );
       if (!imageInputsByLayer.has(layer)) {
         imageInputsByLayer.set(layer, []);
       }
@@ -581,50 +596,59 @@ function buildSeparateTimelines(
     }
   });
 
-  console.log(`📊 Input counts: video layers=${videoInputsByLayer.size}, image layers=${imageInputsByLayer.size}, audio=${audioInputs.length}`);
+  console.log(
+    `📊 Input counts: video layers=${videoInputsByLayer.size}, image layers=${imageInputsByLayer.size}, audio=${audioInputs.length}`,
+  );
 
   // Build video timelines for each layer
   const videoLayers = new Map<number, ProcessedTimeline>();
   for (const [layer, layerInputs] of videoInputsByLayer.entries()) {
-    console.log(`🎥 Building video layer ${layer} with ${layerInputs.length} inputs`);
+    console.log(
+      `🎥 Building video layer ${layer} with ${layerInputs.length} inputs`,
+    );
     let videoSegments = buildVideoTimeline(layerInputs, targetFrameRate);
     videoSegments = fillTimelineGaps(videoSegments, targetFrameRate, 'video');
-    
-    const totalDuration = videoSegments.length > 0 
-      ? Math.max(...videoSegments.map(s => s.endTime))
-      : 0;
-    
+
+    const totalDuration =
+      videoSegments.length > 0
+        ? Math.max(...videoSegments.map((s) => s.endTime))
+        : 0;
+
     videoLayers.set(layer, {
       segments: videoSegments,
       totalDuration,
       timelineType: 'video',
     });
   }
-  
+
   // Build image timelines for each layer
   const imageLayers = new Map<number, ProcessedTimeline>();
   for (const [layer, layerInputs] of imageInputsByLayer.entries()) {
-    console.log(`🖼️ Building image layer ${layer} with ${layerInputs.length} inputs`);
+    console.log(
+      `🖼️ Building image layer ${layer} with ${layerInputs.length} inputs`,
+    );
     const imageSegments = buildImageTimeline(layerInputs, targetFrameRate);
-    
-    const totalDuration = imageSegments.length > 0
-      ? Math.max(...imageSegments.map(s => s.endTime))
-      : 0;
-    
+
+    const totalDuration =
+      imageSegments.length > 0
+        ? Math.max(...imageSegments.map((s) => s.endTime))
+        : 0;
+
     imageLayers.set(layer, {
       segments: imageSegments,
       totalDuration,
       timelineType: 'video', // Images are video-like
     });
   }
-  
+
   // Build audio timeline (simpler, no layering)
   let audioSegments = buildAudioTimeline(audioInputs, targetFrameRate);
   audioSegments = fillTimelineGaps(audioSegments, targetFrameRate, 'audio');
 
-  const audioTotalDuration = audioSegments.length > 0
-    ? Math.max(...audioSegments.map(s => s.endTime))
-    : 0;
+  const audioTotalDuration =
+    audioSegments.length > 0
+      ? Math.max(...audioSegments.map((s) => s.endTime))
+      : 0;
 
   return {
     videoLayers,
@@ -651,9 +675,11 @@ function fillTimelineGaps(
   }
 
   // Sort segments by start time
-  const sortedSegments = [...segments].sort((a, b) => a.startTime - b.startTime);
+  const sortedSegments = [...segments].sort(
+    (a, b) => a.startTime - b.startTime,
+  );
   const filledSegments: ProcessedTimelineSegment[] = [];
-  
+
   let currentTime = 0;
   let gapIndex = 0;
 
@@ -662,11 +688,13 @@ function fillTimelineGaps(
     const gapDuration = segment.startTime - currentTime;
     const frameDuration = 1 / targetFrameRate; // Duration of one frame
     const minGapThreshold = frameDuration * 0.5; // Half a frame as threshold
-    
+
     if (gapDuration > minGapThreshold) {
       // Only add gap if it's larger than half a frame (to avoid rounding issues)
-      console.log(`🕳️ Found ${timelineType} gap: ${currentTime.toFixed(2)}s-${segment.startTime.toFixed(2)}s (${gapDuration.toFixed(2)}s)`);
-      
+      console.log(
+        `🕳️ Found ${timelineType} gap: ${currentTime.toFixed(2)}s-${segment.startTime.toFixed(2)}s (${gapDuration.toFixed(2)}s)`,
+      );
+
       // Add gap segment
       const gapTrackInfo: TrackInfo = {
         path: GAP_MARKER,
@@ -683,13 +711,15 @@ function fillTimelineGaps(
         endTime: segment.startTime,
         timelineType,
       });
-      
+
       // Add the actual segment at its original position
       filledSegments.push(segment);
       currentTime = Math.max(currentTime, segment.endTime);
     } else if (gapDuration > 0 && gapDuration <= minGapThreshold) {
       // Tiny gap (less than half a frame) - adjust segment to start at currentTime
-      console.log(`🔧 Adjusting segment to eliminate tiny gap of ${gapDuration.toFixed(4)}s`);
+      console.log(
+        `🔧 Adjusting segment to eliminate tiny gap of ${gapDuration.toFixed(4)}s`,
+      );
       const adjustedSegment = {
         ...segment,
         startTime: currentTime,
@@ -704,7 +734,9 @@ function fillTimelineGaps(
     }
   });
 
-  console.log(`✅ ${timelineType} timeline after filling gaps: ${filledSegments.length} segments`);
+  console.log(
+    `✅ ${timelineType} timeline after filling gaps: ${filledSegments.length} segments`,
+  );
   return filledSegments;
 }
 
@@ -1158,24 +1190,32 @@ function buildImageOverlayFilters(
 ): { filters: string[]; outputLabel: string } {
   const filters: string[] = [];
   let currentLabel = baseVideoLabel;
-  
+
   // Process each image segment
   imageSegments.forEach((segment, index) => {
     const { input: trackInfo, originalIndex, duration } = segment;
     // Round timing values to 3 decimals to avoid FFmpeg truncation inconsistencies
     const startTime = Math.round(segment.startTime * 1000) / 1000;
     const endTime = Math.round(segment.endTime * 1000) / 1000;
-    
+
     // Find the file index for this image
-    const fileIndex = findFileIndexForSegment(segment, categorizedInputs, 'video');
-    
+    const fileIndex = findFileIndexForSegment(
+      segment,
+      categorizedInputs,
+      'video',
+    );
+
     if (fileIndex === undefined) {
-      console.warn(`❌ Could not find file index for image segment ${originalIndex}`);
+      console.warn(
+        `❌ Could not find file index for image segment ${originalIndex}`,
+      );
       return;
     }
-    
-    console.log(`🖼️ Processing image overlay ${index}: ${trackInfo.path} [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s]`);
-    
+
+    console.log(
+      `🖼️ Processing image overlay ${index}: ${trackInfo.path} [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s]`,
+    );
+
     // Get transform settings (default to centered, no rotation, 100% scale)
     const transform = trackInfo.imageTransform || {
       x: 0,
@@ -1185,97 +1225,108 @@ function buildImageOverlayFilters(
       width: trackInfo.width || targetDimensions.width,
       height: trackInfo.height || targetDimensions.height,
     };
-    
+
     // Log transform settings
     if (trackInfo.imageTransform) {
       console.log(
         `🎨 Image transform: pos=(${transform.x.toFixed(2)}, ${transform.y.toFixed(2)}), ` +
-        `scale=${transform.scale.toFixed(2)}, rotation=${transform.rotation.toFixed(1)}°, ` +
-        `size=${transform.width}x${transform.height}`
+          `scale=${transform.scale.toFixed(2)}, rotation=${transform.rotation.toFixed(1)}°, ` +
+          `size=${transform.width}x${transform.height}`,
       );
     }
-    
+
     const imageInputRef = `[${fileIndex}:v]`;
     const imagePreparedRef = `[img${index}_prepared]`;
     const imageScaledRef = `[img${index}_scaled]`;
     const imageRotatedRef = `[img${index}_rotated]`;
-    const overlayOutputRef = index === imageSegments.length - 1 ? `[video_with_images]` : `[overlay${index}]`;
-    
+    const overlayOutputRef =
+      index === imageSegments.length - 1
+        ? `[video_with_images]`
+        : `[overlay${index}]`;
+
     // Step 1: Prepare image - trim to duration and reset timestamps
     // Static images don't need loop filter - trim alone will hold the frame for the duration
     // Add transparent padding at the start to align with timeline position
     filters.push(
       `${imageInputRef}trim=duration=${duration},setpts=PTS-STARTPTS,` +
-      `tpad=start_duration=${startTime}:start_mode=add:color=black@0.0${imagePreparedRef}`
+        `tpad=start_duration=${startTime}:start_mode=add:color=black@0.0${imagePreparedRef}`,
     );
-    
+
     // Step 2: Apply scaling if needed
     // Calculate scaled dimensions based on transform.scale
     const scaledWidth = Math.round(transform.width * transform.scale);
     const scaledHeight = Math.round(transform.height * transform.scale);
-    
+
     let currentImageRef = imagePreparedRef;
     let currentWidth = transform.width;
     let currentHeight = transform.height;
-    
+
     if (transform.scale !== 1.0) {
       filters.push(
-        `${imagePreparedRef}scale=${scaledWidth}:${scaledHeight}${imageScaledRef}`
+        `${imagePreparedRef}scale=${scaledWidth}:${scaledHeight}${imageScaledRef}`,
       );
       currentImageRef = imageScaledRef;
       currentWidth = scaledWidth;
       currentHeight = scaledHeight;
-      console.log(`📐 Scaled image to ${scaledWidth}x${scaledHeight} (scale factor: ${transform.scale.toFixed(2)})`);
+      console.log(
+        `📐 Scaled image to ${scaledWidth}x${scaledHeight} (scale factor: ${transform.scale.toFixed(2)})`,
+      );
     }
-    
+
     // Step 3: Apply rotation if needed
     if (transform.rotation !== 0) {
       const rotationRadians = (transform.rotation * Math.PI) / 180;
-      
+
       // Calculate the bounding box size after rotation to prevent cropping
       // When an image is rotated, its bounding box expands
       // Formula: newWidth = |w*cos(θ)| + |h*sin(θ)|, newHeight = |w*sin(θ)| + |h*cos(θ)|
-      const absRotation = Math.abs(transform.rotation * Math.PI / 180);
+      const absRotation = Math.abs((transform.rotation * Math.PI) / 180);
       const cosTheta = Math.abs(Math.cos(absRotation));
       const sinTheta = Math.abs(Math.sin(absRotation));
-      const rotatedWidth = Math.ceil(currentWidth * cosTheta + currentHeight * sinTheta);
-      const rotatedHeight = Math.ceil(currentWidth * sinTheta + currentHeight * cosTheta);
-      
+      const rotatedWidth = Math.ceil(
+        currentWidth * cosTheta + currentHeight * sinTheta,
+      );
+      const rotatedHeight = Math.ceil(
+        currentWidth * sinTheta + currentHeight * cosTheta,
+      );
+
       filters.push(
-        `${currentImageRef}rotate=${rotationRadians}:out_w=${rotatedWidth}:out_h=${rotatedHeight}:fillcolor=none${imageRotatedRef}`
+        `${currentImageRef}rotate=${rotationRadians}:out_w=${rotatedWidth}:out_h=${rotatedHeight}:fillcolor=none${imageRotatedRef}`,
       );
       currentImageRef = imageRotatedRef;
       currentWidth = rotatedWidth;
       currentHeight = rotatedHeight;
       console.log(
         `🔄 Rotated image by ${transform.rotation.toFixed(1)}° (clockwise) → ${rotationRadians.toFixed(3)} rad\n` +
-        `   Expanded canvas from ${scaledWidth}x${scaledHeight} to ${rotatedWidth}x${rotatedHeight} to prevent cropping`
+          `   Expanded canvas from ${scaledWidth}x${scaledHeight} to ${rotatedWidth}x${rotatedHeight} to prevent cropping`,
       );
     }
-    
+
     // Step 4: Calculate overlay position
-    
-    const overlayX = transform.x >= 0 
-      ? `(W-w)/2+${transform.x}*W/2`
-      : `(W-w)/2${transform.x}*W/2`; // Negative sign already in value
-    const overlayY = transform.y >= 0
-      ? `(H-h)/2-${transform.y}*H/2` // Subtract because positive y should move up
-      : `(H-h)/2-${transform.y}*H/2`; // Double negative becomes addition
-    
+
+    const overlayX =
+      transform.x >= 0
+        ? `(W-w)/2+${transform.x}*W/2`
+        : `(W-w)/2${transform.x}*W/2`; // Negative sign already in value
+    const overlayY =
+      transform.y >= 0
+        ? `(H-h)/2+${transform.y}*H/2` // Add because positive y moves down (matches preview)
+        : `(H-h)/2${transform.y}*H/2`; // Negative sign already in value
+
     // Step 5: Overlay the image onto the current video with time-based enable
     // The overlay is only active between startTime and endTime
     filters.push(
-      `[${currentLabel}]${currentImageRef}overlay=${overlayX}:${overlayY}:enable='between(t,${startTime},${endTime})'${overlayOutputRef}`
+      `[${currentLabel}]${currentImageRef}overlay=${overlayX}:${overlayY}:enable='between(t,${startTime},${endTime})'${overlayOutputRef}`,
     );
-    
+
     currentLabel = overlayOutputRef.replace('[', '').replace(']', '');
-    
+
     console.log(
       `✅ Image overlay ${index} at position (${transform.x.toFixed(2)}, ${transform.y.toFixed(2)}) ` +
-      `enabled between ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s`
+        `enabled between ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s`,
     );
   });
-  
+
   return {
     filters,
     outputLabel: currentLabel,
@@ -1295,18 +1346,21 @@ function buildFontDirectoriesParameter(fontFamilies: string[]): string {
   }
 
   console.log('📝 Font families used in subtitles:', fontFamilies);
-  
+
   // Get all unique font directories
   const fontDirectories = getFontDirectoriesForFamilies(fontFamilies);
   console.log('📝 Resolved font directories:', fontDirectories);
-  
+
   if (fontDirectories.length === 0) {
     return '';
   }
 
   // Escape each directory path for FFmpeg filter syntax
-  const escapedDirs = fontDirectories.map(dir => {
-    const escapedDir = dir.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+  const escapedDirs = fontDirectories.map((dir) => {
+    const escapedDir = dir
+      .replace(/\\/g, '/')
+      .replace(/:/g, '\\:')
+      .replace(/'/g, "\\'");
     return escapedDir;
   });
 
@@ -1314,9 +1368,9 @@ function buildFontDirectoriesParameter(fontFamilies: string[]): string {
   // FFmpeg expects multiple directories separated by ':' on Unix or ';' on Windows
   const separator = process.platform === 'win32' ? ';' : ':';
   const joinedDirs = escapedDirs.join(separator);
-  
+
   console.log('📝 Using fonts directories:', joinedDirs);
-  
+
   return `:fontsdir='${joinedDirs}'`;
 }
 
@@ -1334,7 +1388,7 @@ function processLayerSegments(
   videoFilters: string[],
 ): string[] {
   const concatInputs: string[] = [];
-  
+
   timeline.segments.forEach((segment, segmentIndex) => {
     const { input: trackInfo, originalIndex } = segment;
     const uniqueIndex = `${layerType}_L${layerIndex}_${segmentIndex}`;
@@ -1349,7 +1403,9 @@ function processLayerSegments(
       );
       videoFilters.push(...gapResult.filters);
       concatInputs.push(gapResult.filterRef);
-      console.log(`🎬 Layer ${layerIndex} (${layerType}): Added gap ${gapResult.filterRef}`);
+      console.log(
+        `🎬 Layer ${layerIndex} (${layerType}): Added gap ${gapResult.filterRef}`,
+      );
     } else {
       // Regular video/image file
       const fileIndex = findFileIndexForSegment(
@@ -1392,8 +1448,11 @@ function processLayerSegments(
         // Scale to match target dimensions if needed
         const isVideoFile = FILE_EXTENSIONS.VIDEO.test(trackInfo.path);
         const isImageFile = FILE_EXTENSIONS.IMAGE.test(trackInfo.path);
-        const needsScaling = (isVideoFile || isImageFile) && trackInfo.width && trackInfo.height && 
-           (trackInfo.width !== targetDimensions.width || 
+        const needsScaling =
+          (isVideoFile || isImageFile) &&
+          trackInfo.width &&
+          trackInfo.height &&
+          (trackInfo.width !== targetDimensions.width ||
             trackInfo.height !== targetDimensions.height);
 
         if (needsScaling) {
@@ -1402,15 +1461,19 @@ function processLayerSegments(
             // For images, scale without padding to preserve transparency
             // Images will be overlaid at their natural size, centered on the video
             videoFilters.push(
-              `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease${scaleRef}`
+              `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease${scaleRef}`,
             );
-            console.log(`📐 Layer ${layerIndex}: Scaled image (preserving transparency) to fit ${targetDimensions.width}x${targetDimensions.height}`);
+            console.log(
+              `📐 Layer ${layerIndex}: Scaled image (preserving transparency) to fit ${targetDimensions.width}x${targetDimensions.height}`,
+            );
           } else {
             // For videos, use black padding
             videoFilters.push(
-              `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`
+              `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`,
             );
-            console.log(`📐 Layer ${layerIndex}: Scaled video segment to ${targetDimensions.width}x${targetDimensions.height}`);
+            console.log(
+              `📐 Layer ${layerIndex}: Scaled video segment to ${targetDimensions.width}x${targetDimensions.height}`,
+            );
           }
           videoStreamRef = scaleRef;
         }
@@ -1423,7 +1486,7 @@ function processLayerSegments(
       }
     }
   });
-  
+
   return concatInputs;
 }
 
@@ -1439,13 +1502,17 @@ function determineTargetDimensions(
   for (const input of job.inputs) {
     const trackInfo = getTrackInfo(input);
     const path = getInputPath(input);
-    
-    console.log(`📐 Checking input: ${path}, isVideo: ${FILE_EXTENSIONS.VIDEO.test(path)}, width: ${trackInfo.width}, height: ${trackInfo.height}`);
-    
+
+    console.log(
+      `📐 Checking input: ${path}, isVideo: ${FILE_EXTENSIONS.VIDEO.test(path)}, width: ${trackInfo.width}, height: ${trackInfo.height}`,
+    );
+
     if (!isGapInput(path) && FILE_EXTENSIONS.VIDEO.test(path)) {
       // Found a video file - check if it has explicit dimensions
       if (trackInfo.width && trackInfo.height) {
-        console.log(`📐 ✅ Using video input dimensions from inputs: ${trackInfo.width}x${trackInfo.height}`);
+        console.log(
+          `📐 ✅ Using video input dimensions from inputs: ${trackInfo.width}x${trackInfo.height}`,
+        );
         return { width: trackInfo.width, height: trackInfo.height };
       }
     }
@@ -1457,7 +1524,9 @@ function determineTargetDimensions(
     if (!isGapInput(path) && FILE_EXTENSIONS.VIDEO.test(path)) {
       // Found a video file - check if it has explicit dimensions
       if (segment.input.width && segment.input.height) {
-        console.log(`📐 Using video input dimensions from timeline: ${segment.input.width}x${segment.input.height}`);
+        console.log(
+          `📐 Using video input dimensions from timeline: ${segment.input.width}x${segment.input.height}`,
+        );
         return { width: segment.input.width, height: segment.input.height };
       }
     }
@@ -1465,7 +1534,9 @@ function determineTargetDimensions(
 
   // Fallback to job's video dimensions
   const dimensions = job.videoDimensions || VIDEO_DEFAULTS.SIZE;
-  console.log(`📐 Using project dimensions (fallback): ${dimensions.width}x${dimensions.height}`);
+  console.log(
+    `📐 Using project dimensions (fallback): ${dimensions.width}x${dimensions.height}`,
+  );
   return dimensions;
 }
 
@@ -1486,32 +1557,40 @@ function buildSeparateTimelineFilterComplex(
 
   // Determine target dimensions from first available video layer
   let firstVideoTimeline: ProcessedTimeline | undefined;
-  const sortedVideoLayers = Array.from(videoLayers.entries()).sort((a, b) => a[0] - b[0]);
+  const sortedVideoLayers = Array.from(videoLayers.entries()).sort(
+    (a, b) => a[0] - b[0],
+  );
   if (sortedVideoLayers.length > 0) {
     firstVideoTimeline = sortedVideoLayers[0][1];
   }
-  
-  const targetDimensions = firstVideoTimeline 
+
+  const targetDimensions = firstVideoTimeline
     ? determineTargetDimensions(firstVideoTimeline, job)
-    : (job.videoDimensions || VIDEO_DEFAULTS.SIZE);
+    : job.videoDimensions || VIDEO_DEFAULTS.SIZE;
   const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
 
   console.log('🎬 Building filter complex with multi-layer support:');
-  console.log(`📊 Video layers: ${videoLayers.size}, Image layers: ${imageLayers.size}`);
+  console.log(
+    `📊 Video layers: ${videoLayers.size}, Image layers: ${imageLayers.size}`,
+  );
 
   // Collect all image segments for overlay processing (images are NOT concatenated like video)
   const allImageSegments: ProcessedTimelineSegment[] = [];
   for (const [layerNum, timeline] of imageLayers.entries()) {
-    console.log(`🖼️ Collecting ${timeline.segments.length} image segments from layer ${layerNum}`);
+    console.log(
+      `🖼️ Collecting ${timeline.segments.length} image segments from layer ${layerNum}`,
+    );
     allImageSegments.push(...timeline.segments);
   }
-  
+
   // Process video layers only (images will be overlaid later)
   const layerConcatOutputs = new Map<number, string>();
-  
+
   for (const [layerNum, timeline] of videoLayers.entries()) {
-    console.log(`🎬 Processing video layer ${layerNum} with ${timeline.segments.length} segments`);
-    
+    console.log(
+      `🎬 Processing video layer ${layerNum} with ${timeline.segments.length} segments`,
+    );
+
     const concatInputs = processLayerSegments(
       timeline,
       layerNum,
@@ -1522,7 +1601,7 @@ function buildSeparateTimelineFilterComplex(
       targetFps,
       videoFilters,
     );
-    
+
     // Build concatenation filter for this layer
     if (concatInputs.length > 0) {
       const layerLabel = `layer_${layerNum}`;
@@ -1530,7 +1609,9 @@ function buildSeparateTimelineFilterComplex(
         const inputRef = concatInputs[0].replace('[', '').replace(']', '');
         videoFilters.push(`[${inputRef}]null[${layerLabel}]`);
       } else {
-        videoFilters.push(`${concatInputs.join('')}concat=n=${concatInputs.length}:v=1:a=0[${layerLabel}]`);
+        videoFilters.push(
+          `${concatInputs.join('')}concat=n=${concatInputs.length}:v=1:a=0[${layerLabel}]`,
+        );
       }
       layerConcatOutputs.set(layerNum, layerLabel);
       console.log(`✅ Layer ${layerNum} concatenated to [${layerLabel}]`);
@@ -1588,50 +1669,57 @@ function buildSeparateTimelineFilterComplex(
   // Composite layers from bottom to top
   let currentVideoLabel = '';
   let hasVideoContent = false;
-  
+
   if (layerConcatOutputs.size > 0) {
-    const sortedLayerOutputs = Array.from(layerConcatOutputs.entries()).sort((a, b) => a[0] - b[0]);
-    
+    const sortedLayerOutputs = Array.from(layerConcatOutputs.entries()).sort(
+      (a, b) => a[0] - b[0],
+    );
+
     if (sortedLayerOutputs.length === 1) {
       // Single layer - no overlay needed
       currentVideoLabel = sortedLayerOutputs[0][1];
-      console.log(`🎬 Single layer detected: using [${currentVideoLabel}] as base`);
+      console.log(
+        `🎬 Single layer detected: using [${currentVideoLabel}] as base`,
+      );
     } else {
       // Multiple layers - overlay from bottom to top
       console.log(`🎬 Compositing ${sortedLayerOutputs.length} layers`);
-      
+
       // Start with the base layer (layer 0 or lowest layer)
       currentVideoLabel = sortedLayerOutputs[0][1];
-      
+
       // Overlay each subsequent layer on top
       for (let i = 1; i < sortedLayerOutputs.length; i++) {
         const [layerNum, layerLabel] = sortedLayerOutputs[i];
-        const overlayOutputLabel = i === sortedLayerOutputs.length - 1 ? 'video_base' : `composite_${i}`;
-        
+        const overlayOutputLabel =
+          i === sortedLayerOutputs.length - 1 ? 'video_base' : `composite_${i}`;
+
         // Overlay this layer on top of the current composite
         // Use (W-w)/2:(H-h)/2 to center the overlay if it's smaller than the base
         videoFilters.push(
-          `[${currentVideoLabel}][${layerLabel}]overlay=(W-w)/2:(H-h)/2[${overlayOutputLabel}]`
+          `[${currentVideoLabel}][${layerLabel}]overlay=(W-w)/2:(H-h)/2[${overlayOutputLabel}]`,
         );
-        
+
         currentVideoLabel = overlayOutputLabel;
-        console.log(`🎬 Overlaid layer ${layerNum} (centered) onto composite -> [${overlayOutputLabel}]`);
+        console.log(
+          `🎬 Overlaid layer ${layerNum} (centered) onto composite -> [${overlayOutputLabel}]`,
+        );
       }
     }
-    
+
     // If we didn't end with 'video_base', rename it
     if (currentVideoLabel !== 'video_base') {
       videoFilters.push(`[${currentVideoLabel}]null[video_base]`);
       currentVideoLabel = 'video_base';
     }
-    
+
     hasVideoContent = true;
   } else {
     // No video layers - create a black base if needed
     console.log('⚠️ No video layers found, creating black base');
     const totalDuration = audioTimeline.totalDuration || 1;
     videoFilters.push(
-      `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${totalDuration}:rate=${targetFps}[video_base]`
+      `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${totalDuration}:rate=${targetFps}[video_base]`,
     );
     currentVideoLabel = 'video_base';
     hasVideoContent = true;
@@ -1658,8 +1746,10 @@ function buildSeparateTimelineFilterComplex(
     for (const timeline of imageLayers.values()) {
       totalDuration = Math.max(totalDuration, timeline.totalDuration);
     }
-    
-    console.log(`🖼️ Applying ${allImageSegments.length} image overlays to video base`);
+
+    console.log(
+      `🖼️ Applying ${allImageSegments.length} image overlays to video base`,
+    );
     const imageOverlayResult = buildImageOverlayFilters(
       allImageSegments,
       categorizedInputs,
@@ -1668,34 +1758,41 @@ function buildSeparateTimelineFilterComplex(
       totalDuration,
       currentVideoLabel,
     );
-    
+
     if (imageOverlayResult.filters.length > 0) {
       videoFilters.push(...imageOverlayResult.filters);
       currentVideoLabel = imageOverlayResult.outputLabel;
-      console.log(`✅ Image overlays applied, output label: [${currentVideoLabel}]`);
+      console.log(
+        `✅ Image overlays applied, output label: [${currentVideoLabel}]`,
+      );
     }
   }
 
   // Apply subtitles to video stream if needed (must be in filter_complex)
   // Note: Text clips are now bundled with subtitles in ASS format
   let subtitleFilter = '';
-  
+
   if (job.operations.subtitles && hasVideoContent) {
     // Use escapePathForFilter for proper filter syntax escaping
     const escapedPath = escapePathForFilter(job.operations.subtitles);
-    const fileExtension = job.operations.subtitles.toLowerCase().split('.').pop();
-    
+    const fileExtension = job.operations.subtitles
+      .toLowerCase()
+      .split('.')
+      .pop();
+
     // Get font directories for the fonts used in subtitles
     let fontsDirParam = '';
     if (job.subtitleFontFamilies && job.subtitleFontFamilies.length > 0) {
       // Use the new method to build font directories parameter
       fontsDirParam = buildFontDirectoriesParameter(job.subtitleFontFamilies);
     }
-    
+
     if (fileExtension === 'ass' || fileExtension === 'ssa') {
       // Use 'subtitles' filter for ASS files with fontsdir parameter
       subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'${fontsDirParam}[video]`;
-      console.log('📝 Added ASS subtitles filter (includes text clips) with fontsdir');
+      console.log(
+        '📝 Added ASS subtitles filter (includes text clips) with fontsdir',
+      );
     } else {
       // Use 'subtitles' filter for other formats
       subtitleFilter = `[${currentVideoLabel}]subtitles='${escapedPath}'${fontsDirParam}[video]`;
@@ -1853,7 +1950,7 @@ function handleTimelineProcessing(
       ),
     );
   }
-  
+
   // Log image layers
   console.log('Final Image Layers:');
   for (const [layer, timeline] of imageLayers.entries()) {
@@ -1865,7 +1962,7 @@ function handleTimelineProcessing(
       ),
     );
   }
-  
+
   console.log(
     'Final Audio Timeline:',
     finalAudioTimeline.segments.map(
@@ -1873,7 +1970,6 @@ function handleTimelineProcessing(
         `${s.input.path}${s.input.gapType ? ` (${s.input.gapType} gap)` : ''} [${s.startTime.toFixed(2)}s-${s.endTime.toFixed(2)}s]`,
     ),
   );
-
 
   // Categorize inputs for file indexing
   const categorizedInputs = categorizeInputs(job.inputs);
