@@ -122,8 +122,8 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
             <div
               className="relative"
               style={{
-                width: `${imageTransform.width || defaultWidth}px`,
-                height: `${imageTransform.height || defaultHeight}px`,
+                width: `${(imageTransform.width || defaultWidth) * previewScale}px`,
+                height: `${(imageTransform.height || defaultHeight) * previewScale}px`,
                 opacity:
                   track.textStyle?.opacity !== undefined
                     ? track.textStyle.opacity / 100

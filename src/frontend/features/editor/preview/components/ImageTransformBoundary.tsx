@@ -199,8 +199,9 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     if (containerSize.width > 0 && containerSize.height > 0) {
       const currentWidth = normalizedTransform.width || 0;
       const currentHeight = normalizedTransform.height || 0;
-      const newWidth = containerSize.width;
-      const newHeight = containerSize.height;
+      // Store base dimensions (without previewScale) so they can be scaled at render time
+      const newWidth = containerSize.width / previewScale;
+      const newHeight = containerSize.height / previewScale;
 
       // Only update if dimensions have changed significantly (avoid infinite loops)
       if (
@@ -220,6 +221,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     normalizedTransform.height,
     track.id,
     onTransformUpdate,
+    previewScale,
   ]);
 
   // Handle mouse down on the image element (start dragging)
