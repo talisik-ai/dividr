@@ -556,10 +556,6 @@ function computeASSStyleParams(
   let fontSize = style?.fontSize 
     ? parseInt(style.fontSize.replace('px', ''))
     : 20;
-  
-  if (videoDimensions?.width) {
-    fontSize = fontSize * (videoDimensions.width / 720);
-  }
 
   return {
     fontFamily: assStyle.fontFamily,
