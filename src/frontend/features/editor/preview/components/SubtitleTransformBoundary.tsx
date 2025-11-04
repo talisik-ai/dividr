@@ -1,10 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
-import {
-  Z_INDEX_SUBTITLE_CONTAINER,
-  Z_INDEX_SUBTITLE_SELECTION,
-} from '../core/constants';
+import { Z_INDEX_SUBTITLE_SELECTION } from '../core/constants';
 
 interface SubtitleTransformBoundaryProps {
   track: VideoTrack;
@@ -98,7 +95,7 @@ export const SubtitleTransformBoundary: React.FC<
 
   // Get current transform from track (normalized coordinates: -1 to 1 where 0 is center)
   // Default to bottom-aligned position if not set
-  const rawTransform = track.subtitleTransform ||  {
+  const rawTransform = track.subtitleTransform || {
     x: 0,
     y: DEFAULT_SUBTITLE_Y,
   };
