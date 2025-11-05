@@ -1,7 +1,7 @@
 import { cn } from '@/frontend/utils/utils';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { getRowHeight, getTrackItemHeight } from './utils/timelineConstants';
-import { getTrackRowTop } from './utils/trackRowPositions';
+import { getTrackRowTop, TRACK_ROW_ORDER } from './utils/trackRowPositions';
 
 interface DropZoneIndicatorProps {
   targetRow: string;
@@ -21,6 +21,7 @@ interface DropZoneIndicatorProps {
  * - Resizes automatically to match dragged item's full length
  * - Shows valid (green/blue) or invalid (red) drop states
  * - Positioned accurately using track row calculations
+ * - Accounts for centering when < 5 tracks are visible
  */
 export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
   ({
@@ -32,6 +33,31 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
     visibleTrackRows,
     isValidDrop,
   }) => {
+    // Calculate centering offset when < 5 tracks are visible
+    const centeringOffset = useMemo(() => {
+      const visibleRowsInOrder = TRACK_ROW_ORDER.filter((rowId) =>
+        visibleTrackRows.includes(rowId),
+      );
+
+      // If all 5 tracks are visible, no centering
+      if (visibleRowsInOrder.length >= TRACK_ROW_ORDER.length) {
+        return 0;
+      }
+
+      // Calculate baseline height (all 5 tracks)
+      const baselineHeight = TRACK_ROW_ORDER.reduce((sum, rowId) => {
+        return sum + getRowHeight(rowId);
+      }, 0);
+
+      // Calculate total height of visible tracks
+      const totalVisibleHeight = visibleRowsInOrder.reduce((sum, rowId) => {
+        return sum + getRowHeight(rowId);
+      }, 0);
+
+      // Return centering offset
+      return (baselineHeight - totalVisibleHeight) / 2;
+    }, [visibleTrackRows]);
+
     // Calculate position and dimensions
     const left = startFrame * frameWidth - scrollX;
     const width = Math.max(1, (endFrame - startFrame) * frameWidth);
@@ -39,8 +65,8 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
     const rowHeight = getRowHeight(targetRow);
     const trackItemHeight = getTrackItemHeight(targetRow);
 
-    // Center the drop zone vertically within the row
-    const top = rowTop + (rowHeight - trackItemHeight) / 2;
+    // Center the drop zone vertically within the row, accounting for centering offset
+    const top = rowTop + centeringOffset + (rowHeight - trackItemHeight) / 2;
     const height = trackItemHeight;
 
     return (

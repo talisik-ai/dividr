@@ -1511,6 +1511,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                         mouseY={dragGhost.mouseY + verticalOffset}
                         offsetX={dragGhost.offsetX}
                         offsetY={dragGhost.offsetY}
+                        visibleTrackRows={visibleTrackRows}
                       />
                     );
                   })}
