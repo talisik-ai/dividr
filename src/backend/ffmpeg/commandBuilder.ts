@@ -438,7 +438,7 @@ function createGapVideoFilters(
     filterRef: gapRef,
     filters: [
       `color=black:size=${videoDimensions.width}x${videoDimensions.height}:duration=${duration}:rate=${targetFps}[temp_gap_${originalIndex}]`,
-      `[temp_gap_${originalIndex}]setpts=PTS-STARTPTS${gapRef}`,
+      `[temp_gap_${originalIndex}]setpts=PTS-STARTPTS,setsar=1${gapRef}`,
     ],
   };
 }
@@ -459,6 +459,24 @@ function createFpsNormalizationFilters(
   return {
     filterRef: fpsRef,
     filters: [`${inputRef}fps=${targetFps}:start_time=0${fpsRef}`],
+  };
+}
+
+/**
+ * Creates SAR (Sample Aspect Ratio) normalization filters
+ * Normalizes SAR to 1:1 to ensure compatibility with concat filter
+ * @param originalIndex - Unique index for filter labeling
+ * @param inputRef - Input filter reference (e.g., "[v0_trim]")
+ * @returns AudioTrimResult with filter reference and filter strings
+ */
+function createSarNormalizationFilters(
+  originalIndex: number,
+  inputRef: string,
+): AudioTrimResult {
+  const sarRef = `[v${originalIndex}_sar]`;
+  return {
+    filterRef: sarRef,
+    filters: [`${inputRef}setsar=1${sarRef}`],
   };
 }
 
@@ -1247,8 +1265,9 @@ function buildImageOverlayFilters(
     // Step 1: Prepare image - trim to duration and reset timestamps
     // Static images don't need loop filter - trim alone will hold the frame for the duration
     // Add transparent padding at the start to align with timeline position
+    // Also normalize SAR to 1:1 for consistency
     filters.push(
-      `${imageInputRef}trim=duration=${duration},setpts=PTS-STARTPTS,` +
+      `${imageInputRef}trim=duration=${duration},setpts=PTS-STARTPTS,setsar=1,` +
         `tpad=start_duration=${startTime}:start_mode=add:color=black@0.0${imagePreparedRef}`,
     );
 
@@ -1477,6 +1496,18 @@ function processLayerSegments(
           }
           videoStreamRef = scaleRef;
         }
+
+        // Normalize SAR (Sample Aspect Ratio) to 1:1 for concat compatibility
+        // This ensures all video streams have the same SAR before concatenation
+        const sarResult = createSarNormalizationFilters(
+          9000 + layerIndex * 1000 + segmentIndex,
+          videoStreamRef,
+        );
+        videoFilters.push(...sarResult.filters);
+        videoStreamRef = sarResult.filterRef;
+        console.log(
+          `📐 Layer ${layerIndex}: Normalized SAR to 1:1 for segment ${segmentIndex}`,
+        );
 
         concatInputs.push(videoStreamRef);
       } else {
@@ -1719,7 +1750,7 @@ function buildSeparateTimelineFilterComplex(
     console.log('⚠️ No video layers found, creating black base');
     const totalDuration = audioTimeline.totalDuration || 1;
     videoFilters.push(
-      `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${totalDuration}:rate=${targetFps}[video_base]`,
+      `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${totalDuration}:rate=${targetFps},setsar=1[video_base]`,
     );
     currentVideoLabel = 'video_base';
     hasVideoContent = true;
