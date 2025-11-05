@@ -783,6 +783,8 @@ const ZoomSlider: React.FC = React.memo(() => {
   );
   const setZoom = useVideoEditorStore((state) => state.setZoom);
 
+  console.log('storeZoom', storeZoom);
+
   // Local state for smooth slider interaction
   const [localZoom, setLocalZoom] = useState(storeZoom);
   const isUserInteracting = useRef(false);

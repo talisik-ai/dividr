@@ -102,7 +102,7 @@ export const ProjectThumbnailSetter: React.FC<ProjectThumbnailSetterProps> =
               variant="ghost"
               size="icon"
               className={cn(
-                'relative size-10 border-2 group border-dashed group-hover:bg-secondary/20 border-accent group-hover:border-secondary transition-colors bg-accent/10 backdrop-blur-sm overflow-hidden',
+                'relative size-10 border-2 group border-dashed group-hover:bg-secondary/20 border-accent group-hover:border-secondary transition-colors bg-accent/10 backdrop-blur-sm overflow-hidden rounded-sm',
                 className,
               )}
               onClick={handleOpenDialog}

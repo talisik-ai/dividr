@@ -31,12 +31,11 @@ import {
   File,
   Image,
   Loader2,
-  MoreHorizontal,
   Music,
   PlusCircle,
+  Trash,
   Trash2,
   Video,
-  X,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -463,14 +462,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     }
   }, []);
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
   const formatDuration = (seconds: number): string => {
     if (seconds < 60) {
       return `${Math.round(seconds)}s`;
@@ -787,18 +778,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 </div>
               )}
               <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                <div className="absolute top-2 right-2 flex items-center space-x-1">
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                    }}
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 text-white/80 hover:text-white hover:bg-white/20"
-                    title="More options"
-                  >
-                    <MoreHorizontal className="h-3 w-3" />
-                  </Button>
+                <div className="absolute bottom-1 right-2">
                   <Button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -806,26 +786,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                     }}
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-6 p-0 text-white/80 hover:text-red-400 hover:bg-red-500/20"
+                    className="!size-5 !p-1.5 rounded-sm bg-accent/20"
                     title="Remove from media library"
                   >
-                    <X className="h-3 w-3" />
+                    <Trash className="h-3 w-3" />
                   </Button>
-                </div>
-                <div className="absolute bottom-2 left-2">
-                  <p className="text-xs text-white/80">
-                    {formatFileSize(file.size)}
-                    {file.duration && ` • ${file.duration.toFixed(1)}s`}
-                  </p>
-                  {file.isOnTimeline ? (
-                    <p className="text-xs text-green-400 font-medium">
-                      On Timeline
-                    </p>
-                  ) : (
-                    <p className="text-xs text-blue-400 font-medium">
-                      Drag to Timeline
-                    </p>
-                  )}
                 </div>
               </div>
               {file.isOnTimeline && (
@@ -1034,10 +999,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 toast.error(errorMessage);
               }
             }}
-            className="w-full"
+            className="w-full bg-accent text-accent-foreground hover:bg-accent/80 font-normal text-sm rounded-sm"
+            variant="ghost"
           >
-            Upload Files
-            <Download />
+            Upload
+            <Download className="size-4" />
           </Button>
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <Tabs
@@ -1118,7 +1084,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
 
       <KaraokeConfirmationDialog
         open={karaokeConfirmation.show}

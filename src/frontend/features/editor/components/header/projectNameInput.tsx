@@ -97,11 +97,11 @@ const ProjectNameInput: React.FC<ProjectNameInputProps> = ({
       <div className="relative">
         <Input
           className={cn(
-            'border-none text-center text-sm p-2 h-6 pe-9 focus-visible:ring-0 max-w-[250px] focus-visible:ring-offset-0',
-            isSaving && 'text-blue-600 dark:text-blue-400',
+            'border-none text-sm !pl-0 h-6 pe-9 focus-visible:ring-0 min-w-[114px] max-w-[135px] focus-visible:ring-offset-0 focus-visible:outline-none ring-0 rounded-md',
+            isSaving && 'text-secondary',
             className,
           )}
-          style={{ fieldSizing: 'content' } as any}
+          // style={{ fieldSizing: 'content' } as any}
           placeholder={placeholder}
           value={localTitle}
           onChange={handleChange}
@@ -113,11 +113,7 @@ const ProjectNameInput: React.FC<ProjectNameInputProps> = ({
         />
       </div>
 
-      {isSaving && (
-        <div className="text-xs text-blue-600 dark:text-blue-400 px-2">
-          Saving...
-        </div>
-      )}
+      {isSaving && <div className="text-xs text-secondary px-2">Saving...</div>}
     </div>
   );
 };

@@ -105,7 +105,7 @@ export const createDefaultProject = (
         currentFrame: 0,
         totalFrames: 3000, // 100 seconds at 30fps
         fps: 30,
-        zoom: 1,
+        zoom: 0.2555,
         scrollX: 0,
         selectedTrackIds: [],
         playheadVisible: true,

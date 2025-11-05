@@ -6,10 +6,10 @@ export function ModeToggle() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div>
+    <div className="flex items-center">
       <Toggle
         variant="default"
-        className="group data-[state=on]:hover:bg-muted size-9 data-[state=on]:bg-transparent"
+        className="group !size-5 !p-1.5 !min-w-0 hover:!bg-transparent !bg-transparent"
         pressed={theme === 'dark'}
         onPressedChange={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}

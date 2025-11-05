@@ -172,7 +172,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
         onClick={onClick}
       >
         {/* Background Grid */}
-        <div
+        {/* <div
           className="absolute top-0 h-full bg-gradient-to-r from-transparent via-transparent to-transparent"
           style={{
             left: -(timelineScrollElement?.scrollLeft ?? scrollX),
@@ -184,7 +184,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
             backgroundImage:
               'repeating-linear-gradient(90deg, transparent, transparent 9px, hsl(var(--foreground) / 0.05) 9px, hsl(var(--foreground) / 0.05) 10px)',
           }}
-        />
+        /> */}
 
         {/* Track Content Regions Indicator */}
         <div className="absolute bottom-0.5 left-0 right-0 h-[1.5px] bg-accent">

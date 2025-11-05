@@ -2281,6 +2281,15 @@ const createWindow = () => {
       // console.log('Window unfocused - clipboard monitoring resumed');
     });
 
+    // Maximize state change events
+    mainWindow.on('maximize', () => {
+      mainWindow?.webContents.send('window-maximize-changed', true);
+    });
+
+    mainWindow.on('unmaximize', () => {
+      mainWindow?.webContents.send('window-maximize-changed', false);
+    });
+
     // Prevent navigation to external URLs
     mainWindow.webContents.on('will-navigate', (event) => {
       event.preventDefault();
@@ -2305,6 +2314,12 @@ ipcMain.on('maximize-btn', () => {
   } else {
     mainWindow.maximize();
   }
+});
+
+// Get current maximize state
+ipcMain.handle('get-maximize-state', () => {
+  if (!mainWindow) return false;
+  return mainWindow.isMaximized();
 });
 
 // Helper function to get run in background setting

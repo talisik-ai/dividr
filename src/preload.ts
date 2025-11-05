@@ -238,6 +238,15 @@ contextBridge.exposeInMainWorld('appControl', {
   minimizeApp: () => ipcRenderer.send('minimize-btn'),
   maximizeApp: () => ipcRenderer.send('maximize-btn'),
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
+  getMaximizeState: () => ipcRenderer.invoke('get-maximize-state'),
+  onMaximizeChanged: (callback: (isMaximized: boolean) => void) => {
+    ipcRenderer.on('window-maximize-changed', (_event, isMaximized: boolean) =>
+      callback(isMaximized),
+    );
+  },
+  offMaximizeChanged: () => {
+    ipcRenderer.removeAllListeners('window-maximize-changed');
+  },
 
   // Clipboard monitoring
   getClipboardText: () => ipcRenderer.invoke('get-clipboard-text'),
