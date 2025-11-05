@@ -13,6 +13,7 @@ import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
 import {
+  getRowHeight,
   getRowHeightClasses,
   getTrackItemHeight,
   getTrackItemHeightClasses,
@@ -951,6 +952,7 @@ interface TrackRowProps {
   allTracksCount: number;
   onPlaceholderClick?: () => void;
   isSplitModeActive: boolean;
+  shouldCenter: boolean;
 }
 
 const TrackRow: React.FC<TrackRowProps> = React.memo(
@@ -969,6 +971,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     allTracksCount,
     onPlaceholderClick,
     isSplitModeActive,
+    shouldCenter,
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
@@ -1034,21 +1037,23 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Row background and grid */}
-        <div
-          className="absolute top-0 h-full pointer-events-none"
-          style={{
-            left: 0,
-            width: timelineWidth,
-            background: `repeating-linear-gradient(
-          90deg,
-          transparent,
-          transparent ${frameWidth * 30 - 1}px,
-          hsl(var(--foreground) / 0.05) ${frameWidth * 30 - 1}px,
-          hsl(var(--foreground) / 0.05) ${frameWidth * 30}px
-        )`,
-          }}
-        />
+        {/* Row background and grid - only show when NOT centering (placeholder grids handle it when centering) */}
+        {!shouldCenter && (
+          <div
+            className="absolute top-0 h-full pointer-events-none"
+            style={{
+              left: 0,
+              width: timelineWidth,
+              background: `repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent ${frameWidth * 30 - 1}px,
+            hsl(var(--foreground) / 0.05) ${frameWidth * 30 - 1}px,
+            hsl(var(--foreground) / 0.05) ${frameWidth * 30}px
+          )`,
+            }}
+          />
+        )}
 
         {/* Tracks in this row - centered vertically */}
         <div className="h-full flex items-center">
@@ -1132,7 +1137,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       JSON.stringify(prevProps.selectedTrackIds) ===
         JSON.stringify(nextProps.selectedTrackIds) &&
       prevProps.allTracksCount === nextProps.allTracksCount &&
-      prevProps.isSplitModeActive === nextProps.isSplitModeActive
+      prevProps.isSplitModeActive === nextProps.isSplitModeActive &&
+      prevProps.shouldCenter === nextProps.shouldCenter
     );
   },
 );
@@ -1160,6 +1166,25 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
     const visibleTrackRows = useVideoEditorStore(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
     );
+
+    // Calculate baseline height (5 tracks) and whether we should center
+    const { baselineHeight, shouldCenter } = useMemo(() => {
+      // Calculate height for each visible row
+      const visibleRowsInOrder = TRACK_ROWS.filter((row) =>
+        visibleTrackRows.includes(row.id),
+      );
+
+      // Baseline height = height of ALL 5 track rows (even if not visible)
+      // This ensures the grid always shows space for 5 tracks
+      const baseline = TRACK_ROWS.reduce((sum, row) => {
+        return sum + getRowHeight(row.id);
+      }, 0);
+
+      return {
+        baselineHeight: baseline,
+        shouldCenter: visibleRowsInOrder.length < TRACK_ROWS.length,
+      };
+    }, [visibleTrackRows]);
 
     const handleTrackSelect = useCallback(
       (trackId: string, multiSelect = false) => {
@@ -1332,32 +1357,92 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     return (
       <div
-        className="relative min-h-full overflow-visible"
+        className="relative overflow-visible"
         style={{
           width: timelineWidth,
           minWidth: timelineWidth,
+          minHeight: shouldCenter ? `${baselineHeight}px` : 'auto',
+          height: shouldCenter ? `${baselineHeight}px` : 'auto',
         }}
       >
-        {/* Render only visible track rows */}
-        {visibleRows.map((rowDef) => (
-          <TrackRow
-            key={rowDef.id}
-            rowDef={rowDef}
-            tracks={tracksByRow[rowDef.id] || []}
-            frameWidth={frameWidth}
-            timelineWidth={timelineWidth}
-            scrollX={scrollX}
-            zoomLevel={zoomLevel}
-            selectedTrackIds={selectedTrackIds}
-            onTrackSelect={memoizedHandlers.onTrackSelect}
-            onTrackMove={memoizedHandlers.onTrackMove}
-            onTrackResize={memoizedHandlers.onTrackResize}
-            onDrop={memoizedHandlers.onDrop}
-            allTracksCount={tracks.length}
-            onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
-            isSplitModeActive={isSplitModeActive}
-          />
-        ))}
+        {/* Grid background for ALL 5 track rows when centering - positioned at absolute positions */}
+        {shouldCenter && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: 0,
+              left: 0,
+              width: timelineWidth,
+              height: `${baselineHeight}px`,
+            }}
+          >
+            {TRACK_ROWS.map((rowDef) => {
+              // Calculate this row's top position - sum of all previous row heights
+              let top = 0;
+              for (let i = 0; i < TRACK_ROWS.length; i++) {
+                if (TRACK_ROWS[i].id === rowDef.id) break;
+                top += getRowHeight(TRACK_ROWS[i].id);
+              }
+
+              const rowHeight = getRowHeight(rowDef.id);
+              const isVisible = visibleTrackRows.includes(rowDef.id);
+
+              return (
+                <div
+                  key={`grid-${rowDef.id}`}
+                  className="absolute"
+                  style={{
+                    top: `${top}px`,
+                    left: 0,
+                    width: timelineWidth,
+                    height: `${rowHeight}px`,
+                    background: `repeating-linear-gradient(
+                      90deg,
+                      transparent,
+                      transparent ${frameWidth * 30 - 1}px,
+                      hsl(var(--foreground) / ${isVisible ? '0.05' : '0.03'}) ${frameWidth * 30 - 1}px,
+                      hsl(var(--foreground) / ${isVisible ? '0.05' : '0.03'}) ${frameWidth * 30}px
+                    )`,
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {/* Centering wrapper - only active when <5 tracks */}
+        <div
+          className="relative"
+          style={{
+            width: '100%',
+            height: shouldCenter ? `${baselineHeight}px` : 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: shouldCenter ? 'center' : 'flex-start',
+          }}
+        >
+          {/* Render only visible track rows */}
+          {visibleRows.map((rowDef) => (
+            <TrackRow
+              key={rowDef.id}
+              rowDef={rowDef}
+              tracks={tracksByRow[rowDef.id] || []}
+              frameWidth={frameWidth}
+              timelineWidth={timelineWidth}
+              scrollX={scrollX}
+              zoomLevel={zoomLevel}
+              selectedTrackIds={selectedTrackIds}
+              onTrackSelect={memoizedHandlers.onTrackSelect}
+              onTrackMove={memoizedHandlers.onTrackMove}
+              onTrackResize={memoizedHandlers.onTrackResize}
+              onDrop={memoizedHandlers.onDrop}
+              allTracksCount={tracks.length}
+              onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
+              isSplitModeActive={isSplitModeActive}
+              shouldCenter={shouldCenter}
+            />
+          ))}
+        </div>
       </div>
     );
   },
