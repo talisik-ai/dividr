@@ -5,16 +5,11 @@ import { TextTransformBoundary } from '../components/TextTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
   GLOW_SPREAD_MULTIPLIER,
-  TEXT_CLIP_BASE_SIZE_RATIO,
-  TEXT_CLIP_MIN_FONT_SIZE,
   TEXT_CLIP_PADDING_HORIZONTAL,
   TEXT_CLIP_PADDING_VERTICAL,
 } from '../core/constants';
 import { OverlayRenderProps } from '../core/types';
-import {
-  calculateResponsiveFontSize,
-  scaleTextShadow,
-} from '../utils/scalingUtils';
+import { scaleTextShadow } from '../utils/scalingUtils';
 import {
   getTextStyleForTextClip,
   hasActualBackground,
@@ -92,18 +87,14 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
         const appliedStyle = getTextStyleForTextClip(track);
         const isSelected = selectedTrackIds.includes(track.id);
 
-        // Calculate responsive font size using the fixed coordinate system
-        // This ensures text size is consistent regardless of container size
-        const baseFontSize = calculateResponsiveFontSize(
-          baseVideoHeight,
-          TEXT_CLIP_MIN_FONT_SIZE,
-          TEXT_CLIP_BASE_SIZE_RATIO,
-          renderScale,
-        );
+        // Extract the fontSize from appliedStyle and scale it for rendering
+        // appliedStyle.fontSize is like "24px", we need to extract the number and scale it
+        const baseFontSize = parseFloat(appliedStyle.fontSize) || 24;
 
         // CRITICAL: Apply the track's scale to the font size for resolution-independent rendering
         // This ensures text is re-rendered at the actual target size, not bitmap-scaled
-        const actualFontSize = baseFontSize * (track.textTransform?.scale || 1);
+        const actualFontSize =
+          baseFontSize * renderScale * (track.textTransform?.scale || 1);
 
         // Scale padding and effects using both render scale AND track scale for consistency
         const effectiveScale = renderScale * (track.textTransform?.scale || 1);

@@ -57,6 +57,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
   const setFontFamily = useVideoEditorStore((state) => state.setFontFamily);
+  const setFontSize = useVideoEditorStore((state) => state.setFontSize);
   const toggleBold = useVideoEditorStore((state) => state.toggleBold);
   const toggleItalic = useVideoEditorStore((state) => state.toggleItalic);
   const toggleUnderline = useVideoEditorStore((state) => state.toggleUnderline);
@@ -96,7 +97,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       isUnderline: false,
       textTransform: 'none',
       textAlign: 'center',
-      fontSize: 18,
+      fontSize: 24,
       fillColor: '#FFFFFF',
       strokeColor: '#000000',
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -262,20 +263,30 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
             className="flex-1"
           />
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div>
-                <Select disabled>
-                  <SelectTrigger className="w-20" size="sm">
-                    <SelectValue placeholder="18" />
-                  </SelectTrigger>
-                </Select>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Font size (coming soon)</p>
-            </TooltipContent>
-          </Tooltip>
+          <Select
+            value={String(textStyle.globalControls.fontSize)}
+            onValueChange={(value) => setFontSize(Number(value))}
+          >
+            <SelectTrigger className="w-20" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="12">12</SelectItem>
+              <SelectItem value="14">14</SelectItem>
+              <SelectItem value="16">16</SelectItem>
+              <SelectItem value="18">18</SelectItem>
+              <SelectItem value="20">20</SelectItem>
+              <SelectItem value="24">24</SelectItem>
+              <SelectItem value="28">28</SelectItem>
+              <SelectItem value="32">32</SelectItem>
+              <SelectItem value="36">36</SelectItem>
+              <SelectItem value="40">40</SelectItem>
+              <SelectItem value="48">48</SelectItem>
+              <SelectItem value="56">56</SelectItem>
+              <SelectItem value="64">64</SelectItem>
+              <SelectItem value="72">72</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex items-center justify-between">

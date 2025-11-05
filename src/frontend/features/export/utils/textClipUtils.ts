@@ -30,7 +30,7 @@ export function extractTextClips(
       isUnderline: track.textStyle?.isUnderline || false,
       textTransform: track.textStyle?.textTransform || ('none' as const),
       textAlign: track.textStyle?.textAlign || ('center' as const),
-      fontSize: track.textStyle?.fontSize || 18,
+      fontSize: track.textStyle?.fontSize || 24,
       fillColor: track.textStyle?.fillColor || '#FFFFFF',
       strokeColor: track.textStyle?.strokeColor || '#000000',
       backgroundColor: track.textStyle?.backgroundColor || 'rgba(0, 0, 0, 0.5)',
