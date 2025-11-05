@@ -367,9 +367,9 @@ const Projects = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Project?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{deleteConfirm.projectName}"?
-              This action cannot be undone and will permanently remove all
+            <AlertDialogDescription className="whitespace-pre-wrap break-words w-fit overflow-wrap-anywhere break-all">
+              Are you sure you want to delete {`"${deleteConfirm.projectName}"`}
+              ? This action cannot be undone and will permanently remove all
               project data.
             </AlertDialogDescription>
           </AlertDialogHeader>

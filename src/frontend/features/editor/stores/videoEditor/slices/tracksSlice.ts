@@ -478,6 +478,7 @@ export const createTracksSlice: StateCreator<
     try {
       // Process all tracks in a single state update for better performance
       const newTracks: VideoTrack[] = [];
+      const trackTypesToEnsureVisible = new Set<string>();
 
       for (const trackData of tracksData) {
         const id = uuidv4();
@@ -553,6 +554,11 @@ export const createTracksSlice: StateCreator<
 
           newTracks.push(newTrack);
           trackIds.push(id);
+
+          // Track which types need their track rows to be visible
+          if (trackData.type === 'subtitle' || trackData.type === 'image') {
+            trackTypesToEnsureVisible.add(trackData.type);
+          }
         }
       }
 
@@ -564,6 +570,18 @@ export const createTracksSlice: StateCreator<
       // Refresh state reference
       const currentState = get() as any;
       currentState.markUnsavedChanges?.();
+
+      // Auto-create track rows for subtitle and image types
+      // Use setTimeout to avoid synchronous state updates that can cause loops
+      if (trackTypesToEnsureVisible.size > 0) {
+        setTimeout(() => {
+          const latestState = get() as any;
+          trackTypesToEnsureVisible.forEach((trackType) => {
+            latestState.ensureTrackRowVisible?.(trackType);
+            console.log(`📝 Auto-created ${trackType} track row (batch)`);
+          });
+        }, 0);
+      }
 
       console.log(`✅ Added ${newTracks.length} tracks in batch`);
     } finally {
