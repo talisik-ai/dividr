@@ -1236,7 +1236,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               <div
                 ref={tracksRef}
                 className={cn(
-                  'relative overflow-auto transition-colors duration-200',
+                  'relative overflow-auto transition-colors duration-200 z-10',
                   // Don't apply cursor styles when dragging/resizing tracks
                   playback.isDraggingTrack
                     ? ''
@@ -1320,16 +1320,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               </div>
 
               {/* Global Playhead - spans across ruler and tracks */}
-              <div className="absolute top-0 left-0 right-0 bottom-0 z-[999] pointer-events-none">
-                <TimelinePlayhead
-                  currentFrame={timeline.currentFrame}
-                  frameWidth={frameWidth}
-                  scrollX={timeline.scrollX}
-                  visible={timeline.playheadVisible}
-                  timelineScrollElement={tracksRef.current}
-                  onStartDrag={handlePlayheadDragStart}
-                />
-              </div>
+              <TimelinePlayhead
+                currentFrame={timeline.currentFrame}
+                frameWidth={frameWidth}
+                scrollX={timeline.scrollX}
+                visible={timeline.playheadVisible}
+                timelineScrollElement={tracksRef.current}
+                onStartDrag={handlePlayheadDragStart}
+              />
 
               {/* Split Indicator Line - confined to hovered track row */}
               {isSplitModeActive &&
