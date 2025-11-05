@@ -78,6 +78,19 @@ export const createTimelineShortcuts = (store: any): ShortcutConfig[] => [
     },
   },
   {
+    id: 'timeline-split-playhead-k',
+    keys: 'k',
+    description: 'Split at Playhead',
+    category: 'Timeline Tools',
+    scope: 'timeline',
+    handler: (e) => {
+      e?.preventDefault();
+      // Use fresh state to avoid stale closure issues
+      const freshState = useVideoEditorStore.getState();
+      freshState.splitAtPlayhead();
+    },
+  },
+  {
     id: 'timeline-exit-split-mode',
     keys: 'escape',
     description: 'Exit Split Mode',

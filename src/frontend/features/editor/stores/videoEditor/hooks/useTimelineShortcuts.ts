@@ -45,13 +45,13 @@ export const useTimelineShortcutsV2 = () => {
     timeline.snapEnabled,
   ]);
 
-  // Note: B, C, V tool switching shortcuts are registered in useTrackShortcuts to avoid conflicts
+  // Note: B, C, V, K tool switching shortcuts are registered in useTrackShortcuts to avoid conflicts
   // Exit split mode is handled there as well via Escape key
 
   // Select All (Ctrl+A / Cmd+A)
   useHotkeys(
     ['ctrl+a', 'meta+a'],
-    timelineShortcuts[7].handler,
+    timelineShortcuts[8].handler,
     { preventDefault: true, enableOnFormTags: false },
     [tracks.length, timeline.selectedTrackIds],
   );
