@@ -39,11 +39,6 @@ export const AddTrackButton: React.FC<AddTrackButtonProps> = React.memo(
       (row) => !visibleTrackRows.includes(row.id),
     );
 
-    // If all tracks are visible, don't show the button
-    if (availableTrackRows.length === 0) {
-      return null;
-    }
-
     const getTrackIcon = (rowId: string) => {
       switch (rowId) {
         case 'video':
@@ -68,6 +63,7 @@ export const AddTrackButton: React.FC<AddTrackButtonProps> = React.memo(
                 variant="ghost"
                 size="sm"
                 className={cn('h-6 w-6 p-0', className)}
+                disabled={availableTrackRows.length === 0}
               >
                 <Plus className="h-4 w-4" />
               </Button>

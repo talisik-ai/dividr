@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import StartupLoader from './frontend/components/custom/StartupLoader';
 import { useShortcutRegistryInit } from './frontend/features/editor/stores/videoEditor';
 import { ThemeProvider } from './frontend/providers/ThemeProvider';
+import { WindowStateProvider } from './frontend/providers/WindowStateProvider';
 import { router } from './frontend/routes';
 import './frontend/styles/app.css';
 import { startupManager, StartupStage } from './frontend/utils/startupManager';
@@ -59,24 +60,26 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      {/* Show startup loader until app is ready */}
-      {!isAppReady && (
-        <StartupLoader
-          stage={getStageMessage(startupStage)}
-          progress={startupProgress}
-          isVisible={!isAppReady}
-        />
-      )}
+      <WindowStateProvider>
+        {/* Show startup loader until app is ready */}
+        {!isAppReady && (
+          <StartupLoader
+            stage={getStageMessage(startupStage)}
+            progress={startupProgress}
+            isVisible={!isAppReady}
+          />
+        )}
 
-      {/* Main app - render immediately but hidden behind loader */}
-      <div style={{ display: isAppReady ? 'block' : 'none' }}>
-        <RouterProvider router={router} />
-        <Toaster
-          richColors
-          position="bottom-right"
-          style={{ fontFamily: 'inherit' }}
-        />
-      </div>
+        {/* Main app - render immediately but hidden behind loader */}
+        <div style={{ display: isAppReady ? 'block' : 'none' }}>
+          <RouterProvider router={router} />
+          <Toaster
+            richColors
+            position="bottom-right"
+            style={{ fontFamily: 'inherit' }}
+          />
+        </div>
+      </WindowStateProvider>
     </ThemeProvider>
   );
 }

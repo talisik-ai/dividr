@@ -760,7 +760,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
                     className="absolute bottom-5 left-0 right-0"
                     style={{
                       // Apply all subtitle style properties from state
-                      fontSize: `${Math.max(18, preview.canvasHeight * 0.045)}px`,
+                      fontSize: appliedStyle.fontSize,
                       fontFamily: appliedStyle.fontFamily,
                       fontWeight: appliedStyle.fontWeight,
                       fontStyle: appliedStyle.fontStyle,

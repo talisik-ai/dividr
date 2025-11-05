@@ -5,18 +5,13 @@ import { SubtitleTransformBoundary } from '../components/SubtitleTransformBounda
 import {
   GLOW_BLUR_MULTIPLIER,
   GLOW_SPREAD_MULTIPLIER,
-  SUBTITLE_BASE_SIZE_RATIO,
-  SUBTITLE_MIN_FONT_SIZE,
   SUBTITLE_PADDING_HORIZONTAL,
   SUBTITLE_PADDING_VERTICAL,
   Z_INDEX_SUBTITLE_CONTENT_BASE,
   Z_INDEX_SUBTITLE_OVERLAY,
 } from '../core/constants';
 import { OverlayRenderProps } from '../core/types';
-import {
-  calculateResponsiveFontSize,
-  scaleTextShadow,
-} from '../utils/scalingUtils';
+import { scaleTextShadow } from '../utils/scalingUtils';
 import { hasActualBackground } from '../utils/textStyleUtils';
 
 /**
@@ -81,13 +76,10 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   // Get applied style for subtitle rendering
   const appliedStyle = getTextStyleForSubtitle(activeStyle);
 
-  // Calculate responsive font size using the fixed coordinate system
-  const responsiveFontSize = calculateResponsiveFontSize(
-    baseVideoHeight,
-    SUBTITLE_MIN_FONT_SIZE,
-    SUBTITLE_BASE_SIZE_RATIO,
-    renderScale,
-  );
+  // Extract the fontSize from appliedStyle and scale it for rendering
+  // appliedStyle.fontSize is like "24px", we need to extract the number and scale it
+  const baseFontSize = parseFloat(appliedStyle.fontSize) || 24;
+  const responsiveFontSize = baseFontSize * renderScale;
 
   // Scale padding and effects using the render scale
   const scaledPaddingVertical = SUBTITLE_PADDING_VERTICAL * renderScale;

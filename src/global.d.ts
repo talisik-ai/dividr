@@ -327,6 +327,9 @@ declare global {
       minimizeApp: () => void;
       maximizeApp: () => void;
       openExternalLink: (link: string) => Promise<void>;
+      getMaximizeState: () => Promise<boolean>;
+      onMaximizeChanged: (callback: (isMaximized: boolean) => void) => void;
+      offMaximizeChanged: () => void;
     };
   }
 }

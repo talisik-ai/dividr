@@ -5,7 +5,7 @@
  */
 import { Button } from '@/frontend/components/ui/button';
 import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
-import { Upload } from 'lucide-react';
+import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useState } from 'react';
 import { useVideoEditorStore } from '../../editor/stores/videoEditor/index';
 import { useTimelineDuration } from '../../editor/timeline/hooks/useTimelineDuration';
@@ -144,12 +144,14 @@ const ExportButton: React.FC<ExportButtonProps> = ({
         variant={variant}
         onClick={handleOpenModal}
         disabled={isButtonDisabled}
-        className={className}
+        className={cn(
+          className,
+          'rounded-sm text-base font-bold w-[140px] h-9',
+        )}
         size="sm"
         data-export-button
       >
         {render.isRendering ? 'Exporting...' : 'Export'}
-        <Upload className="size-3.5" />
       </Button>
 
       <ExportModal

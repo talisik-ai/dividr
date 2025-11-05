@@ -239,36 +239,42 @@ const Projects = () => {
       <div className="flex flex-col flex-1 min-h-0 p-6 lg:p-12">
         <Header />
         <div className="flex-1 flex items-center justify-center text-center">
-          <div className="flex flex-col items-center gap-4 max-w-md">
+          <div className="flex flex-col items-center gap-[25px] max-w-md">
             <img
               src={theme === 'dark' ? NewDark : New}
               alt="New Project"
               className="w-24 h-24"
             />
-            <h1 className="text-3xl text-zinc-900 font-semibold dark:text-zinc-100">
+            <h1 className="text-3xl text-zinc-900 font-bold dark:text-zinc-100 font-sans">
               No projects yet
             </h1>
             <div className="text-base text-muted-foreground font-normal">
               <p>Start creating your first video project. Import media,</p>
               <p>edit, and export professional videos.</p>
             </div>
-            <Button onClick={handleCreateProject}>
-              <Plus size={16} />
-              Create your first project
-            </Button>
 
-            {/* Import option */}
-            <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 w-full">
-              <label className="flex items-center justify-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 cursor-pointer transition-colors">
-                <Upload size={16} />
-                Import existing project
-                <input
-                  type="file"
-                  accept=".dividr,.json"
-                  onChange={handleImportProject}
-                  className="hidden"
-                />
-              </label>
+            <div className="flex items-center gap-3">
+              {/* Import option */}
+              <div className="w-full">
+                <label className="flex items-center justify-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 cursor-pointer transition-colors h-[46px] px-4 py-2 rounded-lg font-normal">
+                  <Upload size={16} />
+                  Import existing project
+                  <input
+                    type="file"
+                    accept=".dividr,.json"
+                    onChange={handleImportProject}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <Button
+                onClick={handleCreateProject}
+                className="h-[46px] rounded-lg px-4 py-2 font-normal"
+              >
+                <Plus size={16} />
+                Create your first project
+              </Button>
             </div>
           </div>
         </div>
@@ -367,9 +373,9 @@ const Projects = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Project?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{deleteConfirm.projectName}"?
-              This action cannot be undone and will permanently remove all
+            <AlertDialogDescription className="whitespace-pre-wrap break-words w-fit overflow-wrap-anywhere break-all">
+              Are you sure you want to delete {`"${deleteConfirm.projectName}"`}
+              ? This action cannot be undone and will permanently remove all
               project data.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -407,8 +407,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     <div
       ref={containerRef}
       className={cn(
-        'relative overflow-hidden rounded-lg preview-background',
         className,
+        'relative overflow-hidden rounded-lg preview-background',
         'bg-zinc-100 dark:bg-zinc-900',
         (() => {
           if (!activeVideoTrack && !activeAudioTrack) return 'cursor-default';
@@ -420,6 +420,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           return 'cursor-default';
         })(),
       )}
+      style={
+        !activeVideoTrack && !activeAudioTrack
+          ? {
+              height: '374px',
+              maxWidth: '66.67%',
+              aspectRatio: '16 / 9',
+              margin: '0 auto',
+            }
+          : undefined
+      }
       onDragEnter={handleDrag}
       onDragLeave={handleDrag}
       onDragOver={handleDrag}

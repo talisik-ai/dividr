@@ -1195,11 +1195,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         <div className="flex flex-1">
           {/* Timeline Track Controllers */}
-          <TimelineTrackControllers
-            key={`controllers-${layoutKey}`}
-            tracks={tracks}
-            className="w-fit flex-shrink-0"
-          />
+          {tracks.length > 0 && (
+            <TimelineTrackControllers
+              key={`controllers-${layoutKey}`}
+              tracks={tracks}
+              className="w-fit flex-shrink-0"
+            />
+          )}
 
           {/* Project Thumbnail Setter - Only show if there are video tracks */}
           {tracks.some((track) => track.type === 'video') && (
@@ -1509,6 +1511,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                         mouseY={dragGhost.mouseY + verticalOffset}
                         offsetX={dragGhost.offsetX}
                         offsetY={dragGhost.offsetY}
+                        visibleTrackRows={visibleTrackRows}
                       />
                     );
                   })}

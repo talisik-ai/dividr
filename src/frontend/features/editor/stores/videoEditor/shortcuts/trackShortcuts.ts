@@ -32,6 +32,51 @@ export const createTrackShortcuts = (store: any): ShortcutConfig[] => [
     },
   },
   {
+    id: 'track-slice-playhead-k',
+    keys: 'k',
+    description: 'Slice at Playhead',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      store.splitAtPlayhead();
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-slice-playhead-ctrl-k',
+    keys: 'ctrl+k',
+    description: 'Slice at Playhead',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      store.splitAtPlayhead();
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
+    id: 'track-slice-playhead-cmd-k',
+    keys: 'cmd+k',
+    description: 'Slice at Playhead',
+    category: 'Track Editing',
+    scope: 'track',
+    handler: (e) => {
+      e?.preventDefault();
+      store.splitAtPlayhead();
+    },
+    options: {
+      preventDefault: true,
+      enableOnFormTags: false,
+    },
+  },
+  {
     id: 'track-duplicate',
     keys: 'ctrl+d',
     description: 'Duplicate Track',

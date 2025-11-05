@@ -172,7 +172,7 @@ const AppMenuBarComponent = () => {
   }, [selectedTrackIds.length, removeSelectedTracks]);
 
   return (
-    <div className="flex items-center my-1">
+    <div className="flex items-center my-1 ml-4">
       <Menubar variant="minimal">
         <MenubarMenu>
           <Link to="/">

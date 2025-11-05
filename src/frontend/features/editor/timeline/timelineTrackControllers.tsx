@@ -27,6 +27,7 @@ import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AddTrackButton } from './addTrackButton';
 import { TRACK_ROWS, TrackRowDefinition } from './timelineTracks';
 import {
+  getRowHeight,
   getRowHeightClasses,
   TIMELINE_HEADER_HEIGHT_CLASSES,
 } from './utils/timelineConstants';
@@ -468,6 +469,25 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
         [visibleTrackRows],
       );
 
+      // Calculate baseline height (5 tracks) and whether we should center - matches TimelineTracks
+      const { baselineHeight, shouldCenter } = useMemo(() => {
+        // Calculate height for each visible row
+        const visibleRowsInOrder = TRACK_ROWS.filter((row) =>
+          visibleTrackRows.includes(row.id),
+        );
+
+        // Baseline height = height of ALL 5 track rows (even if not visible)
+        // This ensures the grid always shows space for 5 tracks
+        const baseline = TRACK_ROWS.reduce((sum, row) => {
+          return sum + getRowHeight(row.id);
+        }, 0);
+
+        return {
+          baselineHeight: baseline,
+          shouldCenter: visibleRowsInOrder.length < TRACK_ROWS.length,
+        };
+      }, [visibleTrackRows]);
+
       return (
         <div className={cn('', className)}>
           {/* Header with Add Track button */}
@@ -480,15 +500,68 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
             <AddTrackButton />
           </div>
 
-          {/* Track controller rows - only visible ones */}
-          <div className="flex flex-col items-center">
-            {visibleRows.map((rowDef) => (
-              <TrackControllerRow
-                key={rowDef.id}
-                rowDef={rowDef}
-                tracks={tracksByRow[rowDef.id] || []}
-              />
-            ))}
+          {/* Track controller rows wrapper - with centering when <5 tracks */}
+          <div
+            className="relative"
+            style={{
+              minHeight: shouldCenter ? `${baselineHeight}px` : 'auto',
+              height: shouldCenter ? `${baselineHeight}px` : 'auto',
+            }}
+          >
+            {/* Placeholder borders for ALL 5 track rows when centering - positioned at absolute positions */}
+            {shouldCenter && (
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: `${baselineHeight}px`,
+                }}
+              >
+                {TRACK_ROWS.map((rowDef) => {
+                  // Calculate this row's top position - sum of all previous row heights
+                  let top = 0;
+                  for (let i = 0; i < TRACK_ROWS.length; i++) {
+                    if (TRACK_ROWS[i].id === rowDef.id) break;
+                    top += getRowHeight(TRACK_ROWS[i].id);
+                  }
+
+                  const rowHeight = getRowHeight(rowDef.id);
+
+                  return (
+                    <div
+                      key={`placeholder-${rowDef.id}`}
+                      className="absolute bg-transparent"
+                      style={{
+                        top: `${top}px`,
+                        left: 0,
+                        right: 0,
+                        height: `${rowHeight}px`,
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            <div
+              className="flex flex-col items-center relative"
+              style={{
+                height: shouldCenter ? `${baselineHeight}px` : 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: shouldCenter ? 'center' : 'flex-start',
+              }}
+            >
+              {visibleRows.map((rowDef) => (
+                <TrackControllerRow
+                  key={rowDef.id}
+                  rowDef={rowDef}
+                  tracks={tracksByRow[rowDef.id] || []}
+                />
+              ))}
+            </div>
           </div>
         </div>
       );

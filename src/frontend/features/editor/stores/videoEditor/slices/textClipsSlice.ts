@@ -38,7 +38,7 @@ const DEFAULT_TEXT_STYLE = {
   isUnderline: false,
   textTransform: 'none' as const,
   textAlign: 'center' as const,
-  fontSize: 18,
+  fontSize: 24,
   fillColor: '#FFFFFF',
   strokeColor: '#000000',
   backgroundColor: 'transparent',

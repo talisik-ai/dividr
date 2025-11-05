@@ -4,7 +4,7 @@ import { VideoPlayerControls } from './header/videoPlayerControls';
 
 export const VideoEditorHeader = () => {
   return (
-    <div className="flex items-center justify-between my-1 relative flex-1 min-h-0">
+    <div className="flex items-center justify-between my-1 relative flex-1 min-h-0 mr-4">
       <ProjectNameInput className="w-fit" />
       <VideoPlayerControls className="absolute left-1/2 -translate-x-1/2" />
       <ExportButton className="!px-5" />

@@ -1,9 +1,10 @@
 import { cn } from '@/frontend/utils/utils';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
-import { getTrackItemHeightClasses } from './utils/timelineConstants';
+import { getRowHeight, getTrackItemHeightClasses } from './utils/timelineConstants';
+import { TRACK_ROW_ORDER } from './utils/trackRowPositions';
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 interface DragGhostProps {
@@ -14,6 +15,7 @@ interface DragGhostProps {
   mouseY: number;
   offsetX: number; // Offset from left edge of track to mouse cursor
   offsetY: number; // Offset from top edge of track to mouse cursor
+  visibleTrackRows?: string[]; // Optional: for centering offset calculation
 }
 
 /**

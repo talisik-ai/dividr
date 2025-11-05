@@ -18,7 +18,7 @@ const VideoEditorLayoutComponent = () => {
       <div className="h-screen flex flex-col text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-900 p-4">
         <TitleBar className="relative z-10 border-b border-accent -mx-4 px-4 -mt-4 py-2" />
 
-        <div className="grid grid-cols-[auto_1fr] grid-rows-[auto_1fr_auto] flex-1 min-h-0">
+        <div className="grid grid-cols-[auto_1fr] grid-rows-[55px_1fr_auto] flex-1 min-h-0">
           {/* Menubar and Project Additional controllers */}
           <AppMenuBar />
           <VideoEditorHeader />
