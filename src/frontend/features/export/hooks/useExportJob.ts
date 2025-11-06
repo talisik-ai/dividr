@@ -277,7 +277,7 @@ function convertTracksToFFmpegInputs(
     const sourceStartTime = track.sourceStartTime || 0;
 
     console.log(
-      `🎥 Adding track "${track.name}": type=${track.type}, timeline=${track.startFrame}-${track.endFrame}, source start ${sourceStartTime}s, duration ${trackDurationSeconds}s, dimensions: ${track.width}x${track.height}`,
+      `🎥 Adding track "${track.name}": type=${track.type}, timeline=${track.startFrame}-${track.endFrame}, source start ${sourceStartTime}s, duration ${trackDurationSeconds}s, dimensions: ${track.width}x${track.height}, aspect ratio: ${track.detectedAspectRatioLabel || 'custom'}`,
     );
 
     // DON'T attach audio to video tracks - process them independently
@@ -294,6 +294,8 @@ function convertTracksToFFmpegInputs(
       visible: track.visible,
       width: track.width,
       height: track.height,
+      aspectRatio: track.detectedAspectRatioLabel,
+      detectedAspectRatioLabel: track.detectedAspectRatioLabel,
     };
 
     // Add image transform for image tracks

@@ -22,6 +22,8 @@ export interface TrackInfo {
   gapType?: 'video' | 'audio' | 'both';
   width?: number;
   height?: number;
+  aspectRatio?: string; // Aspect ratio in width:height format (e.g., '16:9', '9:16', '1920:1080')
+  detectedAspectRatioLabel?: string; // Human-readable label (e.g., '16:9', '9:16', '1:1')
   isImage?: boolean; // Internal flag to mark image layers for overlay processing
   layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
   imageTransform?: ImageTransform; // Transform data for image overlays (position, rotation, scale)
