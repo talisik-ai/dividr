@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import started from 'electron-squirrel-startup';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -2193,12 +2193,12 @@ ipcMain.handle('media:has-audio', async (event, filePath: string) => {
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: 1280,
+    height: 720,
     frame: false,
     autoHideMenuBar: true,
-    minWidth: 750,
-    minHeight: 500,
+    minWidth: 1280,
+    minHeight: 520,
     show: false, // Don't show immediately - wait for ready-to-show
     backgroundColor: '#09090b', // Match loader background to prevent flash
     webPreferences: {
@@ -2228,7 +2228,7 @@ const createWindow = () => {
       );
 
       // 🚫 Remove all default menus so "View → Toggle Developer Tools" disappears
-      Menu.setApplicationMenu(null);
+      // Menu.setApplicationMenu(null);
 
       // 🚫 Block keyboard shortcuts
       mainWindow.webContents.on('before-input-event', (event, input) => {
