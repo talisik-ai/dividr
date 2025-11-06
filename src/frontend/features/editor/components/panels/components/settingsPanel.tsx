@@ -101,6 +101,9 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   // Determine if controls should be disabled (no track selected or canvas dimensions match a preset perfectly)
   const hasTrackSelected = selectedTrack !== null;
 
+  // Determine if the selected track is a video (aspect ratio controls only apply to videos)
+  const isVideoTrackSelected = selectedTrack?.type === 'video';
+
   // Handle preset selection
   const handlePresetSelect = (
     preset: (typeof ASPECT_RATIO_PRESETS)[number],
@@ -184,163 +187,172 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
       <div className="flex flex-col gap-6">
         {/* Aspect Ratio Section */}
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-muted-foreground">
-                Aspect Ratio
-              </label>
-              {detectedAspectRatioLabel && hasTrackSelected && (
-                <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
-                  Detected: {detectedAspectRatioLabel}
-                </span>
-              )}
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-muted-foreground">
+              Aspect Ratio
+            </label>
+            {detectedAspectRatioLabel && isVideoTrackSelected && (
+              <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
+                Detected: {detectedAspectRatioLabel}
+              </span>
+            )}
+          </div>
+
+          {/* Show message when image track is selected */}
+          {hasTrackSelected && !isVideoTrackSelected && (
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-4 text-center">
+              Aspect ratio controls are not available for image tracks. Use the
+              Image Properties Panel for scaling and cropping.
             </div>
-            {/* Show track dimensions when selected */}
-            {hasTrackSelected &&
-              selectedTrack?.width &&
-              selectedTrack?.height && (
+          )}
+
+          {/* Show message when no track is selected */}
+          {!hasTrackSelected && (
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-4 text-center">
+              Select a video track to adjust aspect ratio
+            </div>
+          )}
+
+          {/* Show aspect ratio controls only for video tracks */}
+          {isVideoTrackSelected && (
+            <>
+              {/* Show track dimensions when selected */}
+              {selectedTrack?.width && selectedTrack?.height && (
                 <div className="text-xs text-muted-foreground">
                   Track dimensions: {selectedTrack.width} ×{' '}
                   {selectedTrack.height}
                 </div>
               )}
-          </div>
 
-          {/* Show helper message and quick-apply button when track's ratio differs from canvas */}
-          {hasTrackSelected &&
-            selectedTrack?.width &&
-            selectedTrack?.height &&
-            (selectedTrack.width !== preview.canvasWidth ||
-              selectedTrack.height !== preview.canvasHeight) && (
-              <div className="text-xs bg-blue-500/10 border border-blue-500/20 rounded-md px-3 py-2 flex items-center justify-between gap-2">
-                <span className="text-blue-600 dark:text-blue-400">
-                  Track is {detectedAspectRatioLabel} ({selectedTrack.width}×
-                  {selectedTrack.height})
-                  {activePreset?.label && `, canvas is ${activePreset.label}`}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                  onClick={() => {
-                    // If there's a matching preset, use it. Otherwise, use exact dimensions
-                    if (detectedPreset) {
-                      handlePresetSelect(detectedPreset);
-                    } else if (selectedTrack) {
-                      // Apply exact track dimensions to canvas
-                      setCanvasSize(
-                        selectedTrack.width!,
-                        selectedTrack.height!,
-                      );
-                      updateTrack(selectedTrack.id, {
-                        aspectRatio:
-                          selectedTrack.width! / selectedTrack.height!,
-                        detectedAspectRatioLabel: undefined, // No preset label
-                      });
-                    }
-                  }}
-                >
-                  Match Track
-                </Button>
+              {/* Show helper message and quick-apply button when track's ratio differs from canvas */}
+              {selectedTrack?.width &&
+                selectedTrack?.height &&
+                (selectedTrack.width !== preview.canvasWidth ||
+                  selectedTrack.height !== preview.canvasHeight) && (
+                  <div className="text-xs bg-blue-500/10 border border-blue-500/20 rounded-md px-3 py-2 flex items-center justify-between gap-2">
+                    <span className="text-blue-600 dark:text-blue-400">
+                      Track is {detectedAspectRatioLabel} ({selectedTrack.width}
+                      ×{selectedTrack.height})
+                      {activePreset?.label &&
+                        `, canvas is ${activePreset.label}`}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      onClick={() => {
+                        // If there's a matching preset, use it. Otherwise, use exact dimensions
+                        if (detectedPreset) {
+                          handlePresetSelect(detectedPreset);
+                        } else if (selectedTrack) {
+                          // Apply exact track dimensions to canvas
+                          setCanvasSize(
+                            selectedTrack.width!,
+                            selectedTrack.height!,
+                          );
+                          updateTrack(selectedTrack.id, {
+                            aspectRatio:
+                              selectedTrack.width! / selectedTrack.height!,
+                            detectedAspectRatioLabel: undefined, // No preset label
+                          });
+                        }
+                      }}
+                    >
+                      Match Track
+                    </Button>
+                  </div>
+                )}
+
+              {/* Preset Grid */}
+              <div className="grid grid-cols-4 gap-2">
+                {ASPECT_RATIO_PRESETS.map((ratio) => {
+                  const isActive = activePreset?.label === ratio.label;
+                  const isSuggested = detectedPreset?.label === ratio.label;
+                  const aspectValue = ratio.width / ratio.height;
+
+                  return (
+                    <Button
+                      key={ratio.label}
+                      variant="outline"
+                      onClick={() => handlePresetSelect(ratio)}
+                      className={cn(
+                        'flex flex-col items-center border-none justify-end gap-2 h-auto py-3 transition-all rounded-md relative',
+                        isActive && 'bg-primary/10 dark:bg-primary/10',
+                        isSuggested &&
+                          !isActive &&
+                          'ring-2 ring-blue-500/40 dark:ring-blue-400/40',
+                      )}
+                    >
+                      {/* Visual shape representation */}
+                      <div
+                        className={cn(
+                          'border-2 rounded transition-colors',
+                          isActive
+                            ? 'border-primary'
+                            : isSuggested
+                              ? 'border-blue-500 dark:border-blue-400'
+                              : 'border-muted-foreground/40',
+                        )}
+                        style={{
+                          width:
+                            aspectValue >= 1 ? '32px' : `${32 * aspectValue}px`,
+                          height:
+                            aspectValue <= 1 ? '32px' : `${32 / aspectValue}px`,
+                        }}
+                      />
+                      <span
+                        className={cn(
+                          'text-xs font-medium',
+                          isSuggested &&
+                            !isActive &&
+                            'text-blue-600 dark:text-blue-400',
+                        )}
+                      >
+                        {ratio.label}
+                      </span>
+                    </Button>
+                  );
+                })}
               </div>
-            )}
 
-          {/* Show message when no track is selected */}
-          {!hasTrackSelected && (
-            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-4 text-center">
-              Select a video or image track to adjust aspect ratio
-            </div>
+              {/* Custom Dimensions */}
+              <div className="flex items-center pt-2 justify-between">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Custom
+                </label>
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground block text-center">
+                      W
+                    </span>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={customWidth}
+                      onChange={(e) => handleCustomWidthChange(e.target.value)}
+                      placeholder="Width"
+                      style={{ fieldSizing: 'content' } as React.CSSProperties}
+                      className="max-w-20"
+                    />
+                  </div>
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground block text-center">
+                      H
+                    </span>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={customHeight}
+                      onChange={(e) => handleCustomHeightChange(e.target.value)}
+                      placeholder="Height"
+                      style={{ fieldSizing: 'content' } as React.CSSProperties}
+                      className="max-w-20"
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
           )}
-
-          {/* Preset Grid - Show even without selection, but for canvas control */}
-          <div className="grid grid-cols-4 gap-2">
-            {ASPECT_RATIO_PRESETS.map((ratio) => {
-              const isActive = activePreset?.label === ratio.label;
-              const isSuggested =
-                hasTrackSelected && detectedPreset?.label === ratio.label;
-              const aspectValue = ratio.width / ratio.height;
-
-              return (
-                <Button
-                  key={ratio.label}
-                  variant="outline"
-                  onClick={() => handlePresetSelect(ratio)}
-                  className={cn(
-                    'flex flex-col items-center border-none justify-end gap-2 h-auto py-3 transition-all rounded-md relative',
-                    isActive && 'bg-primary/10 dark:bg-primary/10',
-                    isSuggested &&
-                      !isActive &&
-                      'ring-2 ring-blue-500/40 dark:ring-blue-400/40',
-                  )}
-                >
-                  {/* Visual shape representation */}
-                  <div
-                    className={cn(
-                      'border-2 rounded transition-colors',
-                      isActive
-                        ? 'border-primary'
-                        : isSuggested
-                          ? 'border-blue-500 dark:border-blue-400'
-                          : 'border-muted-foreground/40',
-                    )}
-                    style={{
-                      width:
-                        aspectValue >= 1 ? '32px' : `${32 * aspectValue}px`,
-                      height:
-                        aspectValue <= 1 ? '32px' : `${32 / aspectValue}px`,
-                    }}
-                  />
-                  <span
-                    className={cn(
-                      'text-xs font-medium',
-                      isSuggested &&
-                        !isActive &&
-                        'text-blue-600 dark:text-blue-400',
-                    )}
-                  >
-                    {ratio.label}
-                  </span>
-                </Button>
-              );
-            })}
-          </div>
-
-          {/* Custom Dimensions */}
-          <div className="flex items-center pt-2 justify-between">
-            <label className="text-xs font-medium text-muted-foreground">
-              Custom
-            </label>
-            <div className="flex items-center gap-4">
-              <div className="flex-1 flex items-center gap-2">
-                <span className="text-xs text-muted-foreground block text-center">
-                  W
-                </span>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  value={customWidth}
-                  onChange={(e) => handleCustomWidthChange(e.target.value)}
-                  placeholder="Width"
-                  style={{ fieldSizing: 'content' } as React.CSSProperties}
-                  className="max-w-20"
-                />
-              </div>
-              <div className="flex-1 flex items-center gap-2">
-                <span className="text-xs text-muted-foreground block text-center">
-                  H
-                </span>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  value={customHeight}
-                  onChange={(e) => handleCustomHeightChange(e.target.value)}
-                  placeholder="Height"
-                  style={{ fieldSizing: 'content' } as React.CSSProperties}
-                  className="max-w-20"
-                />
-              </div>
-            </div>
-          </div>
         </div>
 
         <Separator />
