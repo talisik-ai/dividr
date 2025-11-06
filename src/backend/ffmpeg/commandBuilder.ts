@@ -480,6 +480,26 @@ function createSarNormalizationFilters(
   };
 }
 
+/**
+ * Creates aspect ratio adjustment filters
+ * Applies setdar (Display Aspect Ratio) to change the aspect ratio
+ * @param originalIndex - Unique index for filter labeling
+ * @param inputRef - Input filter reference
+ * @param aspectRatio - Target aspect ratio (e.g., "16:9", "4:3", "21:9")
+ * @returns AudioTrimResult with filter reference and filter strings
+ */
+function createAspectRatioFilters(
+  originalIndex: number,
+  inputRef: string,
+  aspectRatio: string,
+): AudioTrimResult {
+  const aspectRef = `[v${originalIndex}_aspect]`;
+  return {
+    filterRef: aspectRef,
+    filters: [`${inputRef}setdar=${aspectRatio}${aspectRef}`],
+  };
+}
+
 // -------------------------
 // Audio Processing Functions
 // -------------------------
@@ -1509,6 +1529,21 @@ function processLayerSegments(
           `📐 Layer ${layerIndex}: Normalized SAR to 1:1 for segment ${segmentIndex}`,
         );
 
+        // Apply aspect ratio filter if specified in job operations
+        // This is applied per-segment before concatenation
+        if (job.operations.aspect) {
+          const aspectResult = createAspectRatioFilters(
+            9000 + layerIndex * 1000 + segmentIndex,
+            videoStreamRef,
+            job.operations.aspect,
+          );
+          videoFilters.push(...aspectResult.filters);
+          videoStreamRef = aspectResult.filterRef;
+          console.log(
+            `📐 Layer ${layerIndex}: Applied aspect ratio ${job.operations.aspect} to segment ${segmentIndex}`,
+          );
+        }
+
         concatInputs.push(videoStreamRef);
       } else {
         console.warn(
@@ -2044,6 +2079,27 @@ function handleFilterComplex(
 }
 
 /**
+ * Applies aspect ratio control to command
+ */
+function handleAspectRatio(job: VideoEditJob, cmd: CommandParts): void {
+  if (job.operations.aspect) {
+    cmd.args.push('-aspect', job.operations.aspect);
+    console.log(`📐 Applied aspect ratio: ${job.operations.aspect}`);
+  }
+}
+
+/**
+ * Applies FPS control to command output
+ * This sets the output frame rate independently of the filter_complex fps normalization
+ */
+function handleOutputFps(job: VideoEditJob, cmd: CommandParts): void {
+  if (job.operations.targetFrameRate) {
+    cmd.args.push('-r', String(job.operations.targetFrameRate));
+    console.log(`🎞️ Applied output FPS: ${job.operations.targetFrameRate}`);
+  }
+}
+
+/**
  * Applies encoding settings to command
  */
 function handleEncodingSettings(
@@ -2174,221 +2230,15 @@ export async function buildFfmpegCommand(
   handlePreset(job, cmd, hwAccel);
   handleThreads(job, cmd);
 
-  // Step 5: Add output file
+  // Step 5: Apply aspect ratio and FPS controls
+  handleAspectRatio(job, cmd);
+  handleOutputFps(job, cmd);
+
+  // Step 6: Add output file
   handleOutput(job, cmd, location);
 
   console.log('Full FFmpeg Command:', ['ffmpeg', ...cmd.args].join(' '));
   return cmd.args;
 }
 
-// TODO: DELETE IF NOT NEEDED
-// -------------------------
-// Helpers
-// -------------------------
 
-// Test function for debugging command generation
-export async function testConcatCommand() {
-  const testJob: VideoEditJob = {
-    inputs: ['video1.mp4', 'video2.mp4'],
-    output: 'output.mp4',
-    operations: {
-      concat: true,
-      normalizeFrameRate: true,
-      targetFrameRate: 30,
-    },
-  };
-
-  const command = await buildFfmpegCommand(testJob);
-  console.log('🧪 Test Concat Command:', command.join(' '));
-  return command;
-}
-
-// Test function for mixed video/audio inputs (audio replacement)
-export async function testAudioReplacementCommand() {
-  const testJob: VideoEditJob = {
-    inputs: ['video1.mp4', 'audio1.mp3', 'video2.mp4'],
-    output: 'output.mp4',
-    operations: {
-      concat: true,
-      normalizeFrameRate: true,
-      targetFrameRate: 30,
-    },
-  };
-
-  const command = await buildFfmpegCommand(testJob);
-  console.log('🎵 Test Audio Replacement Command:', command.join(' '));
-  return command;
-}
-
-// Test function for track trimming
-export async function testTrackTrimmingCommand() {
-  const testJob: VideoEditJob = {
-    inputs: [
-      { path: 'video1.mp4', startTime: 10, duration: 20 }, // Start at 10s, take 20s
-      { path: 'video2.mp4', startTime: 5, duration: 15 }, // Start at 5s, take 15s
-      { path: 'audio1.mp3', startTime: 2, duration: 30 }, // Audio: independent timing! 2s start, 30s duration
-    ],
-    output: 'trimmed_output.mp4',
-    operations: {
-      concat: true,
-      normalizeFrameRate: true,
-      targetFrameRate: 30,
-    },
-  };
-
-  console.log(
-    '✂️ Expected behavior: Video plays for full 35s, audio plays for 30s then silence for last 5s',
-  );
-  console.log(
-    '📏 Note: Track durations should now be accurate (no more 50s estimates!)',
-  );
-  console.log(
-    '🎵 Audio trimming: Independent of video - can trim start/end separately!',
-  );
-  const command = await buildFfmpegCommand(testJob);
-  console.log('✂️ Test Track Trimming Command:', command.join(' '));
-  return command;
-}
-
-// Test function for single track trimming
-export async function testSingleTrackTrimming() {
-  const testJob: VideoEditJob = {
-    inputs: [
-      { path: 'video1.mp4', startTime: 5, duration: 10 }, // Start at 5s, take 10s
-    ],
-    output: 'single_trimmed.mp4',
-    operations: {
-      concat: false,
-      normalizeFrameRate: false,
-    },
-  };
-
-  const command = await buildFfmpegCommand(testJob);
-  console.log('🎬 Single Track Trimming:', command.join(' '));
-  return command;
-}
-
-// Test function for independent audio trimming
-export async function testIndependentAudioTrimming() {
-  const testJob: VideoEditJob = {
-    inputs: [
-      { path: 'video1.mp4', startTime: 10, duration: 30 }, // Video: 10s-40s (30s duration)
-      { path: 'audio1.mp3', startTime: 5, duration: 25 }, // Audio: 5s-30s (25s duration) - independent timing!
-    ],
-    output: 'independent_audio_trim.mp4',
-    operations: {
-      concat: true,
-      normalizeFrameRate: false,
-    },
-  };
-
-  console.log(
-    '🎵 Independent Audio Trimming: Audio trimmed separately from video',
-  );
-  console.log('📹 Video: 10s start, 30s duration');
-  console.log('🎵 Audio: 5s start, 25s duration (completely independent!)');
-  const command = await buildFfmpegCommand(testJob);
-  console.log('🎛️ Command:', command.join(' '));
-  return command;
-}
-
-// Test function for the specific export error scenario
-export async function testExportErrorScenario() {
-  const testJob: VideoEditJob = {
-    inputs: [
-      { path: 'uu.mp4', startTime: 0, duration: 10 },
-      { path: 'eee.mp4', startTime: 0, duration: 15 },
-    ],
-    output: 'Untitled_Project.mp4',
-    operations: {
-      concat: true,
-      normalizeFrameRate: true,
-      targetFrameRate: 30,
-    },
-  };
-
-  console.log('🐛 Testing Export Error Scenario Fix:');
-  console.log('📹 Two video clips with FPS normalization');
-  const command = await buildFfmpegCommand(testJob);
-  console.log('🎬 Fixed Command:', command.join(' '));
-
-  // Validate filter complex structure
-  const filterIndex = command.indexOf('-filter_complex');
-  if (filterIndex !== -1 && filterIndex + 1 < command.length) {
-    const filterComplex = command[filterIndex + 1];
-
-    // Check for proper video/audio interleaving
-    if (
-      filterComplex.includes('[v0_fps][a0_trimmed][v1_fps][a1_trimmed]concat')
-    ) {
-      console.log('✅ Video/Audio interleaving looks correct!');
-    } else {
-      console.log('⚠️ Check video/audio interleaving pattern');
-    }
-  }
-
-  return command;
-}
-
-// Test function for encoding presets
-export async function testEncodingPresets() {
-  const testJob: VideoEditJob = {
-    inputs: ['video1.mp4', 'video2.mp4'],
-    output: 'output_superfast.mp4',
-    operations: {
-      concat: true,
-      preset: 'superfast', // Fast encoding for quick exports
-      normalizeFrameRate: true,
-      targetFrameRate: 30,
-    },
-  };
-
-  console.log('🚀 Testing Encoding Presets:');
-  console.log('⚡ Using "superfast" preset for speed optimization');
-  const command = await buildFfmpegCommand(testJob);
-  console.log('🎬 Preset Command:', command.join(' '));
-
-  // Validate preset is in the command
-  const presetIndex = command.indexOf('-preset');
-  if (presetIndex !== -1 && presetIndex + 1 < command.length) {
-    const presetValue = command[presetIndex + 1];
-    console.log(`✅ Preset applied: ${presetValue}`);
-  } else {
-    console.log('⚠️ Preset not found in command');
-  }
-
-  return command;
-}
-
-// Test all available presets
-export async function testAllPresets() {
-  const presets = [
-    'ultrafast',
-    'superfast',
-    'veryfast',
-    'faster',
-    'fast',
-    'medium',
-    'slow',
-    'slower',
-    'veryslow',
-  ] as const;
-
-  console.log('🎛️ Testing all available encoding presets:');
-
-  for (const preset of presets) {
-    const testJob: VideoEditJob = {
-      inputs: ['input.mp4'],
-      output: `output_${preset}.mp4`,
-      operations: {
-        preset,
-      },
-    };
-
-    const command = await buildFfmpegCommand(testJob);
-    const presetIndex = command.indexOf('-preset');
-    const appliedPreset =
-      presetIndex !== -1 ? command[presetIndex + 1] : 'NOT_FOUND';
-    console.log(`  ${preset.padEnd(10)} → ${appliedPreset}`);
-  }
-}
