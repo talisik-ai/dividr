@@ -502,13 +502,27 @@ export const createMediaLibrarySlice: StateCreator<
       // Generate a single thumbnail at 1 second (or 10% of duration, whichever is smaller)
       const thumbnailTime = Math.min(1, mediaItem.duration * 0.1);
 
+      // Calculate thumbnail dimensions based on video aspect ratio
+      // Target width is 320px, height is calculated to preserve aspect ratio
+      let thumbnailWidth = 320;
+      let thumbnailHeight = 180; // Default 16:9
+
+      if (mediaItem.metadata?.width && mediaItem.metadata?.height) {
+        const aspectRatio =
+          mediaItem.metadata.width / mediaItem.metadata.height;
+        thumbnailHeight = Math.round(thumbnailWidth / aspectRatio);
+        console.log(
+          `📐 Using video aspect ratio: ${mediaItem.metadata.width}x${mediaItem.metadata.height} (${aspectRatio.toFixed(2)}) -> thumbnail: ${thumbnailWidth}x${thumbnailHeight}`,
+        );
+      }
+
       const result = await VideoThumbnailGenerator.generateThumbnails({
         videoPath,
         duration: 0.1, // Very short duration, just one frame
         fps: 30,
         intervalSeconds: 0.1,
-        width: 320, // Higher quality thumbnail for project display
-        height: 180, // 16:9 aspect ratio
+        width: thumbnailWidth,
+        height: thumbnailHeight,
         sourceStartTime: thumbnailTime,
       });
 

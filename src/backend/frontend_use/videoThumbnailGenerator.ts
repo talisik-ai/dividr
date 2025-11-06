@@ -244,7 +244,7 @@ export class VideoThumbnailGenerator {
     console.log(`🎬 Extracting ${totalThumbnails} thumbnails using FFmpeg`);
 
     // Create a custom FFmpeg command for thumbnail extraction
-    // This command will extract frames at specific intervals
+    // This command will extract frames at specific intervals while preserving aspect ratio
     const thumbnailCommand = [
       '-i',
       videoPath,
@@ -253,7 +253,7 @@ export class VideoThumbnailGenerator {
       '-t',
       duration.toString(), // Duration
       '-vf',
-      `fps=1/${intervalSeconds},scale=${width}:${height}:flags=fast_bilinear`, // Extract every N seconds and scale, fast_bilinear = fastest scaling method
+      `fps=1/${intervalSeconds},scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=fast_bilinear`, // Extract every N seconds and scale while preserving aspect ratio
       '-q:v',
       '5', // Lower quality
       '-vsync',
