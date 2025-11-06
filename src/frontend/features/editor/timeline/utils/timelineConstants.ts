@@ -189,3 +189,57 @@ export const TRACK_ROW_HEIGHT_CLASSES = 'sm:h-6 md:h-8 lg:h-12';
  * Use this string in all components that need to match header height
  */
 export const TIMELINE_HEADER_HEIGHT_CLASSES = 'h-8';
+
+/**
+ * All track row IDs in their canonical order
+ * This matches TRACK_ROWS from timelineTracks.tsx
+ */
+export const ALL_TRACK_ROW_IDS = [
+  'text',
+  'subtitle',
+  'image',
+  'video',
+  'audio',
+];
+
+/**
+ * Calculate the baseline height (sum of all 5 track rows)
+ * This is used for centering when fewer than 5 tracks are visible
+ */
+export const calculateBaselineHeight = (): number => {
+  return ALL_TRACK_ROW_IDS.reduce((sum, rowId) => {
+    return sum + getRowHeight(rowId);
+  }, 0);
+};
+
+/**
+ * Calculate the total height of visible track rows
+ */
+export const calculateVisibleTracksHeight = (
+  visibleTrackRows: string[],
+): number => {
+  return visibleTrackRows.reduce((sum, rowId) => {
+    return sum + getRowHeight(rowId);
+  }, 0);
+};
+
+/**
+ * Calculate the vertical centering offset when fewer than 5 tracks are visible
+ * This offset is applied to the visible tracks to center them within the baseline height
+ * @param visibleTrackRows - Array of visible track row IDs
+ * @returns The vertical offset in pixels to center the visible tracks
+ */
+export const calculateCenteringOffset = (
+  visibleTrackRows: string[],
+): number => {
+  const baselineHeight = calculateBaselineHeight();
+  const visibleHeight = calculateVisibleTracksHeight(visibleTrackRows);
+  const shouldCenter = visibleTrackRows.length < ALL_TRACK_ROW_IDS.length;
+
+  if (!shouldCenter) {
+    return 0;
+  }
+
+  // Center the visible tracks within the baseline height
+  return (baselineHeight - visibleHeight) / 2;
+};

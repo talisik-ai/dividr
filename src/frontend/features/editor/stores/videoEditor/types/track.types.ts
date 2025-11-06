@@ -15,6 +15,8 @@ export interface VideoTrack {
   offsetY?: number;
   width?: number;
   height?: number;
+  aspectRatio?: number; // Calculated aspect ratio (width / height)
+  detectedAspectRatioLabel?: string; // Human-readable label (e.g., '16:9', '9:16', '1:1')
   volume?: number;
   visible: boolean;
   locked: boolean;

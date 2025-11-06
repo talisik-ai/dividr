@@ -1209,7 +1209,7 @@ async function processSpriteSheetsInBackground(
           let processTimeout: NodeJS.Timeout;
 
           // Set adaptive timeout based on video complexity
-          const timeoutMs = Math.min(300000, 30000 + i * 15000); // Max 5 minutes, min 30s + 15s per sheet
+          const timeoutMs = Math.min(300000, 60000 + i * 60000); // Max 5 minutes, min 1 minute + 1 minute per sheet
           processTimeout = setTimeout(() => {
             ffmpeg.kill('SIGKILL');
             resolve({

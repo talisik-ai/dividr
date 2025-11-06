@@ -26,7 +26,10 @@ import { TimelinePlayhead } from './timelinePlayhead';
 import { TimelineRuler } from './timelineRuler';
 import { TimelineTrackControllers } from './timelineTrackControllers';
 import { TimelineTracks } from './timelineTracks';
-import { getRowHeight } from './utils/timelineConstants';
+import {
+  calculateCenteringOffset,
+  getRowHeight,
+} from './utils/timelineConstants';
 import {
   calculateFrameFromPosition,
   handleTimelineMouseDown as centralizedHandleMouseDown,
@@ -479,12 +482,17 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         // Find which row the cursor is over
         const mouseRelativeY = clientY - rect.top;
+
+        // Calculate centering offset and adjust mouse Y position
+        const centeringOffset = calculateCenteringOffset(visibleTrackRows);
+        const adjustedMouseY = mouseRelativeY - centeringOffset;
+
         let targetRow: string | null = null;
 
         for (const rowType of visibleTrackRows) {
           const rowTop = getTrackRowTop(rowType, visibleTrackRows);
           const rowHeight = getRowHeight(rowType);
-          if (mouseRelativeY >= rowTop && mouseRelativeY < rowTop + rowHeight) {
+          if (adjustedMouseY >= rowTop && adjustedMouseY < rowTop + rowHeight) {
             targetRow = rowType;
             break;
           }
@@ -665,15 +673,24 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (rect: { left: number; top: number; right: number; bottom: number }) => {
         const selectedIds: string[] = [];
 
+        // Calculate centering offset to adjust track positions
+        const centeringOffset = calculateCenteringOffset(visibleTrackRows);
+
         tracks.forEach((track) => {
           const trackLeft = track.startFrame * frameWidth;
           const trackRight = track.endFrame * frameWidth;
 
           // Use dynamic row positioning based on individual row heights
-          const trackTop = getTrackRowTop(track.type, visibleTrackRows);
+          // Add centering offset to match the actual visual position
+          const trackTop =
+            getTrackRowTop(track.type, visibleTrackRows) + centeringOffset;
 
           // Skip if track type is not visible
-          if (trackTop === 0 && !visibleTrackRows.includes(track.type)) return;
+          if (
+            trackTop === centeringOffset &&
+            !visibleTrackRows.includes(track.type)
+          )
+            return;
 
           const trackBottom = trackTop + getRowHeight(track.type);
 
@@ -921,7 +938,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Helper functions to get track row positions (using dynamic utilities)
     const getTrackRowTopPosition = useCallback(
       (trackType: string) => {
-        return getTrackRowTop(trackType, visibleTrackRows);
+        // Use includeCenteringOffset=true to get absolute position including centering
+        return getTrackRowTop(trackType, visibleTrackRows, true);
       },
       [visibleTrackRows],
     );
@@ -1236,7 +1254,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               <div
                 ref={tracksRef}
                 className={cn(
-                  'relative overflow-auto transition-colors duration-200',
+                  'relative overflow-auto transition-colors duration-200 z-10',
                   // Don't apply cursor styles when dragging/resizing tracks
                   playback.isDraggingTrack
                     ? ''
@@ -1320,16 +1338,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               </div>
 
               {/* Global Playhead - spans across ruler and tracks */}
-              <div className="absolute top-0 left-0 right-0 bottom-0 z-[999] pointer-events-none">
-                <TimelinePlayhead
-                  currentFrame={timeline.currentFrame}
-                  frameWidth={frameWidth}
-                  scrollX={timeline.scrollX}
-                  visible={timeline.playheadVisible}
-                  timelineScrollElement={tracksRef.current}
-                  onStartDrag={handlePlayheadDragStart}
-                />
-              </div>
+              <TimelinePlayhead
+                currentFrame={timeline.currentFrame}
+                frameWidth={frameWidth}
+                scrollX={timeline.scrollX}
+                visible={timeline.playheadVisible}
+                timelineScrollElement={tracksRef.current}
+                onStartDrag={handlePlayheadDragStart}
+              />
 
               {/* Split Indicator Line - confined to hovered track row */}
               {isSplitModeActive &&

@@ -14,7 +14,7 @@
  * - Split mode click: Split track at position
  */
 
-import { getRowHeight } from './timelineConstants';
+import { calculateCenteringOffset, getRowHeight } from './timelineConstants';
 import { getVisibleRowsInOrder } from './trackRowPositions';
 
 import { VideoTrack } from '../../stores/videoEditor/types';
@@ -204,6 +204,7 @@ export const handleTimelineDoubleClick = (
 
 /**
  * Helper to find which track is at a given position
+ * Accounts for vertical centering offset when fewer than 5 tracks are visible
  */
 export const findTrackAtPosition = (
   clientX: number,
@@ -224,13 +225,22 @@ export const findTrackAtPosition = (
   const visibleRows = visibleTrackRows || ['video', 'audio'];
   const visibleRowsInOrder = getVisibleRowsInOrder(visibleRows);
 
+  // Calculate the centering offset (if tracks are vertically centered)
+  const centeringOffset = calculateCenteringOffset(visibleRows);
+
+  // Adjust Y position by subtracting the centering offset
+  const adjustedY = y - centeringOffset;
+
   // Calculate cumulative heights to find which row the Y position falls into
   let cumulativeHeight = 0;
   let trackType: VideoTrack['type'] | null = null;
 
   for (const rowId of visibleRowsInOrder) {
     const rowHeight = getRowHeight(rowId);
-    if (y >= cumulativeHeight && y < cumulativeHeight + rowHeight) {
+    if (
+      adjustedY >= cumulativeHeight &&
+      adjustedY < cumulativeHeight + rowHeight
+    ) {
       trackType = rowId as VideoTrack['type'];
       break;
     }

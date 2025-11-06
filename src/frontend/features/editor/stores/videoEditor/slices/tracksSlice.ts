@@ -2,6 +2,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
 import { VideoTrack } from '../types';
+import { detectAspectRatio } from '../utils/aspectRatioHelpers';
 import { SUBTITLE_EXTENSIONS } from '../utils/constants';
 import { processSubtitleFile } from '../utils/subtitleParser';
 import {
@@ -402,11 +403,11 @@ export const createTracksSlice: StateCreator<
       if (trackData.type === 'image' && trackData.width && trackData.height) {
         const canvasWidth = state.preview?.canvasWidth || 1920;
         const canvasHeight = state.preview?.canvasHeight || 1080;
-        
+
         // Use original image dimensions
         let imageWidth = trackData.width;
         let imageHeight = trackData.height;
-        
+
         // Only scale down if image is significantly larger than canvas
         // This prevents massive images from being unmanageable, but preserves smaller images
         const maxDimension = Math.max(canvasWidth, canvasHeight) * 1.5; // Allow 150% of canvas size
@@ -656,6 +657,13 @@ export const createTracksSlice: StateCreator<
 
     // Convert media library item to single track (for non-subtitles or fallback)
     const duration = Math.floor(mediaItem.duration * state.timeline.fps);
+
+    // Detect aspect ratio from video/image metadata
+    const aspectRatioData = detectAspectRatio(
+      mediaItem.metadata?.width,
+      mediaItem.metadata?.height,
+    );
+
     const track = {
       type: mediaItem.type,
       name: mediaItem.name,
@@ -665,6 +673,8 @@ export const createTracksSlice: StateCreator<
       tempFilePath: mediaItem.tempFilePath,
       height: mediaItem.metadata?.height,
       width: mediaItem.metadata?.width,
+      aspectRatio: aspectRatioData?.ratio,
+      detectedAspectRatioLabel: aspectRatioData?.label || undefined,
       duration,
       startFrame,
       endFrame: startFrame + duration,
@@ -678,7 +688,7 @@ export const createTracksSlice: StateCreator<
     };
 
     console.log(
-      `I GOT THE WIDTH ${mediaItem.metadata?.width} AND HEIGHT ${mediaItem.metadata?.height} IN tracksSlice`,
+      `📐 Detected aspect ratio: ${aspectRatioData?.label || 'custom'} (${aspectRatioData?.ratio?.toFixed(2)}) for ${mediaItem.name}`,
     );
     return await get().addTrack(track);
   },

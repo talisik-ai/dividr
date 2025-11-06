@@ -560,11 +560,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       const hasGeneratedThumbnail = mediaLibraryItem?.thumbnail;
       if (hasGeneratedThumbnail && !hasError) {
         return (
-          <div className="w-full h-full bg-muted rounded-md overflow-hidden relative">
+          <div className="w-full h-full bg-muted rounded-md overflow-hidden relative flex items-center justify-center">
             <img
               src={mediaLibraryItem.thumbnail}
               alt={file.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               loading="lazy"
               onError={() => setHasError(true)}
             />
@@ -613,19 +613,19 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       }
 
       return (
-        <div className="w-full h-full bg-muted rounded-md overflow-hidden relative">
+        <div className="w-full h-full bg-muted rounded-md overflow-hidden relative flex items-center justify-center">
           {isImage ? (
             <img
               src={file.url}
               alt={file.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               loading="lazy"
               onError={() => setHasError(true)}
             />
           ) : (
             <video
               src={file.url}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               muted
               preload="metadata"
               onError={() => setHasError(true)}

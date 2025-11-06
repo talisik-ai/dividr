@@ -569,7 +569,7 @@ export class VideoSpriteSheetGenerator {
 
       // Calculate adaptive timeout based on video duration and number of sheets
       const baseTimeout = 60000; // 1 minute base
-      const perSheetTimeout = 30000; // 30 seconds per sheet
+      const perSheetTimeout = 60000; // 1 minute per sheet
       const durationFactor = Math.max(1, duration / 60); // Factor based on video length
       const sheetCount = Math.ceil(
         finalTotalThumbnails / maxThumbnailsPerSheet,

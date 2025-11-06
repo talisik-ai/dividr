@@ -7,6 +7,12 @@
  * @returns JSX.Element - The rendered component displaying a Toolbar
  */
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/frontend/components/ui/tooltip';
+import {
   usePanelStore,
   type PanelType,
 } from '@/frontend/features/editor/stores/PanelStore';
@@ -31,16 +37,25 @@ const ToolbarButton = ({
   isActive,
   disabled = false,
 }: ToolbarButtonProps) => (
-  <Button
-    onClick={onClick}
-    title={title}
-    size="icon"
-    variant="ghost"
-    className={cn(isActive && 'bg-accent', 'rounded-sm')}
-    disabled={disabled}
-  >
-    {icon}
-  </Button>
+  <TooltipProvider delayDuration={0}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          onClick={onClick}
+          title={title}
+          size="icon"
+          variant="ghost"
+          className={cn(isActive && 'bg-accent', 'rounded-sm')}
+          disabled={disabled}
+        >
+          {icon}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="right" align="center">
+        {title}
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
 );
 
 interface ToolbarConfig {

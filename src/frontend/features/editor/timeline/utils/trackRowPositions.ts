@@ -3,7 +3,11 @@
  * based on visible track rows in the timeline
  */
 
-import { getCurrentTrackRowHeight, getRowHeight } from './timelineConstants';
+import {
+  calculateCenteringOffset,
+  getCurrentTrackRowHeight,
+  getRowHeight,
+} from './timelineConstants';
 
 export const TRACK_ROW_ORDER = [
   'text',
@@ -33,10 +37,14 @@ export const getVisibleRowIndex = (
 /**
  * Get the top position (in pixels) of a track row
  * Uses individual row heights for accurate positioning
+ * @param trackType - The track type to get the top position for
+ * @param visibleTrackRows - Array of visible track row IDs
+ * @param includeCenteringOffset - Whether to include vertical centering offset (default: false)
  */
 export const getTrackRowTop = (
   trackType: string,
   visibleTrackRows: string[],
+  includeCenteringOffset = false,
 ): number => {
   // Get all visible rows in order up to (but not including) the target row
   const visibleRowsInOrder = TRACK_ROW_ORDER.filter((rowId) =>
@@ -53,6 +61,11 @@ export const getTrackRowTop = (
   let topPosition = 0;
   for (let i = 0; i < rowIndex; i++) {
     topPosition += getRowHeight(visibleRowsInOrder[i]);
+  }
+
+  // Add centering offset if requested
+  if (includeCenteringOffset) {
+    topPosition += calculateCenteringOffset(visibleTrackRows);
   }
 
   return topPosition;
