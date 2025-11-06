@@ -128,8 +128,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   });
 
   // Calculate base video dimensions
-  const baseVideoWidth = activeVideoTrack?.width || preview.canvasWidth;
-  const baseVideoHeight = activeVideoTrack?.height || preview.canvasHeight;
+  // Always use canvas dimensions as the base - this allows aspect ratio changes to affect the preview
+  // The video will be cropped/fitted to match the canvas aspect ratio
+  const baseVideoWidth = preview.canvasWidth;
+  const baseVideoHeight = preview.canvasHeight;
 
   // Alignment guides
   const { alignmentGuides, isDraggingText, handleDragStateChange } =
