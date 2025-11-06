@@ -131,6 +131,7 @@ export function generateSubtitleContent(
         const position = track.textTransform ? {
           x: (track.textTransform.x + 1) / 2, // Convert from [-1,1] to [0,1]
           y: (track.textTransform.y + 1) / 2, // Convert from [-1,1] to [0,1]
+          scale: track.textTransform.scale || 1, // Scale factor (1 = 100%)
           rotation: track.textTransform.rotation || 0, // Degrees, clockwise
         } : undefined;
 

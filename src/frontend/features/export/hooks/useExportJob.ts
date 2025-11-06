@@ -184,16 +184,18 @@ function processLinkedTracks(
 
   let videoWidth = 1920;
   let videoHeight = 1080;
+  let dimensionsSet = false; // Track whether we've already extracted dimensions
 
   // Combine linked video/audio tracks
   for (const videoTrack of videoTracks) {
     if (processedTrackIds.has(videoTrack.id)) continue;
 
     // Extract dimensions from first visible video track
-    if (videoTrack.visible && videoWidth === 1920 && videoHeight === 1080) {
+    if (videoTrack.visible && !dimensionsSet) {
       if (videoTrack.width && videoTrack.height) {
         videoWidth = videoTrack.width;
         videoHeight = videoTrack.height;
+        dimensionsSet = true;
         console.log(
           `📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`,
         );

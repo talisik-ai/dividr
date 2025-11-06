@@ -37,6 +37,7 @@ export interface SubtitleSegment {
   position?: {
     x?: number; // X coordinate (0-1 normalized, or pixel value if > 1)
     y?: number; // Y coordinate (0-1 normalized, or pixel value if > 1)
+    scale?: number; // Scale factor (1 = 100%, 2 = 200%, etc.)
     rotation?: number; // Rotation angle in degrees (UI convention: clockwise)
                        // Positive = clockwise, negative = counter-clockwise
                        // Note: Negated when converted to ASS \frz tag (which uses counter-clockwise)
@@ -211,15 +212,16 @@ export function convertTextClipsToSubtitleSegments(
     // Convert transform to position
     // TextClip transform uses normalized coordinates (-1 to 1, where 0 is center)
     // We need to convert to ASS coordinates (0-1, where 0.5 is center)
-    // Rotation is preserved as-is (degrees, clockwise)
+    // Scale and rotation are preserved as-is
     const position = {
       x: (clip.transform.x + 1) / 2, // Convert from [-1,1] to [0,1]
       y: (clip.transform.y + 1) / 2, // Convert from [-1,1] to [0,1]
+      scale: clip.transform.scale || 1, // Scale factor (1 = 100%)
       rotation: clip.transform.rotation || 0, // Degrees, clockwise (same as CSS)
     };
 
     console.log(
-      `[Export] Converting text clip "${clip.content}" to subtitle segment: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s, position: (${position.x.toFixed(3)}, ${position.y.toFixed(3)}), rotation: ${position.rotation}°`,
+      `[Export] Converting text clip "${clip.content}" to subtitle segment: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s, position: (${position.x.toFixed(3)}, ${position.y.toFixed(3)}), scale: ${position.scale}, rotation: ${position.rotation}°`,
     );
 
     return {
@@ -508,6 +510,7 @@ function createStyleKey(params: ASSStyleParams): string {
 function computeASSStyleParams(
   style: TextStyleOptions,
   videoDimensions?: { width: number; height: number },
+  scale?: number,
 ): ASSStyleParams {
   const assStyle = convertTextStyleToASS(style);
   
@@ -524,7 +527,7 @@ function computeASSStyleParams(
     effectiveStrokeColor.match(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)/);
 
   const hasOutline = !isTransparentStroke;
-  const outlineWidth = hasOutline ? 1.5 : 0;
+  const outlineWidth = hasOutline ? 2.1 : 0;
   
   // Convert strokeColor to ASS BGR format with opacity applied
   let outlineColor = '&H00000000'; // Default: black
@@ -556,6 +559,14 @@ function computeASSStyleParams(
   let fontSize = style?.fontSize 
     ? parseInt(style.fontSize.replace('px', ''))
     : 20;
+  
+  // Apply scale factor to font size
+  const effectiveScale = scale || 1;
+  if (effectiveScale !== 1) {
+    const originalFontSize = fontSize;
+    fontSize = Math.round(fontSize * effectiveScale);
+    console.log(`📏 Applied scale ${effectiveScale} to font size: ${originalFontSize}px → ${fontSize}px`);
+  }
 
   return {
     fontFamily: assStyle.fontFamily,
@@ -603,7 +614,8 @@ export function generateASSContent(
   segments.forEach((segment, index) => {
     // Merge global style with segment-specific style
     const mergedStyle = mergeTextStyles(textStyle, segment.style);
-    const styleParams = computeASSStyleParams(mergedStyle, videoDimensions);
+    const scale = segment.position?.scale || 1;
+    const styleParams = computeASSStyleParams(mergedStyle, videoDimensions, scale);
     const styleKey = createStyleKey(styleParams);
 
     let styleName: string;
@@ -644,7 +656,7 @@ export function generateASSContent(
     // Base style
     console.log(`🎨 Creating ASS style "${styleName}" with font: "${params.fontFamily}"`);
     styleDefinitions.push(
-      `Style: ${styleName},${params.fontFamily},${params.fontSize},${params.primaryColor},&H000000FF,${params.outlineColor},${params.backColor},${params.bold},${params.italic},${params.underline},0,100,100,0,0,${params.borderStyle},${params.outlineWidth},${params.shadowDistance},2,10,10,20,1`
+      `Style: ${styleName},${params.fontFamily},${params.fontSize},${params.primaryColor},&H000000FF,${params.outlineColor},${params.backColor},${params.bold},${params.italic},${params.underline},0,100,100,0,0,${params.borderStyle},${params.outlineWidth},${params.shadowDistance},2,10,10,0,1`
     );
     
     // If this style has both background and outline, create an outline variant
@@ -656,7 +668,7 @@ export function generateASSContent(
       );
       
       styleDefinitions.push(
-        `Style: ${styleName}Outline,${params.fontFamily},${params.fontSize},${params.primaryColor},&H000000FF,${originalOutlineColor},&H00000000,${params.bold},${params.italic},${params.underline},0,100,100,0,0,1,${params.outlineWidth},0,2,10,10,20,1`
+        `Style: ${styleName}Outline,${params.fontFamily},${params.fontSize},${params.primaryColor},&H000000FF,${originalOutlineColor},&H00000000,${params.bold},${params.italic},${params.underline},0,100,100,0,0,1,${params.outlineWidth},0,2,10,10,0,1`
       );
     }
   });
@@ -687,7 +699,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const endTime = formatTimeForASS(segment.endTime);
       const styleName = segmentStyleNames[index];
       const mergedStyle = mergeTextStyles(textStyle, segment.style);
-      const computedParams = computeASSStyleParams(mergedStyle, videoDimensions);
+      const scale = segment.position?.scale || 1;
+      const computedParams = computeASSStyleParams(mergedStyle, videoDimensions, scale);
       const styleKey = createStyleKey(computedParams);
       const styleParams = styleMap.get(styleKey)?.params;
       const layerOffset = layerOffsets[index];
@@ -811,6 +824,7 @@ function convertToASSCoordinate(value: number, resolution: number): number {
  * - Position: Converts normalized coordinates (0-1) to pixel coordinates
  * - Rotation: Converts from UI clockwise to ASS counter-clockwise (negated)
  * - Alignment: Sets center alignment (5) when using custom position for proper rotation pivot
+ * - Scale: Applied directly to font size, not via ASS tags
  * 
  * ASS rotation convention:
  * - ASS uses counter-clockwise rotation (mathematical convention)
