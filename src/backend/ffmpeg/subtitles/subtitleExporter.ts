@@ -705,6 +705,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const styleParams = styleMap.get(styleKey)?.params;
       const layerOffset = layerOffsets[index];
 
+      // Log segment processing
+      console.log(`\n📝 Processing segment ${index + 1}/${segments.length}:`);
+      console.log(`   - Text: "${segment.text.substring(0, 50)}${segment.text.length > 50 ? '...' : ''}"`);
+      console.log(`   - Time: ${segment.startTime.toFixed(3)}s - ${segment.endTime.toFixed(3)}s`);
+      console.log(`   - Style: ${styleName}`);
+      console.log(`   - Layer offset: ${layerOffset}`);
+      if (segment.position) {
+        console.log(`   - Position: x=${segment.position.x?.toFixed(3)}, y=${segment.position.y?.toFixed(3)}, scale=${segment.position.scale}, rotation=${segment.position.rotation}°`);
+      }
+
       // Apply text transformations if specified
       let text = segment.text;
       if (mergedStyle?.textTransform) {
@@ -858,6 +868,13 @@ function generatePositionTags(
       ? convertToASSCoordinate(position.y, playResY)
       : playResY - 20; // Default bottom position with 20px margin
 
+    // Log normalized and pixel coordinates
+    console.log(`📍 Subtitle position coordinates:`);
+    console.log(`   - Normalized: x=${position.x?.toFixed(3) || 'default'}, y=${position.y?.toFixed(3) || 'default'} (0-1 range, 0.5=center)`);
+    console.log(`   - Pixel coords: x=${Math.round(x)}px, y=${Math.round(y)}px`);
+    console.log(`   - Video dimensions: ${playResX}x${playResY}`);
+    console.log(`   - Scale: ${position.scale || 1}`);
+
     // \pos(x,y) - absolute position
     tags.push(`\\pos(${x},${y})`);
     
@@ -878,7 +895,7 @@ function generatePositionTags(
     // We negate our clockwise rotation to match ASS convention
     tags.push(`\\frz${assRotation}`);
     
-    console.log(`🔄 Applied rotation: ${position.rotation}° (UI clockwise) → ${assRotation}° (ASS counter-clockwise) at position (${position.x?.toFixed(3)}, ${position.y?.toFixed(3)})`);
+    console.log(`🔄 Applied rotation: ${position.rotation}° (UI clockwise) → ${assRotation}° (ASS counter-clockwise)`);
   }
 
   return tags.length > 0 ? `{${tags.join('')}}` : '';
