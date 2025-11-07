@@ -120,14 +120,38 @@ export const useExportJob = () => {
         `📍 Export timeline starts at frame ${timelineStartFrame} (${(timelineStartFrame / timelineFps).toFixed(3)}s)`,
       );
 
+      // Determine the target aspect ratio from the first video track
+      let targetAspectRatio: string | undefined = undefined;
+      for (const track of videoTracks) {
+        if (track.detectedAspectRatioLabel) {
+          targetAspectRatio = track.detectedAspectRatioLabel;
+          console.log(`📐 Using aspect ratio from first video track: ${targetAspectRatio}`);
+          break;
+        }
+      }
+
+      // Calculate final video dimensions after aspect ratio conversion (scale+crop)
+      // This ensures subtitles and text are positioned correctly relative to the final video
+      const finalVideoDimensions = calculateFinalDimensions(
+        videoDimensions,
+        targetAspectRatio,
+      );
+      
+      console.log(
+        `📐 Video dimensions: source=${videoDimensions.width}x${videoDimensions.height}, ` +
+        `final=${finalVideoDimensions.width}x${finalVideoDimensions.height} ` +
+        `(aspect ratio: ${targetAspectRatio || 'none'})`
+      );
+
       // Generate subtitle content (now includes text clips bundled together)
+      // Use finalVideoDimensions so subtitles are positioned for the final video after scale+crop
       const { subtitleContent, currentTextStyle, fontFamilies } =
         generateSubtitleContent(
           subtitleTracks,
           textTracks, // Pass text tracks to be bundled with subtitles
           textStyle,
           getTextStyleForSubtitle,
-          videoDimensions,
+          finalVideoDimensions, // Use final dimensions after aspect ratio conversion
           timelineStartFrame, // Pass start frame for time offset adjustment
         );
 
@@ -153,7 +177,7 @@ export const useExportJob = () => {
             ? 'ass'
             : undefined,
         subtitleFontFamilies: fontFamilies, // Pass font families, main process will resolve paths
-        videoDimensions,
+        videoDimensions: finalVideoDimensions, // Use final dimensions after aspect ratio conversion
         // textClips and textClipsContent removed - now bundled with subtitles
       };
     },
@@ -162,6 +186,57 @@ export const useExportJob = () => {
 
   return { createFFmpegJob };
 };
+
+/**
+ * Calculate final video dimensions after aspect ratio conversion
+ * This matches the logic in commandBuilder.ts for scale+crop operations
+ */
+function calculateFinalDimensions(
+  sourceDimensions: { width: number; height: number },
+  targetAspectRatio?: string,
+): { width: number; height: number } {
+  if (!targetAspectRatio) {
+    return sourceDimensions;
+  }
+
+  // Parse aspect ratio (e.g., "9:16" -> 0.5625)
+  const parts = targetAspectRatio.split(':');
+  if (parts.length !== 2) {
+    console.warn(`Invalid aspect ratio format: ${targetAspectRatio}`);
+    return sourceDimensions;
+  }
+  
+  const targetRatio = parseFloat(parts[0]) / parseFloat(parts[1]);
+  const sourceRatio = sourceDimensions.width / sourceDimensions.height;
+
+  // If ratios are very close (within 1%), no conversion needed
+  const ratioDifference = Math.abs(targetRatio - sourceRatio) / sourceRatio;
+  if (ratioDifference < 0.01) {
+    return sourceDimensions;
+  }
+
+  // Calculate final dimensions after scale+crop
+  // Universal strategy: Always preserve the SMALLER source dimension
+  const smallerDimension = Math.min(sourceDimensions.width, sourceDimensions.height);
+  
+  let cropWidth: number;
+  let cropHeight: number;
+  
+  if (targetRatio < 1) {
+    // Portrait target (width < height) - smaller dimension becomes final width
+    cropWidth = smallerDimension;
+    cropHeight = Math.round(cropWidth / targetRatio);
+  } else {
+    // Landscape target (width > height) - smaller dimension becomes final height
+    cropHeight = smallerDimension;
+    cropWidth = Math.round(cropHeight * targetRatio);
+  }
+  
+  console.log(
+    `📐 Calculated final dimensions: ${cropWidth}x${cropHeight} from ${sourceDimensions.width}x${sourceDimensions.height} (ratio ${sourceRatio.toFixed(3)} → ${targetRatio.toFixed(3)})`
+  );
+  return { width: cropWidth, height: cropHeight };
+}
 
 /**
  * Process linked video/audio tracks into combined tracks
