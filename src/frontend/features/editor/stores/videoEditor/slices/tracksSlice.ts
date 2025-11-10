@@ -690,6 +690,23 @@ export const createTracksSlice: StateCreator<
     console.log(
       `📐 Detected aspect ratio: ${aspectRatioData?.label || 'custom'} (${aspectRatioData?.ratio?.toFixed(2)}) for ${mediaItem.name}`,
     );
+
+    // Auto-update canvas size if this is the first video track
+    const existingVideoTracks = state.tracks.filter(
+      (t: any) => t.type === 'video',
+    );
+    if (
+      existingVideoTracks.length === 0 &&
+      track.type === 'video' &&
+      track.width &&
+      track.height
+    ) {
+      console.log(
+        `🎬 Setting canvas size to match first video track: ${track.width}×${track.height}`,
+      );
+      (get() as any).setCanvasSize(track.width, track.height);
+    }
+
     return await get().addTrack(track);
   },
 

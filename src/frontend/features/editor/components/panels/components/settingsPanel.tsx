@@ -45,22 +45,47 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     );
   }, [tracks, timeline.selectedTrackIds]);
 
-  // Sync settings panel inputs with canvas dimensions only
-  // This allows users to see and edit the current canvas size
+  // Sync settings panel inputs with selected track dimensions if available, otherwise canvas dimensions
+  // This allows users to see the track's native dimensions or the current canvas size
   useEffect(() => {
-    setCustomWidth(preview.canvasWidth.toString());
-    setCustomHeight(preview.canvasHeight.toString());
-  }, [preview.canvasWidth, preview.canvasHeight]);
+    if (selectedTrack?.width && selectedTrack?.height) {
+      // Display the selected track's native dimensions
+      setCustomWidth(selectedTrack.width.toString());
+      setCustomHeight(selectedTrack.height.toString());
+    } else {
+      // Fall back to canvas dimensions when no track is selected
+      setCustomWidth(preview.canvasWidth.toString());
+      setCustomHeight(preview.canvasHeight.toString());
+    }
+  }, [
+    selectedTrack?.width,
+    selectedTrack?.height,
+    preview.canvasWidth,
+    preview.canvasHeight,
+  ]);
 
-  // Determine if a preset is active based on canvas dimensions
+  // Determine if a preset is active based on selected track dimensions (if available) or canvas dimensions
   const activePreset = useMemo(() => {
-    // Match by exact canvas dimensions
+    // If a track is selected, match by track dimensions
+    if (selectedTrack?.width && selectedTrack?.height) {
+      return ASPECT_RATIO_PRESETS.find(
+        (ratio) =>
+          ratio.width === selectedTrack.width &&
+          ratio.height === selectedTrack.height,
+      );
+    }
+    // Otherwise, match by canvas dimensions
     return ASPECT_RATIO_PRESETS.find(
       (ratio) =>
         ratio.width === preview.canvasWidth &&
         ratio.height === preview.canvasHeight,
     );
-  }, [preview.canvasWidth, preview.canvasHeight]);
+  }, [
+    selectedTrack?.width,
+    selectedTrack?.height,
+    preview.canvasWidth,
+    preview.canvasHeight,
+  ]);
 
   // Determine which preset matches the selected track's detected aspect ratio
   const detectedPreset = useMemo(() => {
@@ -223,45 +248,6 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
                   {selectedTrack.height}
                 </div>
               )}
-
-              {/* Show helper message and quick-apply button when track's ratio differs from canvas */}
-              {selectedTrack?.width &&
-                selectedTrack?.height &&
-                (selectedTrack.width !== preview.canvasWidth ||
-                  selectedTrack.height !== preview.canvasHeight) && (
-                  <div className="text-xs bg-blue-500/10 border border-blue-500/20 rounded-md px-3 py-2 flex items-center justify-between gap-2">
-                    <span className="text-blue-600 dark:text-blue-400">
-                      Track is {detectedAspectRatioLabel} ({selectedTrack.width}
-                      ×{selectedTrack.height})
-                      {activePreset?.label &&
-                        `, canvas is ${activePreset.label}`}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                      onClick={() => {
-                        // If there's a matching preset, use it. Otherwise, use exact dimensions
-                        if (detectedPreset) {
-                          handlePresetSelect(detectedPreset);
-                        } else if (selectedTrack) {
-                          // Apply exact track dimensions to canvas
-                          setCanvasSize(
-                            selectedTrack.width!,
-                            selectedTrack.height!,
-                          );
-                          updateTrack(selectedTrack.id, {
-                            aspectRatio:
-                              selectedTrack.width! / selectedTrack.height!,
-                            detectedAspectRatioLabel: undefined, // No preset label
-                          });
-                        }
-                      }}
-                    >
-                      Match Track
-                    </Button>
-                  </div>
-                )}
 
               {/* Preset Grid */}
               <div className="grid grid-cols-4 gap-2">
