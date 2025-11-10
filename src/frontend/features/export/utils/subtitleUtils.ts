@@ -4,11 +4,7 @@
  * Handles subtitle content generation for export
  * Now also handles text clips bundled with subtitles
  */
-import {
-  extractSubtitleSegments,
-  generateASSContent,
-  convertTextClipsToSubtitleSegments,
-} from '@/backend/ffmpeg/subtitles/subtitleExporter';
+import { generateASSContent } from '@/backend/ffmpeg/subtitles/subtitleExporter';
 import {
   useVideoEditorStore,
   VideoTrack,
@@ -37,118 +33,170 @@ export function generateSubtitleContent(
   const { timeline } = useVideoEditorStore.getState();
 
   // Calculate time offset if export starts at a specific frame
-  const timeOffset = timelineStartFrame !== undefined ? timelineStartFrame / timeline.fps : 0;
-  
+  const timeOffset =
+    timelineStartFrame !== undefined ? timelineStartFrame / timeline.fps : 0;
+
   if (timeOffset > 0) {
-    console.log(`📝 Export starts at frame ${timelineStartFrame} (${timeOffset.toFixed(3)}s)`);
+    console.log(
+      `📝 Export starts at frame ${timelineStartFrame} (${timeOffset.toFixed(3)}s)`,
+    );
   }
 
   // Extract subtitle segments from subtitle tracks with frame-based timing
-  const subtitleSegments = subtitleTracks.length > 0 
-    ? subtitleTracks.map((track, index) => {
-        // Calculate timing relative to export start frame
-        const relativeStartFrame = Math.max(0, track.startFrame - (timelineStartFrame || 0));
-        const relativeEndFrame = Math.max(0, track.endFrame - (timelineStartFrame || 0));
-        
-        const startTime = relativeStartFrame / timeline.fps;
-        const endTime = relativeEndFrame / timeline.fps;
-        
-        console.log(
-          `[Subtitle] "${track.subtitleText?.substring(0, 30)}" - frames ${track.startFrame}-${track.endFrame} -> relative ${relativeStartFrame}-${relativeEndFrame} -> ${startTime.toFixed(3)}s-${endTime.toFixed(3)}s`,
-        );
-        
-        // Extract per-track styling if available
-        const style = track.textStyle ? {
-          fontFamily: track.textStyle.fontFamily,
-          fontWeight: track.textStyle.isBold ? '700' : (track.textStyle.fontWeight || '400'),
-          fontStyle: track.textStyle.isItalic ? 'italic' : (track.textStyle.fontStyle || 'normal'),
-          isUnderline: track.textStyle.isUnderline,
-          textTransform: track.textStyle.textTransform,
-          textDecoration: track.textStyle.isUnderline ? 'underline' : undefined,
-          fontSize: track.textStyle.fontSize ? `${track.textStyle.fontSize}px` : undefined,
-          color: track.textStyle.fillColor,
-          strokeColor: track.textStyle.strokeColor,
-          backgroundColor: track.textStyle.backgroundColor,
-          hasShadow: track.textStyle.hasShadow,
-          hasGlow: track.textStyle.hasGlow,
-          opacity: track.textStyle.opacity,
-          letterSpacing: track.textStyle.letterSpacing ? `${track.textStyle.letterSpacing}px` : undefined,
-          lineHeight: track.textStyle.lineSpacing,
-          textAlign: track.textStyle.textAlign,
-        } : undefined;
-        
-        // Clean up text: remove trailing newlines and extra whitespace
-        const cleanText = (track.subtitleText || '').replace(/\n\s*$/, '').trim();
-        
-        return {
-          startTime,
-          endTime,
-          text: cleanText,
-          index: index + 1,
-          style,
-          isTextClip: false,
-        };
-      })
-    : [];
+  const subtitleSegments =
+    subtitleTracks.length > 0
+      ? subtitleTracks.map((track, index) => {
+          // Calculate timing relative to export start frame
+          const relativeStartFrame = Math.max(
+            0,
+            track.startFrame - (timelineStartFrame || 0),
+          );
+          const relativeEndFrame = Math.max(
+            0,
+            track.endFrame - (timelineStartFrame || 0),
+          );
+
+          const startTime = relativeStartFrame / timeline.fps;
+          const endTime = relativeEndFrame / timeline.fps;
+
+          console.log(
+            `[Subtitle] "${track.subtitleText?.substring(0, 30)}" - frames ${track.startFrame}-${track.endFrame} -> relative ${relativeStartFrame}-${relativeEndFrame} -> ${startTime.toFixed(3)}s-${endTime.toFixed(3)}s`,
+          );
+
+          // Extract per-segment styling if available (prioritize subtitleStyle over textStyle)
+          const trackStyle = track.subtitleStyle || track.textStyle;
+          const style = trackStyle
+            ? {
+                fontFamily: trackStyle.fontFamily,
+                // For subtitleStyle (no fontWeight/fontStyle), use isBold/isItalic
+                // For textStyle (has fontWeight/fontStyle), use those if available
+                fontWeight: trackStyle.isBold
+                  ? '700'
+                  : 'fontWeight' in trackStyle
+                    ? String(trackStyle.fontWeight)
+                    : '400',
+                fontStyle: trackStyle.isItalic
+                  ? 'italic'
+                  : 'fontStyle' in trackStyle
+                    ? String(trackStyle.fontStyle)
+                    : 'normal',
+                isUnderline: trackStyle.isUnderline,
+                textTransform: trackStyle.textTransform,
+                textDecoration: trackStyle.isUnderline
+                  ? 'underline'
+                  : undefined,
+                fontSize: trackStyle.fontSize
+                  ? `${trackStyle.fontSize}px`
+                  : undefined,
+                color: trackStyle.fillColor,
+                strokeColor: trackStyle.strokeColor,
+                backgroundColor: trackStyle.backgroundColor,
+                hasShadow: trackStyle.hasShadow,
+                hasGlow: trackStyle.hasGlow,
+                opacity: trackStyle.opacity,
+                letterSpacing: trackStyle.letterSpacing
+                  ? `${trackStyle.letterSpacing}px`
+                  : undefined,
+                lineHeight: trackStyle.lineSpacing,
+                textAlign: trackStyle.textAlign,
+              }
+            : undefined;
+
+          // Clean up text: remove trailing newlines and extra whitespace
+          const cleanText = (track.subtitleText || '')
+            .replace(/\n\s*$/, '')
+            .trim();
+
+          return {
+            startTime,
+            endTime,
+            text: cleanText,
+            index: index + 1,
+            style,
+            isTextClip: false,
+          };
+        })
+      : [];
 
   // Convert text tracks to subtitle segments with frame-based timing
-  const textClipSegments = textTracks.length > 0
-    ? textTracks.map((track, index) => {
-        // Calculate timing relative to export start frame
-        const relativeStartFrame = Math.max(0, track.startFrame - (timelineStartFrame || 0));
-        const relativeEndFrame = Math.max(0, track.endFrame - (timelineStartFrame || 0));
-        
-        const startTime = relativeStartFrame / timeline.fps;
-        const endTime = relativeEndFrame / timeline.fps;
-        
-        console.log(
-          `[TextClip] "${track.textContent?.substring(0, 30)}" - frames ${track.startFrame}-${track.endFrame} -> relative ${relativeStartFrame}-${relativeEndFrame} -> ${startTime.toFixed(3)}s-${endTime.toFixed(3)}s`,
-        );
-        
-        // Convert track textStyle to subtitle style format
-        const style = {
-          fontFamily: track.textStyle?.fontFamily,
-          fontWeight: track.textStyle?.isBold ? '700' : (track.textStyle?.fontWeight || '400'),
-          fontStyle: track.textStyle?.isItalic ? 'italic' : (track.textStyle?.fontStyle || 'normal'),
-          isUnderline: track.textStyle?.isUnderline,
-          textTransform: track.textStyle?.textTransform,
-          textDecoration: track.textStyle?.isUnderline ? 'underline' : undefined,
-          fontSize: track.textStyle?.fontSize ? `${track.textStyle.fontSize}px` : undefined,
-          color: track.textStyle?.fillColor,
-          strokeColor: track.textStyle?.strokeColor,
-          backgroundColor: track.textStyle?.backgroundColor,
-          hasShadow: track.textStyle?.hasShadow,
-          hasGlow: track.textStyle?.hasGlow,
-          opacity: track.textStyle?.opacity,
-          letterSpacing: track.textStyle?.letterSpacing ? `${track.textStyle.letterSpacing}px` : undefined,
-          lineHeight: track.textStyle?.lineSpacing,
-          textAlign: track.textStyle?.textAlign,
-        };
+  const textClipSegments =
+    textTracks.length > 0
+      ? textTracks.map((track, index) => {
+          // Calculate timing relative to export start frame
+          const relativeStartFrame = Math.max(
+            0,
+            track.startFrame - (timelineStartFrame || 0),
+          );
+          const relativeEndFrame = Math.max(
+            0,
+            track.endFrame - (timelineStartFrame || 0),
+          );
 
-        // Convert transform to position (normalized coordinates)
-        // Position: [-1,1] (center=0) -> [0,1] (center=0.5)
-        // Rotation: degrees, clockwise (same as CSS transform rotate)
-        const position = track.textTransform ? {
-          x: (track.textTransform.x + 1) / 2, // Convert from [-1,1] to [0,1]
-          y: (track.textTransform.y + 1) / 2, // Convert from [-1,1] to [0,1]
-          scale: track.textTransform.scale || 1, // Scale factor (1 = 100%)
-          rotation: track.textTransform.rotation || 0, // Degrees, clockwise
-        } : undefined;
+          const startTime = relativeStartFrame / timeline.fps;
+          const endTime = relativeEndFrame / timeline.fps;
 
-        // Clean up text: remove trailing newlines and extra whitespace
-        const cleanText = (track.textContent || '').replace(/\n\s*$/, '').trim();
+          console.log(
+            `[TextClip] "${track.textContent?.substring(0, 30)}" - frames ${track.startFrame}-${track.endFrame} -> relative ${relativeStartFrame}-${relativeEndFrame} -> ${startTime.toFixed(3)}s-${endTime.toFixed(3)}s`,
+          );
 
-        return {
-          startTime,
-          endTime,
-          text: cleanText,
-          index: index + 1,
-          style,
-          position,
-          isTextClip: true,
-        };
-      })
-    : [];
+          // Convert track textStyle to subtitle style format
+          const style = {
+            fontFamily: track.textStyle?.fontFamily,
+            fontWeight: track.textStyle?.isBold
+              ? '700'
+              : track.textStyle?.fontWeight || '400',
+            fontStyle: track.textStyle?.isItalic
+              ? 'italic'
+              : track.textStyle?.fontStyle || 'normal',
+            isUnderline: track.textStyle?.isUnderline,
+            textTransform: track.textStyle?.textTransform,
+            textDecoration: track.textStyle?.isUnderline
+              ? 'underline'
+              : undefined,
+            fontSize: track.textStyle?.fontSize
+              ? `${track.textStyle.fontSize}px`
+              : undefined,
+            color: track.textStyle?.fillColor,
+            strokeColor: track.textStyle?.strokeColor,
+            backgroundColor: track.textStyle?.backgroundColor,
+            hasShadow: track.textStyle?.hasShadow,
+            hasGlow: track.textStyle?.hasGlow,
+            opacity: track.textStyle?.opacity,
+            letterSpacing: track.textStyle?.letterSpacing
+              ? `${track.textStyle.letterSpacing}px`
+              : undefined,
+            lineHeight: track.textStyle?.lineSpacing,
+            textAlign: track.textStyle?.textAlign,
+          };
+
+          // Convert transform to position (normalized coordinates)
+          // Position: [-1,1] (center=0) -> [0,1] (center=0.5)
+          // Rotation: degrees, clockwise (same as CSS transform rotate)
+          const position = track.textTransform
+            ? {
+                x: (track.textTransform.x + 1) / 2, // Convert from [-1,1] to [0,1]
+                y: (track.textTransform.y + 1) / 2, // Convert from [-1,1] to [0,1]
+                scale: track.textTransform.scale || 1, // Scale factor (1 = 100%)
+                rotation: track.textTransform.rotation || 0, // Degrees, clockwise
+              }
+            : undefined;
+
+          // Clean up text: remove trailing newlines and extra whitespace
+          const cleanText = (track.textContent || '')
+            .replace(/\n\s*$/, '')
+            .trim();
+
+          return {
+            startTime,
+            endTime,
+            text: cleanText,
+            index: index + 1,
+            style,
+            position,
+            isTextClip: true,
+          };
+        })
+      : [];
 
   // Combine subtitle and text clip segments
   const allSegments = [...subtitleSegments, ...textClipSegments];
@@ -162,8 +210,8 @@ export function generateSubtitleContent(
   }
 
   // Filter out segments that have invalid timing (end time <= 0 or start >= end)
-  const validSegments = allSegments.filter((segment) => 
-    segment.endTime > 0 && segment.startTime < segment.endTime
+  const validSegments = allSegments.filter(
+    (segment) => segment.endTime > 0 && segment.startTime < segment.endTime,
   );
 
   if (validSegments.length === 0) {
@@ -180,14 +228,18 @@ export function generateSubtitleContent(
   validSegments.forEach((segment, index) => {
     segment.index = index + 1;
   });
-  
+
   console.log(`📝 Final subtitle count: ${validSegments.length} segments`);
 
   // Get current text style (for subtitles that don't have per-segment styling)
   const currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);
 
   // Generate ASS content with styling and video dimensions
-  const assResult = generateASSContent(validSegments, currentTextStyle, videoDimensions);
+  const assResult = generateASSContent(
+    validSegments,
+    currentTextStyle,
+    videoDimensions,
+  );
 
   console.log(
     `📝 Generated combined subtitle/textclip content: ${validSegments.length} segments (${subtitleSegments.length} subtitles + ${textClipSegments.length} text clips)`,
