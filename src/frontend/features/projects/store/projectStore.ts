@@ -5,6 +5,7 @@ import {
   ProjectData,
   ProjectSummary,
 } from '@/shared/types/project.types';
+import { sanitizeFilename } from '@/frontend/utils/filenameSanitizer';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { useVideoEditorStore } from '../../editor/stores/videoEditor/index';
@@ -324,10 +325,13 @@ export const useProjectStore = create<ProjectStore>()(
         type: 'application/json',
       });
 
+      // Use comprehensive filename sanitization
+      const sanitizedFilename = sanitizeFilename(exportData.metadata.title, 'Untitled_Project');
+
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${exportData.metadata.title.replace(/[^a-z0-9]/gi, '_')}.dividr`;
+      link.download = `${sanitizedFilename}.dividr`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

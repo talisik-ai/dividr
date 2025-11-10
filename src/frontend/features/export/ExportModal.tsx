@@ -19,7 +19,11 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/frontend/components/ui/select';
-import React, { useState } from 'react';
+import {
+  previewSanitizedFilename,
+  sanitizeFilename,
+} from '@/frontend/utils/filenameSanitizer';
+import React, { useMemo, useState } from 'react';
 
 interface ExportConfig {
   filename: string;
@@ -78,6 +82,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [format, setFormat] = useState('mp4');
   const [outputPath, setOutputPath] = useState('');
   const [isLoadingDefaultPath, setIsLoadingDefaultPath] = useState(false);
+
+  // Calculate sanitized filename preview
+  const selectedFormat = videoFormats.find((f) => f.value === format);
+  const sanitizationPreview = useMemo(() => {
+    return previewSanitizedFilename(
+      filename.trim(),
+      selectedFormat?.extension || '.mp4',
+    );
+  }, [filename, selectedFormat]);
 
   // Removed subtitle options - subtitles are automatically included from timeline
 
@@ -157,9 +170,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       return;
     }
 
-    const selectedFormat = videoFormats.find((f) => f.value === format);
+    // Sanitize the filename before export
+    const sanitizedBaseName = sanitizeFilename(
+      filename.trim(),
+      'Untitled_Project',
+    );
     const finalFilename =
-      filename.trim() + (selectedFormat?.extension || '.mp4');
+      sanitizedBaseName + (selectedFormat?.extension || '.mp4');
+
+    console.log('🧹 Filename sanitization:', {
+      original: filename.trim(),
+      sanitized: sanitizedBaseName,
+      final: finalFilename,
+    });
 
     onExport({
       filename: finalFilename,
@@ -171,8 +194,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleCancel = () => {
     onClose();
   };
-
-  const selectedFormat = videoFormats.find((f) => f.value === format);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -195,13 +216,23 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 className="w-full"
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Extension will be added automatically:{' '}
-              <span className="italic">
-                {filename.trim() || 'filename'}
-                {selectedFormat?.extension || '.mp4'}
-              </span>
-            </p>
+            {sanitizationPreview.changed ? (
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  Exported as:{' '}
+                  <span className="font-mono italic">
+                    {sanitizationPreview.fullSanitized}
+                  </span>
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Extension will be added automatically:{' '}
+                <span className="font-mono italic">
+                  {sanitizationPreview.fullSanitized || 'filename.mp4'}
+                </span>
+              </p>
+            )}
           </div>
 
           {/* Format Selection */}
@@ -268,7 +299,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <p className="text-xs text-muted-foreground">
               Full path:{' '}
               {outputPath
-                ? `${outputPath}\\${filename.trim() || 'filename'}${selectedFormat?.extension || '.mp4'}`
+                ? `${outputPath}\\${sanitizationPreview.fullSanitized}`
                 : 'No folder selected'}
             </p>
           </div>
