@@ -104,7 +104,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       fontSize: 24,
       fillColor: '#FFFFFF',
       strokeColor: '#000000',
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      backgroundColor: 'rgba(0, 0, 0, 0)',
       hasShadow: false,
       letterSpacing: 0,
       lineSpacing: 1.2,

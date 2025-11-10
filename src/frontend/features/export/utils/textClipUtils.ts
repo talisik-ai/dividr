@@ -33,7 +33,7 @@ export function extractTextClips(
       fontSize: track.textStyle?.fontSize || 24,
       fillColor: track.textStyle?.fillColor || '#FFFFFF',
       strokeColor: track.textStyle?.strokeColor || '#000000',
-      backgroundColor: track.textStyle?.backgroundColor || 'rgba(0, 0, 0, 0.5)',
+      backgroundColor: track.textStyle?.backgroundColor || 'rgba(0, 0, 0, 0.0)',
       hasShadow: track.textStyle?.hasShadow || false,
       letterSpacing: track.textStyle?.letterSpacing || 0,
       lineSpacing: track.textStyle?.lineSpacing || 1.2,
