@@ -559,12 +559,22 @@ function createAspectRatioCropFilters(
     cropWidth = smallerDimension;
     cropHeight = Math.round(cropWidth / targetRatio);
     
-    // Scale so HEIGHT becomes cropHeight (scale UP)
-    const scaleFactor = cropHeight / sourceHeight;
-    scaleHeight = cropHeight;
-    scaleWidth = Math.round(sourceWidth * scaleFactor);
+    // Scale so that BOTH cropWidth and cropHeight fit
+    // We need to ensure the scaled video is at least as large as the crop dimensions
+    const scaleFactorForWidth = cropWidth / sourceWidth;
+    const scaleFactorForHeight = cropHeight / sourceHeight;
     
-    console.log(`📐 Portrait target: smaller dim (${smallerDimension}) → final width`);
+    // Use the LARGER scale factor to ensure both dimensions fit
+    const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
+    scaleWidth = Math.round(sourceWidth * scaleFactor);
+    scaleHeight = Math.round(sourceHeight * scaleFactor);
+    
+    // Safety check: ensure scaled dimensions are at least as large as crop dimensions
+    // This handles rounding errors
+    if (scaleWidth < cropWidth) scaleWidth = cropWidth;
+    if (scaleHeight < cropHeight) scaleHeight = cropHeight;
+    
+    console.log(`📐 Portrait target: smaller dim (${smallerDimension}) → final width, scale factor: ${scaleFactor.toFixed(3)}`);
   } else {
     // Landscape target (width >= height) - smaller dimension becomes final height
     cropHeight = smallerDimension;
@@ -580,7 +590,12 @@ function createAspectRatioCropFilters(
     scaleWidth = Math.round(sourceWidth * scaleFactor);
     scaleHeight = Math.round(sourceHeight * scaleFactor);
     
-    console.log(`📐 Landscape target: smaller dim (${smallerDimension}) → final height`);
+    // Safety check: ensure scaled dimensions are at least as large as crop dimensions
+    // This handles rounding errors
+    if (scaleWidth < cropWidth) scaleWidth = cropWidth;
+    if (scaleHeight < cropHeight) scaleHeight = cropHeight;
+    
+    console.log(`📐 Landscape target: smaller dim (${smallerDimension}) → final height, scale factor: ${scaleFactor.toFixed(3)}`);
   }
   
   console.log(
@@ -1982,10 +1997,20 @@ function buildSeparateTimelineFilterComplex(
         cropWidth = smallerDimension;
         cropHeight = Math.round(cropWidth / targetRatio);
         
-        // Scale so HEIGHT becomes cropHeight (scale UP)
-        const scaleFactor = cropHeight / targetDimensions.height;
-        scaleHeight = cropHeight;
+        // Scale so that BOTH cropWidth and cropHeight fit
+        // We need to ensure the scaled video is at least as large as the crop dimensions
+        const scaleFactorForWidth = cropWidth / targetDimensions.width;
+        const scaleFactorForHeight = cropHeight / targetDimensions.height;
+        
+        // Use the LARGER scale factor to ensure both dimensions fit
+        const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
         scaleWidth = Math.round(targetDimensions.width * scaleFactor);
+        scaleHeight = Math.round(targetDimensions.height * scaleFactor);
+        
+        // Safety check: ensure scaled dimensions are at least as large as crop dimensions
+        // This handles rounding errors
+        if (scaleWidth < cropWidth) scaleWidth = cropWidth;
+        if (scaleHeight < cropHeight) scaleHeight = cropHeight;
         
         console.log(`📐 Portrait target: smaller dim (${smallerDimension}) → final width, scale factor: ${scaleFactor.toFixed(3)}`);
       } else {
@@ -2002,6 +2027,11 @@ function buildSeparateTimelineFilterComplex(
         const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
         scaleWidth = Math.round(targetDimensions.width * scaleFactor);
         scaleHeight = Math.round(targetDimensions.height * scaleFactor);
+        
+        // Safety check: ensure scaled dimensions are at least as large as crop dimensions
+        // This handles rounding errors
+        if (scaleWidth < cropWidth) scaleWidth = cropWidth;
+        if (scaleHeight < cropHeight) scaleHeight = cropHeight;
         
         console.log(`📐 Landscape target: smaller dim (${smallerDimension}) → final height, scale factor: ${scaleFactor.toFixed(3)}`);
       }
