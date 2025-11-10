@@ -113,6 +113,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     volume: playback.volume,
     playbackRate: playback.playbackRate,
     setCurrentFrame,
+    allTracks: tracks,
   });
 
   // Audio playback synchronization
@@ -141,11 +142,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     });
 
   // Reset pan when video track changes or when there's no video
+  // Use ref to prevent unnecessary pan resets during non-video track updates
+  const prevVideoTrackIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (preview.panX !== 0 || preview.panY !== 0) {
-      setPreviewPan(0, 0);
+    if (prevVideoTrackIdRef.current !== activeVideoTrack?.id) {
+      prevVideoTrackIdRef.current = activeVideoTrack?.id;
+      if (preview.panX !== 0 || preview.panY !== 0) {
+        setPreviewPan(0, 0);
+      }
     }
-  }, [activeVideoTrack?.id]);
+  }, [activeVideoTrack?.id, preview.panX, preview.panY, setPreviewPan]);
 
   // Add effect to pause playback at the end of ALL tracks
   useEffect(() => {
@@ -167,18 +173,35 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
   }, [timeline.currentFrame, tracks, playback, videoRef, audioRef]);
 
-  // Resize observer
+  // Resize observer with debouncing to prevent excessive re-renders
   useEffect(() => {
+    let resizeTimeout: NodeJS.Timeout | null = null;
+
     const updateSize = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         setContainerSize({ width: rect.width, height: rect.height });
       }
     };
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
+
+    const debouncedUpdateSize = () => {
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+      resizeTimeout = setTimeout(updateSize, 100); // Debounce resize events
+    };
+
+    updateSize(); // Initial size
+
+    const ro = new ResizeObserver(debouncedUpdateSize);
     if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
+
+    return () => {
+      ro.disconnect();
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+    };
   }, []);
 
   // Content scale calculation with fixed coordinate system
@@ -192,24 +215,30 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     },
   );
 
-  // Get active tracks
-  const activeSubtitles = getActiveTracksAtFrame(
-    tracks,
-    timeline.currentFrame,
-    'subtitle',
-  ).filter((track) => track.subtitleText);
+  // Get active tracks - memoize to prevent unnecessary re-renders
+  const activeSubtitles = React.useMemo(
+    () =>
+      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'subtitle').filter(
+        (track) => track.subtitleText,
+      ),
+    [tracks, timeline.currentFrame],
+  );
 
-  const activeTexts = getActiveTracksAtFrame(
-    tracks,
-    timeline.currentFrame,
-    'text',
-  ).filter((track) => track.textContent);
+  const activeTexts = React.useMemo(
+    () =>
+      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'text').filter(
+        (track) => track.textContent,
+      ),
+    [tracks, timeline.currentFrame],
+  );
 
-  const activeImages = getActiveTracksAtFrame(
-    tracks,
-    timeline.currentFrame,
-    'image',
-  ).filter((track) => track.previewUrl || track.source);
+  const activeImages = React.useMemo(
+    () =>
+      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'image').filter(
+        (track) => track.previewUrl || track.source,
+      ),
+    [tracks, timeline.currentFrame],
+  );
 
   // Handle text transform updates
   const handleTextTransformUpdate = useCallback(

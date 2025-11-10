@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
 import { OverlayRenderProps } from '../core/types';
 import { getTrackZIndex } from '../utils/trackUtils';
 
 /**
  * Video overlay component - renders the active video track
+ * Optimized to prevent unnecessary re-mounts
  */
 
 export interface VideoOverlayProps extends OverlayRenderProps {
@@ -26,6 +27,61 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
   baseVideoHeight,
   onLoadedMetadata,
 }) => {
+  // Track the previous video source to prevent unnecessary reloads
+  const prevSourceRef = useRef<string | undefined>(undefined);
+  const loadedMetadataRef = useRef(false);
+
+  // Update video source only when it actually changes
+  useEffect(() => {
+    const video = videoRef.current;
+    const newSource = activeVideoTrack?.previewUrl;
+
+    if (!video) return;
+
+    // Only update src if it actually changed
+    if (prevSourceRef.current !== newSource) {
+      loadedMetadataRef.current = false;
+
+      if (newSource) {
+        // Pause before changing source to prevent flicker
+        if (!video.paused) {
+          video.pause();
+        }
+        video.src = newSource;
+        video.load(); // Explicitly load the new source
+      } else {
+        video.removeAttribute('src');
+        video.load();
+      }
+
+      prevSourceRef.current = newSource;
+    }
+  }, [activeVideoTrack?.previewUrl, videoRef]);
+
+  // Handle metadata loaded event
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleMetadata = () => {
+      if (!loadedMetadataRef.current) {
+        loadedMetadataRef.current = true;
+        onLoadedMetadata();
+      }
+    };
+
+    video.addEventListener('loadedmetadata', handleMetadata);
+
+    // If metadata is already loaded when component mounts
+    if (video.readyState >= 1 && activeVideoTrack?.previewUrl) {
+      handleMetadata();
+    }
+
+    return () => {
+      video.removeEventListener('loadedmetadata', handleMetadata);
+    };
+  }, [activeVideoTrack?.previewUrl, onLoadedMetadata, videoRef]);
+
   if (!activeVideoTrack) return null;
 
   // Determine if we should use object-cover (crop to fill) or object-contain (fit with letterboxing)
@@ -43,6 +99,9 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
     ? 'cover'
     : 'contain';
 
+  // Check if the track should be visually hidden (but keep video element mounted for playback)
+  const isVisuallyHidden = !activeVideoTrack.visible;
+
   return (
     <div
       className="absolute inset-0 flex items-center justify-center"
@@ -52,8 +111,9 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
         left: `calc(50% + ${panX}px)`,
         top: `calc(50% + ${panY}px)`,
         transform: 'translate(-50%, -50%)',
-        opacity: activeVideoTrack ? 1 : 0,
-        pointerEvents: activeVideoTrack ? 'auto' : 'none',
+        // Use visibility instead of opacity to hide while maintaining video element
+        visibility: isVisuallyHidden ? 'hidden' : 'visible',
+        pointerEvents: isVisuallyHidden ? 'none' : 'auto',
         zIndex: activeVideoTrack
           ? getTrackZIndex(activeVideoTrack, allTracks)
           : 0,
@@ -61,14 +121,11 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
     >
       <video
         ref={videoRef}
-        key={`video-${activeVideoTrack?.previewUrl || 'no-video'}`}
         className="w-full h-full"
         style={{ objectFit }}
         playsInline
         controls={false}
         preload="metadata"
-        src={activeVideoTrack?.previewUrl}
-        onLoadedMetadata={onLoadedMetadata}
       />
     </div>
   );

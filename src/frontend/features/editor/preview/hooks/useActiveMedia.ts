@@ -22,13 +22,13 @@ export function useActiveMedia({
   tracks,
   currentFrame,
 }: UseActiveMediaProps): ActiveMedia {
-  // Active video track for visual display (must be visible)
+  // Active video track for playback (visibility is handled by VideoOverlay)
+  // We return the track regardless of visibility to keep video element mounted
   const activeVideoTrack = useMemo(() => {
     try {
       return tracks.find(
         (track) =>
           track.type === 'video' &&
-          track.visible &&
           track.previewUrl &&
           currentFrame >= track.startFrame &&
           currentFrame < track.endFrame,
