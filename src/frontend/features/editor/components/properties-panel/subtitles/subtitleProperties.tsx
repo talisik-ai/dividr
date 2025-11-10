@@ -56,6 +56,9 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
+  const setStyleApplicationMode = useVideoEditorStore(
+    (state) => state.setStyleApplicationMode,
+  );
   const setFontFamily = useVideoEditorStore((state) => state.setFontFamily);
   const setFontSize = useVideoEditorStore((state) => state.setFontSize);
   const toggleBold = useVideoEditorStore((state) => state.toggleBold);
@@ -537,7 +540,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               <TooltipContent className="max-w-xs">
                 <p>
                   Text edits apply individually per subtitle clip. Style changes
-                  affect all subtitles globally.
+                  can be applied globally or to selected segments only.
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -560,6 +563,46 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               </p>
             </TooltipContent>
           </Tooltip>
+        </div>
+
+        {/* Style Application Mode Selector */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-1 justify-between">
+            <label className="text-xs text-muted-foreground">Apply To</label>
+            <ToggleGroup
+              type="single"
+              value={textStyle.styleApplicationMode}
+              onValueChange={(value) => {
+                if (value) setStyleApplicationMode(value as 'all' | 'selected');
+              }}
+              className="justify-start gap-2"
+              variant="outline"
+            >
+              <ToggleGroupItem
+                value="all"
+                aria-label="Apply to all"
+                size="sm"
+                className="text-xs px-2 py-1 h-fit w-fit"
+              >
+                All Subtitles
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="selected"
+                aria-label="Apply to selected"
+                size="sm"
+                className="text-xs px-2 py-1 h-fit w-fit"
+              >
+                Selected Only
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          {textStyle.styleApplicationMode === 'selected' && (
+            <p className="text-xs text-muted-foreground italic text-right">
+              {selectedSubtitleTracks.length > 0
+                ? `Styling ${selectedSubtitleTracks.length} selected segment${selectedSubtitleTracks.length > 1 ? 's' : ''}`
+                : 'Select subtitle segments to style'}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">

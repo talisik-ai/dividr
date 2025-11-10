@@ -60,6 +60,24 @@ export interface VideoTrack {
     hasGlow?: boolean;
     opacity?: number;
   };
+  // Per-segment subtitle styling (overrides global styles when present)
+  subtitleStyle?: {
+    fontFamily?: string;
+    isBold?: boolean;
+    isItalic?: boolean;
+    isUnderline?: boolean;
+    textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
+    textAlign?: 'left' | 'center' | 'right' | 'justify';
+    fontSize?: number;
+    fillColor?: string;
+    strokeColor?: string;
+    backgroundColor?: string;
+    hasShadow?: boolean;
+    letterSpacing?: number;
+    lineSpacing?: number;
+    hasGlow?: boolean;
+    opacity?: number;
+  };
   // Transform properties for text clips (position, scale, rotation)
   textTransform?: {
     x: number; // X position normalized (-1 to 1, relative to video center, 0 = center)

@@ -8,7 +8,9 @@ export interface TextStyleState {
       textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
     };
   };
-  // Global style controls (affect all subtitles)
+  // Style application mode
+  styleApplicationMode: 'all' | 'selected'; // 'all' = global, 'selected' = per-segment
+  // Global style controls (affect all subtitles when mode is 'all')
   globalControls: {
     fontFamily: string;
     isBold: boolean;
@@ -38,7 +40,13 @@ export interface TextStyleSlice {
 
   // Text Style Actions
   setActiveTextStyle: (styleId: string) => void;
-  getTextStyleForSubtitle: (styleId: string) => React.CSSProperties;
+  getTextStyleForSubtitle: (
+    styleId: string,
+    segmentStyle?: any,
+  ) => React.CSSProperties;
+
+  // Style application mode
+  setStyleApplicationMode: (mode: 'all' | 'selected') => void;
 
   // Global style controls
   setFontFamily: (fontFamily: string) => void;

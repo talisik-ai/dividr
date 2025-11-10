@@ -22,7 +22,7 @@ export interface SubtitleOverlayProps extends OverlayRenderProps {
   activeSubtitles: VideoTrack[];
   allTracks: VideoTrack[];
   selectedTrackIds: string[];
-  getTextStyleForSubtitle: (style: any) => any;
+  getTextStyleForSubtitle: (style: any, segmentStyle?: any) => any;
   activeStyle: any;
   globalSubtitlePosition: { x: number; y: number };
   onTransformUpdate: (
@@ -73,13 +73,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
     selectedTrackIds.includes(track.id),
   );
 
-  // Get applied style for subtitle rendering
-  const appliedStyle = getTextStyleForSubtitle(activeStyle);
-
-  // Extract the fontSize from appliedStyle and scale it for rendering
-  // appliedStyle.fontSize is like "24px", we need to extract the number and scale it
-  const baseFontSize = parseFloat(appliedStyle.fontSize) || 24;
-  const responsiveFontSize = baseFontSize * renderScale;
+  // Note: We'll get per-segment styles inside the map loop below
 
   // Scale padding and effects using the render scale
   const scaledPaddingVertical = SUBTITLE_PADDING_VERTICAL * renderScale;
@@ -127,6 +121,16 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
       onDragStateChange={onDragStateChange}
     >
       {activeSubtitles.map((track) => {
+        // Get style for this specific segment (merges global + per-segment)
+        const appliedStyle = getTextStyleForSubtitle(
+          activeStyle,
+          track.subtitleStyle,
+        );
+
+        // Extract the fontSize from appliedStyle and scale it for rendering
+        const baseFontSize = parseFloat(appliedStyle.fontSize) || 24;
+        const responsiveFontSize = baseFontSize * renderScale;
+
         return (
           <div
             key={`subtitle-content-${track.id}`}
