@@ -62,4 +62,7 @@ export interface TextStyleSlice {
 
   // Global subtitle position
   setGlobalSubtitlePosition: (position: { x: number; y: number }) => void;
+
+  // Cross-slice helpers (accessed by projectSlice for auto-save)
+  markUnsavedChanges?: () => void;
 }

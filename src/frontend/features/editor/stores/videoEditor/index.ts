@@ -93,8 +93,10 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             muted: state.playback.muted,
             isLooping: state.playback.isLooping,
           },
-          textStyle: state.textStyle,
+          // textStyle is now project-scoped, not globally persisted
+          // It will be saved/loaded per project via projectSlice
           colorHistory: state.colorHistory,
+          recentFonts: state.recentFonts, // Keep recent fonts global for convenience
           isAutoSaveEnabled: state.isAutoSaveEnabled,
           // Don't persist undo/redo history - it should reset on app restart
           // undoStack: [],
@@ -123,7 +125,9 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
             ...currentState.playback,
             ...(persistedState?.playback || {}),
           },
-          textStyle: persistedState?.textStyle || currentState.textStyle,
+          // textStyle is NOT merged from localStorage - it's project-scoped
+          // Each project will load its own textStyle via projectSlice.loadProjectData
+          recentFonts: persistedState?.recentFonts || currentState.recentFonts,
           colorHistory:
             persistedState?.colorHistory || currentState.colorHistory,
           isAutoSaveEnabled:

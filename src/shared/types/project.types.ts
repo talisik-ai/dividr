@@ -4,6 +4,7 @@ import {
   MediaLibraryItem,
   PlaybackState,
   PreviewState,
+  TextStyleState,
   TimelineState,
   VideoTrack,
 } from '@/frontend/features/editor/stores/videoEditor/index';
@@ -32,6 +33,7 @@ export interface VideoEditorProjectData {
   timeline: TimelineState;
   preview: PreviewState;
   playback: PlaybackState;
+  textStyle?: TextStyleState; // Optional for backward compatibility with existing projects
 }
 
 // UI state for project management

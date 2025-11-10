@@ -5,6 +5,7 @@ import {
   DEFAULT_PREVIEW_CONFIG,
   DEFAULT_TIMELINE_CONFIG,
 } from '../utils/constants';
+import { getDefaultTextStyleState } from './textStyleSlice';
 
 export interface UtilitySlice {
   reset: () => void;
@@ -52,6 +53,7 @@ export const createUtilitySlice: StateCreator<
         currentTime: undefined,
         currentJob: undefined,
       },
+      textStyle: getDefaultTextStyleState(), // Reset text styles to defaults
       currentProjectId: null,
       isAutoSaveEnabled: true,
       lastSavedAt: null,

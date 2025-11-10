@@ -80,6 +80,11 @@ export const createProjectSlice: StateCreator<
           wasPlayingBeforePlayheadDrag: false,
         },
         preview: { ...state.preview, ...videoEditor.preview },
+        // Load textStyle from project data if available, otherwise keep current defaults
+        // This provides backward compatibility for projects created before textStyle was saved
+        textStyle: videoEditor.textStyle
+          ? { ...state.textStyle, ...videoEditor.textStyle }
+          : state.textStyle,
         currentProjectId: projectId,
         hasUnsavedChanges: false,
         lastSavedAt: new Date().toISOString(),
@@ -117,6 +122,7 @@ export const createProjectSlice: StateCreator<
           timeline: state.timeline,
           playback: state.playback,
           preview: state.preview,
+          textStyle: state.textStyle, // Save text styles per project
         },
         metadata: {
           ...currentProject.metadata,
@@ -187,6 +193,7 @@ export const createProjectSlice: StateCreator<
       tracks: state.tracks,
       timeline: state.timeline,
       preview: state.preview,
+      textStyle: state.textStyle,
     });
   },
 
@@ -199,6 +206,9 @@ export const createProjectSlice: StateCreator<
         tracks: projectData.tracks || [],
         timeline: { ...state.timeline, ...projectData.timeline },
         preview: { ...state.preview, ...projectData.preview },
+        textStyle: projectData.textStyle
+          ? { ...state.textStyle, ...projectData.textStyle }
+          : state.textStyle,
         hasUnsavedChanges: true,
       });
       console.log('✅ Project imported successfully');

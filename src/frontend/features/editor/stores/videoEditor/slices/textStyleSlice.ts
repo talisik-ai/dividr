@@ -1,5 +1,5 @@
 import { StateCreator } from 'zustand';
-import { TextStyleSlice } from '../types';
+import { TextStyleSlice, TextStyleState } from '../types';
 
 const DEFAULT_GLOBAL_CONTROLS = {
   fontFamily: 'Inter',
@@ -24,38 +24,44 @@ const DEFAULT_GLOBAL_SUBTITLE_POSITION = {
   y: 0.7, // Bottom-aligned (70% down from center)
 };
 
+// Export default text style state for project creation/reset
+export const getDefaultTextStyleState = (): TextStyleState => ({
+  activeStyle: 'default',
+  styles: {
+    default: {
+      fontWeight: '400',
+    },
+    semibold: {
+      fontWeight: '600',
+    },
+    script: {
+      fontFamily: '"Segoe Script", cursive',
+      fontWeight: '400',
+    },
+  },
+  globalControls: { ...DEFAULT_GLOBAL_CONTROLS },
+  globalSubtitlePosition: { ...DEFAULT_GLOBAL_SUBTITLE_POSITION },
+});
+
 export const createTextStyleSlice: StateCreator<
   TextStyleSlice,
   [],
   [],
   TextStyleSlice
 > = (set, get) => ({
-  textStyle: {
-    activeStyle: 'default',
-    styles: {
-      default: {
-        fontWeight: '400',
-      },
-      semibold: {
-        fontWeight: '600',
-      },
-      script: {
-        fontFamily: '"Segoe Script", cursive',
-        fontWeight: '400',
-      },
-    },
-    globalControls: DEFAULT_GLOBAL_CONTROLS,
-    globalSubtitlePosition: DEFAULT_GLOBAL_SUBTITLE_POSITION,
-  },
+  textStyle: getDefaultTextStyleState(),
 
   // Text Style Actions
   setActiveTextStyle: (styleId: string) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        activeStyle: styleId,
-      },
-    })),
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          activeStyle: styleId,
+        },
+      };
+    }),
 
   getTextStyleForSubtitle: (styleId: string) => {
     const state = get();
@@ -129,189 +135,240 @@ export const createTextStyleSlice: StateCreator<
 
   // Global style control actions
   toggleBold: () =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          isBold: !state.textStyle.globalControls.isBold,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            isBold: !state.textStyle.globalControls.isBold,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   toggleItalic: () =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          isItalic: !state.textStyle.globalControls.isItalic,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            isItalic: !state.textStyle.globalControls.isItalic,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   toggleUnderline: () =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          isUnderline: !state.textStyle.globalControls.isUnderline,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            isUnderline: !state.textStyle.globalControls.isUnderline,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setTextTransform: (
     transform: 'none' | 'uppercase' | 'lowercase' | 'capitalize',
   ) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          textTransform: transform,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            textTransform: transform,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setTextAlign: (align: 'left' | 'center' | 'right' | 'justify') =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          textAlign: align,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            textAlign: align,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setFontFamily: (fontFamily: string) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          fontFamily,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            fontFamily,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setFontSize: (size: number) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          fontSize: size,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            fontSize: size,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setFillColor: (color: string) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          fillColor: color,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            fillColor: color,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setStrokeColor: (color: string) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          strokeColor: color,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            strokeColor: color,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setBackgroundColor: (color: string) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          backgroundColor: color,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            backgroundColor: color,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   toggleShadow: () =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          hasShadow: !state.textStyle.globalControls.hasShadow,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            hasShadow: !state.textStyle.globalControls.hasShadow,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setLetterSpacing: (spacing: number) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          letterSpacing: spacing,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            letterSpacing: spacing,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setLineSpacing: (spacing: number) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          lineSpacing: spacing,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            lineSpacing: spacing,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   toggleGlow: () =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          hasGlow: !state.textStyle.globalControls.hasGlow,
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            hasGlow: !state.textStyle.globalControls.hasGlow,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setOpacity: (opacity: number) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalControls: {
-          ...state.textStyle.globalControls,
-          opacity: Math.max(0, Math.min(100, opacity)),
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalControls: {
+            ...state.textStyle.globalControls,
+            opacity: Math.max(0, Math.min(100, opacity)),
+          },
         },
-      },
-    })),
+      };
+    }),
 
   resetTextStyles: () =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        activeStyle: 'default',
-        globalControls: DEFAULT_GLOBAL_CONTROLS,
-      },
-    })),
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          activeStyle: 'default',
+          globalControls: DEFAULT_GLOBAL_CONTROLS,
+        },
+      };
+    }),
 
   // Global subtitle position
   setGlobalSubtitlePosition: (position: { x: number; y: number }) =>
-    set((state) => ({
-      textStyle: {
-        ...state.textStyle,
-        globalSubtitlePosition: position,
-      },
-    })),
+    set((state: any) => {
+      state.markUnsavedChanges?.();
+      return {
+        textStyle: {
+          ...state.textStyle,
+          globalSubtitlePosition: position,
+        },
+      };
+    }),
 });
 
 export type { TextStyleSlice };
