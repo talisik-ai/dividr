@@ -456,6 +456,7 @@ export function useVideoPlayback({
 
   // Reset video ready state when track changes
   useEffect(() => {
+    const video = videoRef.current;
     if (activeVideoTrack?.id) {
       setIsVideoReady(false);
       setVideoHealth({
@@ -464,8 +465,20 @@ export function useVideoPlayback({
         recoveryAttempts: 0,
         lastSeekTime: Date.now(),
       });
+
+      // Force video element check and reload if needed (handles undo/redo restoration)
+      if (video && activeVideoTrack.previewUrl) {
+        // If video element doesn't have the correct source, force reload
+        if (!video.src || video.readyState === 0) {
+          console.log(
+            `🔄 useVideoPlayback: Force reloading video for restored track ${activeVideoTrack.id}`,
+          );
+          video.src = activeVideoTrack.previewUrl;
+          video.load();
+        }
+      }
     }
-  }, [activeVideoTrack?.id]);
+  }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl, videoRef]);
 
   // Cleanup seek timeout on unmount
   useEffect(() => {

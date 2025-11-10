@@ -38,8 +38,14 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
 
     if (!video) return;
 
-    // Only update src if it actually changed
-    if (prevSourceRef.current !== newSource) {
+    // Only update src if it actually changed OR if the video element is in error/empty state
+    // This handles undo/redo scenarios where the track is restored
+    const needsReload =
+      prevSourceRef.current !== newSource ||
+      (newSource && !video.src) ||
+      (newSource && video.readyState === 0);
+
+    if (needsReload) {
       loadedMetadataRef.current = false;
 
       if (newSource) {
@@ -49,6 +55,10 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
         }
         video.src = newSource;
         video.load(); // Explicitly load the new source
+        console.log(`🔄 VideoOverlay: Reloading source for track`, {
+          trackId: activeVideoTrack?.id,
+          source: newSource,
+        });
       } else {
         video.removeAttribute('src');
         video.load();
@@ -56,7 +66,7 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
 
       prevSourceRef.current = newSource;
     }
-  }, [activeVideoTrack?.previewUrl, videoRef]);
+  }, [activeVideoTrack?.previewUrl, activeVideoTrack?.id, videoRef]);
 
   // Handle metadata loaded event
   useEffect(() => {

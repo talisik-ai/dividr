@@ -307,6 +307,35 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
       }
     }
 
+    // Check for video elements that need to be reloaded (previewUrl changed)
+    // This handles undo/redo scenarios where track is restored but video element is stale
+    for (const [trackId, videoElement] of videoElements.entries()) {
+      const track = tracks.find((t) => t.id === trackId);
+      if (
+        track &&
+        track.previewUrl &&
+        videoElement.element.src !== track.previewUrl
+      ) {
+        console.log(
+          `🔄 Reloading video element for restored track: ${track.name}`,
+        );
+
+        // Force reload with new source
+        videoElement.element.pause();
+        videoElement.element.src = track.previewUrl;
+        videoElement.element.load();
+
+        // Reset loading state
+        videoElements.set(trackId, {
+          ...videoElement,
+          isLoaded: false,
+          isBuffering: true,
+        });
+        setLoadingTracks((prev) => new Set(prev).add(trackId));
+        setBufferingTracks((prev) => new Set(prev).add(trackId));
+      }
+    }
+
     // Create video elements for new video/image tracks
     tracks.forEach((track) => {
       if (
@@ -317,7 +346,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         const videoElement = document.createElement('video');
         videoElement.style.display = 'none';
         videoElement.muted = false;
-        videoElement.preload = 'metadata';
+        videoElement.preload = 'auto'; // Changed from 'metadata' to 'auto' for faster loading
         videoElement.crossOrigin = 'anonymous';
         videoElement.volume = 0.8;
 
@@ -336,11 +365,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
             return newSet;
           });
 
-          // console.log(`✅ Video loaded: ${track.name}`);
+          console.log(`✅ Video loaded: ${track.name}`);
         };
 
         const handleError = () => {
-          //   console.error(`❌ Failed to load: ${track.name}`);
+          console.error(`❌ Failed to load: ${track.name}`);
           setLoadingTracks((prev) => {
             const newSet = new Set(prev);
             newSet.delete(track.id);
@@ -355,12 +384,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
         // Add buffering event listeners
         const handleWaiting = () => {
-          //   console.log(`⏳ Video ${track.name} started buffering`);
+          console.log(`⏳ Video ${track.name} started buffering`);
           setBufferingTracks((prev) => new Set(prev).add(track.id));
         };
 
         const handleCanPlay = () => {
-          //    console.log(`▶️ Video ${track.name} can play`);
+          console.log(`▶️ Video ${track.name} can play`);
           setBufferingTracks((prev) => {
             const newSet = new Set(prev);
             newSet.delete(track.id);
@@ -369,7 +398,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         };
 
         const handleLoadedMetadata = () => {
-          //  console.log(`📊 Video ${track.name} metadata loaded`);
+          console.log(`📊 Video ${track.name} metadata loaded`);
           setBufferingTracks((prev) => {
             const newSet = new Set(prev);
             newSet.delete(track.id);
@@ -391,9 +420,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           id: track.id,
           element: videoElement,
           isLoaded: false,
-          isBuffering: false,
+          isBuffering: true,
           lastSeekTime: null,
         });
+
+        console.log(`🎬 Creating video element for track: ${track.name}`);
       }
     });
 
