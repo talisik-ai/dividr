@@ -60,6 +60,7 @@ export const SubtitleTransformBoundary: React.FC<
   const containerRef = useRef<HTMLDivElement>(null);
   const boundaryRef = useRef<HTMLDivElement>(null);
   const editableRef = useRef<HTMLDivElement>(null);
+  const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
   const [isDragging, setIsDragging] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
@@ -104,8 +105,14 @@ export const SubtitleTransformBoundary: React.FC<
   };
 
   // Migration: If coordinates appear to be in pixel space, convert to normalized
+  // ONLY run this migration once per track to avoid interfering with drag operations
   const normalizedTransform = React.useMemo(() => {
-    if (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2) {
+    // Check if coordinates need migration (look like pixel values > 2)
+    const needsMigration = !hasMigratedRef.current &&
+      (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2);
+
+    if (needsMigration) {
+      hasMigratedRef.current = true; // Mark as migrated
       const normalized = pixelsToNormalized({
         x: rawTransform.x,
         y: rawTransform.y,
@@ -219,15 +226,19 @@ export const SubtitleTransformBoundary: React.FC<
       const deltaX = e.clientX - dragStart.x;
       const deltaY = e.clientY - dragStart.y;
 
-      // Convert screen delta to video coordinate delta using the effective render scale
-      const normalizedDeltaX = deltaX / effectiveRenderScale;
-      const normalizedDeltaY = deltaY / effectiveRenderScale;
+      // Convert screen delta to video coordinate delta
+      // initialTransform is in screen pixels, deltaX/Y is in screen pixels
+      // We need to convert both to video space before adding
+      const videoDeltaX = deltaX / effectiveRenderScale;
+      const videoDeltaY = deltaY / effectiveRenderScale;
 
-      // Add delta to initial position (already in screen pixels)
-      let newPixelX =
-        initialTransform.x / effectiveRenderScale + normalizedDeltaX;
-      let newPixelY =
-        initialTransform.y / effectiveRenderScale + normalizedDeltaY;
+      // initialTransform is already scaled, so convert it back to video space first
+      const initialVideoX = initialTransform.x / effectiveRenderScale;
+      const initialVideoY = initialTransform.y / effectiveRenderScale;
+
+      // Calculate new position in video space
+      let newPixelX = initialVideoX + videoDeltaX;
+      let newPixelY = initialVideoY + videoDeltaY;
 
       // Snapping logic - only when Shift or Ctrl is held
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
