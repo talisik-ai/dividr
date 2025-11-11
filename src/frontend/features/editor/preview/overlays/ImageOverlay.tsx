@@ -81,8 +81,8 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
         const imageUrl = track.previewUrl || track.source;
         const isSelected = selectedTrackIds.includes(track.id);
 
-        // Use original image dimensions - no automatic fit-to-canvas
-        // This preserves the image's intrinsic size as set during import
+        // Use track.width/height as the intrinsic image dimensions (set during import)
+        // Fallback to baseVideoWidth/Height only if image dimensions are not available (legacy support)
         const defaultWidth = track.width || baseVideoWidth;
         const defaultHeight = track.height || baseVideoHeight;
 
