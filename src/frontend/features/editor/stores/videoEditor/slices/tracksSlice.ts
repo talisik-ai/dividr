@@ -373,6 +373,18 @@ export const createTracksSlice: StateCreator<
       state.markUnsavedChanges?.();
       state.updateProjectThumbnailFromTimeline?.();
 
+      // Auto-update canvas size if this is the first video track
+      if (
+        existingVideoTracks.length === 0 &&
+        videoTrack.width &&
+        videoTrack.height
+      ) {
+        console.log(
+          `🎬 Setting canvas size to match first video track: ${videoTrack.width}×${videoTrack.height}`,
+        );
+        state.setCanvasSize(videoTrack.width, videoTrack.height);
+      }
+
       // End grouped transaction for video+audio pair
       state.endGroup?.();
 
@@ -572,6 +584,26 @@ export const createTracksSlice: StateCreator<
       const currentState = get() as any;
       currentState.markUnsavedChanges?.();
 
+      // Auto-update canvas size if this batch contains the first video track
+      const existingVideoTracks = state.tracks.filter(
+        (t: VideoTrack) => t.type === 'video',
+      );
+      const firstVideoInBatch = newTracks.find((t) => t.type === 'video');
+      if (
+        existingVideoTracks.length === 0 &&
+        firstVideoInBatch &&
+        firstVideoInBatch.width &&
+        firstVideoInBatch.height
+      ) {
+        console.log(
+          `🎬 Setting canvas size to match first video track (batch): ${firstVideoInBatch.width}×${firstVideoInBatch.height}`,
+        );
+        currentState.setCanvasSize(
+          firstVideoInBatch.width,
+          firstVideoInBatch.height,
+        );
+      }
+
       // Auto-create track rows for subtitle and image types
       // Use setTimeout to avoid synchronous state updates that can cause loops
       if (trackTypesToEnsureVisible.size > 0) {
@@ -658,11 +690,33 @@ export const createTracksSlice: StateCreator<
     // Convert media library item to single track (for non-subtitles or fallback)
     const duration = Math.floor(mediaItem.duration * state.timeline.fps);
 
-    // Detect aspect ratio from video/image metadata
-    const aspectRatioData = detectAspectRatio(
-      mediaItem.metadata?.width,
-      mediaItem.metadata?.height,
-    );
+    // Use stored aspect ratio from media library item if available,
+    // otherwise detect from dimensions (fallback for older imports)
+    let aspectRatio: number | undefined;
+    let aspectRatioLabel: string | undefined;
+
+    if (
+      mediaItem.metadata?.aspectRatio !== undefined &&
+      mediaItem.metadata?.aspectRatioLabel !== undefined
+    ) {
+      // Use pre-calculated values from import
+      aspectRatio = mediaItem.metadata.aspectRatio;
+      aspectRatioLabel = mediaItem.metadata.aspectRatioLabel || undefined;
+      console.log(
+        `📐 Using stored aspect ratio: ${aspectRatioLabel || 'custom'} (${aspectRatio?.toFixed(2)}) for ${mediaItem.name}`,
+      );
+    } else {
+      // Fallback: Detect aspect ratio from dimensions
+      const aspectRatioData = detectAspectRatio(
+        mediaItem.metadata?.width,
+        mediaItem.metadata?.height,
+      );
+      aspectRatio = aspectRatioData?.ratio;
+      aspectRatioLabel = aspectRatioData?.label || undefined;
+      console.log(
+        `📐 Detected aspect ratio (fallback): ${aspectRatioLabel || 'custom'} (${aspectRatio?.toFixed(2)}) for ${mediaItem.name}`,
+      );
+    }
 
     const track = {
       type: mediaItem.type,
@@ -673,8 +727,8 @@ export const createTracksSlice: StateCreator<
       tempFilePath: mediaItem.tempFilePath,
       height: mediaItem.metadata?.height,
       width: mediaItem.metadata?.width,
-      aspectRatio: aspectRatioData?.ratio,
-      detectedAspectRatioLabel: aspectRatioData?.label || undefined,
+      aspectRatio,
+      detectedAspectRatioLabel: aspectRatioLabel,
       duration,
       startFrame,
       endFrame: startFrame + duration,
@@ -686,10 +740,6 @@ export const createTracksSlice: StateCreator<
         subtitleText: `Subtitle: ${mediaItem.name}`,
       }),
     };
-
-    console.log(
-      `📐 Detected aspect ratio: ${aspectRatioData?.label || 'custom'} (${aspectRatioData?.ratio?.toFixed(2)}) for ${mediaItem.name}`,
-    );
 
     // Auto-update canvas size if this is the first video track
     const existingVideoTracks = state.tracks.filter(
