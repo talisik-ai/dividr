@@ -29,16 +29,6 @@ const AUDIO_DEFAULTS = {
   SAMPLE_RATE: 48000,
 } as const;
 
-// Enhanced timeline processing with proper cumulative positioning
-
-interface TimelineSegment {
-  input: TrackInfo;
-  originalIndex: number;
-  startTime: number; // Timeline position where this segment starts
-  duration: number; // How long this segment lasts
-  endTime: number; // Timeline position where this segment ends
-}
-
 /**
  * Converts Windows path to FFmpeg-compatible format and escapes special characters
  * @param filePath - The file path to convert
@@ -190,26 +180,6 @@ function getTrackInfo(input: string | TrackInfo): TrackInfo {
  */
 function isGapInput(path: string): boolean {
   return path === GAP_MARKER;
-}
-
-/**
- * Calculates the actual duration of a track, accounting for trimming
- */
-function calculateTrackDuration(
-  trackInfo: TrackInfo,
-  defaultDuration = 1,
-): number {
-  // If explicit duration is set, use it
-  if (trackInfo.duration !== undefined) {
-    return trackInfo.duration;
-  }
-
-  // For gaps, use duration or default
-  if (isGapInput(trackInfo.path)) {
-    return trackInfo.duration || defaultDuration;
-  }
-
-  return defaultDuration;
 }
 
 /**
@@ -500,137 +470,6 @@ function parseAspectRatio(aspectRatio: string): number {
   return width / height;
 }
 
-/**
- * Creates aspect ratio adjustment filters with smart scaling and cropping
- * For aspect ratio conversion (e.g., 16:9 to 9:16), this function:
- * 1. Scales the video to preserve one dimension (e.g., height for 16:9 to 9:16)
- * 2. Crops the other dimension to achieve the target aspect ratio
- * 
- * Example: 1920x1080 (16:9) to 9:16
- * - Scale height from 1080 to 1920 (width becomes 3413)
- * - Crop width from 3413 to 1080
- * - Final: 1080x1920 (9:16)
- * 
- * @param originalIndex - Unique index for filter labeling
- * @param inputRef - Input filter reference
- * @param aspectRatio - Target aspect ratio (e.g., "16:9", "4:3", "9:16")
- * @param sourceWidth - Source video width
- * @param sourceHeight - Source video height
- * @returns AudioTrimResult with filter reference and filter strings
- */
-function createAspectRatioCropFilters(
-  originalIndex: number,
-  inputRef: string,
-  aspectRatio: string,
-  sourceWidth: number,
-  sourceHeight: number,
-): AudioTrimResult {
-  const aspectRef = `[v${originalIndex}_aspect]`;
-  const targetRatio = parseAspectRatio(aspectRatio);
-  const sourceRatio = sourceWidth / sourceHeight;
-
-  console.log(
-    `📐 Aspect ratio analysis: source=${sourceRatio.toFixed(3)} (${sourceWidth}x${sourceHeight}), target=${targetRatio.toFixed(3)} (${aspectRatio})`,
-  );
-
-  // If ratios are very close (within 1%), just set display aspect ratio
-  const ratioDifference = Math.abs(targetRatio - sourceRatio) / sourceRatio;
-  if (ratioDifference < 0.01) {
-    console.log(
-      `📐 Aspect ratios are similar (${(ratioDifference * 100).toFixed(2)}% difference), using setdar only`,
-    );
-    return {
-      filterRef: aspectRef,
-      filters: [`${inputRef}setdar=${aspectRatio}${aspectRef}`],
-    };
-  }
-
-  // Determine which dimension to preserve and calculate scaling/cropping
-  let scaleWidth: number;
-  let scaleHeight: number;
-  let cropWidth: number;
-  let cropHeight: number;
-
-  // Universal strategy: Always preserve the smaller source dimension
-  const smallerDimension = Math.min(sourceWidth, sourceHeight);
-  
-  if (targetRatio < 1) {
-    // Portrait target (width < height) - smaller dimension becomes final width
-    cropWidth = smallerDimension;
-    cropHeight = Math.round(cropWidth / targetRatio);
-    
-    // Scale so that BOTH cropWidth and cropHeight fit
-    // We need to ensure the scaled video is at least as large as the crop dimensions
-    const scaleFactorForWidth = cropWidth / sourceWidth;
-    const scaleFactorForHeight = cropHeight / sourceHeight;
-    
-    // Use the LARGER scale factor to ensure both dimensions fit
-    const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
-    scaleWidth = Math.round(sourceWidth * scaleFactor);
-    scaleHeight = Math.round(sourceHeight * scaleFactor);
-    
-    // Safety check: ensure scaled dimensions are at least as large as crop dimensions
-    // This handles rounding errors
-    if (scaleWidth < cropWidth) scaleWidth = cropWidth;
-    if (scaleHeight < cropHeight) scaleHeight = cropHeight;
-    
-    console.log(`📐 Portrait target: smaller dim (${smallerDimension}) → final width, scale factor: ${scaleFactor.toFixed(3)}`);
-  } else {
-    // Landscape target (width >= height) - smaller dimension becomes final height
-    cropHeight = smallerDimension;
-    cropWidth = Math.round(cropHeight * targetRatio);
-    
-    // Determine which dimension needs to be scaled to accommodate the crop
-    // We need to scale so that BOTH cropWidth and cropHeight fit
-    const scaleFactorForWidth = cropWidth / sourceWidth;
-    const scaleFactorForHeight = cropHeight / sourceHeight;
-    
-    // Use the LARGER scale factor to ensure both dimensions fit
-    const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
-    scaleWidth = Math.round(sourceWidth * scaleFactor);
-    scaleHeight = Math.round(sourceHeight * scaleFactor);
-    
-    // Safety check: ensure scaled dimensions are at least as large as crop dimensions
-    // This handles rounding errors
-    if (scaleWidth < cropWidth) scaleWidth = cropWidth;
-    if (scaleHeight < cropHeight) scaleHeight = cropHeight;
-    
-    console.log(`📐 Landscape target: smaller dim (${smallerDimension}) → final height, scale factor: ${scaleFactor.toFixed(3)}`);
-  }
-  
-  console.log(
-    `📐 Source: ${sourceWidth}x${sourceHeight} (ratio: ${sourceRatio.toFixed(3)}), Target ratio: ${targetRatio.toFixed(3)}`
-  );
-  console.log(
-    `📐 Step 1: Scale to ${scaleWidth}x${scaleHeight}`
-  );
-  console.log(
-    `📐 Step 2: Crop to ${cropWidth}x${cropHeight}`
-  );
-  console.log(
-    `📐 Final: ${cropWidth}x${cropHeight} (ratio: ${(cropWidth/cropHeight).toFixed(3)})`
-  );
-
-  // Center the crop
-  const cropX = Math.round((scaleWidth - cropWidth) / 2);
-  const cropY = Math.round((scaleHeight - cropHeight) / 2);
-
-  console.log(
-    `📐 Final dimensions: ${cropWidth}x${cropHeight} (ratio: ${(cropWidth / cropHeight).toFixed(3)})`,
-  );
-  console.log(
-    `📐 Crop position: (${cropX}, ${cropY})`,
-  );
-
-  // Apply scale first, then crop
-  // This ensures we scale up before cropping down
-  return {
-    filterRef: aspectRef,
-    filters: [
-      `${inputRef}scale=${scaleWidth}:${scaleHeight},crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},setdar=${aspectRatio}${aspectRef}`,
-    ],
-  };
-}
 
 // -------------------------
 // Audio Processing Functions
@@ -2033,35 +1872,11 @@ function buildSeparateTimelineFilterComplex(
         if (scaleWidth < cropWidth) scaleWidth = cropWidth;
         if (scaleHeight < cropHeight) scaleHeight = cropHeight;
         
-        console.log(`📐 Landscape target: smaller dim (${smallerDimension}) → final height, scale factor: ${scaleFactor.toFixed(3)}`);
       }
-      
-      console.log(
-        `📐 Final conversion: Source ${targetDimensions.width}x${targetDimensions.height} (ratio: ${sourceRatio.toFixed(3)}) → Target ratio: ${targetRatio.toFixed(3)}`
-      );
-      console.log(
-        `📐   Step 1: Scale to ${scaleWidth}x${scaleHeight}`
-      );
-      console.log(
-        `📐   Step 2: Crop to ${cropWidth}x${cropHeight}`
-      );
-      console.log(
-        `📐   Result: ${cropWidth}x${cropHeight} = ${(cropWidth/cropHeight).toFixed(3)} ratio`
-      );
 
       // Center the crop
       const cropX = Math.round((scaleWidth - cropWidth) / 2);
       const cropY = Math.round((scaleHeight - cropHeight) / 2);
-
-      console.log(
-        `📐 Final dimensions after scale+crop: ${cropWidth}x${cropHeight} at crop position (${cropX}, ${cropY})`
-      );
-      console.log(
-        `📐 ⚠️  IMPORTANT: Scale+Crop is applied BEFORE images and subtitles`
-      );
-      console.log(
-        `📐    Images and subtitle coordinates will be relative to the final video (${cropWidth}x${cropHeight})`
-      );
 
       // Apply scale + crop filter BEFORE images and subtitles
       aspectRatioCropFilter = `[${currentVideoLabel}]scale=${scaleWidth}:${scaleHeight},crop=${cropWidth}:${cropHeight}:${cropX}:${cropY}[video_cropped]`;
@@ -2202,77 +2017,7 @@ function buildSeparateTimelineFilterComplex(
 
   return filterComplex;
 }
-/**
- * Enhanced helper to check if input is a gap marker with specific gap type
- */
-function isVideoGap(trackInfo: TrackInfo): boolean {
-  return isGapInput(trackInfo.path) && trackInfo.gapType === 'video';
-}
-/**
- * Helper to check if input is an audio gap marker
- */
-function isAudioGap(trackInfo: TrackInfo): boolean {
-  return isGapInput(trackInfo.path) && trackInfo.gapType === 'audio';
-}
 
-/**
- * Handles single track audio trimming
- * @param trackInfo - Track information with timing
- * @returns Object with video and audio filter strings, or null if no trimming needed
- */
-function createSingleTrackTrimFilters(
-  trackInfo: TrackInfo,
-  videoDimensions: { width: number; height: number },
-): { videoFilter: string; audioFilter: string } | null {
-  if (trackInfo.startTime === undefined && trackInfo.duration === undefined) {
-    return null;
-  }
-
-  const params = [];
-  if (trackInfo.startTime !== undefined && trackInfo.startTime > 0) {
-    params.push(`start=${trackInfo.startTime}`);
-  }
-  if (trackInfo.duration !== undefined) {
-    params.push(`duration=${trackInfo.duration}`);
-  }
-
-  if (params.length === 0) {
-    return null;
-  }
-
-  const paramString = params.join(':');
-
-  let videoFilter: string;
-  let audioFilter: string;
-
-  // Handle video visibility
-  if (
-    trackInfo.visible === false &&
-    (trackInfo.trackType === 'video' || trackInfo.trackType === 'image')
-  ) {
-    // Generate black video for hidden tracks
-    const duration = trackInfo.duration || 1;
-    videoFilter = `color=black:size=${videoDimensions.width}x${videoDimensions.height}:duration=${duration}:rate=${VIDEO_DEFAULTS.FPS}[outv]`;
-    console.log(`🖤 Single hidden track - using black video`);
-  } else {
-    videoFilter = `[0:v]trim=${paramString}[outv]`;
-  }
-
-  // Handle audio muting
-  if (trackInfo.muted && trackInfo.trackType === 'video') {
-    // Generate silent audio for muted video tracks
-    const duration = trackInfo.duration || 1;
-    audioFilter = `anullsrc=channel_layout=${AUDIO_DEFAULTS.CHANNEL_LAYOUT}:sample_rate=${AUDIO_DEFAULTS.SAMPLE_RATE}[temp_muted];[temp_muted]atrim=duration=${duration}[outa]`;
-    console.log(`🔇 Single track trim with muted video - using silent audio`);
-  } else {
-    audioFilter = `[0:a]atrim=${paramString}[outa]`;
-  }
-
-  return {
-    videoFilter,
-    audioFilter,
-  };
-}
 
 // -------------------------
 // Step handlers
