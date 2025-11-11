@@ -147,11 +147,13 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const selectedTrack = selectedSubtitleTracks[0];
 
   const handleTextEdit = useCallback(() => {
-    if (isEditingText && editedText !== selectedTrack.subtitleText) {
-      // Update the track with new text
-      updateTrack(selectedTrack.id, { subtitleText: editedText });
+    // Only save if we're in editing mode and text changed
+    if (isEditingText) {
+      if (editedText !== selectedTrack.subtitleText) {
+        updateTrack(selectedTrack.id, { subtitleText: editedText });
+      }
+      setIsEditingText(false);
     }
-    setIsEditingText(!isEditingText);
   }, [
     isEditingText,
     editedText,
@@ -169,12 +171,21 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
 
   const handleTextKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter without shift: save and exit
+        e.preventDefault();
+        if (editedText !== selectedTrack.subtitleText) {
+          updateTrack(selectedTrack.id, { subtitleText: editedText });
+        }
+        setIsEditingText(false);
+      } else if (e.key === 'Escape') {
+        // Escape: cancel and revert
         setEditedText(selectedTrack.subtitleText || '');
         setIsEditingText(false);
       }
+      // Shift+Enter: allow default behavior (new line)
     },
-    [selectedTrack.subtitleText],
+    [editedText, selectedTrack.subtitleText, selectedTrack.id, updateTrack],
   );
 
   const handleStartEditing = useCallback(() => {
