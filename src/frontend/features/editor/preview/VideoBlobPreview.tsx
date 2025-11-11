@@ -555,7 +555,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             top: `calc(50% + ${preview.panY}px)`,
             transform: 'translate(-50%, -50%)',
             overflow: 'hidden',
-            zIndex: 500,
+            zIndex: 1500,
           }}
         >
           <DragGuides
