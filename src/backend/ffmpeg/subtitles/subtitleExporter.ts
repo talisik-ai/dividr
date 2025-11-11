@@ -650,13 +650,26 @@ export function generateASSContent(
   });
   console.log(`🎨 Fonts used in subtitles: ${Array.from(usedFontFamilies).join(', ')}`);
 
+  // Calculate vertical margin based on video dimensions
+  const aspectRatio = playResX / playResY;
+  const isPortrait = aspectRatio < 1;
+  
+  // Base margin percentage (works well for landscape)
+  const marginPercentage = isPortrait ? 0.133 : 0.037;
+  
+  // Calculate margin in pixels
+  const verticalMargin = Math.round(playResY * marginPercentage);
+  
+  console.log(`📐 Video dimensions: ${playResX}x${playResY} (aspect ratio: ${aspectRatio.toFixed(3)}, ${isPortrait ? 'portrait' : 'landscape'})`);
+  console.log(`📐 Calculated vertical margin: ${verticalMargin}px (${(marginPercentage * 100).toFixed(1)}% of height)`);
+
   // Generate style definitions
   const styleDefinitions: string[] = [];
   styleMap.forEach(({ params, styleName, style }) => {
     // Base style
     console.log(`🎨 Creating ASS style "${styleName}" with font: "${params.fontFamily}"`);
     styleDefinitions.push(
-      `Style: ${styleName},${params.fontFamily},${params.fontSize},${params.primaryColor},&H000000FF,${params.outlineColor},${params.backColor},${params.bold},${params.italic},${params.underline},0,100,100,0,0,${params.borderStyle},${params.outlineWidth},${params.shadowDistance},2,10,10,0,1`
+      `Style: ${styleName},${params.fontFamily},${params.fontSize},${params.primaryColor},&H000000FF,${params.outlineColor},${params.backColor},${params.bold},${params.italic},${params.underline},0,100,100,0,0,${params.borderStyle},${params.outlineWidth},${params.shadowDistance},2,10,10,${verticalMargin},1`
     );
     
     // If this style has both background and outline, create an outline variant
@@ -668,7 +681,7 @@ export function generateASSContent(
       );
       
       styleDefinitions.push(
-        `Style: ${styleName}Outline,${params.fontFamily},${params.fontSize},${params.primaryColor},&H000000FF,${originalOutlineColor},&H00000000,${params.bold},${params.italic},${params.underline},0,100,100,0,0,1,${params.outlineWidth},0,2,10,10,0,1`
+        `Style: ${styleName}Outline,${params.fontFamily},${params.fontSize},${params.primaryColor},&H000000FF,${originalOutlineColor},&H00000000,${params.bold},${params.italic},${params.underline},0,100,100,0,0,1,${params.outlineWidth},0,2,10,10,${verticalMargin},1`
       );
     }
   });
