@@ -164,28 +164,38 @@ export const useExportJob = () => {
         }
       }
 
-      // Calculate final video dimensions after aspect ratio conversion (scale+crop)
-      // This ensures subtitles and text are positioned correctly relative to the final video
-      const finalVideoDimensions = calculateFinalDimensions(
-        videoDimensions,
+      // Calculate dimensions for subtitle/image positioning
+      // Subtitles and images are positioned at the aspect-ratio-cropped resolution (before final downscale)
+      // We need to find the actual source video dimensions to calculate the intermediate dimensions
+      const sourceVideoDimensions = getSourceVideoDimensions(videoTracks);
+      
+      // Calculate the intermediate dimensions after aspect ratio crop (at source resolution)
+      const intermediateVideoDimensions = calculateIntermediateDimensions(
+        sourceVideoDimensions,
         targetAspectRatio,
       );
+      
+      // The final output dimensions are the custom dimensions from the canvas
+      const finalOutputDimensions = videoDimensions;
 
       console.log(
-        `📐 Video dimensions: source=${videoDimensions.width}x${videoDimensions.height}, ` +
-          `final=${finalVideoDimensions.width}x${finalVideoDimensions.height} ` +
+        `📐 Video dimensions: ` +
+          `source=${sourceVideoDimensions.width}x${sourceVideoDimensions.height}, ` +
+          `intermediate (after aspect crop)=${intermediateVideoDimensions.width}x${intermediateVideoDimensions.height}, ` +
+          `final output=${finalOutputDimensions.width}x${finalOutputDimensions.height} ` +
           `(aspect ratio: ${targetAspectRatio || 'none'})`,
       );
 
       // Generate subtitle content (now includes text clips bundled together)
-      // Use finalVideoDimensions so subtitles are positioned for the final video after scale+crop
+      // Use finalOutputDimensions so subtitles are positioned for the final output video
+      // Subtitles will be applied AFTER the final downscale to match the output dimensions
       const { subtitleContent, currentTextStyle, fontFamilies } =
         generateSubtitleContent(
           subtitleTracks,
           textTracks, // Pass text tracks to be bundled with subtitles
           textStyle,
           getTextStyleForSubtitle,
-          finalVideoDimensions, // Use final dimensions after aspect ratio conversion
+          finalOutputDimensions, // Use final output dimensions for subtitle positioning
           timelineStartFrame, // Pass start frame for time offset adjustment
         );
 
@@ -204,6 +214,7 @@ export const useExportJob = () => {
           useHardwareAcceleration: false,
           hwaccelType: 'auto', // Auto-detect best available hardware acceleration
           preferHEVC: false, // Use H.264 (set to true for H.265/HEVC)
+          aspect: targetAspectRatio, // Pass target aspect ratio for aspect ratio conversion
         },
         subtitleContent, // Now includes both subtitles and text clips
         subtitleFormat:
@@ -211,7 +222,7 @@ export const useExportJob = () => {
             ? 'ass'
             : undefined,
         subtitleFontFamilies: fontFamilies, // Pass font families, main process will resolve paths
-        videoDimensions: finalVideoDimensions, // Use final dimensions after aspect ratio conversion
+        videoDimensions: finalOutputDimensions, // Pass final output dimensions for commandBuilder
         // textClips and textClipsContent removed - now bundled with subtitles
       };
     },
@@ -274,10 +285,32 @@ function getCustomDimensions(
 }
 
 /**
- * Calculate final video dimensions after aspect ratio conversion
+ * Get source video dimensions from the first video track
+ */
+function getSourceVideoDimensions(
+  videoTracks: VideoTrack[],
+): { width: number; height: number } {
+  // Find first visible video track with valid dimensions
+  for (const track of videoTracks) {
+    if (track.visible && track.width && track.height) {
+      console.log(
+        `📐 Source video dimensions from track "${track.name}": ${track.width}x${track.height}`,
+      );
+      return { width: track.width, height: track.height };
+    }
+  }
+
+  // Fallback to default dimensions
+  console.warn(`⚠️ No valid video track dimensions found, using default: 1920x1080`);
+  return { width: 1920, height: 1080 };
+}
+
+/**
+ * Calculate intermediate video dimensions after aspect ratio conversion (scale+crop)
+ * This is the resolution BEFORE final downscaling to custom dimensions
  * This matches the logic in commandBuilder.ts for scale+crop operations
  */
-function calculateFinalDimensions(
+function calculateIntermediateDimensions(
   sourceDimensions: { width: number; height: number },
   targetAspectRatio?: string,
 ): { width: number; height: number } {
@@ -301,7 +334,7 @@ function calculateFinalDimensions(
     return sourceDimensions;
   }
 
-  // Calculate final dimensions after scale+crop
+  // Calculate intermediate dimensions after scale+crop at source resolution
   // Universal strategy: Always preserve the SMALLER source dimension
   const smallerDimension = Math.min(
     sourceDimensions.width,
@@ -316,13 +349,13 @@ function calculateFinalDimensions(
     cropWidth = smallerDimension;
     cropHeight = Math.round(cropWidth / targetRatio);
   } else {
-    // Landscape target (width > height) - smaller dimension becomes final height
+    // Landscape target (width >= height) - smaller dimension becomes final height
     cropHeight = smallerDimension;
     cropWidth = Math.round(cropHeight * targetRatio);
   }
 
   console.log(
-    `📐 Calculated final dimensions: ${cropWidth}x${cropHeight} from ${sourceDimensions.width}x${sourceDimensions.height} (ratio ${sourceRatio.toFixed(3)} → ${targetRatio.toFixed(3)})`,
+    `📐 Calculated intermediate dimensions (after aspect crop): ${cropWidth}x${cropHeight} from ${sourceDimensions.width}x${sourceDimensions.height} (ratio ${sourceRatio.toFixed(3)} → ${targetRatio.toFixed(3)})`,
   );
   return { width: cropWidth, height: cropHeight };
 }
