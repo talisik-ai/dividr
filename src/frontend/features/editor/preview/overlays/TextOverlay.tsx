@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback } from 'react';
-import { VideoTrack } from '../../stores/videoEditor/index';
-import { useVideoEditorStore } from '../../stores/videoEditor';
+import { useVideoEditorStore, VideoTrack } from '../../stores/videoEditor';
 import { TextTransformBoundary } from '../components/TextTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
@@ -44,6 +43,8 @@ export interface TextOverlayProps extends OverlayRenderProps {
     isDragging: boolean,
     position?: { x: number; y: number; width: number; height: number },
   ) => void;
+  pendingEditTextId?: string | null;
+  onEditStarted?: () => void;
 }
 
 export const TextOverlay: React.FC<TextOverlayProps> = ({
@@ -64,6 +65,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   onTextUpdate,
   onRotationStateChange,
   onDragStateChange,
+  pendingEditTextId,
+  onEditStarted,
 }) => {
   if (activeTexts.length === 0) return null;
 
@@ -188,6 +191,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 clipWidth={actualWidth}
                 clipHeight={actualHeight}
                 disableScaleTransform={true}
+                autoEnterEditMode={pendingEditTextId === track.id}
+                onEditStarted={onEditStarted}
               >
                 <div
                   style={{
@@ -272,6 +277,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
               clipWidth={actualWidth}
               clipHeight={actualHeight}
               disableScaleTransform={true}
+              autoEnterEditMode={pendingEditTextId === track.id}
+              onEditStarted={onEditStarted}
             >
               <div
                 style={{
@@ -348,6 +355,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
             clipWidth={actualWidth}
             clipHeight={actualHeight}
             disableScaleTransform={true}
+            autoEnterEditMode={pendingEditTextId === track.id}
+            onEditStarted={onEditStarted}
           >
             <div style={completeStyle}>{track.textContent}</div>
           </TextTransformBoundary>

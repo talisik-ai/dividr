@@ -43,6 +43,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [isPreviewFocused, setIsPreviewFocused] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+  const [pendingEditTextId, setPendingEditTextId] = useState<string | null>(
+    null,
+  );
 
   // Initialize preview shortcuts
   usePreviewShortcuts(isPreviewFocused);
@@ -66,6 +69,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     setSelectedTracks,
     currentTranscribingTrackId,
     transcriptionProgress,
+    addTextClip,
   } = useVideoEditorStore();
 
   // Active media determination
@@ -370,11 +374,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [updateTrack],
   );
 
-  // Handle click outside to deselect
+  // Handle click outside to deselect or add text
   const handlePreviewClick = useCallback(
-    (e: React.MouseEvent) => {
+    async (e: React.MouseEvent) => {
       const target = e.target as HTMLElement;
 
+      // Check if clicking on empty canvas space
       if (
         target === containerRef.current ||
         target.classList.contains('preview-background') ||
@@ -391,12 +396,79 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           },
         );
 
+        // If something is selected, deselect it
         if (hasInteractiveLayerSelected) {
           setSelectedTracks([]);
+          return;
+        }
+
+        // If nothing is selected and we have video content, add new text at click position
+        if (activeVideoTrack || activeAudioTrack) {
+          // Get click position relative to container
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (!rect) return;
+
+          const clickX = e.clientX - rect.left;
+          const clickY = e.clientY - rect.top;
+
+          // Convert screen coordinates to normalized video coordinates
+          // First, account for the pan offset
+          const clickXRelativeToContent =
+            clickX - rect.width / 2 - preview.panX;
+          const clickYRelativeToContent =
+            clickY - rect.height / 2 - preview.panY;
+
+          // Then convert from screen space to video space using the coordinate system
+          const normalizedX =
+            clickXRelativeToContent / (actualWidth / 2) / preview.previewScale;
+          const normalizedY =
+            clickYRelativeToContent / (actualHeight / 2) / preview.previewScale;
+
+          // Create new text track at clicked position
+          const trackId = await addTextClip('body', timeline.currentFrame);
+
+          if (trackId) {
+            // Update the position to clicked location
+            updateTrack(trackId, {
+              textTransform: {
+                x: normalizedX,
+                y: normalizedY,
+                scale: 1,
+                rotation: 0,
+                width: 800,
+                height: 100,
+              },
+              textContent: 'New Text', // Default placeholder text that will be selected
+            });
+
+            // Select the new text track
+            setSelectedTracks([trackId]);
+
+            // Switch to text-edit mode to enable immediate editing
+            setPreviewInteractionMode('text-edit');
+
+            // Mark this text as pending edit (will trigger auto-edit after render)
+            setPendingEditTextId(trackId);
+          }
         }
       }
     },
-    [setSelectedTracks, timeline.selectedTrackIds, tracks],
+    [
+      setSelectedTracks,
+      timeline.selectedTrackIds,
+      timeline.currentFrame,
+      tracks,
+      activeVideoTrack,
+      activeAudioTrack,
+      preview.panX,
+      preview.panY,
+      preview.previewScale,
+      actualWidth,
+      actualHeight,
+      addTextClip,
+      updateTrack,
+      setPreviewInteractionMode,
+    ],
   );
 
   // Handle import from placeholder
@@ -447,6 +519,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
           if (preview.interactionMode === 'pan' && preview.previewScale > 1) {
             return isPanning ? 'cursor-grabbing' : 'cursor-grab';
+          }
+
+          if (preview.interactionMode === 'text-edit') {
+            return 'cursor-text';
           }
 
           return 'cursor-default';
@@ -545,6 +621,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         onTextUpdate={handleTextUpdate}
         onRotationStateChange={setIsRotating}
         onDragStateChange={handleDragStateChange}
+        pendingEditTextId={pendingEditTextId}
+        onEditStarted={() => setPendingEditTextId(null)}
       />
 
       {/* Alignment Guides */}
