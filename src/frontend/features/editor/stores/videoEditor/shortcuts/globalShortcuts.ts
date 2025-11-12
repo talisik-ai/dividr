@@ -163,4 +163,16 @@ export const createGlobalShortcuts = (
       }
     },
   },
+  {
+    id: 'preview-toggle-fullscreen',
+    keys: 'f',
+    description: 'Toggle Fullscreen',
+    category: 'Preview',
+    scope: 'global',
+    priority: 'high',
+    handler: (e) => {
+      e?.preventDefault();
+      getStore().toggleFullscreen();
+    },
+  },
 ];

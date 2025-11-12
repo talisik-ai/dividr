@@ -89,6 +89,9 @@ export const useGlobalShortcuts = () => {
     tracks,
   ]);
 
+  // Toggle Fullscreen (F)
+  useHotkeys('f', globalShortcuts[14].handler, globalShortcuts[14].options, []);
+
   // Project shortcuts (indices 0-6 are project shortcuts)
   // New Project (Ctrl+N / Cmd+N)
   useHotkeys(

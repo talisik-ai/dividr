@@ -56,18 +56,6 @@ export const createPreviewShortcuts = (
       }
     },
   },
-  {
-    id: 'preview-toggle-fullscreen',
-    keys: 'f',
-    description: 'Toggle Fullscreen',
-    category: 'Preview Tools',
-    scope: 'preview',
-    priority: 'high',
-    handler: (e) => {
-      e?.preventDefault();
-      getStore().toggleFullscreen();
-    },
-  },
 
   // Preview Zoom Shortcuts
   {
