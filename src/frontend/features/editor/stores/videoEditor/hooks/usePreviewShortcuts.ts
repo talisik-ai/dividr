@@ -46,12 +46,25 @@ export const usePreviewShortcuts = (enabled = true) => {
     [preview.interactionMode, preview.previewScale, enabled],
   );
 
-  // F - Toggle Fullscreen
+  // T - Text Edit Mode (Preview)
   useHotkeys(
-    'f',
+    't',
     previewShortcuts[2].handler,
     {
       ...previewShortcuts[2].options,
+      enabled,
+      enableOnFormTags: false,
+      preventDefault: true,
+    },
+    [preview.interactionMode, enabled],
+  );
+
+  // F - Toggle Fullscreen
+  useHotkeys(
+    'f',
+    previewShortcuts[3].handler,
+    {
+      ...previewShortcuts[3].options,
       enabled,
       enableOnFormTags: false,
       preventDefault: true,
@@ -63,19 +76,6 @@ export const usePreviewShortcuts = (enabled = true) => {
   // Shift+0 - Zoom to 25%
   useHotkeys(
     'shift+0',
-    previewShortcuts[3].handler,
-    {
-      ...previewShortcuts[3].options,
-      enabled,
-      enableOnFormTags: false,
-      preventDefault: true,
-    },
-    [preview.previewScale, enabled],
-  );
-
-  // Shift+1 - Zoom to 50%
-  useHotkeys(
-    'shift+1',
     previewShortcuts[4].handler,
     {
       ...previewShortcuts[4].options,
@@ -86,12 +86,25 @@ export const usePreviewShortcuts = (enabled = true) => {
     [preview.previewScale, enabled],
   );
 
-  // Shift+F - Zoom to Fit (100%)
+  // Shift+1 - Zoom to 50%
   useHotkeys(
-    'shift+f',
+    'shift+1',
     previewShortcuts[5].handler,
     {
       ...previewShortcuts[5].options,
+      enabled,
+      enableOnFormTags: false,
+      preventDefault: true,
+    },
+    [preview.previewScale, enabled],
+  );
+
+  // Shift+F - Zoom to Fit (100%)
+  useHotkeys(
+    'shift+f',
+    previewShortcuts[6].handler,
+    {
+      ...previewShortcuts[6].options,
       enabled,
       enableOnFormTags: false,
       preventDefault: true,
@@ -102,19 +115,6 @@ export const usePreviewShortcuts = (enabled = true) => {
   // Shift+2 - Zoom to 200%
   useHotkeys(
     'shift+2',
-    previewShortcuts[6].handler,
-    {
-      ...previewShortcuts[6].options,
-      enabled,
-      enableOnFormTags: false,
-      preventDefault: true,
-    },
-    [preview.previewScale, enabled],
-  );
-
-  // Shift+3 - Zoom to 400%
-  useHotkeys(
-    'shift+3',
     previewShortcuts[7].handler,
     {
       ...previewShortcuts[7].options,
@@ -125,9 +125,9 @@ export const usePreviewShortcuts = (enabled = true) => {
     [preview.previewScale, enabled],
   );
 
-  // Ctrl+= - Zoom In
+  // Shift+3 - Zoom to 400%
   useHotkeys(
-    'ctrl+equal',
+    'shift+3',
     previewShortcuts[8].handler,
     {
       ...previewShortcuts[8].options,
@@ -138,9 +138,9 @@ export const usePreviewShortcuts = (enabled = true) => {
     [preview.previewScale, enabled],
   );
 
-  // Ctrl+- - Zoom Out
+  // Ctrl+= - Zoom In
   useHotkeys(
-    'ctrl+minus',
+    'ctrl+equal',
     previewShortcuts[9].handler,
     {
       ...previewShortcuts[9].options,
@@ -151,12 +151,25 @@ export const usePreviewShortcuts = (enabled = true) => {
     [preview.previewScale, enabled],
   );
 
-  // Ctrl+0 - Reset Zoom
+  // Ctrl+- - Zoom Out
   useHotkeys(
-    'ctrl+0',
+    'ctrl+minus',
     previewShortcuts[10].handler,
     {
       ...previewShortcuts[10].options,
+      enabled,
+      enableOnFormTags: false,
+      preventDefault: true,
+    },
+    [preview.previewScale, enabled],
+  );
+
+  // Ctrl+0 - Reset Zoom
+  useHotkeys(
+    'ctrl+0',
+    previewShortcuts[11].handler,
+    {
+      ...previewShortcuts[11].options,
       enabled,
       enableOnFormTags: false,
       preventDefault: true,

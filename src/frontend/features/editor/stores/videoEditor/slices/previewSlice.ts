@@ -9,7 +9,7 @@ export interface PreviewSlice {
   setPreviewScale: (scale: number) => void;
   setPreviewPan: (panX: number, panY: number) => void;
   resetPreviewPan: () => void;
-  setPreviewInteractionMode: (mode: 'select' | 'pan') => void;
+  setPreviewInteractionMode: (mode: 'select' | 'pan' | 'text-edit') => void;
   toggleGrid: () => void;
   toggleSafeZones: () => void;
   setBackgroundColor: (color: string) => void;

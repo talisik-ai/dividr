@@ -24,6 +24,7 @@ export interface TextOverlayProps extends OverlayRenderProps {
   activeTexts: VideoTrack[];
   allTracks: VideoTrack[];
   selectedTrackIds: string[];
+  isTextEditMode?: boolean;
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -48,6 +49,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   activeTexts,
   allTracks,
   selectedTrackIds,
+  isTextEditMode = false,
   previewScale,
   panX,
   panY,
@@ -158,6 +160,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 videoWidth={baseVideoWidth}
                 videoHeight={baseVideoHeight}
                 renderScale={renderScale}
+                isTextEditMode={isTextEditMode}
                 onTransformUpdate={onTransformUpdate}
                 onSelect={onSelect}
                 onTextUpdate={onTextUpdate}
@@ -240,6 +243,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
               videoWidth={baseVideoWidth}
               videoHeight={baseVideoHeight}
               renderScale={renderScale}
+              isTextEditMode={isTextEditMode}
               onTransformUpdate={onTransformUpdate}
               onSelect={onSelect}
               onTextUpdate={onTextUpdate}
@@ -314,6 +318,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
             videoWidth={baseVideoWidth}
             videoHeight={baseVideoHeight}
             renderScale={renderScale}
+            isTextEditMode={isTextEditMode}
             onTransformUpdate={onTransformUpdate}
             onSelect={onSelect}
             onTextUpdate={onTextUpdate}

@@ -22,6 +22,7 @@ export interface SubtitleOverlayProps extends OverlayRenderProps {
   activeSubtitles: VideoTrack[];
   allTracks: VideoTrack[];
   selectedTrackIds: string[];
+  isTextEditMode?: boolean;
   getTextStyleForSubtitle: (style: any, segmentStyle?: any) => any;
   activeStyle: any;
   globalSubtitlePosition: { x: number; y: number };
@@ -44,6 +45,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   activeSubtitles,
   // allTracks is required by interface but not used in this component
   selectedTrackIds,
+  isTextEditMode = false,
   getTextStyleForSubtitle,
   activeStyle,
   globalSubtitlePosition,
@@ -102,6 +104,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
       panY={panY}
       zIndexOverlay={Z_INDEX_SUBTITLE_OVERLAY}
       renderScale={renderScale}
+      isTextEditMode={isTextEditMode}
       onTransformUpdate={(_, transform) => {
         // Pass the first selected subtitle's ID (or first subtitle if none selected)
         const trackId = selectedSubtitle?.id || activeSubtitles[0].id;

@@ -6,7 +6,7 @@ import {
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
 import { cn } from '@/frontend/utils/utils';
-import { Hand, MousePointer2, Redo2, Undo2 } from 'lucide-react';
+import { Hand, MousePointer2, Redo2, Type, Undo2 } from 'lucide-react';
 import React, { useCallback } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditor';
 import { ZoomControls } from './zoomControls';
@@ -70,8 +70,18 @@ export const VideoPlayerControls = React.memo(
       }
     }, [previewScale, setPreviewInteractionMode]);
 
+    const handleTextEditMode = useCallback(() => {
+      // Toggle text edit mode - if already in text edit mode, switch back to select mode
+      if (interactionMode === 'text-edit') {
+        setPreviewInteractionMode('select');
+      } else {
+        setPreviewInteractionMode('text-edit');
+      }
+    }, [interactionMode, setPreviewInteractionMode]);
+
     const isSelectActive = interactionMode === 'select';
     const isPanActive = interactionMode === 'pan';
+    const isTextEditActive = interactionMode === 'text-edit';
     const isPanDisabled = previewScale <= 1;
 
     const handleUndo = useCallback(() => {
@@ -128,6 +138,24 @@ export const VideoPlayerControls = React.memo(
             ) : (
               <>Hand Tool (H) - Pan around zoomed preview</>
             )}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="native"
+              size="icon"
+              onClick={handleTextEditMode}
+              className={cn(
+                'transition-colors',
+                isTextEditActive && 'text-secondary hover:text-secondary/90',
+              )}
+            >
+              <Type />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Text Edit Mode (T) - Click text to edit inline
           </TooltipContent>
         </Tooltip>
         <ZoomControls

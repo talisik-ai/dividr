@@ -15,6 +15,7 @@ interface SubtitleTransformBoundaryProps {
   panY: number;
   zIndexOverlay: number;
   renderScale?: number; // The actual render scale from coordinate system (baseScale)
+  isTextEditMode?: boolean; // Whether text edit mode is active globally
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -49,6 +50,7 @@ export const SubtitleTransformBoundary: React.FC<
   panY,
   zIndexOverlay,
   renderScale,
+  isTextEditMode = false,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
@@ -108,7 +110,8 @@ export const SubtitleTransformBoundary: React.FC<
   // ONLY run this migration once per track to avoid interfering with drag operations
   const normalizedTransform = React.useMemo(() => {
     // Check if coordinates need migration (look like pixel values > 2)
-    const needsMigration = !hasMigratedRef.current &&
+    const needsMigration =
+      !hasMigratedRef.current &&
       (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2);
 
     if (needsMigration) {
@@ -169,6 +172,23 @@ export const SubtitleTransformBoundary: React.FC<
     return () => observer.disconnect();
   }, [children]);
 
+  // Helper to enter edit mode
+  const enterEditMode = useCallback(() => {
+    setIsEditing(true);
+    // Focus the editable element after a brief delay
+    setTimeout(() => {
+      if (editableRef.current) {
+        editableRef.current.focus();
+        // Select all text
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(editableRef.current);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+    }, 10);
+  }, []);
+
   // Handle mouse down on the subtitle element (start dragging)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -180,8 +200,8 @@ export const SubtitleTransformBoundary: React.FC<
         return;
       }
 
-      // Don't start drag if in edit mode
-      if (isEditing) {
+      // Don't start drag if in edit mode or text edit mode is active
+      if (isEditing || isTextEditMode) {
         return;
       }
 
@@ -189,32 +209,45 @@ export const SubtitleTransformBoundary: React.FC<
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
     },
-    [isSelected, track.id, transform, onSelect, isEditing],
+    [isSelected, track.id, transform, onSelect, isEditing, isTextEditMode],
   );
 
-  // Handle double-click for inline editing
+  // Handle single click - enters edit mode when text edit mode is active
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Only handle single clicks in text edit mode
+      if (!isTextEditMode) return;
+
+      e.stopPropagation();
+      e.preventDefault();
+
+      if (!isSelected) {
+        onSelect(track.id);
+        return;
+      }
+
+      // Enter edit mode immediately on single click when in text edit mode
+      enterEditMode();
+    },
+    [isTextEditMode, isSelected, track.id, onSelect, enterEditMode],
+  );
+
+  // Handle double-click for inline editing (when not in text edit mode)
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       if (!isSelected) return;
 
       e.stopPropagation();
       e.preventDefault();
-      setIsEditing(true);
 
-      // Focus the editable element after a brief delay
-      setTimeout(() => {
-        if (editableRef.current) {
-          editableRef.current.focus();
-          // Select all text
-          const selection = window.getSelection();
-          const range = document.createRange();
-          range.selectNodeContents(editableRef.current);
-          selection?.removeAllRanges();
-          selection?.addRange(range);
-        }
-      }, 10);
+      // Don't allow double-click edit when in text edit mode (single click is used instead)
+      if (isTextEditMode) {
+        return;
+      }
+
+      enterEditMode();
     },
-    [isSelected],
+    [isSelected, isTextEditMode, enterEditMode],
   );
 
   // Handle mouse move for dragging
@@ -366,6 +399,7 @@ export const SubtitleTransformBoundary: React.FC<
   // Get cursor style based on state
   const getCursor = () => {
     if (isEditing) return 'text';
+    if (isTextEditMode && isSelected) return 'text'; // Show text cursor when in text edit mode
     if (isDragging) return 'grabbing';
     if (isSelected) return 'grab';
     return 'pointer';
@@ -388,6 +422,7 @@ export const SubtitleTransformBoundary: React.FC<
         WebkitUserSelect: isEditing ? 'text' : 'none',
       }}
       onMouseDown={handleMouseDown}
+      onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
       <div
@@ -438,25 +473,29 @@ export const SubtitleTransformBoundary: React.FC<
 
       {/* Selection Boundary - Rendered separately like TextTransformBoundary */}
       {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
-      {isSelected && !isEditing && containerSize.width > 0 && (
-        <div
-          ref={boundaryRef}
-          className="absolute"
-          style={{
-            left: '50%',
-            top: '50%',
-            transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
-            transformOrigin: 'center center',
-            width: `${containerSize.width}px`,
-            height: `${containerSize.height}px`,
-            border: '2px solid #F45513',
-            zIndex: 10000, // Very high z-index to ensure boundary is always on top and interactive
-            pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
-            cursor: getCursor(), // Show appropriate cursor
-          }}
-          onMouseDown={handleMouseDown}
-        />
-      )}
+      {/* Hide boundary when in text edit mode to prevent dragging */}
+      {isSelected &&
+        !isEditing &&
+        !isTextEditMode &&
+        containerSize.width > 0 && (
+          <div
+            ref={boundaryRef}
+            className="absolute"
+            style={{
+              left: '50%',
+              top: '50%',
+              transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
+              transformOrigin: 'center center',
+              width: `${containerSize.width}px`,
+              height: `${containerSize.height}px`,
+              border: '2px solid #F45513',
+              zIndex: 10000, // Very high z-index to ensure boundary is always on top and interactive
+              pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
+              cursor: getCursor(), // Show appropriate cursor
+            }}
+            onMouseDown={handleMouseDown}
+          />
+        )}
     </div>
   );
 };

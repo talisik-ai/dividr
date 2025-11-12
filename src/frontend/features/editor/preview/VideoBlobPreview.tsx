@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { cn } from '@/frontend/utils/utils';
+import { Type } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { usePreviewShortcuts } from '../stores/videoEditor/hooks/usePreviewShortcuts';
@@ -510,6 +511,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         activeSubtitles={activeSubtitles}
         allTracks={tracks}
         selectedTrackIds={timeline.selectedTrackIds}
+        isTextEditMode={preview.interactionMode === 'text-edit'}
         getTextStyleForSubtitle={getTextStyleForSubtitle}
         activeStyle={textStyle.activeStyle}
         globalSubtitlePosition={textStyle.globalSubtitlePosition}
@@ -537,6 +539,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         activeTexts={activeTexts}
         allTracks={tracks}
         selectedTrackIds={timeline.selectedTrackIds}
+        isTextEditMode={preview.interactionMode === 'text-edit'}
         onTransformUpdate={handleTextTransformUpdate}
         onSelect={handleTextSelect}
         onTextUpdate={handleTextUpdate}
@@ -582,6 +585,19 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         <RotationInfoBadge
           rotation={selectedTextTrack.textTransform?.rotation || 0}
         />
+      )}
+
+      {/* Text Edit Mode Indicator */}
+      {preview.interactionMode === 'text-edit' && (
+        <div
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg shadow-lg pointer-events-none z-[2000] flex items-center gap-2 text-xs"
+          style={{
+            fontWeight: 500,
+          }}
+        >
+          <Type className="size-3" />
+          Text Edit Mode Active - Click text to edit
+        </div>
       )}
 
       {/* Placeholder */}
