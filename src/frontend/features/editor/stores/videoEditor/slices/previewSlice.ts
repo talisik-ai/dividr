@@ -5,7 +5,8 @@ import { DEFAULT_PREVIEW_CONFIG } from '../utils/constants';
 
 export interface PreviewSlice {
   preview: PreviewState;
-  setCanvasSize: (width: number, height: number) => void;
+  setCanvasSize: (width: number, height: number, storeAsOriginal?: boolean) => void;
+  resetCanvasSize: () => void;
   setPreviewScale: (scale: number) => void;
   setPreviewPan: (panX: number, panY: number) => void;
   resetPreviewPan: () => void;
@@ -33,12 +34,43 @@ export const createPreviewSlice: StateCreator<
     isFullscreen: false,
   },
 
-  setCanvasSize: (width, height) => {
-    set((state: any) => ({
-      preview: { ...state.preview, canvasWidth: width, canvasHeight: height },
-    }));
+  setCanvasSize: (width, height, storeAsOriginal = false) => {
+    set((state: any) => {
+      const updates: Partial<PreviewState> = {
+        canvasWidth: width,
+        canvasHeight: height,
+      };
+
+      // Store original dimensions if requested (typically on first video import)
+      // or if original dimensions haven't been set yet
+      if (storeAsOriginal || (!state.preview.originalCanvasWidth && !state.preview.originalCanvasHeight)) {
+        updates.originalCanvasWidth = width;
+        updates.originalCanvasHeight = height;
+      }
+
+      return {
+        preview: { ...state.preview, ...updates },
+      };
+    });
     const state = get() as any;
     state.markUnsavedChanges?.();
+  },
+
+  resetCanvasSize: () => {
+    const state = get() as any;
+    const { originalCanvasWidth, originalCanvasHeight } = state.preview;
+
+    // Only reset if we have original dimensions stored
+    if (originalCanvasWidth && originalCanvasHeight) {
+      set((state: any) => ({
+        preview: {
+          ...state.preview,
+          canvasWidth: originalCanvasWidth,
+          canvasHeight: originalCanvasHeight,
+        },
+      }));
+      state.markUnsavedChanges?.();
+    }
   },
 
   setPreviewScale: (scale) =>
