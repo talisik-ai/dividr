@@ -73,7 +73,7 @@ const DEFAULT_TEXT_STYLE: {
   isUnderline: false,
   textTransform: 'none',
   textAlign: 'center',
-  fontSize: 24,
+  fontSize: 40,
   fillColor: '#FFFFFF',
   strokeColor: '#000000',
   backgroundColor: 'transparent',

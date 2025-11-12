@@ -109,8 +109,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
         const isSelected = selectedTrackIds.includes(track.id);
 
         // Extract the fontSize from appliedStyle and scale it for rendering
-        // appliedStyle.fontSize is like "24px", we need to extract the number and scale it
-        const baseFontSize = parseFloat(appliedStyle.fontSize) || 24;
+        // appliedStyle.fontSize is like "40px", we need to extract the number and scale it
+        const baseFontSize = parseFloat(appliedStyle.fontSize) || 40;
 
         // CRITICAL: Apply the track's scale to the font size for resolution-independent rendering
         // This ensures text is re-rendered at the actual target size, not bitmap-scaled

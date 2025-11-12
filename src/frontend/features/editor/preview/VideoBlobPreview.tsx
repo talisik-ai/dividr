@@ -674,7 +674,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           }}
         >
           <Type className="size-3" />
-          Text Edit Mode Active - Click text to edit
+          Text Tool — Click to edit or add new text
         </div>
       )}
 
