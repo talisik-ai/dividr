@@ -22,8 +22,15 @@ import {
 const FRAME_RATES = [24, 25, 30, 48, 50, 60] as const;
 
 export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
-  const { preview, timeline, tracks, setCanvasSize, setFps, updateTrack, resetCanvasSize } =
-    useVideoEditorStore();
+  const {
+    preview,
+    timeline,
+    tracks,
+    setCanvasSize,
+    setFps,
+    updateTrack,
+    resetCanvasSize,
+  } = useVideoEditorStore();
 
   // Use local state for input fields to prevent reset during typing
   const [customWidth, setCustomWidth] = useState<string>(
@@ -64,7 +71,12 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     // Always sync with canvas dimensions (this is what the user is controlling)
     setCustomWidth(preview.canvasWidth.toString());
     setCustomHeight(preview.canvasHeight.toString());
-  }, [preview.canvasWidth, preview.canvasHeight, isEditingWidth, isEditingHeight]);
+  }, [
+    preview.canvasWidth,
+    preview.canvasHeight,
+    isEditingWidth,
+    isEditingHeight,
+  ]);
 
   // Determine if a preset is active based on selected track dimensions (if available) or canvas dimensions
   const activePreset = useMemo(() => {

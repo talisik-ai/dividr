@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react';
+import React, { useCallback } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
+import { useVideoEditorStore } from '../../stores/videoEditor';
 import { TextTransformBoundary } from '../components/TextTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
@@ -65,6 +66,21 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   onDragStateChange,
 }) => {
   if (activeTexts.length === 0) return null;
+
+  // Get the setPreviewInteractionMode function from the store
+  const setPreviewInteractionMode = useVideoEditorStore(
+    (state) => state.setPreviewInteractionMode,
+  );
+
+  // Handler for when edit mode changes - automatically activate Text Tool
+  const handleEditModeChange = useCallback(
+    (isEditing: boolean) => {
+      if (isEditing) {
+        setPreviewInteractionMode('text-edit');
+      }
+    },
+    [setPreviewInteractionMode],
+  );
 
   // Use the coordinate system's baseScale for consistent rendering
   const renderScale = coordinateSystem.baseScale;
@@ -166,6 +182,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 onTextUpdate={onTextUpdate}
                 onRotationStateChange={onRotationStateChange}
                 onDragStateChange={onDragStateChange}
+                onEditModeChange={handleEditModeChange}
                 appliedStyle={completeStyle}
                 clipContent={true}
                 clipWidth={actualWidth}
@@ -249,6 +266,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
               onTextUpdate={onTextUpdate}
               onRotationStateChange={onRotationStateChange}
               onDragStateChange={onDragStateChange}
+              onEditModeChange={handleEditModeChange}
               appliedStyle={completeStyle}
               clipContent={true}
               clipWidth={actualWidth}
@@ -324,6 +342,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
             onTextUpdate={onTextUpdate}
             onRotationStateChange={onRotationStateChange}
             onDragStateChange={onDragStateChange}
+            onEditModeChange={handleEditModeChange}
             appliedStyle={completeStyle}
             clipContent={true}
             clipWidth={actualWidth}

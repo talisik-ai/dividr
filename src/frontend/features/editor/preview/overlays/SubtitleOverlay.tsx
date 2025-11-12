@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react';
+import React, { useCallback } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
+import { useVideoEditorStore } from '../../stores/videoEditor';
 import { SubtitleTransformBoundary } from '../components/SubtitleTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
@@ -64,6 +65,21 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
 }) => {
   if (activeSubtitles.length === 0) return null;
 
+  // Get the setPreviewInteractionMode function from the store
+  const setPreviewInteractionMode = useVideoEditorStore(
+    (state) => state.setPreviewInteractionMode,
+  );
+
+  // Handler for when edit mode changes - automatically activate Text Tool
+  const handleEditModeChange = useCallback(
+    (isEditing: boolean) => {
+      if (isEditing) {
+        setPreviewInteractionMode('text-edit');
+      }
+    },
+    [setPreviewInteractionMode],
+  );
+
   // Use the coordinate system's baseScale for consistent rendering
   const renderScale = coordinateSystem.baseScale;
 
@@ -122,6 +138,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
           : undefined
       }
       onDragStateChange={onDragStateChange}
+      onEditModeChange={handleEditModeChange}
     >
       {activeSubtitles.map((track) => {
         // Get style for this specific segment (merges global + per-segment)

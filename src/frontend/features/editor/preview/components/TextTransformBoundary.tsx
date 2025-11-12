@@ -29,6 +29,7 @@ interface TextTransformBoundaryProps {
     isDragging: boolean,
     position?: { x: number; y: number; width: number; height: number },
   ) => void;
+  onEditModeChange?: (isEditing: boolean) => void; // Callback when edit mode changes
   children: React.ReactNode;
   appliedStyle?: React.CSSProperties;
   clipContent?: boolean; // Whether to clip content to canvas bounds
@@ -62,6 +63,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   onTextUpdate,
   onRotationStateChange,
   onDragStateChange,
+  onEditModeChange,
   children,
   appliedStyle,
   clipContent = false,
@@ -77,7 +79,10 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const contentRef = useRef<HTMLDivElement>(null);
   const editableRef = useRef<HTMLDivElement>(null);
   const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
+  const dragDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Delay before starting drag to allow double-click
+  const lastClickTimeRef = useRef<number>(0); // Track last click time for double-click detection
   const [isDragging, setIsDragging] = useState(false);
+  const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
   const [isScaling, setIsScaling] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -198,44 +203,57 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   };
 
   // Helper to enter edit mode
-  const enterEditMode = useCallback(() => {
-    setIsEditing(true);
-    // Focus the editable div after a short delay to ensure it's rendered
-    setTimeout(() => {
-      if (editableRef.current) {
-        editableRef.current.focus();
-        // Select all text
-        const range = document.createRange();
-        range.selectNodeContents(editableRef.current);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-      }
-    }, 50);
-  }, []);
+  const enterEditMode = useCallback(
+    (selectAllText = false) => {
+      setIsEditing(true);
+      // Notify parent that we're entering edit mode
+      onEditModeChange?.(true);
+      // Focus the editable div after a short delay to ensure it's rendered
+      setTimeout(() => {
+        if (editableRef.current) {
+          editableRef.current.focus();
+          // Only select all text if explicitly requested (e.g., from Text Tool mode single-click)
+          if (selectAllText) {
+            const range = document.createRange();
+            range.selectNodeContents(editableRef.current);
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          }
+          // Otherwise, let the browser's natural selection happen (word selection on double-click)
+        }
+      }, 10); // Reduced delay for snappier response
+    },
+    [onEditModeChange],
+  );
 
-  // Handle double-click to enter edit mode (when not in text edit mode)
+  // Handle double-click to enter edit mode (works in both Text Tool and Selection Tool modes)
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
+
+      // Cancel any pending drag operation
+      if (dragDelayTimeoutRef.current) {
+        clearTimeout(dragDelayTimeoutRef.current);
+        dragDelayTimeoutRef.current = null;
+      }
+      setIsPendingDrag(false);
+      setIsDragging(false);
+      setDragStart(null);
 
       if (!isSelected) {
         onSelect(track.id);
         return;
       }
 
-      // Don't allow double-click edit when in text edit mode (single click is used instead)
-      if (isTextEditMode) {
-        return;
-      }
-
+      // Always enter edit mode on double-click, regardless of mode
       enterEditMode();
     },
-    [isSelected, track.id, onSelect, isTextEditMode, enterEditMode],
+    [isSelected, track.id, onSelect, enterEditMode],
   );
 
-  // Handle single click - enters edit mode when text edit mode is active
+  // Handle single click - enters edit mode ONLY when text edit mode is active
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       // Only handle single clicks in text edit mode
@@ -249,8 +267,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         return;
       }
 
-      // Enter edit mode immediately on single click when in text edit mode
-      enterEditMode();
+      // Enter edit mode and select all text on single click in Text Tool mode
+      enterEditMode(true);
     },
     [isTextEditMode, isSelected, track.id, onSelect, enterEditMode],
   );
@@ -262,18 +280,25 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       onTextUpdate(track.id, newText);
     }
     setIsEditing(false);
-  }, [track.id, onTextUpdate]);
+    // Notify parent that we're exiting edit mode
+    onEditModeChange?.(false);
+  }, [track.id, onTextUpdate, onEditModeChange]);
 
   // Handle Enter key to save and exit edit mode
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      editableRef.current?.blur();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setIsEditing(false);
-    }
-  }, []);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        editableRef.current?.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsEditing(false);
+        // Notify parent that we're exiting edit mode
+        onEditModeChange?.(false);
+      }
+    },
+    [onEditModeChange],
+  );
 
   // Track content size changes to update boundary dimensions
   // CRITICAL: We observe contentRef (the actual text), NOT containerRef (the transform wrapper)
@@ -354,32 +379,56 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     effectiveRenderScale,
   ]);
 
-  // Handle mouse down on the text element (start dragging)
+  // Handle mouse down on the text element (start dragging with delay to allow double-click)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // Don't prevent default - let double-click through
       e.stopPropagation();
-      e.preventDefault();
 
       if (!isSelected) {
         onSelect(track.id);
         return;
       }
 
-      // Don't start drag if clicking on a handle, in edit mode, or when text edit mode is active
+      // Don't start drag if clicking on a handle or in edit mode
       const target = e.target as HTMLElement;
-      if (
-        target.classList.contains('transform-handle') ||
-        isEditing ||
-        isTextEditMode
-      ) {
+      if (target.classList.contains('transform-handle') || isEditing) {
         return;
       }
 
-      setIsDragging(true);
+      // Check if this is a double-click (second click within 300ms)
+      const now = Date.now();
+      const timeSinceLastClick = now - lastClickTimeRef.current;
+      lastClickTimeRef.current = now;
+
+      // If this is a potential double-click, don't start dragging
+      if (timeSinceLastClick < 300) {
+        // This is a double-click, cancel any pending drag
+        if (dragDelayTimeoutRef.current) {
+          clearTimeout(dragDelayTimeoutRef.current);
+          dragDelayTimeoutRef.current = null;
+        }
+        setIsPendingDrag(false);
+        setIsDragging(false);
+        setDragStart(null);
+
+        // Enter edit mode directly since we detected double-click
+        enterEditMode();
+        return;
+      }
+
+      // Set up pending drag state immediately so we can track mouse movement
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
+      setIsPendingDrag(true);
+
+      // Start actual drag after a short delay (allows double-click to interrupt)
+      dragDelayTimeoutRef.current = setTimeout(() => {
+        setIsDragging(true);
+        setIsPendingDrag(false);
+      }, 200);
     },
-    [isSelected, track.id, transform, onSelect, isEditing, isTextEditMode],
+    [isSelected, track.id, transform, onSelect, isEditing],
   );
 
   // Handle mouse down on scale handles
@@ -414,12 +463,29 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
   // Handle mouse move for all interactions
   useEffect(() => {
-    if (!isDragging && !isScaling && !isRotating) return;
+    if (!isDragging && !isScaling && !isRotating && !isPendingDrag) return;
     if (!dragStart || !initialTransform) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - dragStart.x;
       const deltaY = e.clientY - dragStart.y;
+
+      // If drag is pending and user moves mouse significantly, start drag immediately
+      if (isPendingDrag) {
+        const movementThreshold = 5; // pixels
+        if (
+          Math.abs(deltaX) > movementThreshold ||
+          Math.abs(deltaY) > movementThreshold
+        ) {
+          if (dragDelayTimeoutRef.current) {
+            clearTimeout(dragDelayTimeoutRef.current);
+            dragDelayTimeoutRef.current = null;
+          }
+          setIsDragging(true);
+          setIsPendingDrag(false);
+        }
+        return; // Don't process drag until it's confirmed
+      }
 
       if (isDragging) {
         // Convert screen delta to video coordinate delta
@@ -613,6 +679,12 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     };
 
     const handleMouseUp = () => {
+      // Clear any pending drag timeout
+      if (dragDelayTimeoutRef.current) {
+        clearTimeout(dragDelayTimeoutRef.current);
+        dragDelayTimeoutRef.current = null;
+      }
+
       if (isRotating) {
         onRotationStateChange?.(false);
       }
@@ -620,6 +692,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         onDragStateChange?.(false);
       }
       setIsDragging(false);
+      setIsPendingDrag(false);
       setIsScaling(false);
       setIsRotating(false);
       setActiveHandle(null);
@@ -636,6 +709,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     };
   }, [
     isDragging,
+    isPendingDrag,
     isScaling,
     isRotating,
     dragStart,
@@ -652,6 +726,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     transform.scale,
     videoWidth,
     videoHeight,
+    disableScaleTransform,
   ]);
 
   // Get cursor style based on interaction mode and active handle
@@ -706,8 +781,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         cursor: getCursorStyle(),
         pointerEvents: 'auto',
         zIndex: isSelected ? 1000 : 1,
-        userSelect: isEditing ? 'text' : 'none',
-        WebkitUserSelect: isEditing ? 'text' : 'none',
+        userSelect: isEditing ? 'text' : 'auto',
+        WebkitUserSelect: isEditing ? 'text' : 'auto',
       }}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
@@ -718,6 +793,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         ref={contentRef}
         className="relative"
         style={{ pointerEvents: 'auto' }}
+        onDoubleClick={handleDoubleClick}
       >
         {isEditing ? (
           <div
@@ -771,124 +847,119 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
       {/* Selection Boundary - Rendered separately to avoid scale transform */}
       {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
-      {/* Hide transform handles when in text edit mode to prevent dragging/scaling/rotating */}
-      {isSelected &&
-        !isEditing &&
-        !isTextEditMode &&
-        containerSize.width > 0 && (
-          <div
-            ref={boundaryRef}
-            className="absolute"
-            style={{
-              left: '50%',
-              top: '50%',
-              transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
-              transformOrigin: 'center center',
-              // When disableScaleTransform is true, content is already scaled, so don't multiply again
-              width: disableScaleTransform
-                ? `${containerSize.width}px`
-                : `${containerSize.width * transform.scale}px`,
-              height: disableScaleTransform
-                ? `${containerSize.height}px`
-                : `${containerSize.height * transform.scale}px`,
-              border: `${2 * handleScale}px solid #F45513`,
-              borderRadius: `${4 * handleScale}px`,
-              zIndex: 10000, // Very high z-index to ensure handles are always on top and interactive
-              pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
-              cursor: getCursorStyle(), // Show appropriate cursor
-            }}
-            onMouseDown={handleMouseDown}
-          >
-            {/* Corner Handles */}
-            {['tl', 'tr', 'bl', 'br'].map((handle) => {
-              const getCursorForHandle = (h: string) => {
-                if (h === 'tl' || h === 'br') return 'nwse-resize';
-                if (h === 'tr' || h === 'bl') return 'nesw-resize';
-                return 'nwse-resize';
-              };
+      {/* Hide transform handles only when actively editing text, not when text edit mode is active */}
+      {isSelected && !isEditing && containerSize.width > 0 && (
+        <div
+          ref={boundaryRef}
+          className="absolute"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
+            transformOrigin: 'center center',
+            // When disableScaleTransform is true, content is already scaled, so don't multiply again
+            width: disableScaleTransform
+              ? `${containerSize.width}px`
+              : `${containerSize.width * transform.scale}px`,
+            height: disableScaleTransform
+              ? `${containerSize.height}px`
+              : `${containerSize.height * transform.scale}px`,
+            border: `${2 * handleScale}px solid #F45513`,
+            borderRadius: `${4 * handleScale}px`,
+            zIndex: 10000, // Very high z-index to ensure handles are always on top and interactive
+            pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
+            cursor: getCursorStyle(), // Show appropriate cursor
+          }}
+          onMouseDown={handleMouseDown}
+        >
+          {/* Corner Handles */}
+          {['tl', 'tr', 'bl', 'br'].map((handle) => {
+            const getCursorForHandle = (h: string) => {
+              if (h === 'tl' || h === 'br') return 'nwse-resize';
+              if (h === 'tr' || h === 'bl') return 'nesw-resize';
+              return 'nwse-resize';
+            };
 
-              return (
-                <div
-                  key={handle}
-                  className="transform-handle absolute rounded-full pointer-events-auto hover:scale-125 transition-transform bg-white dark:bg-primary"
-                  style={{
-                    width: `${HANDLE_SIZE * handleScale}px`,
-                    height: `${HANDLE_SIZE * handleScale}px`,
-                    cursor: getCursorForHandle(handle),
-                    ...(handle === 'tl' && {
-                      top: `-${HANDLE_OFFSET * handleScale}px`,
-                      left: `-${HANDLE_OFFSET * handleScale}px`,
-                    }),
-                    ...(handle === 'tr' && {
-                      top: `-${HANDLE_OFFSET * handleScale}px`,
-                      right: `-${HANDLE_OFFSET * handleScale}px`,
-                    }),
-                    ...(handle === 'bl' && {
-                      bottom: `-${HANDLE_OFFSET * handleScale}px`,
-                      left: `-${HANDLE_OFFSET * handleScale}px`,
-                    }),
-                    ...(handle === 'br' && {
-                      bottom: `-${HANDLE_OFFSET * handleScale}px`,
-                      right: `-${HANDLE_OFFSET * handleScale}px`,
-                    }),
-                  }}
-                  onMouseDown={(e) =>
-                    handleScaleMouseDown(e, handle as HandleType)
-                  }
-                />
-              );
-            })}
-
-            {/* Edge Handles - Left and Right only (as partial height lines) */}
-            {['r', 'l'].map((handle) => (
+            return (
               <div
                 key={handle}
-                className="transform-handle absolute pointer-events-auto hover:opacity-80 transition-opacity"
+                className="transform-handle absolute rounded-full pointer-events-auto hover:scale-125 transition-transform bg-white dark:bg-primary"
                 style={{
-                  width: `${5 * handleScale}px`,
-                  height: '40%',
-                  backgroundColor: 'white',
-                  borderRadius: `${999 * handleScale}px`,
-                  cursor: 'ew-resize',
-                  ...(handle === 'r' && {
-                    right: `-${3 * handleScale}px`,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
+                  width: `${HANDLE_SIZE * handleScale}px`,
+                  height: `${HANDLE_SIZE * handleScale}px`,
+                  cursor: getCursorForHandle(handle),
+                  ...(handle === 'tl' && {
+                    top: `-${HANDLE_OFFSET * handleScale}px`,
+                    left: `-${HANDLE_OFFSET * handleScale}px`,
                   }),
-                  ...(handle === 'l' && {
-                    left: `-${3 * handleScale}px`,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
+                  ...(handle === 'tr' && {
+                    top: `-${HANDLE_OFFSET * handleScale}px`,
+                    right: `-${HANDLE_OFFSET * handleScale}px`,
+                  }),
+                  ...(handle === 'bl' && {
+                    bottom: `-${HANDLE_OFFSET * handleScale}px`,
+                    left: `-${HANDLE_OFFSET * handleScale}px`,
+                  }),
+                  ...(handle === 'br' && {
+                    bottom: `-${HANDLE_OFFSET * handleScale}px`,
+                    right: `-${HANDLE_OFFSET * handleScale}px`,
                   }),
                 }}
                 onMouseDown={(e) =>
                   handleScaleMouseDown(e, handle as HandleType)
                 }
               />
-            ))}
+            );
+          })}
 
-            {/* Rotation Handle - Bottom with RefreshCw icon */}
+          {/* Edge Handles - Left and Right only (as partial height lines) */}
+          {['r', 'l'].map((handle) => (
             <div
-              className="transform-handle absolute pointer-events-auto cursor-grab hover:scale-110 transition-transform flex items-center justify-center"
+              key={handle}
+              className="transform-handle absolute pointer-events-auto hover:opacity-80 transition-opacity"
               style={{
-                width: `${20 * handleScale}px`,
-                height: `${20 * handleScale}px`,
-                bottom: `-${ROTATION_HANDLE_DISTANCE * handleScale}px`,
-                left: '50%',
-                transform: `translateX(-50%)`,
-                backgroundColor: '#F45513',
-                borderRadius: '50%',
+                width: `${5 * handleScale}px`,
+                height: '40%',
+                backgroundColor: 'white',
+                borderRadius: `${999 * handleScale}px`,
+                cursor: 'ew-resize',
+                ...(handle === 'r' && {
+                  right: `-${3 * handleScale}px`,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                }),
+                ...(handle === 'l' && {
+                  left: `-${3 * handleScale}px`,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                }),
               }}
-              onMouseDown={handleRotateMouseDown}
-            >
-              <RefreshCw
-                size={12 * handleScale}
-                color="white"
-                strokeWidth={2.5}
-              />
-            </div>
+              onMouseDown={(e) => handleScaleMouseDown(e, handle as HandleType)}
+            />
+          ))}
+
+          {/* Rotation Handle - Bottom with RefreshCw icon */}
+          <div
+            className="transform-handle absolute pointer-events-auto cursor-grab hover:scale-110 transition-transform flex items-center justify-center"
+            style={{
+              width: `${20 * handleScale}px`,
+              height: `${20 * handleScale}px`,
+              bottom: `-${ROTATION_HANDLE_DISTANCE * handleScale}px`,
+              left: '50%',
+              transform: `translateX(-50%)`,
+              backgroundColor: '#F45513',
+              borderRadius: '50%',
+            }}
+            onMouseDown={handleRotateMouseDown}
+          >
+            <RefreshCw
+              size={12 * handleScale}
+              color="white"
+              strokeWidth={2.5}
+            />
           </div>
-        )}
+        </div>
+      )}
     </>
   );
 };
