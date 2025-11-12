@@ -8,6 +8,7 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../../editor/stores/videoEditor/index';
+import { detectAspectRatio } from '../../editor/stores/videoEditor/utils/aspectRatioHelpers';
 import { generateSubtitleContent } from '../utils/subtitleUtils';
 
 export const useExportJob = () => {
@@ -18,6 +19,7 @@ export const useExportJob = () => {
   const getTextStyleForSubtitle = useVideoEditorStore(
     (state) => state.getTextStyleForSubtitle,
   );
+  const preview = useVideoEditorStore((state) => state.preview);
 
   const createFFmpegJob = useCallback(
     (
@@ -80,12 +82,25 @@ export const useExportJob = () => {
         })),
       );
 
+      // Get custom canvas dimensions (user-adjusted dimensions from preview)
+      // These reflect aspect ratio changes or free transform scaling applied in the preview
+      const customDimensions = getCustomDimensions(
+        preview.canvasWidth,
+        preview.canvasHeight,
+        videoTracks,
+      );
+
+      console.log(
+        `📐 Custom canvas dimensions: ${customDimensions.width}x${customDimensions.height}`,
+      );
+
       // Process linked tracks
       const { processedTracks, videoDimensions } = processLinkedTracks(
         videoTracks,
         audioTracks,
         imageTracks,
         mediaLibrary,
+        customDimensions, // Pass custom dimensions to use instead of track dimensions
       );
 
       // Sort by timeline position
@@ -120,15 +135,32 @@ export const useExportJob = () => {
         `📍 Export timeline starts at frame ${timelineStartFrame} (${(timelineStartFrame / timelineFps).toFixed(3)}s)`,
       );
 
-      // Determine the target aspect ratio from the first video track
+      // Determine the target aspect ratio
+      // Priority 1: Detect from custom canvas dimensions (user-set aspect ratio)
+      // Priority 2: Use aspect ratio from first video track (original source aspect ratio)
       let targetAspectRatio: string | undefined = undefined;
-      for (const track of videoTracks) {
-        if (track.detectedAspectRatioLabel) {
-          targetAspectRatio = track.detectedAspectRatioLabel;
-          console.log(
-            `📐 Using aspect ratio from first video track: ${targetAspectRatio}`,
-          );
-          break;
+
+      // Try to detect aspect ratio from custom canvas dimensions first
+      const customAspectRatio = detectAspectRatio(
+        customDimensions.width,
+        customDimensions.height,
+      );
+
+      if (customAspectRatio?.label) {
+        targetAspectRatio = customAspectRatio.label;
+        console.log(
+          `📐 Using aspect ratio from custom canvas dimensions: ${targetAspectRatio} (${customDimensions.width}x${customDimensions.height})`,
+        );
+      } else {
+        // Fallback to video track aspect ratio
+        for (const track of videoTracks) {
+          if (track.detectedAspectRatioLabel) {
+            targetAspectRatio = track.detectedAspectRatioLabel;
+            console.log(
+              `📐 Using aspect ratio from first video track: ${targetAspectRatio}`,
+            );
+            break;
+          }
         }
       }
 
@@ -183,11 +215,63 @@ export const useExportJob = () => {
         // textClips and textClipsContent removed - now bundled with subtitles
       };
     },
-    [tracks, mediaLibrary, timelineFps, textStyle, getTextStyleForSubtitle],
+    [
+      tracks,
+      mediaLibrary,
+      timelineFps,
+      textStyle,
+      getTextStyleForSubtitle,
+      preview,
+    ],
   );
 
   return { createFFmpegJob };
 };
+
+/**
+ * Get custom dimensions with validation and fallback
+ * Uses custom canvas dimensions if valid, otherwise falls back to original track dimensions
+ */
+function getCustomDimensions(
+  canvasWidth: number,
+  canvasHeight: number,
+  videoTracks: VideoTrack[],
+): { width: number; height: number } {
+  // Validate custom canvas dimensions
+  const isValidCustomDimensions =
+    canvasWidth > 0 &&
+    canvasHeight > 0 &&
+    !isNaN(canvasWidth) &&
+    !isNaN(canvasHeight) &&
+    isFinite(canvasWidth) &&
+    isFinite(canvasHeight);
+
+  if (isValidCustomDimensions) {
+    console.log(
+      `✅ Using custom canvas dimensions: ${canvasWidth}x${canvasHeight}`,
+    );
+    return { width: canvasWidth, height: canvasHeight };
+  }
+
+  // Fallback to original track dimensions
+  console.warn(
+    `⚠️ Custom dimensions invalid (${canvasWidth}x${canvasHeight}), falling back to track dimensions`,
+  );
+
+  // Find first visible video track with valid dimensions
+  for (const track of videoTracks) {
+    if (track.visible && track.width && track.height) {
+      console.log(
+        `📐 Fallback: Using track dimensions from "${track.name}": ${track.width}x${track.height}`,
+      );
+      return { width: track.width, height: track.height };
+    }
+  }
+
+  // Final fallback to default dimensions
+  console.warn(`⚠️ No valid track dimensions found, using default: 1920x1080`);
+  return { width: 1920, height: 1080 };
+}
 
 /**
  * Calculate final video dimensions after aspect ratio conversion
@@ -258,29 +342,23 @@ function processLinkedTracks(
     tempFilePath?: string;
     extractedAudio?: { audioPath: string };
   }[],
+  customDimensions: { width: number; height: number },
 ) {
   const processedTracks: VideoTrack[] = [];
   const processedTrackIds = new Set<string>();
 
-  let videoWidth = 1920;
-  let videoHeight = 1080;
-  let dimensionsSet = false; // Track whether we've already extracted dimensions
+  // Use custom dimensions (from canvas/preview) instead of track dimensions
+  // This ensures exported videos match what the user sees in the preview
+  const videoWidth = customDimensions.width;
+  const videoHeight = customDimensions.height;
+
+  console.log(
+    `📐 Using custom dimensions for export: ${videoWidth}x${videoHeight}`,
+  );
 
   // Combine linked video/audio tracks
   for (const videoTrack of videoTracks) {
     if (processedTrackIds.has(videoTrack.id)) continue;
-
-    // Extract dimensions from first visible video track
-    if (videoTrack.visible && !dimensionsSet) {
-      if (videoTrack.width && videoTrack.height) {
-        videoWidth = videoTrack.width;
-        videoHeight = videoTrack.height;
-        dimensionsSet = true;
-        console.log(
-          `📐 Using video dimensions from track "${videoTrack.name}": ${videoWidth}x${videoHeight}`,
-        );
-      }
-    }
 
     // Process video and audio independently - video tracks are added as video-only
     // Audio tracks (whether linked or not) will be added separately below
