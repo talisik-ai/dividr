@@ -125,7 +125,9 @@ export const useExportJob = () => {
       for (const track of videoTracks) {
         if (track.detectedAspectRatioLabel) {
           targetAspectRatio = track.detectedAspectRatioLabel;
-          console.log(`📐 Using aspect ratio from first video track: ${targetAspectRatio}`);
+          console.log(
+            `📐 Using aspect ratio from first video track: ${targetAspectRatio}`,
+          );
           break;
         }
       }
@@ -136,11 +138,11 @@ export const useExportJob = () => {
         videoDimensions,
         targetAspectRatio,
       );
-      
+
       console.log(
         `📐 Video dimensions: source=${videoDimensions.width}x${videoDimensions.height}, ` +
-        `final=${finalVideoDimensions.width}x${finalVideoDimensions.height} ` +
-        `(aspect ratio: ${targetAspectRatio || 'none'})`
+          `final=${finalVideoDimensions.width}x${finalVideoDimensions.height} ` +
+          `(aspect ratio: ${targetAspectRatio || 'none'})`,
       );
 
       // Generate subtitle content (now includes text clips bundled together)
@@ -205,7 +207,7 @@ function calculateFinalDimensions(
     console.warn(`Invalid aspect ratio format: ${targetAspectRatio}`);
     return sourceDimensions;
   }
-  
+
   const targetRatio = parseFloat(parts[0]) / parseFloat(parts[1]);
   const sourceRatio = sourceDimensions.width / sourceDimensions.height;
 
@@ -217,11 +219,14 @@ function calculateFinalDimensions(
 
   // Calculate final dimensions after scale+crop
   // Universal strategy: Always preserve the SMALLER source dimension
-  const smallerDimension = Math.min(sourceDimensions.width, sourceDimensions.height);
-  
+  const smallerDimension = Math.min(
+    sourceDimensions.width,
+    sourceDimensions.height,
+  );
+
   let cropWidth: number;
   let cropHeight: number;
-  
+
   if (targetRatio < 1) {
     // Portrait target (width < height) - smaller dimension becomes final width
     cropWidth = smallerDimension;
@@ -231,9 +236,9 @@ function calculateFinalDimensions(
     cropHeight = smallerDimension;
     cropWidth = Math.round(cropHeight * targetRatio);
   }
-  
+
   console.log(
-    `📐 Calculated final dimensions: ${cropWidth}x${cropHeight} from ${sourceDimensions.width}x${sourceDimensions.height} (ratio ${sourceRatio.toFixed(3)} → ${targetRatio.toFixed(3)})`
+    `📐 Calculated final dimensions: ${cropWidth}x${cropHeight} from ${sourceDimensions.width}x${sourceDimensions.height} (ratio ${sourceRatio.toFixed(3)} → ${targetRatio.toFixed(3)})`,
   );
   return { width: cropWidth, height: cropHeight };
 }
@@ -373,6 +378,8 @@ function convertTracksToFFmpegInputs(
       height: track.height,
       aspectRatio: track.detectedAspectRatioLabel,
       detectedAspectRatioLabel: track.detectedAspectRatioLabel,
+      sourceFps: track.sourceFps, // Original FPS from source media
+      effectiveFps: track.effectiveFps, // User-set FPS for this track
     };
 
     // Add image transform for image tracks

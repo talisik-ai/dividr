@@ -17,6 +17,8 @@ export interface VideoTrack {
   height?: number;
   aspectRatio?: number; // Calculated aspect ratio (width / height)
   detectedAspectRatioLabel?: string; // Human-readable label (e.g., '16:9', '9:16', '1:1')
+  sourceFps?: number; // Original FPS extracted from the source video file
+  effectiveFps?: number; // User-set FPS for this track (used for export interpretation only)
   volume?: number;
   visible: boolean;
   locked: boolean;
