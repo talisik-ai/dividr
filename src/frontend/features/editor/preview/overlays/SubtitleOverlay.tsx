@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback } from 'react';
-import { VideoTrack } from '../../stores/videoEditor/index';
 import { useVideoEditorStore } from '../../stores/videoEditor';
+import { VideoTrack } from '../../stores/videoEditor/index';
 import { SubtitleTransformBoundary } from '../components/SubtitleTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
@@ -148,7 +148,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
         );
 
         // Extract the fontSize from appliedStyle and scale it for rendering
-        const baseFontSize = parseFloat(appliedStyle.fontSize) || 24;
+        const baseFontSize = parseFloat(appliedStyle.fontSize) || 40;
         const responsiveFontSize = baseFontSize * renderScale;
 
         return (

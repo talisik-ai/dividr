@@ -55,7 +55,7 @@ const DEFAULT_GLOBAL_CONTROLS = {
   isUnderline: false,
   textTransform: 'none' as const,
   textAlign: 'center' as const,
-  fontSize: 24,
+  fontSize: 40,
   fillColor: '#FFFFFF',
   strokeColor: '#000000',
   backgroundColor: 'rgba(0, 0, 0, 0.0)',

@@ -729,6 +729,8 @@ export const createTracksSlice: StateCreator<
       width: mediaItem.metadata?.width,
       aspectRatio,
       detectedAspectRatioLabel: aspectRatioLabel,
+      sourceFps: mediaItem.metadata?.fps, // Store original FPS from media file
+      effectiveFps: mediaItem.metadata?.fps || state.timeline.fps, // Initialize to source FPS or timeline FPS
       duration,
       startFrame,
       endFrame: startFrame + duration,

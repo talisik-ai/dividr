@@ -63,7 +63,7 @@ export function getTextStyleForTextClip(track: VideoTrack): TextStyleResult {
     fontStyle,
     textTransform: style.textTransform || 'none',
     textAlign: style.textAlign || 'center',
-    fontSize: `${style.fontSize || 24}px`,
+    fontSize: `${style.fontSize || 40}px`,
     color: style.fillColor || '#FFFFFF',
     backgroundColor: style.backgroundColor || 'transparent',
     textDecoration: style.isUnderline ? 'underline' : 'none',

@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback } from 'react';
-import { VideoTrack } from '../../stores/videoEditor/index';
-import { useVideoEditorStore } from '../../stores/videoEditor';
+import { useVideoEditorStore, VideoTrack } from '../../stores/videoEditor';
 import { TextTransformBoundary } from '../components/TextTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
@@ -44,6 +43,8 @@ export interface TextOverlayProps extends OverlayRenderProps {
     isDragging: boolean,
     position?: { x: number; y: number; width: number; height: number },
   ) => void;
+  pendingEditTextId?: string | null;
+  onEditStarted?: () => void;
 }
 
 export const TextOverlay: React.FC<TextOverlayProps> = ({
@@ -64,6 +65,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   onTextUpdate,
   onRotationStateChange,
   onDragStateChange,
+  pendingEditTextId,
+  onEditStarted,
 }) => {
   if (activeTexts.length === 0) return null;
 
@@ -106,8 +109,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
         const isSelected = selectedTrackIds.includes(track.id);
 
         // Extract the fontSize from appliedStyle and scale it for rendering
-        // appliedStyle.fontSize is like "24px", we need to extract the number and scale it
-        const baseFontSize = parseFloat(appliedStyle.fontSize) || 24;
+        // appliedStyle.fontSize is like "40px", we need to extract the number and scale it
+        const baseFontSize = parseFloat(appliedStyle.fontSize) || 40;
 
         // CRITICAL: Apply the track's scale to the font size for resolution-independent rendering
         // This ensures text is re-rendered at the actual target size, not bitmap-scaled
@@ -188,6 +191,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 clipWidth={actualWidth}
                 clipHeight={actualHeight}
                 disableScaleTransform={true}
+                autoEnterEditMode={pendingEditTextId === track.id}
+                onEditStarted={onEditStarted}
               >
                 <div
                   style={{
@@ -272,6 +277,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
               clipWidth={actualWidth}
               clipHeight={actualHeight}
               disableScaleTransform={true}
+              autoEnterEditMode={pendingEditTextId === track.id}
+              onEditStarted={onEditStarted}
             >
               <div
                 style={{
@@ -348,6 +355,8 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
             clipWidth={actualWidth}
             clipHeight={actualHeight}
             disableScaleTransform={true}
+            autoEnterEditMode={pendingEditTextId === track.id}
+            onEditStarted={onEditStarted}
           >
             <div style={completeStyle}>{track.textContent}</div>
           </TextTransformBoundary>

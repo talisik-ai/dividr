@@ -30,6 +30,8 @@ interface TextTransformBoundaryProps {
     position?: { x: number; y: number; width: number; height: number },
   ) => void;
   onEditModeChange?: (isEditing: boolean) => void; // Callback when edit mode changes
+  autoEnterEditMode?: boolean; // Whether to automatically enter edit mode on mount
+  onEditStarted?: () => void; // Callback when auto-edit mode is triggered
   children: React.ReactNode;
   appliedStyle?: React.CSSProperties;
   clipContent?: boolean; // Whether to clip content to canvas bounds
@@ -64,6 +66,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   onRotationStateChange,
   onDragStateChange,
   onEditModeChange,
+  autoEnterEditMode = false,
+  onEditStarted,
   children,
   appliedStyle,
   clipContent = false,
@@ -226,6 +230,19 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     },
     [onEditModeChange],
   );
+
+  // Auto-enter edit mode when requested (for newly created text)
+  useEffect(() => {
+    if (autoEnterEditMode && isSelected && !isEditing) {
+      // Small delay to ensure the component is fully rendered
+      const timer = setTimeout(() => {
+        enterEditMode(true); // Select all text so user can type to replace
+        onEditStarted?.(); // Notify parent that edit mode has started
+      }, 50);
+
+      return () => clearTimeout(timer);
+    }
+  }, [autoEnterEditMode, isSelected, isEditing, enterEditMode, onEditStarted]);
 
   // Handle double-click to enter edit mode (works in both Text Tool and Selection Tool modes)
   const handleDoubleClick = useCallback(

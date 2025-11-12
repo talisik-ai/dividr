@@ -101,7 +101,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       isUnderline: false,
       textTransform: 'none',
       textAlign: 'center',
-      fontSize: 24,
+      fontSize: 40,
       fillColor: '#FFFFFF',
       strokeColor: '#000000',
       backgroundColor: 'rgba(0, 0, 0, 0)',

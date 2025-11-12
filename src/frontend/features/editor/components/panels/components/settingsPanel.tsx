@@ -18,6 +18,7 @@ import {
   ASPECT_RATIO_PRESETS,
   getAspectRatioDisplayLabel,
 } from '../../../stores/videoEditor/utils/aspectRatioHelpers';
+import { FpsWarningDialog } from '../../dialogs/fpsWarningDialog';
 
 const FRAME_RATES = [24, 25, 30, 48, 50, 60] as const;
 
@@ -44,6 +45,10 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const [isEditingWidth, setIsEditingWidth] = useState(false);
   const [isEditingHeight, setIsEditingHeight] = useState(false);
 
+  // FPS warning dialog state
+  const [showFpsWarning, setShowFpsWarning] = useState(false);
+  const [pendingFps, setPendingFps] = useState<number | null>(null);
+
   // Get the first selected video or image track
   const selectedTrack = useMemo(() => {
     const selectedTrackIds = timeline.selectedTrackIds;
@@ -58,6 +63,16 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
       ) || null
     );
   }, [tracks, timeline.selectedTrackIds]);
+
+  // Detect the source FPS from video tracks
+  const sourceFps = useMemo(() => {
+    const videoTracks = tracks.filter((track) => track.type === 'video');
+    if (videoTracks.length === 0) return null;
+
+    // Use the first video track's source FPS or fall back to the current timeline FPS
+    const firstVideoTrack = videoTracks[0];
+    return firstVideoTrack.sourceFps || timeline.fps;
+  }, [tracks, timeline.fps]);
 
   // Sync settings panel inputs with canvas dimensions
   // CRITICAL: Always show the current canvas dimensions, not track dimensions
@@ -239,9 +254,41 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   // Handle frame rate change
   const handleFrameRateChange = (value: string) => {
     const fps = parseInt(value);
-    if (!isNaN(fps)) {
+    if (isNaN(fps)) return;
+
+    // Check if the new FPS is higher than the source FPS
+    if (sourceFps && fps > sourceFps) {
+      // Show warning dialog
+      setPendingFps(fps);
+      setShowFpsWarning(true);
+    } else {
+      // Apply FPS change directly
       setFps(fps);
     }
+  };
+
+  // Handle FPS warning confirmation
+  const handleFpsWarningConfirm = (enableInterpolation: boolean) => {
+    if (pendingFps) {
+      setFps(pendingFps);
+      // TODO: Store interpolation preference for export
+      // This could be added to the timeline state or export settings
+      console.log(
+        'FPS set to:',
+        pendingFps,
+        'Interpolation:',
+        enableInterpolation,
+      );
+      setPendingFps(null);
+    }
+  };
+
+  // Handle FPS warning dialog close
+  const handleFpsWarningClose = (open: boolean) => {
+    if (!open) {
+      setPendingFps(null);
+    }
+    setShowFpsWarning(open);
   };
 
   return (
@@ -250,7 +297,7 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
       description="Configure project and export settings"
       className={className}
     >
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col flex-1 min-h-0 overflow-y-auto gap-6">
         {/* Aspect Ratio Section */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -408,27 +455,58 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
         <Separator />
 
         {/* Frame Rate Section */}
-        <div className="flex justify-between items-center">
-          <label className="text-xs font-medium text-muted-foreground">
-            Frame Rate
-          </label>
-          <Select
-            value={timeline.fps.toString()}
-            onValueChange={handleFrameRateChange}
-          >
-            <SelectTrigger className="min-w-[166px]">
-              <SelectValue placeholder="Select frame rate" />
-            </SelectTrigger>
-            <SelectContent>
-              {FRAME_RATES.map((fps) => (
-                <SelectItem key={fps} value={fps.toString()}>
-                  {fps} fps
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <label className="text-xs font-medium text-muted-foreground">
+              Frame Rate
+            </label>
+            <Select
+              value={timeline.fps.toString()}
+              onValueChange={handleFrameRateChange}
+            >
+              <SelectTrigger className="min-w-[166px]">
+                <SelectValue placeholder="Select frame rate" />
+              </SelectTrigger>
+              <SelectContent>
+                {FRAME_RATES.map((fps) => (
+                  <SelectItem key={fps} value={fps.toString()}>
+                    {fps} fps
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Display source FPS and current FPS with warning indicator */}
+          {sourceFps && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                Source: {sourceFps} fps
+              </span>
+              {timeline.fps > sourceFps && (
+                <span className="text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded flex items-center gap-1">
+                  ⚠️ Interpolation required
+                </span>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            FPS affects export interpretation only. Timeline and playback remain
+            stable.
+          </p>
         </div>
       </div>
+
+      {/* FPS Warning Dialog */}
+      <FpsWarningDialog
+        open={showFpsWarning}
+        onOpenChange={handleFpsWarningClose}
+        originalFps={sourceFps || timeline.fps}
+        newFps={pendingFps || timeline.fps}
+        onConfirm={handleFpsWarningConfirm}
+        showInterpolationOption={false}
+      />
     </BasePanel>
   );
 };

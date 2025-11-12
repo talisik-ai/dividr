@@ -31,7 +31,7 @@ export const GLOW_BLUR_MULTIPLIER = 8;
 export const GLOW_SPREAD_MULTIPLIER = 8;
 
 // Subtitle sizing
-export const SUBTITLE_MIN_FONT_SIZE = 24;
+export const SUBTITLE_MIN_FONT_SIZE = 40;
 export const SUBTITLE_BASE_SIZE_RATIO = 0.02; // 2% of video height
 export const SUBTITLE_PADDING_VERTICAL = 7;
 export const SUBTITLE_PADDING_HORIZONTAL = 9;
@@ -39,7 +39,7 @@ export const SUBTITLE_HORIZONTAL_PADDING_RATIO = 0.01; // 1% of video width
 export const SUBTITLE_BOTTOM_PADDING = 20;
 
 // Text clip sizing
-export const TEXT_CLIP_MIN_FONT_SIZE = 24;
+export const TEXT_CLIP_MIN_FONT_SIZE = 40;
 export const TEXT_CLIP_BASE_SIZE_RATIO = 0.02; // 2% of video height
 export const TEXT_CLIP_PADDING_VERTICAL = 2;
 export const TEXT_CLIP_PADDING_HORIZONTAL = 8;
