@@ -470,6 +470,74 @@ function parseAspectRatio(aspectRatio: string): number {
   return width / height;
 }
 
+/**
+ * Calculate dynamic crop X position based on video position within canvas
+ * @param scaleWidth - Scaled video width (before crop)
+ * @param cropWidth - Target crop width
+ * @param videoPositionX - Normalized video X position in canvas (-1 to 1, 0 = center)
+ * @returns Crop X position in pixels
+ * 
+ * Logic: If video is shifted RIGHT in canvas (+X), we crop to show the LEFT side of the video
+ *        If video is shifted LEFT in canvas (-X), we crop to show the RIGHT side of the video
+ */
+function calculateDynamicCropX(
+  scaleWidth: number,
+  cropWidth: number,
+  videoPositionX: number | undefined,
+): number {
+  // If no video position specified, default to center crop (current behavior)
+  if (videoPositionX === undefined || videoPositionX === 0) {
+    return Math.round((scaleWidth - cropWidth) / 2);
+  }
+
+  // Available panning range (how much we can shift the crop window)
+  const maxPanRange = scaleWidth - cropWidth;
+  
+  // Convert video position to crop offset
+  // videoPositionX = +1 (video shifted right) → cropX = 0 (crop left side - what's visible in canvas)
+  // videoPositionX = 0 (video centered) → cropX = maxPanRange / 2 (crop center)
+  // videoPositionX = -1 (video shifted left) → cropX = maxPanRange (crop right side - what's visible in canvas)
+  const normalizedOffset = (videoPositionX + 1) / 2; // Convert -1..1 to 0..1
+  const cropX = Math.round(maxPanRange * (1 - normalizedOffset));
+  
+  // Clamp to valid range
+  return Math.max(0, Math.min(maxPanRange, cropX));
+}
+
+/**
+ * Calculate dynamic crop Y position based on video position within canvas
+ * @param scaleHeight - Scaled video height (before crop)
+ * @param cropHeight - Target crop height
+ * @param videoPositionY - Normalized video Y position in canvas (-1 to 1, 0 = center)
+ * @returns Crop Y position in pixels
+ * 
+ * Logic: If video is shifted DOWN in canvas (+Y), we crop to show the TOP side of the video
+ *        If video is shifted UP in canvas (-Y), we crop to show the BOTTOM side of the video
+ */
+function calculateDynamicCropY(
+  scaleHeight: number,
+  cropHeight: number,
+  videoPositionY: number | undefined,
+): number {
+  // If no video position specified, default to center crop (current behavior)
+  if (videoPositionY === undefined || videoPositionY === 0) {
+    return Math.round((scaleHeight - cropHeight) / 2);
+  }
+
+  // Available panning range
+  const maxPanRange = scaleHeight - cropHeight;
+  
+  // Convert video position to crop offset
+  // videoPositionY = +1 (video shifted down) → cropY = 0 (crop top side - what's visible in canvas)
+  // videoPositionY = 0 (video centered) → cropY = maxPanRange / 2 (crop center)
+  // videoPositionY = -1 (video shifted up) → cropY = maxPanRange (crop bottom side - what's visible in canvas)
+  const normalizedOffset = (videoPositionY + 1) / 2; // Convert -1..1 to 0..1
+  const cropY = Math.round(maxPanRange * (1 - normalizedOffset));
+  
+  // Clamp to valid range
+  return Math.max(0, Math.min(maxPanRange, cropY));
+}
+
 
 // -------------------------
 // Audio Processing Functions
@@ -1825,6 +1893,26 @@ function buildSeparateTimelineFilterComplex(
   // Store the dimensions after aspect ratio crop (before final downscale)
   let aspectRatioCroppedDimensions = targetDimensions;
   
+  // Extract video position within canvas from the first video track for dynamic cropping
+  // Default to (0, 0) which means video is centered → center crop (current behavior)
+  let videoPositionX: number | undefined = undefined;
+  let videoPositionY: number | undefined = undefined;
+  
+  if (videoLayers.size > 0) {
+    const firstLayer = Array.from(videoLayers.values())[0];
+    if (firstLayer.segments.length > 0) {
+      const firstSegment = firstLayer.segments[0];
+      videoPositionX = firstSegment.input.videoPositionX;
+      videoPositionY = firstSegment.input.videoPositionY;
+      
+      if (videoPositionX !== undefined || videoPositionY !== undefined) {
+        console.log(
+          `📐 Video position in canvas detected for dynamic cropping: x=${videoPositionX ?? 0}, y=${videoPositionY ?? 0}`,
+        );
+      }
+    }
+  }
+  
   if (finalAspectRatio && hasVideoContent) {
     // Parse the target aspect ratio from the desired output dimensions
     const targetRatio = parseAspectRatio(finalAspectRatio);
@@ -1901,9 +1989,19 @@ function buildSeparateTimelineFilterComplex(
         
       }
 
-      // Center the crop
-      const cropX = Math.round((scaleWidth - cropWidth) / 2);
-      const cropY = Math.round((scaleHeight - cropHeight) / 2);
+      // Calculate dynamic crop position based on video position within canvas
+      // Defaults to center crop if videoPositionX/videoPositionY are undefined or 0
+      const cropX = calculateDynamicCropX(scaleWidth, cropWidth, videoPositionX);
+      const cropY = calculateDynamicCropY(scaleHeight, cropHeight, videoPositionY);
+
+      // Log crop positioning info
+      if (videoPositionX !== undefined || videoPositionY !== undefined) {
+        console.log(
+          `📐 Dynamic crop positioning: video position in canvas(${videoPositionX ?? 0}, ${videoPositionY ?? 0}) → crop offset(${cropX}, ${cropY})`,
+        );
+      } else {
+        console.log(`📐 Center crop positioning (default): crop offset(${cropX}, ${cropY})`);
+      }
 
       // Apply scale + crop filter BEFORE images and subtitles
       aspectRatioCropFilter = `[${currentVideoLabel}]scale=${scaleWidth}:${scaleHeight},crop=${cropWidth}:${cropHeight}:${cropX}:${cropY}[video_cropped]`;
