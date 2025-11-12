@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React from 'react';
+import React, { useCallback } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
+import { useVideoEditorStore } from '../../stores/videoEditor';
 import { TextTransformBoundary } from '../components/TextTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
@@ -24,6 +25,7 @@ export interface TextOverlayProps extends OverlayRenderProps {
   activeTexts: VideoTrack[];
   allTracks: VideoTrack[];
   selectedTrackIds: string[];
+  isTextEditMode?: boolean;
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -48,6 +50,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   activeTexts,
   allTracks,
   selectedTrackIds,
+  isTextEditMode = false,
   previewScale,
   panX,
   panY,
@@ -63,6 +66,21 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   onDragStateChange,
 }) => {
   if (activeTexts.length === 0) return null;
+
+  // Get the setPreviewInteractionMode function from the store
+  const setPreviewInteractionMode = useVideoEditorStore(
+    (state) => state.setPreviewInteractionMode,
+  );
+
+  // Handler for when edit mode changes - automatically activate Text Tool
+  const handleEditModeChange = useCallback(
+    (isEditing: boolean) => {
+      if (isEditing) {
+        setPreviewInteractionMode('text-edit');
+      }
+    },
+    [setPreviewInteractionMode],
+  );
 
   // Use the coordinate system's baseScale for consistent rendering
   const renderScale = coordinateSystem.baseScale;
@@ -158,11 +176,13 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 videoWidth={baseVideoWidth}
                 videoHeight={baseVideoHeight}
                 renderScale={renderScale}
+                isTextEditMode={isTextEditMode}
                 onTransformUpdate={onTransformUpdate}
                 onSelect={onSelect}
                 onTextUpdate={onTextUpdate}
                 onRotationStateChange={onRotationStateChange}
                 onDragStateChange={onDragStateChange}
+                onEditModeChange={handleEditModeChange}
                 appliedStyle={completeStyle}
                 clipContent={true}
                 clipWidth={actualWidth}
@@ -240,11 +260,13 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
               videoWidth={baseVideoWidth}
               videoHeight={baseVideoHeight}
               renderScale={renderScale}
+              isTextEditMode={isTextEditMode}
               onTransformUpdate={onTransformUpdate}
               onSelect={onSelect}
               onTextUpdate={onTextUpdate}
               onRotationStateChange={onRotationStateChange}
               onDragStateChange={onDragStateChange}
+              onEditModeChange={handleEditModeChange}
               appliedStyle={completeStyle}
               clipContent={true}
               clipWidth={actualWidth}
@@ -314,11 +336,13 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
             videoWidth={baseVideoWidth}
             videoHeight={baseVideoHeight}
             renderScale={renderScale}
+            isTextEditMode={isTextEditMode}
             onTransformUpdate={onTransformUpdate}
             onSelect={onSelect}
             onTextUpdate={onTextUpdate}
             onRotationStateChange={onRotationStateChange}
             onDragStateChange={onDragStateChange}
+            onEditModeChange={handleEditModeChange}
             appliedStyle={completeStyle}
             clipContent={true}
             clipWidth={actualWidth}

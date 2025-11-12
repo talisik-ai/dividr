@@ -39,15 +39,21 @@ export const createPreviewShortcuts = (
     },
   },
   {
-    id: 'preview-toggle-fullscreen',
-    keys: 'f',
-    description: 'Toggle Fullscreen',
+    id: 'preview-text-edit-tool',
+    keys: 't',
+    description: 'Text Edit Mode (Preview)',
     category: 'Preview Tools',
     scope: 'preview',
     priority: 'high',
     handler: (e) => {
       e?.preventDefault();
-      getStore().toggleFullscreen();
+      const store = getStore();
+      // Toggle text edit mode - if already in text edit mode, switch back to select mode
+      if (store.preview.interactionMode === 'text-edit') {
+        store.setPreviewInteractionMode('select');
+      } else {
+        store.setPreviewInteractionMode('text-edit');
+      }
     },
   },
 

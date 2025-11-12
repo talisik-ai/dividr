@@ -152,6 +152,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const handleDrop = useCallback(
       async (e: React.DragEvent) => {
         e.preventDefault();
+        // CRITICAL: Stop propagation to prevent duplicate imports from video preview drop handler
         e.stopPropagation();
         setDropActive(false);
 

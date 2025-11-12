@@ -64,7 +64,9 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
   const effectiveRenderScale = renderScale ?? previewScale;
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null); // Ref to the actual image content (before scale transform)
   const boundaryRef = useRef<HTMLDivElement>(null);
+  const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
   const [isDragging, setIsDragging] = useState(false);
   const [isScaling, setIsScaling] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
@@ -121,8 +123,15 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   };
 
   // Migration: If coordinates appear to be in pixel space, convert to normalized
+  // ONLY run this migration once per track to avoid interfering with drag operations
   const normalizedTransform = React.useMemo(() => {
-    if (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2) {
+    // Check if coordinates need migration (look like pixel values > 2)
+    const needsMigration =
+      !hasMigratedRef.current &&
+      (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2);
+
+    if (needsMigration) {
+      hasMigratedRef.current = true; // Mark as migrated
       const normalized = pixelsToNormalized({
         x: rawTransform.x,
         y: rawTransform.y,
@@ -176,38 +185,31 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     rotation: normalizedTransform.rotation,
   };
 
-  // Track container size changes to update boundary dimensions
+  // Track content size changes to update boundary dimensions
+  // CRITICAL: We observe contentRef (the actual image), NOT containerRef (the transform wrapper)
+  // This gives us the intrinsic content size before scale transform is applied
   // Store the previous renderScale to detect when it changes
   const prevRenderScaleRef = useRef(effectiveRenderScale);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!contentRef.current) return;
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
+        // This is the intrinsic content size (before scale transform)
         setContainerSize({ width, height });
       }
     });
 
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(contentRef.current);
 
     return () => {
       resizeObserver.disconnect();
     };
   }, []);
 
-  // Also update on transform changes (but NOT on renderScale changes)
-  useEffect(() => {
-    if (containerRef.current) {
-      setContainerSize({
-        width: containerRef.current.offsetWidth,
-        height: containerRef.current.offsetHeight,
-      });
-    }
-  }, [transform.scale, transform.rotation]);
-
-  // Update dimensions in the store when container size changes
+  // Update dimensions in the store when content size changes
   // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
   useEffect(() => {
     // Detect if renderScale changed (e.g., entering/exiting fullscreen)
@@ -224,7 +226,9 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       const currentWidth = normalizedTransform.width || 0;
       const currentHeight = normalizedTransform.height || 0;
 
-      // Calculate dimensions in video space (independent of container size)
+      // Calculate dimensions in video space (independent of render scale)
+      // containerSize is now the INTRINSIC content size (from contentRef, not containerRef)
+      // So we don't need to divide by scale - just convert directly to video space
       const videoSpaceWidth = containerSize.width / effectiveRenderScale;
       const videoSpaceHeight = containerSize.height / effectiveRenderScale;
 
@@ -314,15 +318,19 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       const deltaY = e.clientY - dragStart.y;
 
       if (isDragging) {
-        // Convert screen delta to video coordinate delta using the effective render scale
-        const normalizedDeltaX = deltaX / effectiveRenderScale;
-        const normalizedDeltaY = deltaY / effectiveRenderScale;
+        // Convert screen delta to video coordinate delta
+        // initialTransform is in screen pixels, deltaX/Y is in screen pixels
+        // We need to convert both to video space before adding
+        const videoDeltaX = deltaX / effectiveRenderScale;
+        const videoDeltaY = deltaY / effectiveRenderScale;
 
-        // Add delta to initial position (already in screen pixels)
-        let newPixelX =
-          initialTransform.x / effectiveRenderScale + normalizedDeltaX;
-        let newPixelY =
-          initialTransform.y / effectiveRenderScale + normalizedDeltaY;
+        // initialTransform is already scaled, so convert it back to video space first
+        const initialVideoX = initialTransform.x / effectiveRenderScale;
+        const initialVideoY = initialTransform.y / effectiveRenderScale;
+
+        // Calculate new position in video space
+        let newPixelX = initialVideoX + videoDeltaX;
+        let newPixelY = initialVideoY + videoDeltaY;
 
         // Snapping logic - only when Shift or Ctrl is held
         if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -575,7 +583,14 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       }}
       onMouseDown={handleMouseDown}
     >
-      {children}
+      {/* Content wrapper for size observation */}
+      <div
+        ref={contentRef}
+        className="relative"
+        style={{ pointerEvents: 'auto' }}
+      >
+        {children}
+      </div>
     </div>
   );
 

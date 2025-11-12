@@ -10,6 +10,7 @@ interface TextTransformBoundaryProps {
   videoWidth: number;
   videoHeight: number;
   renderScale?: number; // The actual render scale from coordinate system (baseScale)
+  isTextEditMode?: boolean; // Whether text edit mode is active globally
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -28,6 +29,7 @@ interface TextTransformBoundaryProps {
     isDragging: boolean,
     position?: { x: number; y: number; width: number; height: number },
   ) => void;
+  onEditModeChange?: (isEditing: boolean) => void; // Callback when edit mode changes
   children: React.ReactNode;
   appliedStyle?: React.CSSProperties;
   clipContent?: boolean; // Whether to clip content to canvas bounds
@@ -55,11 +57,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   videoWidth,
   videoHeight,
   renderScale,
+  isTextEditMode = false,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
   onRotationStateChange,
   onDragStateChange,
+  onEditModeChange,
   children,
   appliedStyle,
   clipContent = false,
@@ -74,7 +78,11 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const boundaryRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const editableRef = useRef<HTMLDivElement>(null);
+  const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
+  const dragDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Delay before starting drag to allow double-click
+  const lastClickTimeRef = useRef<number>(0); // Track last click time for double-click detection
   const [isDragging, setIsDragging] = useState(false);
+  const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
   const [isScaling, setIsScaling] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -131,8 +139,15 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   };
 
   // Migration: If coordinates appear to be in pixel space, convert to normalized
+  // ONLY run this migration once per track to avoid interfering with drag operations
   const normalizedTransform = React.useMemo(() => {
-    if (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2) {
+    // Check if coordinates need migration (look like pixel values > 2)
+    const needsMigration =
+      !hasMigratedRef.current &&
+      (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2);
+
+    if (needsMigration) {
+      hasMigratedRef.current = true; // Mark as migrated
       const normalized = pixelsToNormalized({
         x: rawTransform.x,
         y: rawTransform.y,
@@ -187,9 +202,63 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     rotation: normalizedTransform.rotation,
   };
 
-  // Handle double-click to enter edit mode
+  // Helper to enter edit mode
+  const enterEditMode = useCallback(
+    (selectAllText = false) => {
+      setIsEditing(true);
+      // Notify parent that we're entering edit mode
+      onEditModeChange?.(true);
+      // Focus the editable div after a short delay to ensure it's rendered
+      setTimeout(() => {
+        if (editableRef.current) {
+          editableRef.current.focus();
+          // Only select all text if explicitly requested (e.g., from Text Tool mode single-click)
+          if (selectAllText) {
+            const range = document.createRange();
+            range.selectNodeContents(editableRef.current);
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          }
+          // Otherwise, let the browser's natural selection happen (word selection on double-click)
+        }
+      }, 10); // Reduced delay for snappier response
+    },
+    [onEditModeChange],
+  );
+
+  // Handle double-click to enter edit mode (works in both Text Tool and Selection Tool modes)
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      // Cancel any pending drag operation
+      if (dragDelayTimeoutRef.current) {
+        clearTimeout(dragDelayTimeoutRef.current);
+        dragDelayTimeoutRef.current = null;
+      }
+      setIsPendingDrag(false);
+      setIsDragging(false);
+      setDragStart(null);
+
+      if (!isSelected) {
+        onSelect(track.id);
+        return;
+      }
+
+      // Always enter edit mode on double-click, regardless of mode
+      enterEditMode();
+    },
+    [isSelected, track.id, onSelect, enterEditMode],
+  );
+
+  // Handle single click - enters edit mode ONLY when text edit mode is active
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Only handle single clicks in text edit mode
+      if (!isTextEditMode) return;
+
       e.stopPropagation();
       e.preventDefault();
 
@@ -198,21 +267,10 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         return;
       }
 
-      setIsEditing(true);
-      // Focus the editable div after a short delay to ensure it's rendered
-      setTimeout(() => {
-        if (editableRef.current) {
-          editableRef.current.focus();
-          // Select all text
-          const range = document.createRange();
-          range.selectNodeContents(editableRef.current);
-          const selection = window.getSelection();
-          selection?.removeAllRanges();
-          selection?.addRange(range);
-        }
-      }, 50);
+      // Enter edit mode and select all text on single click in Text Tool mode
+      enterEditMode(true);
     },
-    [isSelected, track.id, onSelect],
+    [isTextEditMode, isSelected, track.id, onSelect, enterEditMode],
   );
 
   // Handle blur to exit edit mode
@@ -222,18 +280,25 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       onTextUpdate(track.id, newText);
     }
     setIsEditing(false);
-  }, [track.id, onTextUpdate]);
+    // Notify parent that we're exiting edit mode
+    onEditModeChange?.(false);
+  }, [track.id, onTextUpdate, onEditModeChange]);
 
   // Handle Enter key to save and exit edit mode
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      editableRef.current?.blur();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setIsEditing(false);
-    }
-  }, []);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        editableRef.current?.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsEditing(false);
+        // Notify parent that we're exiting edit mode
+        onEditModeChange?.(false);
+      }
+    },
+    [onEditModeChange],
+  );
 
   // Track content size changes to update boundary dimensions
   // CRITICAL: We observe contentRef (the actual text), NOT containerRef (the transform wrapper)
@@ -314,11 +379,11 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     effectiveRenderScale,
   ]);
 
-  // Handle mouse down on the text element (start dragging)
+  // Handle mouse down on the text element (start dragging with delay to allow double-click)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // Don't prevent default - let double-click through
       e.stopPropagation();
-      e.preventDefault();
 
       if (!isSelected) {
         onSelect(track.id);
@@ -331,9 +396,37 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         return;
       }
 
-      setIsDragging(true);
+      // Check if this is a double-click (second click within 300ms)
+      const now = Date.now();
+      const timeSinceLastClick = now - lastClickTimeRef.current;
+      lastClickTimeRef.current = now;
+
+      // If this is a potential double-click, don't start dragging
+      if (timeSinceLastClick < 300) {
+        // This is a double-click, cancel any pending drag
+        if (dragDelayTimeoutRef.current) {
+          clearTimeout(dragDelayTimeoutRef.current);
+          dragDelayTimeoutRef.current = null;
+        }
+        setIsPendingDrag(false);
+        setIsDragging(false);
+        setDragStart(null);
+
+        // Enter edit mode directly since we detected double-click
+        enterEditMode();
+        return;
+      }
+
+      // Set up pending drag state immediately so we can track mouse movement
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
+      setIsPendingDrag(true);
+
+      // Start actual drag after a short delay (allows double-click to interrupt)
+      dragDelayTimeoutRef.current = setTimeout(() => {
+        setIsDragging(true);
+        setIsPendingDrag(false);
+      }, 200);
     },
     [isSelected, track.id, transform, onSelect, isEditing],
   );
@@ -370,23 +463,44 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
   // Handle mouse move for all interactions
   useEffect(() => {
-    if (!isDragging && !isScaling && !isRotating) return;
+    if (!isDragging && !isScaling && !isRotating && !isPendingDrag) return;
     if (!dragStart || !initialTransform) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - dragStart.x;
       const deltaY = e.clientY - dragStart.y;
 
-      if (isDragging) {
-        // Convert screen delta to video coordinate delta using the effective render scale
-        const normalizedDeltaX = deltaX / effectiveRenderScale;
-        const normalizedDeltaY = deltaY / effectiveRenderScale;
+      // If drag is pending and user moves mouse significantly, start drag immediately
+      if (isPendingDrag) {
+        const movementThreshold = 5; // pixels
+        if (
+          Math.abs(deltaX) > movementThreshold ||
+          Math.abs(deltaY) > movementThreshold
+        ) {
+          if (dragDelayTimeoutRef.current) {
+            clearTimeout(dragDelayTimeoutRef.current);
+            dragDelayTimeoutRef.current = null;
+          }
+          setIsDragging(true);
+          setIsPendingDrag(false);
+        }
+        return; // Don't process drag until it's confirmed
+      }
 
-        // Add delta to initial position (already in screen pixels)
-        let newPixelX =
-          initialTransform.x / effectiveRenderScale + normalizedDeltaX;
-        let newPixelY =
-          initialTransform.y / effectiveRenderScale + normalizedDeltaY;
+      if (isDragging) {
+        // Convert screen delta to video coordinate delta
+        // initialTransform is in screen pixels, deltaX/Y is in screen pixels
+        // We need to convert both to video space before adding
+        const videoDeltaX = deltaX / effectiveRenderScale;
+        const videoDeltaY = deltaY / effectiveRenderScale;
+
+        // initialTransform is already scaled, so convert it back to video space first
+        const initialVideoX = initialTransform.x / effectiveRenderScale;
+        const initialVideoY = initialTransform.y / effectiveRenderScale;
+
+        // Calculate new position in video space
+        let newPixelX = initialVideoX + videoDeltaX;
+        let newPixelY = initialVideoY + videoDeltaY;
 
         // Snapping logic - only when Shift or Ctrl is held
         if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -565,6 +679,12 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     };
 
     const handleMouseUp = () => {
+      // Clear any pending drag timeout
+      if (dragDelayTimeoutRef.current) {
+        clearTimeout(dragDelayTimeoutRef.current);
+        dragDelayTimeoutRef.current = null;
+      }
+
       if (isRotating) {
         onRotationStateChange?.(false);
       }
@@ -572,6 +692,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         onDragStateChange?.(false);
       }
       setIsDragging(false);
+      setIsPendingDrag(false);
       setIsScaling(false);
       setIsRotating(false);
       setActiveHandle(null);
@@ -588,6 +709,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     };
   }, [
     isDragging,
+    isPendingDrag,
     isScaling,
     isRotating,
     dragStart,
@@ -604,11 +726,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     transform.scale,
     videoWidth,
     videoHeight,
+    disableScaleTransform,
   ]);
 
   // Get cursor style based on interaction mode and active handle
   const getCursorStyle = () => {
     if (isEditing) return 'text';
+    if (isTextEditMode && isSelected) return 'text'; // Show text cursor when in text edit mode
     if (isDragging) return 'grabbing';
     if (isScaling) {
       switch (activeHandle) {
@@ -657,10 +781,11 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         cursor: getCursorStyle(),
         pointerEvents: 'auto',
         zIndex: isSelected ? 1000 : 1,
-        userSelect: isEditing ? 'text' : 'none',
-        WebkitUserSelect: isEditing ? 'text' : 'none',
+        userSelect: isEditing ? 'text' : 'auto',
+        WebkitUserSelect: isEditing ? 'text' : 'auto',
       }}
       onMouseDown={handleMouseDown}
+      onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
       {/* Content */}
@@ -668,6 +793,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         ref={contentRef}
         className="relative"
         style={{ pointerEvents: 'auto' }}
+        onDoubleClick={handleDoubleClick}
       >
         {isEditing ? (
           <div
@@ -721,6 +847,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
       {/* Selection Boundary - Rendered separately to avoid scale transform */}
       {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
+      {/* Hide transform handles only when actively editing text, not when text edit mode is active */}
       {isSelected && !isEditing && containerSize.width > 0 && (
         <div
           ref={boundaryRef}

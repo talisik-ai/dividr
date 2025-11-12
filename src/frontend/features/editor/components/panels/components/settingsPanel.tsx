@@ -9,6 +9,7 @@ import {
 } from '@/frontend/components/ui/select';
 import { Separator } from '@/frontend/components/ui/separator';
 import { cn } from '@/frontend/utils/utils';
+import { RotateCcw } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { BasePanel } from '../../../components/panels/basePanel';
 import { CustomPanelProps } from '../../../components/panels/panelRegistry';
@@ -21,14 +22,27 @@ import {
 const FRAME_RATES = [24, 25, 30, 48, 50, 60] as const;
 
 export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
-  const { preview, timeline, tracks, setCanvasSize, setFps, updateTrack } =
-    useVideoEditorStore();
+  const {
+    preview,
+    timeline,
+    tracks,
+    setCanvasSize,
+    setFps,
+    updateTrack,
+    resetCanvasSize,
+  } = useVideoEditorStore();
+
+  // Use local state for input fields to prevent reset during typing
   const [customWidth, setCustomWidth] = useState<string>(
     preview.canvasWidth.toString(),
   );
   const [customHeight, setCustomHeight] = useState<string>(
     preview.canvasHeight.toString(),
   );
+
+  // Track whether user is actively editing to prevent external updates
+  const [isEditingWidth, setIsEditingWidth] = useState(false);
+  const [isEditingHeight, setIsEditingHeight] = useState(false);
 
   // Get the first selected video or image track
   const selectedTrack = useMemo(() => {
@@ -45,23 +59,23 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     );
   }, [tracks, timeline.selectedTrackIds]);
 
-  // Sync settings panel inputs with selected track dimensions if available, otherwise canvas dimensions
-  // This allows users to see the track's native dimensions or the current canvas size
+  // Sync settings panel inputs with canvas dimensions
+  // CRITICAL: Always show the current canvas dimensions, not track dimensions
+  // This ensures the input reflects what the user is actually editing (the canvas/preview size)
   useEffect(() => {
-    if (selectedTrack?.width && selectedTrack?.height) {
-      // Display the selected track's native dimensions
-      setCustomWidth(selectedTrack.width.toString());
-      setCustomHeight(selectedTrack.height.toString());
-    } else {
-      // Fall back to canvas dimensions when no track is selected
-      setCustomWidth(preview.canvasWidth.toString());
-      setCustomHeight(preview.canvasHeight.toString());
+    // Don't update inputs while user is actively typing
+    if (isEditingWidth || isEditingHeight) {
+      return;
     }
+
+    // Always sync with canvas dimensions (this is what the user is controlling)
+    setCustomWidth(preview.canvasWidth.toString());
+    setCustomHeight(preview.canvasHeight.toString());
   }, [
-    selectedTrack?.width,
-    selectedTrack?.height,
     preview.canvasWidth,
     preview.canvasHeight,
+    isEditingWidth,
+    isEditingHeight,
   ]);
 
   // Determine if a preset is active based on selected track dimensions (if available) or canvas dimensions
@@ -129,6 +143,16 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   // Determine if the selected track is a video (aspect ratio controls only apply to videos)
   const isVideoTrackSelected = selectedTrack?.type === 'video';
 
+  // Check if we have original dimensions to enable reset button
+  const hasOriginalDimensions =
+    preview.originalCanvasWidth && preview.originalCanvasHeight;
+
+  // Check if current dimensions differ from original (to show reset button)
+  const dimensionsChanged =
+    hasOriginalDimensions &&
+    (preview.canvasWidth !== preview.originalCanvasWidth ||
+      preview.canvasHeight !== preview.originalCanvasHeight);
+
   // Handle preset selection
   const handlePresetSelect = (
     preset: (typeof ASPECT_RATIO_PRESETS)[number],
@@ -145,16 +169,18 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     }
   };
 
-  // Handle custom width change
+  // Handle custom width change with real-time preview
   const handleCustomWidthChange = (value: string) => {
-    // Only allow numeric input
+    // Only allow numeric input or empty string (for clearing)
     if (value === '' || /^\d+$/.test(value)) {
       setCustomWidth(value);
+
+      // Update preview in real-time if we have a valid number
       const numValue = parseInt(value);
       if (numValue > 0 && !isNaN(numValue)) {
-        // Always update canvas size
         const newHeight = parseInt(customHeight);
         if (newHeight > 0) {
+          // Update canvas size for real-time preview
           setCanvasSize(numValue, newHeight);
 
           // Update selected track's aspect ratio metadata if a track is selected
@@ -170,16 +196,18 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     }
   };
 
-  // Handle custom height change
+  // Handle custom height change with real-time preview
   const handleCustomHeightChange = (value: string) => {
-    // Only allow numeric input
+    // Only allow numeric input or empty string (for clearing)
     if (value === '' || /^\d+$/.test(value)) {
       setCustomHeight(value);
+
+      // Update preview in real-time if we have a valid number
       const numValue = parseInt(value);
       if (numValue > 0 && !isNaN(numValue)) {
-        // Always update canvas size
         const newWidth = parseInt(customWidth);
         if (newWidth > 0) {
+          // Update canvas size for real-time preview
           setCanvasSize(newWidth, numValue);
 
           // Update selected track's aspect ratio metadata if a track is selected
@@ -192,6 +220,19 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
           }
         }
       }
+    }
+  };
+
+  // Handle reset to original dimensions
+  const handleResetDimensions = () => {
+    // Reset canvas size in the store
+    resetCanvasSize();
+
+    // Immediately update input fields to reflect the reset
+    // This ensures instant visual feedback without waiting for useEffect
+    if (preview.originalCanvasWidth && preview.originalCanvasHeight) {
+      setCustomWidth(preview.originalCanvasWidth.toString());
+      setCustomHeight(preview.originalCanvasHeight.toString());
     }
   };
 
@@ -213,9 +254,23 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
         {/* Aspect Ratio Section */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-muted-foreground">
-              Aspect Ratio
-            </label>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-muted-foreground">
+                Aspect Ratio
+              </label>
+              {dimensionsChanged && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResetDimensions}
+                  className="h-6 px-2 text-xs gap-1"
+                  title="Reset to original dimensions"
+                >
+                  <RotateCcw className="size-3" />
+                  Reset
+                </Button>
+              )}
+            </div>
             {detectedAspectRatioLabel && isVideoTrackSelected && (
               <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
                 Detected: {detectedAspectRatioLabel}
@@ -241,13 +296,18 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
           {/* Show aspect ratio controls only for video tracks */}
           {isVideoTrackSelected && (
             <>
-              {/* Show track dimensions when selected */}
-              {selectedTrack?.width && selectedTrack?.height && (
-                <div className="text-xs text-muted-foreground">
-                  Track dimensions: {selectedTrack.width} ×{' '}
-                  {selectedTrack.height}
-                </div>
-              )}
+              {/* Show current canvas dimensions */}
+              <div className="text-xs text-muted-foreground">
+                Canvas: {preview.canvasWidth} × {preview.canvasHeight}
+                {hasOriginalDimensions &&
+                  (preview.canvasWidth !== preview.originalCanvasWidth ||
+                    preview.canvasHeight !== preview.originalCanvasHeight) && (
+                    <span className="ml-1 text-muted-foreground/60">
+                      (Original: {preview.originalCanvasWidth} ×{' '}
+                      {preview.originalCanvasHeight})
+                    </span>
+                  )}
+              </div>
 
               {/* Preset Grid */}
               <div className="grid grid-cols-4 gap-2">
@@ -316,6 +376,8 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
                       inputMode="numeric"
                       value={customWidth}
                       onChange={(e) => handleCustomWidthChange(e.target.value)}
+                      onFocus={() => setIsEditingWidth(true)}
+                      onBlur={() => setIsEditingWidth(false)}
                       placeholder="Width"
                       style={{ fieldSizing: 'content' } as React.CSSProperties}
                       className="max-w-20"
@@ -330,6 +392,8 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
                       inputMode="numeric"
                       value={customHeight}
                       onChange={(e) => handleCustomHeightChange(e.target.value)}
+                      onFocus={() => setIsEditingHeight(true)}
+                      onBlur={() => setIsEditingHeight(false)}
                       placeholder="Height"
                       style={{ fieldSizing: 'content' } as React.CSSProperties}
                       className="max-w-20"

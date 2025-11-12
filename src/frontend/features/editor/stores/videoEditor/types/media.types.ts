@@ -16,6 +16,8 @@ export interface MediaLibraryItem {
     fps?: number;
     channels?: number;
     sampleRate?: number;
+    aspectRatio?: number; // Calculated aspect ratio (width/height)
+    aspectRatioLabel?: string | null; // Detected preset label (e.g., "16:9", "9:16")
   };
   extractedAudio?: {
     audioPath: string;

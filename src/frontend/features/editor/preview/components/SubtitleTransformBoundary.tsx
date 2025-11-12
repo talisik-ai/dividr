@@ -15,6 +15,7 @@ interface SubtitleTransformBoundaryProps {
   panY: number;
   zIndexOverlay: number;
   renderScale?: number; // The actual render scale from coordinate system (baseScale)
+  isTextEditMode?: boolean; // Whether text edit mode is active globally
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -28,6 +29,7 @@ interface SubtitleTransformBoundaryProps {
     isDragging: boolean,
     position?: { x: number; y: number; width: number; height: number },
   ) => void;
+  onEditModeChange?: (isEditing: boolean) => void; // Callback when edit mode changes
   children: React.ReactNode;
 }
 
@@ -49,10 +51,12 @@ export const SubtitleTransformBoundary: React.FC<
   panY,
   zIndexOverlay,
   renderScale,
+  isTextEditMode = false,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
   onDragStateChange,
+  onEditModeChange,
   children,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
@@ -60,7 +64,11 @@ export const SubtitleTransformBoundary: React.FC<
   const containerRef = useRef<HTMLDivElement>(null);
   const boundaryRef = useRef<HTMLDivElement>(null);
   const editableRef = useRef<HTMLDivElement>(null);
+  const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
+  const dragDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Delay before starting drag to allow double-click
+  const lastClickTimeRef = useRef<number>(0); // Track last click time for double-click detection
   const [isDragging, setIsDragging] = useState(false);
+  const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
   const [isEditing, setIsEditing] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
     null,
@@ -104,8 +112,15 @@ export const SubtitleTransformBoundary: React.FC<
   };
 
   // Migration: If coordinates appear to be in pixel space, convert to normalized
+  // ONLY run this migration once per track to avoid interfering with drag operations
   const normalizedTransform = React.useMemo(() => {
-    if (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2) {
+    // Check if coordinates need migration (look like pixel values > 2)
+    const needsMigration =
+      !hasMigratedRef.current &&
+      (Math.abs(rawTransform.x) > 2 || Math.abs(rawTransform.y) > 2);
+
+    if (needsMigration) {
+      hasMigratedRef.current = true; // Mark as migrated
       const normalized = pixelsToNormalized({
         x: rawTransform.x,
         y: rawTransform.y,
@@ -162,11 +177,36 @@ export const SubtitleTransformBoundary: React.FC<
     return () => observer.disconnect();
   }, [children]);
 
-  // Handle mouse down on the subtitle element (start dragging)
+  // Helper to enter edit mode
+  const enterEditMode = useCallback(
+    (selectAllText = false) => {
+      setIsEditing(true);
+      // Notify parent that we're entering edit mode
+      onEditModeChange?.(true);
+      // Focus the editable element after a brief delay
+      setTimeout(() => {
+        if (editableRef.current) {
+          editableRef.current.focus();
+          // Only select all text if explicitly requested (e.g., from Text Tool mode single-click)
+          if (selectAllText) {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(editableRef.current);
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          }
+          // Otherwise, let the browser's natural selection happen (word selection on double-click)
+        }
+      }, 10);
+    },
+    [onEditModeChange],
+  );
+
+  // Handle mouse down on the subtitle element (start dragging with delay to allow double-click)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // Don't prevent default - let double-click through
       e.stopPropagation();
-      e.preventDefault();
 
       if (!isSelected) {
         onSelect(track.id);
@@ -178,56 +218,123 @@ export const SubtitleTransformBoundary: React.FC<
         return;
       }
 
-      setIsDragging(true);
+      // Check if this is a double-click (second click within 300ms)
+      const now = Date.now();
+      const timeSinceLastClick = now - lastClickTimeRef.current;
+      lastClickTimeRef.current = now;
+
+      // If this is a potential double-click, don't start dragging
+      if (timeSinceLastClick < 300) {
+        // This is a double-click, cancel any pending drag
+        if (dragDelayTimeoutRef.current) {
+          clearTimeout(dragDelayTimeoutRef.current);
+          dragDelayTimeoutRef.current = null;
+        }
+        setIsPendingDrag(false);
+        setIsDragging(false);
+        setDragStart(null);
+
+        // Enter edit mode directly since we detected double-click
+        enterEditMode();
+        return;
+      }
+
+      // Set up pending drag state immediately so we can track mouse movement
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
+      setIsPendingDrag(true);
+
+      // Start actual drag after a short delay (allows double-click to interrupt)
+      dragDelayTimeoutRef.current = setTimeout(() => {
+        setIsDragging(true);
+        setIsPendingDrag(false);
+      }, 200);
     },
     [isSelected, track.id, transform, onSelect, isEditing],
   );
 
-  // Handle double-click for inline editing
+  // Handle single click - enters edit mode when text edit mode is active
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Only handle single clicks in text edit mode
+      if (!isTextEditMode) return;
+
+      e.stopPropagation();
+      e.preventDefault();
+
+      if (!isSelected) {
+        onSelect(track.id);
+        return;
+      }
+
+      // Enter edit mode and select all text on single click in Text Tool mode
+      enterEditMode(true);
+    },
+    [isTextEditMode, isSelected, track.id, onSelect, enterEditMode],
+  );
+
+  // Handle double-click for inline editing (works in both Text Tool and Selection Tool modes)
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       if (!isSelected) return;
 
       e.stopPropagation();
       e.preventDefault();
-      setIsEditing(true);
 
-      // Focus the editable element after a brief delay
-      setTimeout(() => {
-        if (editableRef.current) {
-          editableRef.current.focus();
-          // Select all text
-          const selection = window.getSelection();
-          const range = document.createRange();
-          range.selectNodeContents(editableRef.current);
-          selection?.removeAllRanges();
-          selection?.addRange(range);
-        }
-      }, 10);
+      // Cancel any pending drag operation
+      if (dragDelayTimeoutRef.current) {
+        clearTimeout(dragDelayTimeoutRef.current);
+        dragDelayTimeoutRef.current = null;
+      }
+      setIsPendingDrag(false);
+      setIsDragging(false);
+      setDragStart(null);
+
+      // Always enter edit mode on double-click, regardless of mode
+      enterEditMode();
     },
-    [isSelected],
+    [isSelected, enterEditMode],
   );
 
   // Handle mouse move for dragging
   useEffect(() => {
-    if (!isDragging) return;
+    if (!isDragging && !isPendingDrag) return;
     if (!dragStart || !initialTransform) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - dragStart.x;
       const deltaY = e.clientY - dragStart.y;
 
-      // Convert screen delta to video coordinate delta using the effective render scale
-      const normalizedDeltaX = deltaX / effectiveRenderScale;
-      const normalizedDeltaY = deltaY / effectiveRenderScale;
+      // If drag is pending and user moves mouse significantly, start drag immediately
+      if (isPendingDrag) {
+        const movementThreshold = 5; // pixels
+        if (
+          Math.abs(deltaX) > movementThreshold ||
+          Math.abs(deltaY) > movementThreshold
+        ) {
+          if (dragDelayTimeoutRef.current) {
+            clearTimeout(dragDelayTimeoutRef.current);
+            dragDelayTimeoutRef.current = null;
+          }
+          setIsDragging(true);
+          setIsPendingDrag(false);
+        }
+        return; // Don't process drag until it's confirmed
+      }
 
-      // Add delta to initial position (already in screen pixels)
-      let newPixelX =
-        initialTransform.x / effectiveRenderScale + normalizedDeltaX;
-      let newPixelY =
-        initialTransform.y / effectiveRenderScale + normalizedDeltaY;
+      // Convert screen delta to video coordinate delta
+      // initialTransform is in screen pixels, deltaX/Y is in screen pixels
+      // We need to convert both to video space before adding
+      const videoDeltaX = deltaX / effectiveRenderScale;
+      const videoDeltaY = deltaY / effectiveRenderScale;
+
+      // initialTransform is already scaled, so convert it back to video space first
+      const initialVideoX = initialTransform.x / effectiveRenderScale;
+      const initialVideoY = initialTransform.y / effectiveRenderScale;
+
+      // Calculate new position in video space
+      let newPixelX = initialVideoX + videoDeltaX;
+      let newPixelY = initialVideoY + videoDeltaY;
 
       // Snapping logic - only when Shift or Ctrl is held
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -294,7 +401,14 @@ export const SubtitleTransformBoundary: React.FC<
     };
 
     const handleMouseUp = () => {
+      // Clear any pending drag timeout
+      if (dragDelayTimeoutRef.current) {
+        clearTimeout(dragDelayTimeoutRef.current);
+        dragDelayTimeoutRef.current = null;
+      }
+
       setIsDragging(false);
+      setIsPendingDrag(false);
       setDragStart(null);
       setInitialTransform(null);
       onDragStateChange?.(false);
@@ -309,6 +423,7 @@ export const SubtitleTransformBoundary: React.FC<
     };
   }, [
     isDragging,
+    isPendingDrag,
     dragStart,
     initialTransform,
     effectiveRenderScale,
@@ -331,7 +446,9 @@ export const SubtitleTransformBoundary: React.FC<
       onTextUpdate?.(track.id, newText);
     }
     setIsEditing(false);
-  }, [track.id, track.subtitleText, onTextUpdate]);
+    // Notify parent that we're exiting edit mode
+    onEditModeChange?.(false);
+  }, [track.id, track.subtitleText, onTextUpdate, onEditModeChange]);
 
   // Handle keyboard events in edit mode
   const handleKeyDown = useCallback(
@@ -347,14 +464,17 @@ export const SubtitleTransformBoundary: React.FC<
           editableRef.current.innerText = track.subtitleText;
         }
         setIsEditing(false);
+        // Notify parent that we're exiting edit mode
+        onEditModeChange?.(false);
       }
     },
-    [handleBlur, track.subtitleText],
+    [handleBlur, track.subtitleText, onEditModeChange],
   );
 
   // Get cursor style based on state
   const getCursor = () => {
     if (isEditing) return 'text';
+    if (isTextEditMode && isSelected) return 'text'; // Show text cursor when in text edit mode
     if (isDragging) return 'grabbing';
     if (isSelected) return 'grab';
     return 'pointer';
@@ -377,6 +497,7 @@ export const SubtitleTransformBoundary: React.FC<
         WebkitUserSelect: isEditing ? 'text' : 'none',
       }}
       onMouseDown={handleMouseDown}
+      onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
       <div
@@ -385,6 +506,7 @@ export const SubtitleTransformBoundary: React.FC<
         suppressContentEditableWarning
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
+        onDoubleClick={handleDoubleClick}
         style={{
           outline: 'none',
           pointerEvents: isEditing ? 'auto' : 'none',
@@ -427,6 +549,7 @@ export const SubtitleTransformBoundary: React.FC<
 
       {/* Selection Boundary - Rendered separately like TextTransformBoundary */}
       {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
+      {/* Hide boundary only when actively editing text, not when text edit mode is active */}
       {isSelected && !isEditing && containerSize.width > 0 && (
         <div
           ref={boundaryRef}

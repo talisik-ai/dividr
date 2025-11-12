@@ -157,11 +157,13 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
   }, [currentStyle.opacity]);
 
   const handleTextEdit = useCallback(() => {
-    if (isEditingText && editedText !== selectedTrack.textContent) {
-      // Update the track with new text
-      updateTrack(selectedTrack.id, { textContent: editedText });
+    // Only save if we're in editing mode and text changed
+    if (isEditingText) {
+      if (editedText !== selectedTrack.textContent) {
+        updateTrack(selectedTrack.id, { textContent: editedText });
+      }
+      setIsEditingText(false);
     }
-    setIsEditingText(!isEditingText);
   }, [
     isEditingText,
     editedText,
@@ -179,12 +181,21 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
 
   const handleTextKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter without shift: save and exit
+        e.preventDefault();
+        if (editedText !== selectedTrack.textContent) {
+          updateTrack(selectedTrack.id, { textContent: editedText });
+        }
+        setIsEditingText(false);
+      } else if (e.key === 'Escape') {
+        // Escape: cancel and revert
         setEditedText(selectedTrack.textContent || '');
         setIsEditingText(false);
       }
+      // Shift+Enter: allow default behavior (new line)
     },
-    [selectedTrack.textContent],
+    [editedText, selectedTrack.textContent, selectedTrack.id, updateTrack],
   );
 
   const handleStartEditing = useCallback(() => {

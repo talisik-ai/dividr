@@ -11,10 +11,12 @@ export interface UseZoomPanProps {
   previewScale: number;
   panX: number;
   panY: number;
-  interactionMode: 'select' | 'pan';
+  interactionMode: 'select' | 'pan' | 'text-edit';
   setPreviewScale: (scale: number) => void;
   setPreviewPan: (x: number, y: number) => void;
-  setPreviewInteractionMode: (mode: 'select' | 'pan') => void;
+  setPreviewInteractionMode: (
+    mode: 'select' | 'pan' | 'text-edit',
+  ) => void;
   hasContent: boolean;
 }
 

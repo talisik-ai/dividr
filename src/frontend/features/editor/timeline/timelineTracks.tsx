@@ -1016,6 +1016,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     const handleDrop = useCallback(
       (e: React.DragEvent) => {
         e.preventDefault();
+        // CRITICAL: Stop propagation to prevent duplicate imports from parent timeline handler
+        e.stopPropagation();
         setIsDragOver(false);
         if (e.dataTransfer.files) {
           onDrop(rowDef.id, e.dataTransfer.files);
@@ -1158,7 +1160,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       moveTrack,
       moveSelectedTracks,
       resizeTrack,
-      importMediaFromFiles,
+      importMediaToTimeline,
       importMediaFromDialog,
     } = useVideoEditorStore();
 
@@ -1286,15 +1288,15 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         });
 
         if (validFiles.length > 0) {
-          // Import files using the existing store method
-          await importMediaFromFiles(validFiles);
+          // Import files using the proper import method that saves to disk and adds to library
+          await importMediaToTimeline(validFiles);
         } else {
           console.warn(
             `No valid ${rowDef.trackTypes.join('/')} files found for ${rowId} row`,
           );
         }
       },
-      [importMediaFromFiles],
+      [importMediaToTimeline],
     );
 
     const handlePlaceholderClick = useCallback(async () => {

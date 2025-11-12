@@ -46,9 +46,9 @@ export const usePreviewShortcuts = (enabled = true) => {
     [preview.interactionMode, preview.previewScale, enabled],
   );
 
-  // F - Toggle Fullscreen
+  // T - Text Edit Mode (Preview)
   useHotkeys(
-    'f',
+    't',
     previewShortcuts[2].handler,
     {
       ...previewShortcuts[2].options,
@@ -56,7 +56,7 @@ export const usePreviewShortcuts = (enabled = true) => {
       enableOnFormTags: false,
       preventDefault: true,
     },
-    [preview.isFullscreen, enabled],
+    [preview.interactionMode, enabled],
   );
 
   // Preview Zoom Shortcuts
