@@ -23,8 +23,8 @@ export interface TrackInfo {
   width?: number;
   height?: number;
   aspectRatio?: string; // Aspect ratio in width:height format (e.g., '16:9', '9:16', '1920:1080')
-  detectedAspectRatioLabel?: string; // Human-readable label (e.g., '16:9', '9:16', '1:1')
-  sourceFps?: number; // Original FPS from the source media file
+  detectedAspectRatioLabel?: string; 
+  sourceFps?: number; 
   effectiveFps?: number; // User-set FPS for this track (used for export interpretation)
   isImage?: boolean; // Internal flag to mark image layers for overlay processing
   layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
