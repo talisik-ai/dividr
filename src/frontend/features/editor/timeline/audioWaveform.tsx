@@ -37,6 +37,9 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     const getWaveformBySource = useVideoEditorStore(
       (state) => state.getWaveformBySource,
     );
+    const getWaveformByMediaId = useVideoEditorStore(
+      (state) => state.getWaveformByMediaId,
+    );
     const isGeneratingWaveform = useVideoEditorStore(
       (state) => state.isGeneratingWaveform,
     );
@@ -59,6 +62,64 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     const waveformData = useMemo(() => {
       if (track.type !== 'audio') return null;
 
+      // CRITICAL: Use mediaId for accurate waveform lookup if available
+      // This ensures each clip gets its own waveform, not a stale one from a previous clip
+      if (track.mediaId) {
+        const mediaIdWaveform = getWaveformByMediaId(track.mediaId);
+        if (mediaIdWaveform?.success && mediaIdWaveform.peaks.length > 0) {
+          // Found waveform by mediaId - use it directly
+          let fullDuration = track.sourceDuration
+            ? track.sourceDuration / fps
+            : trackMetrics.durationSeconds;
+
+          if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
+            const originalVideo = mediaLibrary.find(
+              (item) => item.id === track.mediaId,
+            );
+            if (originalVideo) {
+              fullDuration = originalVideo.duration;
+            }
+          }
+
+          const segmentStartTime = track.sourceStartTime || 0;
+          const segmentEndTime =
+            segmentStartTime + trackMetrics.durationSeconds;
+          const isSegment =
+            segmentStartTime > 0 || segmentEndTime < fullDuration;
+
+          if (isSegment && mediaIdWaveform.peaks.length > 0) {
+            const totalPeaks = mediaIdWaveform.peaks.length;
+            const startPeakIndex = Math.floor(
+              (segmentStartTime / fullDuration) * totalPeaks,
+            );
+            const endPeakIndex = Math.floor(
+              (segmentEndTime / fullDuration) * totalPeaks,
+            );
+
+            const segmentPeaks = mediaIdWaveform.peaks.slice(
+              startPeakIndex,
+              endPeakIndex,
+            );
+
+            return {
+              success: true,
+              peaks: segmentPeaks,
+              duration: segmentEndTime - segmentStartTime,
+              sampleRate: mediaIdWaveform.sampleRate,
+              cacheKey: `segment_${mediaIdWaveform.cacheKey}_${segmentStartTime}_${segmentEndTime}`,
+              startTime: segmentStartTime,
+              endTime: segmentEndTime,
+              isSegment: true,
+            };
+          }
+
+          return mediaIdWaveform;
+        }
+      }
+
+      // Fallback to source-based lookup for backward compatibility
+      // CRITICAL: If we have a mediaId but no waveform found, don't use duration-based fallback
+      // as it can match the wrong waveform when videos have the same duration
       let sourceToCheck = track.source;
       // CRITICAL: Use sourceDuration (original media duration) not current trimmed duration
       let fullDuration = track.sourceDuration
@@ -68,8 +129,9 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
         const originalVideo = mediaLibrary.find(
           (item) =>
-            item.type === 'video' &&
-            item.extractedAudio?.previewUrl === track.previewUrl,
+            (track.mediaId && item.id === track.mediaId) ||
+            (item.type === 'video' &&
+              item.extractedAudio?.previewUrl === track.previewUrl),
         );
         if (originalVideo) {
           sourceToCheck = originalVideo.source;
@@ -157,7 +219,11 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         }
       }
 
-      if (!cachedWaveform?.success) {
+      // CRITICAL: Only use duration-based fallback if we DON'T have a mediaId
+      // Duration-based lookup can match the wrong waveform when videos have the same duration
+      // If we have a mediaId, we should generate a new waveform instead of using a potentially wrong one
+      if (!cachedWaveform?.success && !track.mediaId) {
+        // Only use duration fallback for tracks without mediaId (backward compatibility)
         cachedWaveform = AudioWaveformGenerator.findCachedWaveformByDuration(
           fullDuration,
           8000,
@@ -211,7 +277,9 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       track.sourceDuration,
       trackMetrics.durationSeconds,
       getWaveformBySource,
+      getWaveformByMediaId,
       mediaLibrary,
+      track.mediaId,
     ]);
 
     const isLoading = useMemo(() => {
@@ -245,71 +313,47 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     useEffect(() => {
       if (track.type !== 'audio' || waveformData || isLoading) return;
 
-      let sourceToCheck = track.source;
-      // CRITICAL: Use sourceDuration (original media duration) not current trimmed duration
-      let fullDuration = track.sourceDuration
-        ? track.sourceDuration / fps
-        : trackMetrics.durationSeconds;
+      // CRITICAL: Use mediaId for accurate waveform generation if available
+      let mediaItem = null;
+      if (track.mediaId) {
+        mediaItem = mediaLibrary.find((item) => item.id === track.mediaId);
+      }
 
-      if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
-        const originalVideo = mediaLibrary.find(
-          (item) =>
-            item.type === 'video' &&
-            item.extractedAudio?.previewUrl === track.previewUrl,
-        );
-        if (originalVideo) {
-          sourceToCheck = originalVideo.source;
-          fullDuration = originalVideo.duration;
+      // Fallback to source-based lookup
+      if (!mediaItem) {
+        let sourceToCheck = track.source;
+        if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
+          const originalVideo = mediaLibrary.find(
+            (item) =>
+              item.type === 'video' &&
+              item.extractedAudio?.previewUrl === track.previewUrl,
+          );
+          if (originalVideo) {
+            sourceToCheck = originalVideo.source;
+          }
         }
+        mediaItem = mediaLibrary.find((item) => item.source === sourceToCheck);
       }
-
-      const segmentStartTime = track.sourceStartTime || 0;
-      const segmentEndTime = segmentStartTime + trackMetrics.durationSeconds;
-      const isSegment = segmentStartTime > 0 || segmentEndTime < fullDuration;
-
-      const audioPath = track.previewUrl || track.source;
-      let cachedWaveform = null;
-
-      if (isSegment) {
-        cachedWaveform = AudioWaveformGenerator.getCachedWaveformSegment(
-          audioPath,
-          fullDuration,
-          segmentStartTime,
-          segmentEndTime,
-          8000,
-          30,
-        );
-      } else {
-        cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
-          audioPath,
-          fullDuration,
-          8000,
-          30,
-        );
-      }
-
-      if (cachedWaveform?.success) {
-        return;
-      }
-
-      const mediaItem = mediaLibrary.find(
-        (item) => item.source === sourceToCheck,
-      );
 
       if (
         mediaItem &&
         !mediaItem.waveform?.success &&
         !isGeneratingWaveform(mediaItem.id)
       ) {
+        console.log(
+          `🎵 Triggering waveform generation for track ${track.id} (mediaId: ${track.mediaId || 'none'})`,
+        );
         generateWaveformForMedia(mediaItem.id).catch((error) => {
           console.warn(
-            `⚠️ Fallback waveform generation failed for ${track.name}:`,
+            `⚠️ Waveform generation failed for ${track.name}:`,
             error,
           );
         });
       }
     }, [
       track.type,
+      track.id,
+      track.mediaId,
       track.source,
       track.previewUrl,
       track.sourceStartTime,
@@ -436,14 +480,15 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       const { peaks } = waveformData;
       if (!peaks || peaks.length === 0) return;
 
-      // Create a unique key for the current waveform state (includes trim info)
+      // Create a unique key for the current waveform state (includes track ID, trim info)
+      // CRITICAL: Include track.id to ensure cache invalidation when track changes
       const startTime =
         'startTime' in waveformData ? waveformData.startTime : 0;
       const endTime = 'endTime' in waveformData ? waveformData.endTime : 0;
-      const waveformKey = `${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}`;
+      const waveformKey = `${track.id}_${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}`;
       const waveformChanged = lastRenderedWaveformRef.current !== waveformKey;
 
-      // Clear resampled cache when waveform data changes (trim operation)
+      // Clear resampled cache when waveform data changes (trim operation or track change)
       if (waveformChanged) {
         resampledCache.current.clear();
       }
@@ -716,8 +761,11 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     );
   },
   (prevProps, nextProps) => {
+    // CRITICAL: Re-render if track ID, mediaId, or source changes
+    // This ensures waveforms update when new clips are imported
     if (
       prevProps.track.id !== nextProps.track.id ||
+      prevProps.track.mediaId !== nextProps.track.mediaId ||
       prevProps.track.source !== nextProps.track.source
     ) {
       return false;

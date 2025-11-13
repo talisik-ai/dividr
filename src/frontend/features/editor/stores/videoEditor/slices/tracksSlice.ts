@@ -325,10 +325,18 @@ export const createTracksSlice: StateCreator<
         existingAudioTracks,
       );
 
+      const mediaItem = state.mediaLibrary?.find(
+        (item: any) =>
+          (trackData.mediaId && item.id === trackData.mediaId) ||
+          (item.source === trackData.source && item.type === 'video'),
+      );
+      const extractedAudio = mediaItem?.extractedAudio;
+
       const videoTrack: VideoTrack = {
         ...trackData,
         id,
         type: 'video',
+        mediaId: trackData.mediaId || mediaItem?.id, // Preserve mediaId for accurate waveform lookup
         startFrame: videoStartFrame,
         endFrame: videoStartFrame + duration,
         sourceStartTime: trackData.sourceStartTime || 0,
@@ -339,16 +347,11 @@ export const createTracksSlice: StateCreator<
         isLinked: true,
       };
 
-      const mediaItem = state.mediaLibrary?.find(
-        (item: any) =>
-          item.source === trackData.source && item.type === 'video',
-      );
-      const extractedAudio = mediaItem?.extractedAudio;
-
       const audioTrack: VideoTrack = {
         ...trackData,
         id: audioId,
         type: 'audio',
+        mediaId: trackData.mediaId || mediaItem?.id, // Preserve mediaId for accurate waveform lookup
         name: extractedAudio
           ? `${trackData.name.replace(/\.[^/.]+$/, '')} (Extracted Audio)`
           : `${trackData.name} (Audio)`,
@@ -725,6 +728,7 @@ export const createTracksSlice: StateCreator<
       previewUrl: mediaItem.previewUrl,
       originalFile: mediaItem.originalFile,
       tempFilePath: mediaItem.tempFilePath,
+      mediaId: mediaItem.id, // Store media library ID for accurate waveform/sprite lookup
       height: mediaItem.metadata?.height,
       width: mediaItem.metadata?.width,
       aspectRatio,
