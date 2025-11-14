@@ -56,38 +56,77 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
   const prevSourceRef = useRef<string | undefined>(undefined);
   const loadedMetadataRef = useRef(false);
 
+  // Helper function to get the video source URL
+  // Prefers previewUrl, falls back to constructing URL from source path
+  const getVideoSource = (
+    track: VideoTrack | undefined,
+  ): string | undefined => {
+    if (!track) return undefined;
+
+    // Prefer previewUrl if available
+    if (track.previewUrl && track.previewUrl.trim()) {
+      return track.previewUrl;
+    }
+
+    // Fallback to constructing URL from source path
+    if (track.source && track.source.trim()) {
+      const sourcePath = track.source.trim();
+      // Check if source is already a URL
+      if (
+        sourcePath.startsWith('http://') ||
+        sourcePath.startsWith('https://')
+      ) {
+        return sourcePath;
+      }
+      // For local file paths, construct server URL
+      // This matches the format used in createPreviewUrl
+      const encodedPath = encodeURIComponent(sourcePath);
+      return `http://localhost:3001/${encodedPath}`;
+    }
+
+    return undefined;
+  };
+
   // Update video source only when it actually changes
   useEffect(() => {
     const video = videoRef.current;
-    const newSource = activeVideoTrack?.previewUrl;
+    if (!video || !activeVideoTrack) return;
 
-    if (!video) return;
+    const newSource = getVideoSource(activeVideoTrack);
 
     // Only update src if it actually changed OR if the video element is in error/empty state
-    // This handles undo/redo scenarios where the track is restored
+    // This handles undo/redo scenarios and project reloads where the track is restored
     const needsReload =
       prevSourceRef.current !== newSource ||
       (newSource && !video.src) ||
-      (newSource && video.readyState === 0);
+      (newSource && video.readyState === 0) ||
+      (newSource && video.src !== newSource);
 
-    if (needsReload) {
+    if (needsReload && newSource) {
       loadedMetadataRef.current = false;
 
-      if (newSource) {
-        // Pause before changing source to prevent flicker
-        if (!video.paused) {
-          video.pause();
-        }
-        video.src = newSource;
-        video.load(); // Explicitly load the new source
-      } else {
-        video.removeAttribute('src');
-        video.load();
+      // Pause before changing source to prevent flicker
+      if (!video.paused) {
+        video.pause();
       }
 
+      // Explicitly set the src attribute
+      video.src = newSource;
+      video.load(); // Explicitly load the new source
+
       prevSourceRef.current = newSource;
+    } else if (!newSource && video.src) {
+      // Clear src if no source is available
+      video.removeAttribute('src');
+      video.load();
+      prevSourceRef.current = undefined;
     }
-  }, [activeVideoTrack?.previewUrl, activeVideoTrack?.id, videoRef]);
+  }, [
+    activeVideoTrack?.previewUrl,
+    activeVideoTrack?.source,
+    activeVideoTrack?.id,
+    videoRef,
+  ]);
 
   // Handle metadata loaded event and initialize transform if needed
   useEffect(() => {
@@ -203,6 +242,7 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
             playsInline
             controls={false}
             preload="metadata"
+            src={getVideoSource(activeVideoTrack)}
           />
         </div>
       </VideoTransformBoundary>

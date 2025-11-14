@@ -63,9 +63,52 @@ export const createProjectSlice: StateCreator<
       }
 
       const { videoEditor } = project;
+      
+      // Regenerate previewUrl for video/image tracks that are missing it
+      // This ensures videos display correctly after project reload
+      const tracksWithPreviewUrls = await Promise.all(
+        (videoEditor.tracks || []).map(async (track: any) => {
+          // Only process video and image tracks
+          if (track.type !== 'video' && track.type !== 'image') {
+            return track;
+          }
+
+          // If previewUrl exists and is valid, keep it
+          if (track.previewUrl && track.previewUrl.trim()) {
+            return track;
+          }
+
+          // If source exists, regenerate previewUrl
+          if (track.source && track.source.trim()) {
+            try {
+              const previewResult = await window.electronAPI.createPreviewUrl(
+                track.source,
+              );
+              if (previewResult.success && previewResult.url) {
+                console.log(
+                  `🔄 Regenerated previewUrl for track: ${track.name}`,
+                );
+                return {
+                  ...track,
+                  previewUrl: previewResult.url,
+                };
+              }
+            } catch (error) {
+              console.warn(
+                `⚠️ Failed to regenerate previewUrl for track ${track.name}:`,
+                error,
+              );
+            }
+          }
+
+          // Return track as-is if we couldn't regenerate previewUrl
+          return track;
+        }),
+      );
+
       set((state: any) => ({
         ...state,
-        tracks: videoEditor.tracks || [],
+        tracks: tracksWithPreviewUrls,
         mediaLibrary: (videoEditor as any).mediaLibrary || [], // Support for legacy projects
         timeline: { ...state.timeline, ...videoEditor.timeline },
         playback: {
