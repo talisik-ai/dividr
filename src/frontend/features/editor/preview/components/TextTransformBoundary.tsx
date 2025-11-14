@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { RefreshCw } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useVideoEditorStore } from '../../stores/videoEditor/index';
 import { VideoTrack } from '../../stores/videoEditor/index';
 
 interface TextTransformBoundaryProps {
@@ -85,10 +86,19 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
   const dragDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Delay before starting drag to allow double-click
   const lastClickTimeRef = useRef<number>(0); // Track last click time for double-click detection
+  const transformDragStartedRef = useRef(false); // Track if we've started transform drag for playback pause
   const [isDragging, setIsDragging] = useState(false);
   const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
   const [isScaling, setIsScaling] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+
+  // Get playback control methods
+  const startDraggingTransform = useVideoEditorStore(
+    (state) => state.startDraggingTransform,
+  );
+  const endDraggingTransform = useVideoEditorStore(
+    (state) => state.endDraggingTransform,
+  );
   const [isEditing, setIsEditing] = useState(false);
   const [activeHandle, setActiveHandle] = useState<HandleType>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
@@ -439,6 +449,12 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setInitialTransform(transform);
       setIsPendingDrag(true);
 
+      // Pause playback if playing (pause immediately, not after delay)
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
+
       // Start actual drag after a short delay (allows double-click to interrupt)
       dragDelayTimeoutRef.current = setTimeout(() => {
         setIsDragging(true);
@@ -459,8 +475,14 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setActiveHandle(handle);
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
+
+      // Pause playback if playing
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
     },
-    [isSelected, transform],
+    [isSelected, transform, startDraggingTransform],
   );
 
   // Handle mouse down on rotation handle
@@ -474,8 +496,14 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
       onRotationStateChange?.(true);
+
+      // Pause playback if playing
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
     },
-    [isSelected, transform, onRotationStateChange],
+    [isSelected, transform, onRotationStateChange, startDraggingTransform],
   );
 
   // Handle mouse move for all interactions
@@ -500,6 +528,12 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
           }
           setIsDragging(true);
           setIsPendingDrag(false);
+
+          // Pause playback if playing (when drag is confirmed)
+          if (!transformDragStartedRef.current) {
+            transformDragStartedRef.current = true;
+            startDraggingTransform();
+          }
         }
         return; // Don't process drag until it's confirmed
       }
@@ -708,6 +742,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       if (isDragging) {
         onDragStateChange?.(false);
       }
+
+      // Resume playback if we paused it
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
+
       setIsDragging(false);
       setIsPendingDrag(false);
       setIsScaling(false);
@@ -744,6 +785,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     videoWidth,
     videoHeight,
     disableScaleTransform,
+    startDraggingTransform,
+    endDraggingTransform,
   ]);
 
   // Get cursor style based on interaction mode and active handle

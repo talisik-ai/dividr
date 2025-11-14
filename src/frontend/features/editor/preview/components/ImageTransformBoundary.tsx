@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { RefreshCw } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useVideoEditorStore } from '../../stores/videoEditor/index';
 import { VideoTrack } from '../../stores/videoEditor/index';
 
 interface ImageTransformBoundaryProps {
@@ -67,9 +68,18 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   const contentRef = useRef<HTMLDivElement>(null); // Ref to the actual image content (before scale transform)
   const boundaryRef = useRef<HTMLDivElement>(null);
   const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
+  const transformDragStartedRef = useRef(false); // Track if we've started transform drag for playback pause
   const [isDragging, setIsDragging] = useState(false);
   const [isScaling, setIsScaling] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+
+  // Get playback control methods
+  const startDraggingTransform = useVideoEditorStore(
+    (state) => state.startDraggingTransform,
+  );
+  const endDraggingTransform = useVideoEditorStore(
+    (state) => state.endDraggingTransform,
+  );
   const [activeHandle, setActiveHandle] = useState<HandleType>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
     null,
@@ -274,8 +284,14 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       setIsDragging(true);
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
+
+      // Pause playback if playing
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
     },
-    [isSelected, track.id, transform, onSelect],
+    [isSelected, track.id, transform, onSelect, startDraggingTransform],
   );
 
   // Handle mouse down on scale handles
@@ -289,8 +305,14 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       setActiveHandle(handle);
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
+
+      // Pause playback if playing
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
     },
-    [isSelected, transform],
+    [isSelected, transform, startDraggingTransform],
   );
 
   // Handle mouse down on rotation handle
@@ -304,8 +326,14 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
       onRotationStateChange?.(true);
+
+      // Pause playback if playing
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
     },
-    [isSelected, transform, onRotationStateChange],
+    [isSelected, transform, onRotationStateChange, startDraggingTransform],
   );
 
   // Handle mouse move for all interactions
@@ -499,6 +527,13 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       if (isDragging) {
         onDragStateChange?.(false);
       }
+
+      // Resume playback if we paused it
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
+
       setIsDragging(false);
       setIsScaling(false);
       setIsRotating(false);
@@ -532,6 +567,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     transform.scale,
     videoWidth,
     videoHeight,
+    endDraggingTransform,
   ]);
 
   // Get cursor style based on interaction mode and active handle
