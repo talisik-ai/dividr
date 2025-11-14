@@ -55,10 +55,6 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
         }
         video.src = newSource;
         video.load(); // Explicitly load the new source
-        console.log(`🔄 VideoOverlay: Reloading source for track`, {
-          trackId: activeVideoTrack?.id,
-          source: newSource,
-        });
       } else {
         video.removeAttribute('src');
         video.load();

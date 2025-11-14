@@ -63,7 +63,6 @@ export const FullscreenPreview: React.FC = () => {
 
     // Pause playback during seek for smooth scrubbing
     if (playback.isPlaying) {
-      console.log('[FullscreenPreview] Pausing for seek');
       togglePlayback();
     }
   }, [playback.isPlaying, togglePlayback]);
@@ -72,7 +71,6 @@ export const FullscreenPreview: React.FC = () => {
   const handleSeek = useCallback(
     (value: number[]) => {
       const newFrame = Math.floor(value[0]);
-      console.log('[FullscreenPreview] Seeking to frame:', newFrame);
       setCurrentFrame(newFrame);
     },
     [setCurrentFrame],
@@ -88,7 +86,6 @@ export const FullscreenPreview: React.FC = () => {
     // Resume playback if it was playing before seek
     seekTimeoutRef.current = setTimeout(() => {
       if (wasPlayingBeforeSeekRef.current) {
-        console.log('[FullscreenPreview] Resuming playback after seek');
         togglePlayback();
       }
     }, 100);

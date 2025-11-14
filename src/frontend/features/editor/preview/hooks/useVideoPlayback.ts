@@ -101,11 +101,6 @@ export function useVideoPlayback({
         if (forceInvalidate || diff > tolerance * 2) {
           // For larger seeks or forced invalidation, clear decoder buffer
           // by seeking to a slightly different position first
-          if (forceInvalidate) {
-            console.log(
-              `🔄 Force invalidating buffer: ${video.currentTime.toFixed(3)}s -> ${targetTime.toFixed(3)}s (frame ${targetFrame})`,
-            );
-          }
           video.currentTime = targetTime + 0.001;
         }
 
@@ -176,10 +171,6 @@ export function useVideoPlayback({
       console.warn('[VideoPlayback] Max recovery attempts reached');
       return;
     }
-
-    console.log(
-      `[VideoPlayback] Attempting recovery (attempt ${videoHealth.recoveryAttempts + 1}/${maxRecoveryAttempts})`,
-    );
 
     setVideoHealth((prev) => ({
       ...prev,
@@ -476,44 +467,6 @@ export function useVideoPlayback({
     const video = videoRef.current;
     if (!video || !activeVideoTrack || !isVideoReady) return;
 
-    // Detect segment transition (same media file, different trim offset)
-    // This is critical for trim/cut operations where the track ID changes
-    // but the underlying video source remains the same
-    const currentTrackState = {
-      id: activeVideoTrack.id,
-      previewUrl: activeVideoTrack.previewUrl,
-      sourceStartTime: activeVideoTrack.sourceStartTime || 0,
-    };
-
-    const isSegmentTransition =
-      prevActiveTrackRef.current !== null &&
-      prevActiveTrackRef.current.previewUrl === currentTrackState.previewUrl &&
-      prevActiveTrackRef.current.id !== currentTrackState.id &&
-      Math.abs(
-        prevActiveTrackRef.current.sourceStartTime -
-          currentTrackState.sourceStartTime,
-      ) > 0.01;
-
-    prevActiveTrackRef.current = currentTrackState;
-
-    // Detect if trim boundaries actually changed
-    const currentTrimState: TrimState = {
-      trackId: activeVideoTrack.id,
-      startFrame: activeVideoTrack.startFrame,
-      endFrame: activeVideoTrack.endFrame,
-      sourceStartTime: activeVideoTrack.sourceStartTime || 0,
-    };
-
-    const trimChanged =
-      !prevVideoTrimRef.current ||
-      prevVideoTrimRef.current.trackId !== currentTrimState.trackId ||
-      prevVideoTrimRef.current.startFrame !== currentTrimState.startFrame ||
-      prevVideoTrimRef.current.endFrame !== currentTrimState.endFrame ||
-      prevVideoTrimRef.current.sourceStartTime !==
-        currentTrimState.sourceStartTime;
-
-    prevVideoTrimRef.current = currentTrimState;
-
     // Calculate target video time from timeline frame
     // This mapping is CRITICAL for trim/cut sync:
     // globalTimelineFrame -> relativeClipFrame -> sourceVideoTime
@@ -524,21 +477,49 @@ export function useVideoPlayback({
     const trackTime = relativeFrame / fps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
 
-    // Calculate trimmed boundaries to prevent seeking outside valid range
-    const trackDurationSeconds =
-      (activeVideoTrack.endFrame - activeVideoTrack.startFrame) / fps;
-    const trimmedEndTime =
-      (activeVideoTrack.sourceStartTime || 0) + trackDurationSeconds;
-
-    // Clamp to trimmed boundaries [sourceStartTime, trimmedEndTime]
-    // This ensures we never seek to pre-trim or post-trim content
-    const clampedTargetTime = Math.max(
-      activeVideoTrack.sourceStartTime || 0,
-      Math.min(targetTime, Math.min(trimmedEndTime, video.duration || 0)),
-    );
-
-    const diff = Math.abs(video.currentTime - clampedTargetTime);
+    // Calculate the actual current video position (where video SHOULD be)
+    const diff = Math.abs(video.currentTime - targetTime);
     const tolerance = 1 / fps;
+
+    // Track state changes
+    const currentTrackState = {
+      id: activeVideoTrack.id,
+      previewUrl: activeVideoTrack.previewUrl,
+      sourceStartTime: activeVideoTrack.sourceStartTime || 0,
+    };
+
+    // Detect ACTUAL source file change (different video file loaded)
+    const isSourceFileChange =
+      prevActiveTrackRef.current !== null &&
+      prevActiveTrackRef.current.previewUrl !== currentTrackState.previewUrl;
+
+    // Detect segment boundary crossing within same source (cut/trim segments)
+    const isSameSourceSegmentChange =
+      prevActiveTrackRef.current !== null &&
+      prevActiveTrackRef.current.previewUrl === currentTrackState.previewUrl &&
+      prevActiveTrackRef.current.id !== currentTrackState.id;
+
+    prevActiveTrackRef.current = currentTrackState;
+
+    // CRITICAL: Only detect trim changes when user is actively editing,
+    // NOT when playback naturally crosses segment boundaries
+    const currentTrimState: TrimState = {
+      trackId: activeVideoTrack.id,
+      startFrame: activeVideoTrack.startFrame,
+      endFrame: activeVideoTrack.endFrame,
+      sourceStartTime: activeVideoTrack.sourceStartTime || 0,
+    };
+
+    // User-initiated trim change detection (editing, not playback)
+    const trimChanged =
+      prevVideoTrimRef.current !== null &&
+      prevVideoTrimRef.current.trackId === currentTrimState.trackId && // Same track
+      (prevVideoTrimRef.current.startFrame !== currentTrimState.startFrame ||
+        prevVideoTrimRef.current.endFrame !== currentTrimState.endFrame ||
+        prevVideoTrimRef.current.sourceStartTime !==
+          currentTrimState.sourceStartTime);
+
+    prevVideoTrimRef.current = currentTrimState;
 
     // Determine if this is a scrubbing operation (paused and seeking)
     const isScrubbing = !isPlaying && diff > tolerance;
@@ -548,24 +529,41 @@ export function useVideoPlayback({
       isScrubbingRef.current = isScrubbing;
     }
 
-    // Seek conditions:
-    // 1. Trim boundaries changed (immediate seek required with buffer invalidation)
-    // 2. Segment transition (same media, different offset - force buffer clear)
-    // 3. Scrubbing/seeking while paused (immediate seek for responsiveness)
-    // 4. Playing but significantly out of sync (debounced seek to avoid stuttering)
-    const shouldSeek =
-      trimChanged ||
-      isSegmentTransition ||
-      isScrubbing ||
-      (isPlaying && diff > tolerance * 3);
+    // PROFESSIONAL PLAYBACK LOGIC:
+    // During continuous playback, let the browser's video decoder handle
+    // playback naturally. Only seek when absolutely necessary.
+    const isContinuousPlayback = isPlaying && !seekInProgressRef.current;
 
-    if (shouldSeek && diff > tolerance) {
-      // Use immediate seek for trim changes, segment transitions, and scrubbing
-      // Force buffer invalidation for trim/cut operations to prevent stale frames
-      const useImmediate = trimChanged || isSegmentTransition || isScrubbing;
-      const forceInvalidate = trimChanged || isSegmentTransition;
+    // Check if video is playing continuously through same source
+    // (even across cut boundaries - this is the key to smooth playback)
+    const isPlayingThroughCuts =
+      isContinuousPlayback && isSameSourceSegmentChange;
 
-      queueSeek(clampedTargetTime, currentFrame, useImmediate, forceInvalidate);
+    // SEEK DECISION LOGIC:
+    // Only seek when one of these conditions is true:
+    // 1. User is scrubbing while paused
+    // 2. Source file changed (different video loaded)
+    // 3. User manually trimmed the current track (editing operation)
+    // 4. Significant drift detected during playback (> 3 frames)
+    //
+    // DO NOT SEEK when:
+    // - Playing continuously through cut boundaries in same source
+    // - Video time is within acceptable tolerance
+    const needsSeek =
+      isScrubbing || // User scrubbing
+      isSourceFileChange || // Different video file
+      trimChanged || // User edited trim points
+      (!isContinuousPlayback && diff > tolerance) || // Paused and out of sync
+      (isContinuousPlayback && diff > tolerance * 3 && !isPlayingThroughCuts); // Drift correction (but not at cuts)
+
+    if (needsSeek && diff > tolerance) {
+      // Immediate seeks for user interactions and file changes
+      const useImmediate = isScrubbing || isSourceFileChange || trimChanged;
+
+      // Buffer invalidation only for file changes and user trim edits
+      const forceInvalidate = isSourceFileChange || trimChanged;
+
+      queueSeek(targetTime, currentFrame, useImmediate, forceInvalidate);
     }
   }, [currentFrame, fps, isPlaying, activeVideoTrack, isVideoReady, queueSeek]);
 
@@ -582,19 +580,11 @@ export function useVideoPlayback({
         // Segment transition - video element is already loaded
         // Just ensure it's ready and force a seek to the new offset
         if (video && video.readyState >= 2) {
-          console.log(
-            `🔄 Segment transition detected: ${prevActiveTrackRef.current?.id} -> ${activeVideoTrack.id}`,
-            `sourceStartTime: ${prevActiveTrackRef.current?.sourceStartTime}s -> ${activeVideoTrack.sourceStartTime}s`,
-          );
           // Video is already loaded, just mark as ready
           setIsVideoReady(true);
         }
       } else {
         // Different video file - full reload required
-        console.log(
-          `🎬 Track changed to new video: ${activeVideoTrack.id}`,
-          `sourceStartTime: ${activeVideoTrack.sourceStartTime}s`,
-        );
         setIsVideoReady(false);
       }
 
@@ -609,9 +599,6 @@ export function useVideoPlayback({
       if (video && activeVideoTrack.previewUrl && !isSameVideoFile) {
         // If video element doesn't have the correct source, force reload
         if (!video.src || video.readyState === 0) {
-          console.log(
-            `🔄 useVideoPlayback: Force reloading video for restored track ${activeVideoTrack.id}`,
-          );
           video.src = activeVideoTrack.previewUrl;
           video.load();
         }

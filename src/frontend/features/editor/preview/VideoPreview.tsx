@@ -423,8 +423,6 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           isBuffering: true,
           lastSeekTime: null,
         });
-
-        console.log(`🎬 Creating video element for track: ${track.name}`);
       }
     });
 
