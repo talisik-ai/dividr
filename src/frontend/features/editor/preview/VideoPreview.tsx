@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaSquarePlus } from 'react-icons/fa6';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 
 // Custom debounce and throttle utilities to avoid external dependencies
 const debounce = <T extends (...args: unknown[]) => unknown>(
@@ -43,10 +44,11 @@ interface VideoElement {
 }
 
 // Remotion-inspired media time calculation
+// Use display FPS from source video for frontend rendering
 const calculateMediaTime = (
   currentFrame: number,
   startFrame: number,
-  fps: number,
+  fps: number, // Display FPS from source video
   playbackRate: number,
 ) => {
   const framesSinceStart = currentFrame - startFrame;
@@ -105,8 +107,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
     // Debug logging for subtitle timing verification
     if (activeSubtitles.length > 0) {
+      const displayFps = getDisplayFps(tracks);
       activeSubtitles.forEach((track) => {
-        const currentTime = currentFrame / timeline.fps;
+        const currentTime = currentFrame / displayFps;
         console.log(
           `[Canvas Subtitle Display] Frame: ${currentFrame} (${currentTime.toFixed(3)}s) | ` +
             `Track: [${track.startFrame}, ${track.endFrame}) | ` +
@@ -456,6 +459,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   // Simplified video synchronization - remove debouncing for debugging
   useEffect(() => {
     const videoElements = videoElementsRef.current;
+    const displayFps = getDisplayFps(tracks);
 
     tracks.forEach((track) => {
       const videoElement = videoElements.get(track.id);
@@ -463,7 +467,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         const targetTime = calculateMediaTime(
           timeline.currentFrame,
           track.startFrame,
-          timeline.fps,
+          displayFps,
           playback.playbackRate,
         );
 
@@ -475,7 +479,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         if (
           isTrackActive &&
           targetTime >= 0 &&
-          targetTime <= track.duration / timeline.fps
+          targetTime <= track.duration / displayFps
         ) {
           // Simplified seeking - remove complex logic for debugging
           if (Math.abs(videoElement.element.currentTime - targetTime) > 0.1) {
@@ -484,7 +488,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
         }
       }
     });
-  }, [timeline.currentFrame, timeline.fps, playback.playbackRate, tracks]);
+  }, [timeline.currentFrame, playback.playbackRate, tracks]);
 
   // Enhanced playback synchronization with buffering awareness
   useEffect(() => {

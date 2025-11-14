@@ -2,6 +2,7 @@ import AudioWaveformGenerator from '@/backend/frontend_use/audioWaveformGenerato
 import { Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 
 interface AudioWaveformProps {
   track: VideoTrack;
@@ -47,15 +48,17 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       (state) => state.generateWaveformForMedia,
     );
     const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
-    const fps = useVideoEditorStore((state) => state.timeline.fps);
+    const allTracks = useVideoEditorStore((state) => state.tracks);
+    // Get display FPS from source video tracks (dynamic but static once determined)
+    const displayFps = useMemo(() => getDisplayFps(allTracks), [allTracks]);
 
     const trackMetrics = useMemo(
       () => ({
         durationFrames: track.endFrame - track.startFrame,
-        durationSeconds: (track.endFrame - track.startFrame) / fps,
+        durationSeconds: (track.endFrame - track.startFrame) / displayFps,
         trackStartTime: track.sourceStartTime || 0,
       }),
-      [track.startFrame, track.endFrame, track.sourceStartTime, fps],
+      [track.startFrame, track.endFrame, track.sourceStartTime, displayFps],
     );
 
     // Get waveform data from the store
@@ -69,7 +72,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         if (mediaIdWaveform?.success && mediaIdWaveform.peaks.length > 0) {
           // Found waveform by mediaId - use it directly
           let fullDuration = track.sourceDuration
-            ? track.sourceDuration / fps
+            ? track.sourceDuration / displayFps
             : trackMetrics.durationSeconds;
 
           if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {

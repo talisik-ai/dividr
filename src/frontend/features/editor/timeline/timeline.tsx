@@ -17,6 +17,7 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 import { DragGhost } from './dragGhost';
 import { DropZoneIndicator } from './dropZoneIndicator';
 import { useAutoScroll } from './hooks/useAutoScroll';
@@ -229,8 +230,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       const animate = () => {
         if (!playback.isPlaying) return;
 
+        const displayFps = getDisplayFps(tracks);
         const elapsed = (performance.now() - startTime) / 1000; // elapsed seconds
-        const frameAdvance = elapsed * timeline.fps * playback.playbackRate;
+        const frameAdvance = elapsed * displayFps * playback.playbackRate;
         const targetFrame = Math.floor(startFrame + frameAdvance);
 
         // Linear playback - respect gaps like Premiere Pro
@@ -250,9 +252,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               const newAnimate = () => {
                 if (!playback.isPlaying) return;
 
+                const displayFps = getDisplayFps(tracks);
                 const newElapsed = (performance.now() - newStartTime) / 1000;
                 const newFrameAdvance =
-                  newElapsed * timeline.fps * playback.playbackRate;
+                  newElapsed * displayFps * playback.playbackRate;
                 const newTargetFrame = Math.floor(newFrameAdvance);
 
                 if (newTargetFrame < effectiveEndFrame) {
@@ -295,7 +298,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       playback.isPlaying,
       playback.isLooping,
       playback.playbackRate,
-      timeline.fps,
       effectiveEndFrame,
       setCurrentFrame,
       tracks,

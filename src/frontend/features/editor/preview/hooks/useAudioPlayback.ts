@@ -21,12 +21,14 @@ export function useAudioPlayback({
   audioRef,
   independentAudioTrack,
   currentFrame,
-  fps,
+  fps, // Display FPS from source video (passed from VideoBlobPreview)
   isPlaying,
   isMuted,
   volume,
   playbackRate,
 }: UseAudioPlaybackProps) {
+  // Use display FPS from source video for frontend rendering
+  const displayFps = fps;
   // Track previous trim state to detect actual trim changes
   const prevAudioTrimRef = useRef<TrimState | null>(null);
 
@@ -52,7 +54,7 @@ export function useAudioPlayback({
 
     if (isWithinAudioRange) {
       const relativeFrame = currentFrame - independentAudioTrack.startFrame;
-      const trackTime = relativeFrame / fps;
+      const trackTime = relativeFrame / displayFps;
       const targetTime =
         (independentAudioTrack.sourceStartTime || 0) + trackTime;
 
@@ -67,7 +69,7 @@ export function useAudioPlayback({
         /* ignore */
       });
     }
-  }, [independentAudioTrack, currentFrame, fps, isPlaying, isMuted]);
+  }, [independentAudioTrack, currentFrame, displayFps, isPlaying, isMuted]);
 
   // Sync play/pause & volume for independent audio element
   useEffect(() => {
@@ -191,7 +193,7 @@ export function useAudioPlayback({
     } else {
       // Normal time calculation for scrubbing, paused, or different sources
       const relativeFrame = currentFrame - independentAudioTrack.startFrame;
-      const trackTime = relativeFrame / fps;
+      const trackTime = relativeFrame / displayFps;
       targetTime = (independentAudioTrack.sourceStartTime || 0) + trackTime;
       diff = Math.abs(audio.currentTime - targetTime);
     }
@@ -226,7 +228,7 @@ export function useAudioPlayback({
     }
   }, [
     currentFrame,
-    fps,
+    displayFps,
     isPlaying,
     independentAudioTrack?.id,
     independentAudioTrack?.startFrame,

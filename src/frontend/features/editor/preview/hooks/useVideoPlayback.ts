@@ -39,7 +39,7 @@ export function useVideoPlayback({
   activeVideoTrack,
   independentAudioTrack,
   currentFrame,
-  fps,
+  fps, // Display FPS from source video (passed from VideoBlobPreview)
   isPlaying,
   isMuted,
   volume,
@@ -47,6 +47,8 @@ export function useVideoPlayback({
   setCurrentFrame,
   allTracks = [],
 }: UseVideoPlaybackProps) {
+  // Use display FPS from source video for frontend rendering
+  const displayFps = fps;
   // Track previous trim state to detect actual trim changes
   const prevVideoTrimRef = useRef<TrimState | null>(null);
 
@@ -89,7 +91,7 @@ export function useVideoPlayback({
 
       // Only seek if video is ready and time differs significantly
       const diff = Math.abs(video.currentTime - targetTime);
-      const tolerance = 1 / fps;
+      const tolerance = 1 / displayFps;
 
       if (video.readyState >= 2 && diff > tolerance) {
         // Mark seek in progress to prevent circular updates
@@ -130,7 +132,7 @@ export function useVideoPlayback({
         seekInProgressRef.current = false;
       }
     },
-    [fps],
+    [displayFps],
   );
 
   // Smart seek queueing for rapid seeks (scrubbing)
@@ -182,7 +184,7 @@ export function useVideoPlayback({
       0,
       currentFrame - activeVideoTrack.startFrame,
     );
-    const trackTime = relativeFrame / fps;
+    const trackTime = relativeFrame / displayFps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
 
     // Try loading the video element
@@ -204,7 +206,7 @@ export function useVideoPlayback({
     activeVideoTrack,
     videoHealth.recoveryAttempts,
     currentFrame,
-    fps,
+    displayFps,
     isPlaying,
     performSeek,
   ]);
@@ -227,12 +229,12 @@ export function useVideoPlayback({
       0,
       currentFrame - activeVideoTrack.startFrame,
     );
-    const trackTime = relativeFrame / fps;
+    const trackTime = relativeFrame / displayFps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
 
     // Calculate the trimmed end time based on track duration
     const trackDurationSeconds =
-      (activeVideoTrack.endFrame - activeVideoTrack.startFrame) / fps;
+      (activeVideoTrack.endFrame - activeVideoTrack.startFrame) / displayFps;
     const trimmedEndTime =
       (activeVideoTrack.sourceStartTime || 0) + trackDurationSeconds;
 
@@ -254,7 +256,7 @@ export function useVideoPlayback({
   }, [
     activeVideoTrack,
     currentFrame,
-    fps,
+    displayFps,
     isPlaying,
     isMuted,
     independentAudioTrack,
@@ -441,13 +443,14 @@ export function useVideoPlayback({
         !seekInProgressRef.current
       ) {
         const elapsedFrames =
-          (metadata.mediaTime - (trackForSync.sourceStartTime || 0)) * fps +
+          (metadata.mediaTime - (trackForSync.sourceStartTime || 0)) *
+            displayFps +
           trackForSync.startFrame;
         const newFrame = Math.floor(elapsedFrames);
 
         // Verify this frame update is consistent with the last seek
         const lastSeek = lastSeekStateRef.current;
-        if (!lastSeek || Math.abs(newFrame - lastSeek.frame) > fps * 2) {
+        if (!lastSeek || Math.abs(newFrame - lastSeek.frame) > displayFps * 2) {
           // Large discrepancy detected or no recent seek - update timeline
           setCurrentFrame(newFrame);
         } else {
@@ -460,7 +463,7 @@ export function useVideoPlayback({
 
     handle = video.requestVideoFrameCallback(step);
     return () => video.cancelVideoFrameCallback(handle);
-  }, [activeVideoTrack?.id, isPlaying, fps, setCurrentFrame]);
+  }, [activeVideoTrack?.id, isPlaying, displayFps, setCurrentFrame]);
 
   // Sync video element on scrubbing/seek - MASTER SYNCHRONIZATION EFFECT
   useEffect(() => {
@@ -474,12 +477,12 @@ export function useVideoPlayback({
       0,
       currentFrame - activeVideoTrack.startFrame,
     );
-    const trackTime = relativeFrame / fps;
+    const trackTime = relativeFrame / displayFps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
 
     // Calculate the actual current video position (where video SHOULD be)
     const diff = Math.abs(video.currentTime - targetTime);
-    const tolerance = 1 / fps;
+    const tolerance = 1 / displayFps;
 
     // Track state changes
     const currentTrackState = {
@@ -565,7 +568,14 @@ export function useVideoPlayback({
 
       queueSeek(targetTime, currentFrame, useImmediate, forceInvalidate);
     }
-  }, [currentFrame, fps, isPlaying, activeVideoTrack, isVideoReady, queueSeek]);
+  }, [
+    currentFrame,
+    displayFps,
+    isPlaying,
+    activeVideoTrack,
+    isVideoReady,
+    queueSeek,
+  ]);
 
   // Reset video ready state when track changes
   useEffect(() => {

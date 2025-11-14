@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { usePreviewShortcuts } from '../stores/videoEditor/hooks/usePreviewShortcuts';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 import { DragGuides } from './components/DragGuides';
 import { PreviewPlaceholder } from './components/PreviewPlaceholder';
 import { RotationInfoBadge } from './components/RotationInfoBadge';
@@ -106,13 +107,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     importMediaToTimeline,
   });
 
+  // Get display FPS from source video tracks (dynamic but static once determined)
+  const displayFps = getDisplayFps(tracks);
+
   // Video playback synchronization
   const { handleLoadedMetadata: handleVideoLoadedMetadata } = useVideoPlayback({
     videoRef,
     activeVideoTrack,
     independentAudioTrack,
     currentFrame: timeline.currentFrame,
-    fps: timeline.fps,
+    fps: displayFps, // Use display FPS from source video, not export FPS
     isPlaying: playback.isPlaying,
     isMuted: playback.muted,
     volume: playback.volume,
@@ -126,7 +130,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     audioRef,
     independentAudioTrack,
     currentFrame: timeline.currentFrame,
-    fps: timeline.fps,
+    fps: displayFps, // Use display FPS from source video, not export FPS
     isPlaying: playback.isPlaying,
     isMuted: playback.muted,
     volume: playback.volume,

@@ -3,6 +3,7 @@ import { Slider } from '@/frontend/components/ui/slider';
 import { Minimize, Pause, Play } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 import { VideoBlobPreview } from './VideoBlobPreview';
 
 export const FullscreenPreview: React.FC = () => {
@@ -39,14 +40,15 @@ export const FullscreenPreview: React.FC = () => {
   }, [setFullscreen]);
 
   // Format time helper
+  const displayFps = useMemo(() => getDisplayFps(tracks), [tracks]);
   const formatTime = useCallback(
     (frame: number) => {
-      const totalSeconds = frame / timeline.fps;
+      const totalSeconds = frame / displayFps;
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = Math.floor(totalSeconds % 60);
       return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     },
-    [timeline.fps],
+    [displayFps],
   );
 
   // Calculate effective end frame
