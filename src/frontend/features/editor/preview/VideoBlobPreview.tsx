@@ -402,8 +402,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           return;
         }
 
-        // If nothing is selected and we have video content, add new text at click position
-        if (activeVideoTrack || activeAudioTrack) {
+        // Only create new text if in text-edit mode AND we have video content
+        if (
+          (activeVideoTrack || activeAudioTrack) &&
+          preview.interactionMode === 'text-edit'
+        ) {
           // Get click position relative to container
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect) return;
