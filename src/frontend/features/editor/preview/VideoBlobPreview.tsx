@@ -20,6 +20,7 @@ import {
 } from './hooks';
 import {
   AudioOverlay,
+  CanvasOverlay,
   ImageOverlay,
   SubtitleOverlay,
   TextOverlay,
@@ -335,6 +336,49 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [setSelectedTracks],
   );
 
+  // Handle video transform updates
+  const handleVideoTransformUpdate = useCallback(
+    (
+      trackId: string,
+      transform: {
+        x?: number;
+        y?: number;
+        scale?: number;
+        rotation?: number;
+        width?: number;
+        height?: number;
+      },
+    ) => {
+      const track = tracks.find((t) => t.id === trackId);
+      if (!track || track.type !== 'video') return;
+
+      const currentTransform = track.textTransform || {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+        width: track.width || baseVideoWidth,
+        height: track.height || baseVideoHeight,
+      };
+
+      updateTrack(trackId, {
+        textTransform: {
+          ...currentTransform,
+          ...transform,
+        },
+      });
+    },
+    [tracks, updateTrack, baseVideoWidth, baseVideoHeight],
+  );
+
+  // Handle video selection
+  const handleVideoSelect = useCallback(
+    (trackId: string) => {
+      setSelectedTracks([trackId]);
+    },
+    [setSelectedTracks],
+  );
+
   // Handle text content updates
   const handleTextUpdate = useCallback(
     (trackId: string, newText: string) => {
@@ -507,10 +551,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     coordinateSystem, // Pass the fixed coordinate system to all overlays
   };
 
-  // Get rotation for rotation badge (works for both text and image)
+  // Get rotation for rotation badge (works for text, image, and video)
   const selectedTextTrack = tracks.find(
     (t) =>
-      (t.type === 'text' || t.type === 'image') &&
+      (t.type === 'text' || t.type === 'image' || t.type === 'video') &&
       timeline.selectedTrackIds.includes(t.id),
   );
 
@@ -572,13 +616,28 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onMouseEnter={() => setIsPreviewFocused(true)}
       tabIndex={0}
     >
+      {/* Black Canvas Overlay */}
+      {activeVideoTrack && (
+        <CanvasOverlay
+          actualWidth={actualWidth}
+          actualHeight={actualHeight}
+          panX={preview.panX}
+          panY={preview.panY}
+        />
+      )}
+
       {/* Video Overlay */}
       <VideoOverlay
         {...overlayProps}
         videoRef={videoRef}
         activeVideoTrack={activeVideoTrack}
         allTracks={tracks}
+        selectedTrackIds={timeline.selectedTrackIds}
         onLoadedMetadata={handleVideoLoadedMetadata}
+        onTransformUpdate={handleVideoTransformUpdate}
+        onSelect={handleVideoSelect}
+        onRotationStateChange={setIsRotating}
+        onDragStateChange={handleDragStateChange}
       />
 
       {/* Audio Overlay */}

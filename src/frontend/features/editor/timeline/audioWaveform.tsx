@@ -126,7 +126,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       let sourceToCheck = track.source;
       // CRITICAL: Use sourceDuration (original media duration) not current trimmed duration
       let fullDuration = track.sourceDuration
-        ? track.sourceDuration / fps
+        ? track.sourceDuration / displayFps
         : trackMetrics.durationSeconds;
 
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
