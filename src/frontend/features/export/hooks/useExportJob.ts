@@ -475,6 +475,21 @@ function convertTracksToFFmpegInputs(
       );
     }
 
+    // Add video transform for video tracks
+    if (track.type === 'video' && track.textTransform) {
+      trackInfo.videoTransform = {
+        x: track.textTransform.x,
+        y: track.textTransform.y,
+        scale: track.textTransform.scale,
+        rotation: track.textTransform.rotation,
+        width: track.textTransform.width,
+        height: track.textTransform.height,
+      };
+      console.log(
+        `🎥 Video transform for "${track.name}": pos=(${track.textTransform.x.toFixed(2)}, ${track.textTransform.y.toFixed(2)}), scale=${track.textTransform.scale.toFixed(2)}, rotation=${track.textTransform.rotation.toFixed(1)}°, size=${track.textTransform.width}x${track.textTransform.height}`,
+      );
+    }
+
     return trackInfo;
   });
 }
