@@ -691,7 +691,10 @@ export const createTracksSlice: StateCreator<
     }
 
     // Convert media library item to single track (for non-subtitles or fallback)
-    const duration = Math.floor(mediaItem.duration * state.timeline.fps);
+    // CRITICAL: Use source FPS from media item, not timeline export FPS
+    // This ensures track duration is always calculated correctly based on original media FPS
+    const sourceFps = mediaItem.metadata?.fps || 30; // Fallback to 30 if not available
+    const duration = Math.floor(mediaItem.duration * sourceFps);
 
     // Use stored aspect ratio from media library item if available,
     // otherwise detect from dimensions (fallback for older imports)
@@ -733,8 +736,11 @@ export const createTracksSlice: StateCreator<
       width: mediaItem.metadata?.width,
       aspectRatio,
       detectedAspectRatioLabel: aspectRatioLabel,
-      sourceFps: mediaItem.metadata?.fps, // Store original FPS from media file
-      effectiveFps: mediaItem.metadata?.fps || state.timeline.fps, // Initialize to source FPS or timeline FPS
+      // CRITICAL: sourceFps is IMMUTABLE - always use original FPS from media file
+      // This ensures tracks restore to original FPS when deleted and re-added
+      sourceFps: mediaItem.metadata?.fps, // Original FPS extracted from the source video file (IMMUTABLE)
+      // effectiveFps defaults to sourceFps - user modifications only affect playback/preview, not source
+      effectiveFps: mediaItem.metadata?.fps || state.timeline.fps, // User-set FPS for this track (used for export interpretation only)
       duration,
       startFrame,
       endFrame: startFrame + duration,
@@ -862,9 +868,22 @@ export const createTracksSlice: StateCreator<
   },
 
   updateTrack: (trackId, updates) => {
+    // CRITICAL: Prevent mutation of sourceFps - it must remain immutable
+    // sourceFps represents the original FPS from the source media file
+    // and should NEVER be changed after track creation
+    let safeUpdates = updates;
+    if ('sourceFps' in updates) {
+      console.warn(
+        `⚠️ Attempted to mutate sourceFps on track ${trackId}. sourceFps is immutable and cannot be changed. Ignoring this update.`,
+      );
+      // Remove sourceFps from updates to prevent mutation
+      const { sourceFps: _removed, ...rest } = updates as any;
+      safeUpdates = rest;
+    }
+
     set((state: any) => ({
       tracks: state.tracks.map((track: VideoTrack) =>
-        track.id === trackId ? { ...track, ...updates } : track,
+        track.id === trackId ? { ...track, ...safeUpdates } : track,
       ),
     }));
 
