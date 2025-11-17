@@ -26,7 +26,10 @@ import {
   TextOverlay,
   VideoOverlay,
 } from './overlays';
-import { calculateContentScale } from './utils/scalingUtils';
+import {
+  calculateContentScale,
+  calculateFitDimensions,
+} from './utils/scalingUtils';
 import { getActiveTracksAtFrame } from './utils/trackUtils';
 
 interface VideoBlobPreviewProps {
@@ -378,6 +381,118 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     },
     [setSelectedTracks],
   );
+
+  // Auto-fit video tracks when canvas aspect ratio changes
+  // This ensures video content automatically adapts to new canvas dimensions
+  const prevCanvasDimensionsRef = useRef<{
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useEffect(() => {
+    // Skip if canvas dimensions are invalid or not initialized
+    if (
+      !preview.canvasWidth ||
+      !preview.canvasHeight ||
+      preview.canvasWidth <= 0 ||
+      preview.canvasHeight <= 0
+    ) {
+      return;
+    }
+
+    // Check if canvas dimensions actually changed
+    const prevDimensions = prevCanvasDimensionsRef.current;
+    if (
+      prevDimensions &&
+      prevDimensions.width === preview.canvasWidth &&
+      prevDimensions.height === preview.canvasHeight
+    ) {
+      return; // No change, skip auto-fit
+    }
+
+    // Store current dimensions for next comparison
+    prevCanvasDimensionsRef.current = {
+      width: preview.canvasWidth,
+      height: preview.canvasHeight,
+    };
+
+    // Skip auto-fit on initial mount (when prevDimensions is null)
+    // This prevents auto-fitting when component first loads
+    if (!prevDimensions) {
+      return;
+    }
+
+    // Find all video tracks that need auto-fitting
+    const videoTracks = tracks.filter(
+      (track) => track.type === 'video' && track.visible,
+    );
+
+    if (videoTracks.length === 0) {
+      return; // No video tracks to fit
+    }
+
+    // Auto-fit each video track
+    videoTracks.forEach((track) => {
+      // Get original video dimensions
+      // Priority: track.width/height > video element dimensions > canvas dimensions
+      let originalWidth: number;
+      let originalHeight: number;
+
+      if (track.width && track.height) {
+        // Use stored track dimensions (most reliable)
+        originalWidth = track.width;
+        originalHeight = track.height;
+      } else if (videoRef.current && videoRef.current.videoWidth > 0) {
+        // Fallback to video element dimensions
+        originalWidth = videoRef.current.videoWidth;
+        originalHeight = videoRef.current.videoHeight;
+      } else {
+        // Skip if we can't determine original dimensions
+        return;
+      }
+
+      // Calculate new dimensions that fit within canvas while preserving aspect ratio
+      const fittedDimensions = calculateFitDimensions(
+        originalWidth,
+        originalHeight,
+        preview.canvasWidth,
+        preview.canvasHeight,
+      );
+
+      // Get current transform (preserve position, scale, rotation)
+      const currentTransform = track.textTransform || {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+        width: originalWidth,
+        height: originalHeight,
+      };
+
+      // Only update if dimensions actually changed
+      if (
+        currentTransform.width !== fittedDimensions.width ||
+        currentTransform.height !== fittedDimensions.height
+      ) {
+        // Update transform with new dimensions, preserving other properties
+        handleVideoTransformUpdate(track.id, {
+          width: fittedDimensions.width,
+          height: fittedDimensions.height,
+          // Preserve position, scale, and rotation
+          x: currentTransform.x,
+          y: currentTransform.y,
+          scale: currentTransform.scale,
+          rotation: currentTransform.rotation,
+        });
+      }
+    });
+  }, [
+    preview.canvasWidth,
+    preview.canvasHeight,
+    tracks,
+    videoRef,
+    handleVideoTransformUpdate,
+  ]);
 
   // Handle text content updates
   const handleTextUpdate = useCallback(
