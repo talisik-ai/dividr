@@ -106,3 +106,53 @@ export function normalizedToPixels(
 export function pixelsToNormalized(pixels: number, dimension: number): number {
   return pixels / (dimension / 2);
 }
+
+/**
+ * Calculate dimensions that fit within a container while preserving aspect ratio
+ * Uses "contain" strategy - video fits entirely within canvas without cropping
+ *
+ * @param originalWidth - Original video/image width
+ * @param originalHeight - Original video/image height
+ * @param containerWidth - Canvas/container width
+ * @param containerHeight - Canvas/container height
+ * @returns Fitted dimensions that preserve aspect ratio
+ */
+export function calculateFitDimensions(
+  originalWidth: number,
+  originalHeight: number,
+  containerWidth: number,
+  containerHeight: number,
+): { width: number; height: number } {
+  if (
+    !originalWidth ||
+    !originalHeight ||
+    !containerWidth ||
+    !containerHeight
+  ) {
+    return {
+      width: containerWidth || originalWidth,
+      height: containerHeight || originalHeight,
+    };
+  }
+
+  const originalAspect = originalWidth / originalHeight;
+  const containerAspect = containerWidth / containerHeight;
+
+  let fittedWidth: number;
+  let fittedHeight: number;
+
+  // If video is wider than container (or same aspect), fit to width
+  if (originalAspect >= containerAspect) {
+    fittedWidth = containerWidth;
+    fittedHeight = containerWidth / originalAspect;
+  } else {
+    // If video is taller than container, fit to height
+    fittedHeight = containerHeight;
+    fittedWidth = containerHeight * originalAspect;
+  }
+
+  return {
+    width: Math.round(fittedWidth),
+    height: Math.round(fittedHeight),
+  };
+}

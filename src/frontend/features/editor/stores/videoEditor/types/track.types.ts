@@ -18,8 +18,20 @@ export interface VideoTrack {
   height?: number;
   aspectRatio?: number; // Calculated aspect ratio (width / height)
   detectedAspectRatioLabel?: string; // Human-readable label (e.g., '16:9', '9:16', '1:1')
-  sourceFps?: number; // Original FPS extracted from the source video file
-  effectiveFps?: number; // User-set FPS for this track (used for export interpretation only)
+  /**
+   * Original FPS extracted from the source video file (IMMUTABLE)
+   * This value must NEVER be mutated after track creation.
+   * When a track is deleted and re-added, it always restores to this original FPS.
+   * Used for: timeline display, track duration calculation, playback synchronization
+   */
+  sourceFps?: number;
+  /**
+   * User-set FPS for this track (used for export interpretation only)
+   * This can be modified by the user for export purposes, but does not affect
+   * timeline display or track length calculations (which use sourceFps).
+   * Defaults to sourceFps when track is created.
+   */
+  effectiveFps?: number;
   volume?: number;
   visible: boolean;
   locked: boolean;
