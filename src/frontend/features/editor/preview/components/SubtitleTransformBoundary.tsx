@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useVideoEditorStore } from '../../stores/videoEditor/index';
 import { VideoTrack } from '../../stores/videoEditor/index';
 
 interface SubtitleTransformBoundaryProps {
@@ -67,9 +68,18 @@ export const SubtitleTransformBoundary: React.FC<
   const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
   const dragDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Delay before starting drag to allow double-click
   const lastClickTimeRef = useRef<number>(0); // Track last click time for double-click detection
+  const transformDragStartedRef = useRef(false); // Track if we've started transform drag for playback pause
   const [isDragging, setIsDragging] = useState(false);
   const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
   const [isEditing, setIsEditing] = useState(false);
+
+  // Get playback control methods
+  const startDraggingTransform = useVideoEditorStore(
+    (state) => state.startDraggingTransform,
+  );
+  const endDraggingTransform = useVideoEditorStore(
+    (state) => state.endDraggingTransform,
+  );
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -244,13 +254,19 @@ export const SubtitleTransformBoundary: React.FC<
       setInitialTransform(transform);
       setIsPendingDrag(true);
 
+      // Pause playback if playing (pause immediately, not after delay)
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
+
       // Start actual drag after a short delay (allows double-click to interrupt)
       dragDelayTimeoutRef.current = setTimeout(() => {
         setIsDragging(true);
         setIsPendingDrag(false);
       }, 200);
     },
-    [isSelected, track.id, transform, onSelect, isEditing],
+    [isSelected, track.id, transform, onSelect, isEditing, startDraggingTransform],
   );
 
   // Handle single click - enters edit mode when text edit mode is active
@@ -318,6 +334,12 @@ export const SubtitleTransformBoundary: React.FC<
           }
           setIsDragging(true);
           setIsPendingDrag(false);
+
+          // Pause playback if playing (when drag is confirmed)
+          if (!transformDragStartedRef.current) {
+            transformDragStartedRef.current = true;
+            startDraggingTransform();
+          }
         }
         return; // Don't process drag until it's confirmed
       }
@@ -412,6 +434,12 @@ export const SubtitleTransformBoundary: React.FC<
       setDragStart(null);
       setInitialTransform(null);
       onDragStateChange?.(false);
+
+      // Resume playback if we paused it
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -435,6 +463,8 @@ export const SubtitleTransformBoundary: React.FC<
     onTransformUpdate,
     onDragStateChange,
     track.id,
+    startDraggingTransform,
+    endDraggingTransform,
   ]);
 
   // Handle text editing completion

@@ -1,4 +1,5 @@
 import { VideoTrack } from '@/frontend/features/editor/stores/videoEditor/index';
+import { getDisplayFps } from '@/frontend/features/editor/stores/videoEditor/types/timeline.types';
 import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useMemo } from 'react';
 import { TIMELINE_HEADER_HEIGHT_CLASSES } from './utils/timelineConstants';
@@ -7,7 +8,7 @@ interface TimelineRulerProps {
   frameWidth: number;
   totalFrames: number;
   scrollX: number;
-  fps: number;
+  fps: number; // Kept for backward compatibility but not used - getDisplayFps is used instead
   tracks: VideoTrack[];
   inPoint?: number;
   outPoint?: number;
@@ -21,7 +22,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     frameWidth,
     totalFrames,
     scrollX,
-    fps,
+    fps: _fps, // Unused - kept for backward compatibility
     tracks,
     inPoint,
     outPoint,
@@ -29,6 +30,9 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     className,
     timelineScrollElement,
   }) => {
+    // Get display FPS from source video tracks (dynamic but static once determined)
+    const displayFps = useMemo(() => getDisplayFps(tracks), [tracks]);
+
     // Memoize effective timeline duration calculation
     const effectiveEndFrame = useMemo(() => {
       // When tracks exist, use the maximum track end frame
@@ -41,11 +45,11 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     // Memoize format time function with zoom-responsive precision
     const formatTime = useCallback(
       (frame: number, pixelsPerSecond: number) => {
-        const totalSeconds = frame / fps;
+        const totalSeconds = frame / displayFps;
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = Math.floor(totalSeconds % 60);
-        const frameRemainder = Math.floor((totalSeconds % 1) * fps);
+        const frameRemainder = Math.floor((totalSeconds % 1) * displayFps);
 
         // Adjust precision based on zoom level
         if (pixelsPerSecond >= 150) {
@@ -74,26 +78,26 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
           return `${minutes}m`;
         }
       },
-      [fps],
+      [displayFps],
     );
 
     // Memoize tick interval calculation based on zoom level
     const tickInterval = useMemo(() => {
-      const pixelsPerSecond = frameWidth * fps;
+      const pixelsPerSecond = frameWidth * displayFps;
 
-      if (pixelsPerSecond >= 100) return fps / 4; // 0.25 second intervals (very zoomed in)
-      if (pixelsPerSecond >= 50) return fps / 2; // 0.5 second intervals
-      if (pixelsPerSecond >= 25) return fps; // 1 second intervals
-      if (pixelsPerSecond >= 10) return fps * 2; // 2 second intervals
-      if (pixelsPerSecond >= 5) return fps * 5; // 5 second intervals
-      if (pixelsPerSecond >= 2) return fps * 10; // 10 second intervals
-      if (pixelsPerSecond >= 1) return fps * 30; // 30 second intervals
-      return fps * 60; // 1 minute intervals (very zoomed out)
-    }, [frameWidth, fps]);
+      if (pixelsPerSecond >= 100) return displayFps / 4; // 0.25 second intervals (very zoomed in)
+      if (pixelsPerSecond >= 50) return displayFps / 2; // 0.5 second intervals
+      if (pixelsPerSecond >= 25) return displayFps; // 1 second intervals
+      if (pixelsPerSecond >= 10) return displayFps * 2; // 2 second intervals
+      if (pixelsPerSecond >= 5) return displayFps * 5; // 5 second intervals
+      if (pixelsPerSecond >= 2) return displayFps * 10; // 10 second intervals
+      if (pixelsPerSecond >= 1) return displayFps * 30; // 30 second intervals
+      return displayFps * 60; // 1 minute intervals (very zoomed out)
+    }, [frameWidth, displayFps]);
     // Memoize ticks calculation with real-time scroll position
     const ticks = useMemo(() => {
       const ticksArray = [];
-      const pixelsPerSecond = frameWidth * fps;
+      const pixelsPerSecond = frameWidth * displayFps;
 
       // Use actual scroll position if available, otherwise fallback to prop
       const currentScrollX = timelineScrollElement?.scrollLeft ?? scrollX;
@@ -119,9 +123,9 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
             frame,
             x,
             time: formatTime(frame, pixelsPerSecond),
-            isSecond: frame % fps === 0,
-            isMinute: frame % (fps * 60) === 0,
-            isHour: frame % (fps * 3600) === 0,
+            isSecond: frame % displayFps === 0,
+            isMinute: frame % (displayFps * 60) === 0,
+            isHour: frame % (displayFps * 3600) === 0,
           });
         }
       }
@@ -133,7 +137,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
       effectiveEndFrame,
       tickInterval,
       formatTime,
-      fps,
+      displayFps,
       timelineScrollElement,
     ]);
 
@@ -207,7 +211,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
         {/* Time Ticks */}
         {ticks.map(({ frame, x, time, isSecond, isMinute, isHour }) => {
           // Responsive tick height based on zoom level
-          const pixelsPerSecond = frameWidth * fps;
+          const pixelsPerSecond = frameWidth * displayFps;
           const getTickHeight = () => {
             if (isHour) {
               return 14;
@@ -249,7 +253,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
 
           // Smart label visibility based on zoom level and spacing
           const getShowLabel = () => {
-            const pixelsPerSecond = frameWidth * fps;
+            const pixelsPerSecond = frameWidth * displayFps;
 
             // Very zoomed in (> 100px per second) - show all labels
             if (pixelsPerSecond >= 100) {
@@ -269,21 +273,24 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
             // Medium-low zoom (10-25px per second) - show every 2nd minute and hours
             if (pixelsPerSecond >= 10) {
               return (
-                isHour || (isMinute && Math.floor(frame / fps) % 120 === 0)
+                isHour ||
+                (isMinute && Math.floor(frame / displayFps) % 120 === 0)
               ); // every 2 minutes
             }
 
             // Low zoom (5-10px per second) - show every 5th minute and hours
             if (pixelsPerSecond >= 5) {
               return (
-                isHour || (isMinute && Math.floor(frame / fps) % 300 === 0)
+                isHour ||
+                (isMinute && Math.floor(frame / displayFps) % 300 === 0)
               ); // every 5 minutes
             }
 
             // Very low zoom (2-5px per second) - show every 10th minute and hours
             if (pixelsPerSecond >= 2) {
               return (
-                isHour || (isMinute && Math.floor(frame / fps) % 600 === 0)
+                isHour ||
+                (isMinute && Math.floor(frame / displayFps) % 600 === 0)
               ); // every 10 minutes
             }
 
@@ -315,7 +322,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
                   )}
                   style={{
                     fontSize: (() => {
-                      const pixelsPerSecond = frameWidth * fps;
+                      const pixelsPerSecond = frameWidth * displayFps;
 
                       // Larger font sizes for higher zoom levels
                       if (isHour) {
@@ -374,7 +381,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     if (prevProps.frameWidth !== nextProps.frameWidth) return false;
     if (prevProps.totalFrames !== nextProps.totalFrames) return false;
     if (prevProps.scrollX !== nextProps.scrollX) return false;
-    if (prevProps.fps !== nextProps.fps) return false;
+    // fps prop is no longer used (getDisplayFps is used instead), so skip this check
     if (prevProps.inPoint !== nextProps.inPoint) return false;
     if (prevProps.outPoint !== nextProps.outPoint) return false;
 

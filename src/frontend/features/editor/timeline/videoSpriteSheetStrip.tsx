@@ -12,6 +12,7 @@ import React, {
   useState,
 } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 
 interface VideoSpriteSheetStripProps {
   track: VideoTrack;
@@ -115,23 +116,25 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
       });
       const rafRef = useRef<number>(0);
 
-      const fps = useVideoEditorStore((state) => state.timeline.fps);
       const getSpriteSheetsBySource = useVideoEditorStore(
         (state) => state.getSpriteSheetsBySource,
       );
+      const allTracks = useVideoEditorStore((state) => state.tracks);
+      // Get display FPS from source video tracks (dynamic but static once determined)
+      const displayFps = useMemo(() => getDisplayFps(allTracks), [allTracks]);
 
       const trackMetrics = useMemo(
         () => ({
           durationFrames: track.endFrame - track.startFrame,
-          durationSeconds: (track.endFrame - track.startFrame) / fps,
+          durationSeconds: (track.endFrame - track.startFrame) / displayFps,
           trackStartTime: track.sourceStartTime || 0,
-          pixelsPerSecond: frameWidth * fps,
+          pixelsPerSecond: frameWidth * displayFps,
         }),
         [
           track.startFrame,
           track.endFrame,
           track.sourceStartTime,
-          fps,
+          displayFps,
           frameWidth,
         ],
       );
@@ -221,7 +224,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         }
 
         return tiles;
-      }, [state.spriteSheets, trackMetrics, height, fps, frameWidth]);
+      }, [state.spriteSheets, trackMetrics, height, displayFps, frameWidth]);
 
       // High-performance viewport culling with buffer zone
       const visibleTiles = useMemo(() => {
@@ -346,7 +349,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
           const cached = await VideoSpriteSheetGenerator.getCachedSpriteSheets({
             videoPath,
             duration: trackMetrics.durationSeconds,
-            fps,
+            fps: displayFps,
             sourceStartTime: trackMetrics.trackStartTime,
             thumbWidth: 120,
             thumbHeight: 68,
@@ -372,7 +375,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         try {
           const result = await VideoSpriteSheetGenerator.generateForTrack(
             track,
-            fps,
+            displayFps,
           );
 
           if (result.success) {
@@ -400,7 +403,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         track.tempFilePath,
         track.type,
         trackMetrics,
-        fps,
+        displayFps,
         getSpriteSheetsBySource,
         state.isLoading,
       ]);

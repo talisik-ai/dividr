@@ -16,6 +16,7 @@ import { CustomPanelProps } from '../../../components/panels/panelRegistry';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import {
   ASPECT_RATIO_PRESETS,
+  detectAspectRatio,
   getAspectRatioDisplayLabel,
 } from '../../../stores/videoEditor/utils/aspectRatioHelpers';
 import { FpsWarningDialog } from '../../dialogs/fpsWarningDialog';
@@ -93,28 +94,15 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     isEditingHeight,
   ]);
 
-  // Determine if a preset is active based on selected track dimensions (if available) or canvas dimensions
+  // Determine if a preset is active based on canvas dimensions
+  // Canvas dimensions are the source of truth since that's what the user controls in this panel
   const activePreset = useMemo(() => {
-    // If a track is selected, match by track dimensions
-    if (selectedTrack?.width && selectedTrack?.height) {
-      return ASPECT_RATIO_PRESETS.find(
-        (ratio) =>
-          ratio.width === selectedTrack.width &&
-          ratio.height === selectedTrack.height,
-      );
-    }
-    // Otherwise, match by canvas dimensions
     return ASPECT_RATIO_PRESETS.find(
       (ratio) =>
         ratio.width === preview.canvasWidth &&
         ratio.height === preview.canvasHeight,
     );
-  }, [
-    selectedTrack?.width,
-    selectedTrack?.height,
-    preview.canvasWidth,
-    preview.canvasHeight,
-  ]);
+  }, [preview.canvasWidth, preview.canvasHeight]);
 
   // Determine which preset matches the selected track's detected aspect ratio
   const detectedPreset = useMemo(() => {
@@ -201,9 +189,11 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
           // Update selected track's aspect ratio metadata if a track is selected
           if (selectedTrack) {
             const newRatio = numValue / newHeight;
+            // Detect if the custom dimensions match a preset aspect ratio
+            const detectedAspectRatio = detectAspectRatio(numValue, newHeight);
             updateTrack(selectedTrack.id, {
               aspectRatio: newRatio,
-              detectedAspectRatioLabel: undefined, // Custom ratio, no preset label
+              detectedAspectRatioLabel: detectedAspectRatio?.label || undefined,
             });
           }
         }
@@ -228,9 +218,11 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
           // Update selected track's aspect ratio metadata if a track is selected
           if (selectedTrack) {
             const newRatio = newWidth / numValue;
+            // Detect if the custom dimensions match a preset aspect ratio
+            const detectedAspectRatio = detectAspectRatio(newWidth, numValue);
             updateTrack(selectedTrack.id, {
               aspectRatio: newRatio,
-              detectedAspectRatioLabel: undefined, // Custom ratio, no preset label
+              detectedAspectRatioLabel: detectedAspectRatio?.label || undefined,
             });
           }
         }

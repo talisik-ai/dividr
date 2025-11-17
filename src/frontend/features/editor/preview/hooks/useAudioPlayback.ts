@@ -21,14 +21,26 @@ export function useAudioPlayback({
   audioRef,
   independentAudioTrack,
   currentFrame,
-  fps,
+  fps, // Display FPS from source video (passed from VideoBlobPreview)
   isPlaying,
   isMuted,
   volume,
   playbackRate,
 }: UseAudioPlaybackProps) {
+  // Use display FPS from source video for frontend rendering
+  const displayFps = fps;
   // Track previous trim state to detect actual trim changes
   const prevAudioTrimRef = useRef<TrimState | null>(null);
+
+  // Track the last active audio track to detect segment transitions
+  const prevActiveAudioTrackRef = useRef<{
+    id: string;
+    previewUrl: string;
+    sourceStartTime: number;
+  } | null>(null);
+
+  // Track if we're in a seek operation
+  const seekInProgressRef = useRef<boolean>(false);
 
   // Handle audio metadata loaded
   const handleAudioLoadedMetadata = useCallback(() => {
@@ -42,20 +54,12 @@ export function useAudioPlayback({
 
     if (isWithinAudioRange) {
       const relativeFrame = currentFrame - independentAudioTrack.startFrame;
-      const trackTime = relativeFrame / fps;
+      const trackTime = relativeFrame / displayFps;
       const targetTime =
         (independentAudioTrack.sourceStartTime || 0) + trackTime;
 
-      const trackDurationSeconds =
-        (independentAudioTrack.endFrame - independentAudioTrack.startFrame) /
-        fps;
-      const trimmedEndTime =
-        (independentAudioTrack.sourceStartTime || 0) + trackDurationSeconds;
-
-      audio.currentTime = Math.max(
-        independentAudioTrack.sourceStartTime || 0,
-        Math.min(targetTime, Math.min(trimmedEndTime, audio.duration || 0)),
-      );
+      // Direct time assignment, no clamping during metadata load
+      audio.currentTime = targetTime;
     }
 
     // Auto play if timeline is playing
@@ -65,7 +69,7 @@ export function useAudioPlayback({
         /* ignore */
       });
     }
-  }, [independentAudioTrack, currentFrame, fps, isPlaying, isMuted]);
+  }, [independentAudioTrack, currentFrame, displayFps, isPlaying, isMuted]);
 
   // Sync play/pause & volume for independent audio element
   useEffect(() => {
@@ -107,7 +111,7 @@ export function useAudioPlayback({
     currentFrame,
   ]);
 
-  // Sync independent audio element on scrubbing/seek
+  // Sync independent audio element on scrubbing/seek - CONTINUOUS PLAYBACK LOGIC
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !independentAudioTrack) return;
@@ -121,7 +125,32 @@ export function useAudioPlayback({
       return;
     }
 
-    // Detect if trim boundaries actually changed
+    const tolerance = 1 / fps;
+
+    // Track state changes
+    const currentTrackState = {
+      id: independentAudioTrack.id,
+      previewUrl: independentAudioTrack.previewUrl,
+      sourceStartTime: independentAudioTrack.sourceStartTime || 0,
+    };
+
+    // Detect ACTUAL source file change (different audio file loaded)
+    const isSourceFileChange =
+      prevActiveAudioTrackRef.current !== null &&
+      prevActiveAudioTrackRef.current.previewUrl !==
+        currentTrackState.previewUrl;
+
+    // Detect segment boundary crossing within same source (cut/trim segments)
+    const isSameSourceSegmentChange =
+      prevActiveAudioTrackRef.current !== null &&
+      prevActiveAudioTrackRef.current.previewUrl ===
+        currentTrackState.previewUrl &&
+      prevActiveAudioTrackRef.current.id !== currentTrackState.id;
+
+    prevActiveAudioTrackRef.current = currentTrackState;
+
+    // CRITICAL: Only detect trim changes when user is actively editing,
+    // NOT when playback naturally crosses segment boundaries
     const currentTrimState: TrimState = {
       trackId: independentAudioTrack.id,
       startFrame: independentAudioTrack.startFrame,
@@ -129,47 +158,84 @@ export function useAudioPlayback({
       sourceStartTime: independentAudioTrack.sourceStartTime || 0,
     };
 
+    // User-initiated trim change detection (editing, not playback)
     const trimChanged =
-      !prevAudioTrimRef.current ||
-      prevAudioTrimRef.current.trackId !== currentTrimState.trackId ||
-      prevAudioTrimRef.current.startFrame !== currentTrimState.startFrame ||
-      prevAudioTrimRef.current.endFrame !== currentTrimState.endFrame ||
-      prevAudioTrimRef.current.sourceStartTime !==
-        currentTrimState.sourceStartTime;
+      prevAudioTrimRef.current !== null &&
+      prevAudioTrimRef.current.trackId === currentTrimState.trackId && // Same track
+      (prevAudioTrimRef.current.startFrame !== currentTrimState.startFrame ||
+        prevAudioTrimRef.current.endFrame !== currentTrimState.endFrame ||
+        prevAudioTrimRef.current.sourceStartTime !==
+          currentTrimState.sourceStartTime);
 
     prevAudioTrimRef.current = currentTrimState;
 
-    const relativeFrame = currentFrame - independentAudioTrack.startFrame;
-    const trackTime = relativeFrame / fps;
-    const targetTime = (independentAudioTrack.sourceStartTime || 0) + trackTime;
+    // PROFESSIONAL AUDIO PLAYBACK LOGIC:
+    // During continuous playback, let the browser's audio decoder handle
+    // playback naturally. Only seek when absolutely necessary.
+    const isContinuousPlayback = isPlaying && !seekInProgressRef.current;
 
-    const trackDurationSeconds =
-      (independentAudioTrack.endFrame - independentAudioTrack.startFrame) / fps;
-    const trimmedEndTime =
-      (independentAudioTrack.sourceStartTime || 0) + trackDurationSeconds;
+    // Check if audio is playing continuously through same source
+    // (even across cut boundaries - this is the key to smooth audio playback)
+    const isPlayingThroughCuts =
+      isContinuousPlayback && isSameSourceSegmentChange;
 
-    const clampedTargetTime = Math.max(
-      independentAudioTrack.sourceStartTime || 0,
-      Math.min(targetTime, Math.min(trimmedEndTime, audio.duration || 0)),
-    );
+    // CRITICAL FIX: During continuous playback through cuts, DO NOT recalculate
+    // targetTime based on segment offset, as this causes audio to jump backward
+    // and trigger false drift correction. Instead, just let audio continue playing.
+    let targetTime: number;
+    let diff: number;
 
-    const diff = Math.abs(audio.currentTime - clampedTargetTime);
-    const tolerance = 1 / fps;
+    if (isPlayingThroughCuts) {
+      // During continuous playback through cuts, don't recalculate time
+      // Just check that audio is still playing (not paused/stuck)
+      targetTime = audio.currentTime; // Expected = actual (no change needed)
+      diff = 0; // No difference, let it play naturally
+    } else {
+      // Normal time calculation for scrubbing, paused, or different sources
+      const relativeFrame = currentFrame - independentAudioTrack.startFrame;
+      const trackTime = relativeFrame / displayFps;
+      targetTime = (independentAudioTrack.sourceStartTime || 0) + trackTime;
+      diff = Math.abs(audio.currentTime - targetTime);
+    }
 
-    const shouldSeek = trimChanged || (!isPlaying && diff > tolerance);
+    // Determine if this is a scrubbing operation (paused and seeking)
+    const isScrubbing = !isPlaying && diff > tolerance;
 
-    if (shouldSeek && diff > tolerance) {
-      audio.currentTime = clampedTargetTime;
+    // SEEK DECISION LOGIC:
+    // Only seek when one of these conditions is true:
+    // 1. User is scrubbing while paused
+    // 2. Source file changed (different audio loaded)
+    // 3. User manually trimmed the current track (editing operation)
+    // 4. Paused and out of sync
+    //
+    // DO NOT SEEK when:
+    // - Playing continuously through cut boundaries (diff = 0, let it play)
+    // - Audio time is within acceptable tolerance
+    const needsSeek =
+      isScrubbing || // User scrubbing
+      isSourceFileChange || // Different audio file
+      trimChanged || // User edited trim points
+      (!isContinuousPlayback && diff > tolerance); // Paused and out of syncs
+
+    if (needsSeek && diff > tolerance) {
+      seekInProgressRef.current = true;
+      audio.currentTime = targetTime;
+
+      // Clear seek in progress flag after audio element processes the seek
+      requestAnimationFrame(() => {
+        seekInProgressRef.current = false;
+      });
     }
   }, [
     currentFrame,
-    fps,
+    displayFps,
     isPlaying,
     independentAudioTrack?.id,
     independentAudioTrack?.startFrame,
     independentAudioTrack?.endFrame,
     independentAudioTrack?.sourceStartTime,
     independentAudioTrack?.sourceDuration,
+    independentAudioTrack?.previewUrl,
   ]);
 
   return {

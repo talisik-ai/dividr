@@ -18,10 +18,13 @@ export const AudioOverlay: React.FC<AudioOverlayProps> = ({
 }) => {
   if (!independentAudioTrack || !independentAudioTrack.previewUrl) return null;
 
+  // CRITICAL: Key must be based ONLY on the source file URL, NOT startFrame
+  // This ensures React reuses the same audio element when crossing segment boundaries
+  // from the same source, allowing continuous playback without resets
   return (
     <audio
       ref={audioRef}
-      key={`audio-${independentAudioTrack.previewUrl}-${independentAudioTrack.startFrame}`}
+      key={`audio-${independentAudioTrack.previewUrl}`}
       preload="metadata"
       src={independentAudioTrack.previewUrl}
       onLoadedMetadata={onLoadedMetadata}

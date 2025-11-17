@@ -29,8 +29,7 @@ export interface TrackInfo {
   isImage?: boolean; // Internal flag to mark image layers for overlay processing
   layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
   imageTransform?: ImageTransform; // Transform data for image overlays (position, rotation, scale)
-  videoPositionX?: number; // Video's X position in canvas 
-  videoPositionY?: number; // Video's Y position in canvas
+  videoTransform?: ImageTransform; // Transform data for video clips (position, rotation, scale)
 }
 
 export interface TextStyleConfig {

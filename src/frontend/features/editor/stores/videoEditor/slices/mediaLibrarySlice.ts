@@ -30,6 +30,9 @@ export interface MediaLibrarySlice {
   getWaveformBySource: (
     source: string,
   ) => MediaLibraryItem['waveform'] | undefined;
+  getWaveformByMediaId: (
+    mediaId: string,
+  ) => MediaLibraryItem['waveform'] | undefined;
   isGeneratingWaveform: (mediaId: string) => boolean;
   setGeneratingWaveform: (mediaId: string, isGenerating: boolean) => void;
   generateWaveformForMedia: (mediaId: string) => Promise<boolean>;
@@ -217,6 +220,14 @@ export const createMediaLibrarySlice: StateCreator<
     const state = get() as any;
     const mediaItem = state.mediaLibrary.find(
       (item: MediaLibraryItem) => item.source === source,
+    );
+    return mediaItem?.waveform;
+  },
+
+  getWaveformByMediaId: (mediaId) => {
+    const state = get() as any;
+    const mediaItem = state.mediaLibrary.find(
+      (item: MediaLibraryItem) => item.id === mediaId,
     );
     return mediaItem?.waveform;
   },

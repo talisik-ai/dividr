@@ -45,6 +45,7 @@ import React, {
 import { toast } from 'sonner';
 import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 
 // Throttle utility for zoom operations to prevent lag
 const useThrottledCallback = <T extends (...args: any[]) => void>(
@@ -87,21 +88,22 @@ const TimeDisplay: React.FC = React.memo(() => {
   const currentFrame = useVideoEditorStore(
     (state) => state.timeline.currentFrame,
   );
-  const fps = useVideoEditorStore((state) => state.timeline.fps);
   const tracks = useVideoEditorStore((state) => state.tracks);
   const totalFrames = useVideoEditorStore(
     (state) => state.timeline.totalFrames,
   );
+  // Get display FPS from source video tracks (dynamic but static once determined)
+  const displayFps = React.useMemo(() => getDisplayFps(tracks), [tracks]);
 
   const formatTime = useCallback(
     (frame: number) => {
-      const totalSeconds = frame / fps;
+      const totalSeconds = frame / displayFps;
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = Math.floor(totalSeconds % 60);
-      const frames = Math.floor((totalSeconds % 1) * fps);
+      const frames = Math.floor((totalSeconds % 1) * displayFps);
       return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
     },
-    [fps],
+    [displayFps],
   );
 
   const effectiveEndFrame = useMemo(() => {

@@ -1,17 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { RefreshCw } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useVideoEditorStore } from '../../stores/videoEditor/index';
-import { VideoTrack } from '../../stores/videoEditor/index';
+import {
+  useVideoEditorStore,
+  VideoTrack,
+} from '../../stores/videoEditor/index';
 
-interface TextTransformBoundaryProps {
+interface VideoTransformBoundaryProps {
   track: VideoTrack;
   isSelected: boolean;
   previewScale: number;
   videoWidth: number;
   videoHeight: number;
   renderScale?: number; // The actual render scale from coordinate system (baseScale)
-  isTextEditMode?: boolean; // Whether text edit mode is active globally
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -24,21 +25,15 @@ interface TextTransformBoundaryProps {
     },
   ) => void;
   onSelect: (trackId: string) => void;
-  onTextUpdate?: (trackId: string, newText: string) => void;
   onRotationStateChange?: (isRotating: boolean) => void;
   onDragStateChange?: (
     isDragging: boolean,
     position?: { x: number; y: number; width: number; height: number },
   ) => void;
-  onEditModeChange?: (isEditing: boolean) => void; // Callback when edit mode changes
-  autoEnterEditMode?: boolean; // Whether to automatically enter edit mode on mount
-  onEditStarted?: () => void; // Callback when auto-edit mode is triggered
   children: React.ReactNode;
-  appliedStyle?: React.CSSProperties;
   clipContent?: boolean; // Whether to clip content to canvas bounds
   clipWidth?: number; // Width of the clipping area
   clipHeight?: number; // Height of the clipping area
-  disableScaleTransform?: boolean; // Whether to disable CSS scale transform (for vector-sharp text)
 }
 
 type HandleType =
@@ -53,42 +48,30 @@ type HandleType =
   | 'rotate'
   | null;
 
-export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
+export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
   track,
   isSelected,
   previewScale,
   videoWidth,
   videoHeight,
   renderScale,
-  isTextEditMode = false,
   onTransformUpdate,
   onSelect,
-  onTextUpdate,
   onRotationStateChange,
   onDragStateChange,
-  onEditModeChange,
-  autoEnterEditMode = false,
-  onEditStarted,
   children,
-  appliedStyle,
   clipContent = false,
   clipWidth,
   clipHeight,
-  disableScaleTransform = false,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
-  // This ensures consistent positioning across different container sizes
   const effectiveRenderScale = renderScale ?? previewScale;
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null); // Ref to the actual video content (before scale transform)
   const boundaryRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const editableRef = useRef<HTMLDivElement>(null);
   const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
-  const dragDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Delay before starting drag to allow double-click
-  const lastClickTimeRef = useRef<number>(0); // Track last click time for double-click detection
   const transformDragStartedRef = useRef(false); // Track if we've started transform drag for playback pause
   const [isDragging, setIsDragging] = useState(false);
-  const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
   const [isScaling, setIsScaling] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
 
@@ -99,7 +82,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const endDraggingTransform = useVideoEditorStore(
     (state) => state.endDraggingTransform,
   );
-  const [isEditing, setIsEditing] = useState(false);
   const [activeHandle, setActiveHandle] = useState<HandleType>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
     null,
@@ -119,6 +101,10 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const HANDLE_SIZE = 10;
   const HANDLE_OFFSET = HANDLE_SIZE / 2;
   const ROTATION_HANDLE_DISTANCE = 30;
+
+  // Get video aspect ratio from track dimensions
+  const videoAspectRatio =
+    track.width && track.height ? track.width / track.height : 16 / 9;
 
   // Convert normalized coordinates to pixel coordinates for rendering
   const normalizedToPixels = useCallback(
@@ -146,7 +132,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const rawTransform = track.textTransform || {
     x: 0,
     y: 0,
-    scale: 0.2,
+    scale: 1,
     rotation: 0,
     width: 0,
     height: 0,
@@ -203,7 +189,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   );
 
   // Get pixel-based transform for rendering
-  // Convert from normalized coordinates to video space, then scale to screen space
   const pixelPosition = normalizedToPixels({
     x: normalizedTransform.x,
     y: normalizedTransform.y,
@@ -216,119 +201,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     rotation: normalizedTransform.rotation,
   };
 
-  // Helper to enter edit mode
-  const enterEditMode = useCallback(
-    (selectAllText = false) => {
-      setIsEditing(true);
-      // Notify parent that we're entering edit mode
-      onEditModeChange?.(true);
-      // Focus the editable div after a short delay to ensure it's rendered
-      setTimeout(() => {
-        if (editableRef.current) {
-          editableRef.current.focus();
-          // Only select all text if explicitly requested (e.g., from Text Tool mode single-click)
-          if (selectAllText) {
-            const range = document.createRange();
-            range.selectNodeContents(editableRef.current);
-            const selection = window.getSelection();
-            selection?.removeAllRanges();
-            selection?.addRange(range);
-          }
-          // Otherwise, let the browser's natural selection happen (word selection on double-click)
-        }
-      }, 10); // Reduced delay for snappier response
-    },
-    [onEditModeChange],
-  );
-
-  // Auto-enter edit mode when requested (for newly created text)
-  useEffect(() => {
-    if (autoEnterEditMode && isSelected && !isEditing) {
-      // Small delay to ensure the component is fully rendered
-      const timer = setTimeout(() => {
-        enterEditMode(true); // Select all text so user can type to replace
-        onEditStarted?.(); // Notify parent that edit mode has started
-      }, 50);
-
-      return () => clearTimeout(timer);
-    }
-  }, [autoEnterEditMode, isSelected, isEditing, enterEditMode, onEditStarted]);
-
-  // Handle double-click to enter edit mode (works in both Text Tool and Selection Tool modes)
-  const handleDoubleClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
-
-      // Cancel any pending drag operation
-      if (dragDelayTimeoutRef.current) {
-        clearTimeout(dragDelayTimeoutRef.current);
-        dragDelayTimeoutRef.current = null;
-      }
-      setIsPendingDrag(false);
-      setIsDragging(false);
-      setDragStart(null);
-
-      if (!isSelected) {
-        onSelect(track.id);
-        return;
-      }
-
-      // Always enter edit mode on double-click, regardless of mode
-      enterEditMode();
-    },
-    [isSelected, track.id, onSelect, enterEditMode],
-  );
-
-  // Handle single click - enters edit mode ONLY when text edit mode is active
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      // Only handle single clicks in text edit mode
-      if (!isTextEditMode) return;
-
-      e.stopPropagation();
-      e.preventDefault();
-
-      if (!isSelected) {
-        onSelect(track.id);
-        return;
-      }
-
-      // Enter edit mode and select all text on single click in Text Tool mode
-      enterEditMode(true);
-    },
-    [isTextEditMode, isSelected, track.id, onSelect, enterEditMode],
-  );
-
-  // Handle blur to exit edit mode
-  const handleBlur = useCallback(() => {
-    if (editableRef.current && onTextUpdate) {
-      const newText = editableRef.current.innerText;
-      onTextUpdate(track.id, newText);
-    }
-    setIsEditing(false);
-    // Notify parent that we're exiting edit mode
-    onEditModeChange?.(false);
-  }, [track.id, onTextUpdate, onEditModeChange]);
-
-  // Handle Enter key to save and exit edit mode
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        editableRef.current?.blur();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        setIsEditing(false);
-        // Notify parent that we're exiting edit mode
-        onEditModeChange?.(false);
-      }
-    },
-    [onEditModeChange],
-  );
-
   // Track content size changes to update boundary dimensions
-  // CRITICAL: We observe contentRef (the actual text), NOT containerRef (the transform wrapper)
+  // CRITICAL: We observe contentRef (the actual video), NOT containerRef (the transform wrapper)
   // This gives us the intrinsic content size before scale transform is applied
   // Store the previous renderScale to detect when it changes
   const prevRenderScaleRef = useRef(effectiveRenderScale);
@@ -350,16 +224,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       resizeObserver.disconnect();
     };
   }, []);
-
-  // Also update on content changes (but NOT on renderScale changes)
-  useEffect(() => {
-    if (contentRef.current) {
-      setContainerSize({
-        width: contentRef.current.offsetWidth,
-        height: contentRef.current.offsetHeight,
-      });
-    }
-  }, [track.textContent]);
 
   // Update dimensions in the store when content size changes
   // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
@@ -406,62 +270,34 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     effectiveRenderScale,
   ]);
 
-  // Handle mouse down on the text element (start dragging with delay to allow double-click)
+  // Handle mouse down on the video element (start dragging)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      // Don't prevent default - let double-click through
       e.stopPropagation();
+      e.preventDefault();
 
       if (!isSelected) {
         onSelect(track.id);
         return;
       }
 
-      // Don't start drag if clicking on a handle or in edit mode
+      // Don't start drag if clicking on a handle
       const target = e.target as HTMLElement;
-      if (target.classList.contains('transform-handle') || isEditing) {
+      if (target.classList.contains('transform-handle')) {
         return;
       }
 
-      // Check if this is a double-click (second click within 300ms)
-      const now = Date.now();
-      const timeSinceLastClick = now - lastClickTimeRef.current;
-      lastClickTimeRef.current = now;
-
-      // If this is a potential double-click, don't start dragging
-      if (timeSinceLastClick < 300) {
-        // This is a double-click, cancel any pending drag
-        if (dragDelayTimeoutRef.current) {
-          clearTimeout(dragDelayTimeoutRef.current);
-          dragDelayTimeoutRef.current = null;
-        }
-        setIsPendingDrag(false);
-        setIsDragging(false);
-        setDragStart(null);
-
-        // Enter edit mode directly since we detected double-click
-        enterEditMode();
-        return;
-      }
-
-      // Set up pending drag state immediately so we can track mouse movement
+      setIsDragging(true);
       setDragStart({ x: e.clientX, y: e.clientY });
       setInitialTransform(transform);
-      setIsPendingDrag(true);
 
-      // Pause playback if playing (pause immediately, not after delay)
+      // Pause playback if playing
       if (!transformDragStartedRef.current) {
         transformDragStartedRef.current = true;
         startDraggingTransform();
       }
-
-      // Start actual drag after a short delay (allows double-click to interrupt)
-      dragDelayTimeoutRef.current = setTimeout(() => {
-        setIsDragging(true);
-        setIsPendingDrag(false);
-      }, 200);
     },
-    [isSelected, track.id, transform, onSelect, isEditing],
+    [isSelected, track.id, transform, onSelect, startDraggingTransform],
   );
 
   // Handle mouse down on scale handles
@@ -508,35 +344,12 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
   // Handle mouse move for all interactions
   useEffect(() => {
-    if (!isDragging && !isScaling && !isRotating && !isPendingDrag) return;
+    if (!isDragging && !isScaling && !isRotating) return;
     if (!dragStart || !initialTransform) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = e.clientX - dragStart.x;
       const deltaY = e.clientY - dragStart.y;
-
-      // If drag is pending and user moves mouse significantly, start drag immediately
-      if (isPendingDrag) {
-        const movementThreshold = 5; // pixels
-        if (
-          Math.abs(deltaX) > movementThreshold ||
-          Math.abs(deltaY) > movementThreshold
-        ) {
-          if (dragDelayTimeoutRef.current) {
-            clearTimeout(dragDelayTimeoutRef.current);
-            dragDelayTimeoutRef.current = null;
-          }
-          setIsDragging(true);
-          setIsPendingDrag(false);
-
-          // Pause playback if playing (when drag is confirmed)
-          if (!transformDragStartedRef.current) {
-            transformDragStartedRef.current = true;
-            startDraggingTransform();
-          }
-        }
-        return; // Don't process drag until it's confirmed
-      }
 
       if (isDragging) {
         // Convert screen delta to video coordinate delta
@@ -564,14 +377,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
           };
 
           // Add edge snap points
-          const actualWidth = disableScaleTransform
-            ? containerSize.width
-            : containerSize.width * transform.scale;
-          const actualHeight = disableScaleTransform
-            ? containerSize.height
-            : containerSize.height * transform.scale;
-          const halfWidth = actualWidth / 2;
-          const halfHeight = actualHeight / 2;
+          const halfWidth = (containerSize.width * transform.scale) / 2;
+          const halfHeight = (containerSize.height * transform.scale) / 2;
 
           // Video frame edges (in video pixel coordinates)
           snapPoints.horizontal.push(
@@ -609,21 +416,14 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
         // Notify parent of drag state for guide rendering
         if (onDragStateChange && containerSize.width > 0) {
-          const actualWidth = disableScaleTransform
-            ? containerSize.width
-            : containerSize.width * transform.scale;
-          const actualHeight = disableScaleTransform
-            ? containerSize.height
-            : containerSize.height * transform.scale;
           onDragStateChange(true, {
             x: newPixelX,
             y: newPixelY,
-            width: actualWidth,
-            height: actualHeight,
+            width: containerSize.width * transform.scale,
+            height: containerSize.height * transform.scale,
           });
         }
 
-        // Only update position during drag - width/height remain unchanged
         onTransformUpdate(track.id, {
           x: clampedPos.x,
           y: clampedPos.y,
@@ -633,6 +433,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         let scaleFactor = 1;
 
         // Calculate scale factor based on handle type and direction
+        // For video, we always maintain aspect ratio, so we use the diagonal distance
         switch (activeHandle) {
           case 'tl': // Top-left: drag up/left to grow, down/right to shrink
             scaleFactor = 1 - (deltaX + deltaY) / (2 * scaleSensitivity);
@@ -660,10 +461,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
             break;
         }
 
+        // For video, maintain aspect ratio by using the dominant dimension
+        // Calculate the diagonal distance for corner handles, or use the appropriate axis for edge handles
         let newScale = initialTransform.scale * scaleFactor;
         newScale = Math.max(0.1, Math.min(5, newScale));
 
-        // Only update scale - width/height will be recalculated by the ResizeObserver effect
+        // Ensure aspect ratio is maintained by updating width/height proportionally
+        // The scale factor applies uniformly to maintain aspect ratio
         onTransformUpdate(track.id, {
           scale: newScale,
         });
@@ -721,8 +525,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
           }
         }
 
-        // Only update rotation - width/height remain unchanged during rotation
-        // This prevents auto-scaling when rotating elements
         onTransformUpdate(track.id, {
           rotation: newRotation,
         });
@@ -730,12 +532,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     };
 
     const handleMouseUp = () => {
-      // Clear any pending drag timeout
-      if (dragDelayTimeoutRef.current) {
-        clearTimeout(dragDelayTimeoutRef.current);
-        dragDelayTimeoutRef.current = null;
-      }
-
       if (isRotating) {
         onRotationStateChange?.(false);
       }
@@ -750,7 +546,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       }
 
       setIsDragging(false);
-      setIsPendingDrag(false);
       setIsScaling(false);
       setIsRotating(false);
       setActiveHandle(null);
@@ -767,7 +562,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     };
   }, [
     isDragging,
-    isPendingDrag,
     isScaling,
     isRotating,
     dragStart,
@@ -784,15 +578,11 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     transform.scale,
     videoWidth,
     videoHeight,
-    disableScaleTransform,
-    startDraggingTransform,
     endDraggingTransform,
   ]);
 
   // Get cursor style based on interaction mode and active handle
   const getCursorStyle = () => {
-    if (isEditing) return 'text';
-    if (isTextEditMode && isSelected) return 'text'; // Show text cursor when in text edit mode
     if (isDragging) return 'grabbing';
     if (isScaling) {
       switch (activeHandle) {
@@ -817,18 +607,12 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     return 'pointer';
   };
 
-  // Handles are now rendered outside the text's scale transform
+  // Handles are now rendered outside the video's scale transform
   // Apply minimal compensation only for extreme zoom out (< 0.5)
   // This keeps handles at reasonable size without over-scaling at normal zoom levels
   const handleScale = previewScale < 0.5 ? 0.5 : 1;
 
   // Content component - may be wrapped in clipping layer
-  // When disableScaleTransform is true, we omit scale() from the CSS transform
-  // This allows text to be re-rendered at actual size for vector-sharp rendering
-  const contentTransform = disableScaleTransform
-    ? `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`
-    : `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`;
-
   const contentComponent = (
     <div
       ref={containerRef}
@@ -836,56 +620,34 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       style={{
         left: '50%',
         top: '50%',
-        transform: contentTransform,
+        transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`,
         transformOrigin: 'center center',
         cursor: getCursorStyle(),
         pointerEvents: 'auto',
         zIndex: isSelected ? 1000 : 1,
-        userSelect: isEditing ? 'text' : 'auto',
-        WebkitUserSelect: isEditing ? 'text' : 'auto',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
       }}
       onMouseDown={handleMouseDown}
-      onClick={handleClick}
-      onDoubleClick={handleDoubleClick}
     >
-      {/* Content */}
+      {/* Content wrapper for size observation */}
       <div
         ref={contentRef}
         className="relative"
-        style={{ pointerEvents: 'auto' }}
-        onDoubleClick={handleDoubleClick}
+        style={{
+          pointerEvents: 'auto',
+          // Maintain aspect ratio for video
+          aspectRatio: `${videoAspectRatio}`,
+        }}
       >
-        {isEditing ? (
-          <div
-            ref={editableRef}
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
-            style={{
-              outline: 'none',
-              minWidth: '20px',
-              minHeight: '20px',
-              // Preserve all existing text styles during editing
-              ...appliedStyle,
-              // Override specific properties for editing
-              cursor: 'text',
-              userSelect: 'text',
-              WebkitUserSelect: 'text',
-            }}
-          >
-            {track.textContent}
-          </div>
-        ) : (
-          children
-        )}
+        {children}
       </div>
     </div>
   );
 
   return (
     <>
-      {/* Text Content Container - with optional clipping wrapper */}
+      {/* Video Content Container - with optional clipping wrapper */}
       {clipContent && clipWidth && clipHeight ? (
         <div
           className="absolute pointer-events-none"
@@ -907,8 +669,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
       {/* Selection Boundary - Rendered separately to avoid scale transform */}
       {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
-      {/* Hide transform handles only when actively editing text, not when text edit mode is active */}
-      {isSelected && !isEditing && containerSize.width > 0 && (
+      {isSelected && containerSize.width > 0 && (
         <div
           ref={boundaryRef}
           className="absolute"
@@ -917,13 +678,10 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
             top: '50%',
             transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
             transformOrigin: 'center center',
-            // When disableScaleTransform is true, content is already scaled, so don't multiply again
-            width: disableScaleTransform
-              ? `${containerSize.width}px`
-              : `${containerSize.width * transform.scale}px`,
-            height: disableScaleTransform
-              ? `${containerSize.height}px`
-              : `${containerSize.height * transform.scale}px`,
+            // Boundary must match the actual rendered size (containerSize * scale)
+            // containerSize is the base size before scale transform is applied
+            width: `${containerSize.width * transform.scale}px`,
+            height: `${containerSize.height * transform.scale}px`,
             border: `${2 * handleScale}px solid #F45513`,
             borderRadius: `${4 * handleScale}px`,
             zIndex: 10000, // Very high z-index to ensure handles are always on top and interactive

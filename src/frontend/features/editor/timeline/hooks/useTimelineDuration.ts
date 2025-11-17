@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditor/index';
+import { getDisplayFps } from '../../stores/videoEditor/types/timeline.types';
 
 export interface TimelineDuration {
   totalFrames: number;
@@ -12,6 +13,8 @@ export interface TimelineDuration {
 
 export const useTimelineDuration = (): TimelineDuration => {
   const { tracks, timeline } = useVideoEditorStore();
+  // Get display FPS from source video tracks (dynamic but static once determined)
+  const displayFps = useMemo(() => getDisplayFps(tracks), [tracks]);
 
   // Memoize expensive calculations - only recalculates when tracks or timeline change
   return useMemo(() => {
@@ -23,17 +26,17 @@ export const useTimelineDuration = (): TimelineDuration => {
         ? Math.max(...tracks.map((track) => track.endFrame))
         : timeline.totalFrames;
 
-    const totalSeconds = effectiveEndFrame / timeline.fps;
+    const totalSeconds = effectiveEndFrame / displayFps;
     const totalMinutes = totalSeconds / 60;
     const totalHours = totalSeconds / 3600;
 
     // Format time with better precision and readability
     const formatTime = (frame: number): string => {
-      const seconds = frame / timeline.fps;
+      const seconds = frame / displayFps;
       const hours = Math.floor(seconds / 3600);
       const minutes = Math.floor((seconds % 3600) / 60);
       const secs = Math.floor(seconds % 60);
-      const frameRemainder = Math.floor((seconds % 1) * timeline.fps);
+      const frameRemainder = Math.floor((seconds % 1) * displayFps);
 
       if (hours > 0) {
         return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frameRemainder.toString().padStart(2, '0')}`;
@@ -49,5 +52,5 @@ export const useTimelineDuration = (): TimelineDuration => {
       formattedTime: formatTime(effectiveEndFrame),
       effectiveEndFrame,
     };
-  }, [tracks, timeline.totalFrames, timeline.fps]); // Only recalculate when these change
+  }, [tracks, timeline.totalFrames, displayFps]); // Only recalculate when these change
 };

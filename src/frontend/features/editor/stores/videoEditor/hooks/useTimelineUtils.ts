@@ -1,9 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useVideoEditorStore } from '../';
+import { getDisplayFps } from '../types/timeline.types';
 import { detectTimelineGaps } from '../utils/trackPositioning';
 
 export const useTimelineUtils = () => {
   const store = useVideoEditorStore();
+  // Get display FPS from source video tracks (dynamic but static once determined)
+  const displayFps = getDisplayFps(store.tracks);
 
   const getTimelineGaps = () => {
     console.log('--- Starting independent gap detection process ---');
@@ -58,12 +61,12 @@ export const useTimelineUtils = () => {
   };
 
   const framesToTime = (frames: number) => {
-    const seconds = frames / store.timeline.fps;
+    const seconds = frames / displayFps;
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
     const frames_remainder = Math.floor(
-      (seconds - Math.floor(seconds)) * store.timeline.fps,
+      (seconds - Math.floor(seconds)) * displayFps,
     );
 
     return {
@@ -83,7 +86,7 @@ export const useTimelineUtils = () => {
     frames = 0,
   ) => {
     const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-    return Math.floor(totalSeconds * store.timeline.fps) + frames;
+    return Math.floor(totalSeconds * displayFps) + frames;
   };
 
   const getTrackDuration = (trackId: string) => {

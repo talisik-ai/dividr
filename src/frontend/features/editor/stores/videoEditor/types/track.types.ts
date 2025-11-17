@@ -6,6 +6,7 @@ export interface VideoTrack {
   previewUrl?: string;
   originalFile?: File;
   tempFilePath?: string;
+  mediaId?: string; // Media library ID for accurate waveform/sprite lookup
   duration: number; // Current visible duration in frames (timeline length)
   sourceDuration?: number; // Original source media duration in frames (for trimming boundaries - video/audio only; dynamically updated for text/subtitle/image)
   startFrame: number;

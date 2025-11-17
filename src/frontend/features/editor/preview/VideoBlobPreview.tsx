@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { usePreviewShortcuts } from '../stores/videoEditor/hooks/usePreviewShortcuts';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 import { DragGuides } from './components/DragGuides';
 import { PreviewPlaceholder } from './components/PreviewPlaceholder';
 import { RotationInfoBadge } from './components/RotationInfoBadge';
@@ -19,6 +20,7 @@ import {
 } from './hooks';
 import {
   AudioOverlay,
+  CanvasOverlay,
   ImageOverlay,
   SubtitleOverlay,
   TextOverlay,
@@ -106,13 +108,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     importMediaToTimeline,
   });
 
+  // Get display FPS from source video tracks (dynamic but static once determined)
+  const displayFps = getDisplayFps(tracks);
+
   // Video playback synchronization
   const { handleLoadedMetadata: handleVideoLoadedMetadata } = useVideoPlayback({
     videoRef,
     activeVideoTrack,
     independentAudioTrack,
     currentFrame: timeline.currentFrame,
-    fps: timeline.fps,
+    fps: displayFps, // Use display FPS from source video, not export FPS
     isPlaying: playback.isPlaying,
     isMuted: playback.muted,
     volume: playback.volume,
@@ -126,7 +131,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     audioRef,
     independentAudioTrack,
     currentFrame: timeline.currentFrame,
-    fps: timeline.fps,
+    fps: displayFps, // Use display FPS from source video, not export FPS
     isPlaying: playback.isPlaying,
     isMuted: playback.muted,
     volume: playback.volume,
@@ -331,6 +336,49 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [setSelectedTracks],
   );
 
+  // Handle video transform updates
+  const handleVideoTransformUpdate = useCallback(
+    (
+      trackId: string,
+      transform: {
+        x?: number;
+        y?: number;
+        scale?: number;
+        rotation?: number;
+        width?: number;
+        height?: number;
+      },
+    ) => {
+      const track = tracks.find((t) => t.id === trackId);
+      if (!track || track.type !== 'video') return;
+
+      const currentTransform = track.textTransform || {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+        width: track.width || baseVideoWidth,
+        height: track.height || baseVideoHeight,
+      };
+
+      updateTrack(trackId, {
+        textTransform: {
+          ...currentTransform,
+          ...transform,
+        },
+      });
+    },
+    [tracks, updateTrack, baseVideoWidth, baseVideoHeight],
+  );
+
+  // Handle video selection
+  const handleVideoSelect = useCallback(
+    (trackId: string) => {
+      setSelectedTracks([trackId]);
+    },
+    [setSelectedTracks],
+  );
+
   // Handle text content updates
   const handleTextUpdate = useCallback(
     (trackId: string, newText: string) => {
@@ -402,8 +450,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           return;
         }
 
-        // If nothing is selected and we have video content, add new text at click position
-        if (activeVideoTrack || activeAudioTrack) {
+        // Only create new text if in text-edit mode AND we have video content
+        if (
+          (activeVideoTrack || activeAudioTrack) &&
+          preview.interactionMode === 'text-edit'
+        ) {
           // Get click position relative to container
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect) return;
@@ -500,10 +551,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     coordinateSystem, // Pass the fixed coordinate system to all overlays
   };
 
-  // Get rotation for rotation badge (works for both text and image)
+  // Get rotation for rotation badge (works for text, image, and video)
   const selectedTextTrack = tracks.find(
     (t) =>
-      (t.type === 'text' || t.type === 'image') &&
+      (t.type === 'text' || t.type === 'image' || t.type === 'video') &&
       timeline.selectedTrackIds.includes(t.id),
   );
 
@@ -565,13 +616,28 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onMouseEnter={() => setIsPreviewFocused(true)}
       tabIndex={0}
     >
+      {/* Black Canvas Overlay */}
+      {activeVideoTrack && (
+        <CanvasOverlay
+          actualWidth={actualWidth}
+          actualHeight={actualHeight}
+          panX={preview.panX}
+          panY={preview.panY}
+        />
+      )}
+
       {/* Video Overlay */}
       <VideoOverlay
         {...overlayProps}
         videoRef={videoRef}
         activeVideoTrack={activeVideoTrack}
         allTracks={tracks}
+        selectedTrackIds={timeline.selectedTrackIds}
         onLoadedMetadata={handleVideoLoadedMetadata}
+        onTransformUpdate={handleVideoTransformUpdate}
+        onSelect={handleVideoSelect}
+        onRotationStateChange={setIsRotating}
+        onDragStateChange={handleDragStateChange}
       />
 
       {/* Audio Overlay */}

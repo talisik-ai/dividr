@@ -27,12 +27,19 @@ interface VideoHealthState {
   lastSeekTime: number;
 }
 
+interface SeekState {
+  targetTime: number;
+  frame: number;
+  timestamp: number;
+  immediate: boolean;
+}
+
 export function useVideoPlayback({
   videoRef,
   activeVideoTrack,
   independentAudioTrack,
   currentFrame,
-  fps,
+  fps, // Display FPS from source video (passed from VideoBlobPreview)
   isPlaying,
   isMuted,
   volume,
@@ -40,8 +47,17 @@ export function useVideoPlayback({
   setCurrentFrame,
   allTracks = [],
 }: UseVideoPlaybackProps) {
+  // Use display FPS from source video for frontend rendering
+  const displayFps = fps;
   // Track previous trim state to detect actual trim changes
   const prevVideoTrimRef = useRef<TrimState | null>(null);
+
+  // Track the last active video track to detect segment transitions
+  const prevActiveTrackRef = useRef<{
+    id: string;
+    previewUrl: string;
+    sourceStartTime: number;
+  } | null>(null);
 
   // Video health monitoring state
   const [videoHealth, setVideoHealth] = useState<VideoHealthState>({
@@ -51,57 +67,97 @@ export function useVideoPlayback({
     lastSeekTime: 0,
   });
 
-  // Debounce timer for seek operations
+  // Unified seek state management
   const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const pendingSeekRef = useRef<number | null>(null);
+  const lastSeekStateRef = useRef<SeekState | null>(null);
+  const seekInProgressRef = useRef<boolean>(false);
 
   // Track if video is ready for playback
   const [isVideoReady, setIsVideoReady] = useState(false);
 
-  // Debounced seek function to prevent overlapping seeks
+  // Track if we're currently scrubbing (rapid seeks)
+  const isScrubbingRef = useRef<boolean>(false);
+
+  // Unified seek function with frame buffer invalidation
   const performSeek = useCallback(
-    (targetTime: number) => {
+    (
+      targetTime: number,
+      targetFrame: number,
+      immediate = false,
+      forceInvalidate = false,
+    ) => {
       const video = videoRef.current;
       if (!video) return;
 
-      // Clear any pending seeks
-      if (seekTimeoutRef.current) {
-        clearTimeout(seekTimeoutRef.current);
-        seekTimeoutRef.current = null;
-      }
-
       // Only seek if video is ready and time differs significantly
       const diff = Math.abs(video.currentTime - targetTime);
-      const tolerance = 1 / fps;
+      const tolerance = 1 / displayFps;
 
       if (video.readyState >= 2 && diff > tolerance) {
+        // Mark seek in progress to prevent circular updates
+        seekInProgressRef.current = true;
+
+        // Force invalidate any cached frames by triggering a micro-seek
+        // This ensures the video decoder doesn't show stale frames
+        // More aggressive invalidation for trim/cut operations
+        if (forceInvalidate || diff > tolerance * 2) {
+          // For larger seeks or forced invalidation, clear decoder buffer
+          // by seeking to a slightly different position first
+          video.currentTime = targetTime + 0.001;
+        }
+
+        // Perform the actual seek
         video.currentTime = targetTime;
+
+        // Store the last successful seek state
+        lastSeekStateRef.current = {
+          targetTime,
+          frame: targetFrame,
+          timestamp: Date.now(),
+          immediate,
+        };
+
         setVideoHealth((prev) => ({
           ...prev,
           lastSeekTime: Date.now(),
           recoveryAttempts: 0, // Reset recovery attempts on successful seek
         }));
+
+        // Clear seek in progress flag after the video element processes the seek
+        requestAnimationFrame(() => {
+          seekInProgressRef.current = false;
+        });
+      } else if (diff <= tolerance) {
+        // Already at target position, just update state
+        seekInProgressRef.current = false;
       }
     },
-    [fps],
+    [displayFps],
   );
 
-  // Debounced seek with retry mechanism
-  const debouncedSeek = useCallback(
-    (targetTime: number, immediate = false) => {
+  // Smart seek queueing for rapid seeks (scrubbing)
+  const queueSeek = useCallback(
+    (
+      targetTime: number,
+      targetFrame: number,
+      immediate = false,
+      forceInvalidate = false,
+    ) => {
+      // Clear any pending debounced seeks
       if (seekTimeoutRef.current) {
         clearTimeout(seekTimeoutRef.current);
+        seekTimeoutRef.current = null;
       }
 
-      pendingSeekRef.current = targetTime;
-
       if (immediate) {
-        performSeek(targetTime);
+        // Immediate seek - execute right away (for scrubbing, trim changes)
+        performSeek(targetTime, targetFrame, true, forceInvalidate);
       } else {
+        // Debounced seek - batch rapid updates during playback
         seekTimeoutRef.current = setTimeout(() => {
-          performSeek(targetTime);
+          performSeek(targetTime, targetFrame, false, forceInvalidate);
           seekTimeoutRef.current = null;
-        }, 16); // ~1 frame delay at 60fps to batch seeks
+        }, 8); // Reduced to 8ms for more responsive seeking
       }
     },
     [performSeek],
@@ -118,10 +174,6 @@ export function useVideoPlayback({
       return;
     }
 
-    console.log(
-      `[VideoPlayback] Attempting recovery (attempt ${videoHealth.recoveryAttempts + 1}/${maxRecoveryAttempts})`,
-    );
-
     setVideoHealth((prev) => ({
       ...prev,
       recoveryAttempts: prev.recoveryAttempts + 1,
@@ -132,7 +184,7 @@ export function useVideoPlayback({
       0,
       currentFrame - activeVideoTrack.startFrame,
     );
-    const trackTime = relativeFrame / fps;
+    const trackTime = relativeFrame / displayFps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
 
     // Try loading the video element
@@ -140,21 +192,21 @@ export function useVideoPlayback({
       video.load();
       // Wait a brief moment for load to start, then seek
       setTimeout(() => {
-        performSeek(targetTime);
+        performSeek(targetTime, currentFrame, true);
         if (isPlaying && video.paused) {
           video.play().catch(console.warn);
         }
       }, 100);
     } else {
       // Just seek if already loaded
-      performSeek(targetTime);
+      performSeek(targetTime, currentFrame, true);
     }
   }, [
     videoRef,
     activeVideoTrack,
     videoHealth.recoveryAttempts,
     currentFrame,
-    fps,
+    displayFps,
     isPlaying,
     performSeek,
   ]);
@@ -177,12 +229,12 @@ export function useVideoPlayback({
       0,
       currentFrame - activeVideoTrack.startFrame,
     );
-    const trackTime = relativeFrame / fps;
+    const trackTime = relativeFrame / displayFps;
     const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
 
     // Calculate the trimmed end time based on track duration
     const trackDurationSeconds =
-      (activeVideoTrack.endFrame - activeVideoTrack.startFrame) / fps;
+      (activeVideoTrack.endFrame - activeVideoTrack.startFrame) / displayFps;
     const trimmedEndTime =
       (activeVideoTrack.sourceStartTime || 0) + trackDurationSeconds;
 
@@ -192,7 +244,7 @@ export function useVideoPlayback({
       Math.min(targetTime, Math.min(trimmedEndTime, video.duration || 0)),
     );
 
-    debouncedSeek(clampedTargetTime, true);
+    queueSeek(clampedTargetTime, currentFrame, true);
 
     // Auto play if timeline is playing
     if (isPlaying && video.paused && video.readyState >= 3) {
@@ -204,11 +256,11 @@ export function useVideoPlayback({
   }, [
     activeVideoTrack,
     currentFrame,
-    fps,
+    displayFps,
     isPlaying,
     isMuted,
     independentAudioTrack,
-    debouncedSeek,
+    queueSeek,
   ]);
 
   // Keep the simplified canplay effect for auto-play only
@@ -383,25 +435,77 @@ export function useVideoPlayback({
       _now: DOMHighResTimeStamp,
       metadata: VideoFrameCallbackMetadata,
     ) => {
-      if (!video.paused && isPlaying && video.readyState >= 2) {
+      // Only update timeline from video if we're not in the middle of a seek operation
+      if (
+        !video.paused &&
+        isPlaying &&
+        video.readyState >= 2 &&
+        !seekInProgressRef.current
+      ) {
         const elapsedFrames =
-          (metadata.mediaTime - (trackForSync.sourceStartTime || 0)) * fps +
+          (metadata.mediaTime - (trackForSync.sourceStartTime || 0)) *
+            displayFps +
           trackForSync.startFrame;
-        setCurrentFrame(Math.floor(elapsedFrames));
+        const newFrame = Math.floor(elapsedFrames);
+
+        // Verify this frame update is consistent with the last seek
+        const lastSeek = lastSeekStateRef.current;
+        if (!lastSeek || Math.abs(newFrame - lastSeek.frame) > displayFps * 2) {
+          // Large discrepancy detected or no recent seek - update timeline
+          setCurrentFrame(newFrame);
+        } else {
+          // Normal playback progression
+          setCurrentFrame(newFrame);
+        }
       }
       handle = video.requestVideoFrameCallback(step);
     };
 
     handle = video.requestVideoFrameCallback(step);
     return () => video.cancelVideoFrameCallback(handle);
-  }, [activeVideoTrack?.id, isPlaying, fps, setCurrentFrame]);
+  }, [activeVideoTrack?.id, isPlaying, displayFps, setCurrentFrame]);
 
-  // Sync video element on scrubbing/seek with debouncing
+  // Sync video element on scrubbing/seek - MASTER SYNCHRONIZATION EFFECT
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeVideoTrack || !isVideoReady) return;
 
-    // Detect if trim boundaries actually changed
+    // Calculate target video time from timeline frame
+    // This mapping is CRITICAL for trim/cut sync:
+    // globalTimelineFrame -> relativeClipFrame -> sourceVideoTime
+    const relativeFrame = Math.max(
+      0,
+      currentFrame - activeVideoTrack.startFrame,
+    );
+    const trackTime = relativeFrame / displayFps;
+    const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+
+    // Calculate the actual current video position (where video SHOULD be)
+    const diff = Math.abs(video.currentTime - targetTime);
+    const tolerance = 1 / displayFps;
+
+    // Track state changes
+    const currentTrackState = {
+      id: activeVideoTrack.id,
+      previewUrl: activeVideoTrack.previewUrl,
+      sourceStartTime: activeVideoTrack.sourceStartTime || 0,
+    };
+
+    // Detect ACTUAL source file change (different video file loaded)
+    const isSourceFileChange =
+      prevActiveTrackRef.current !== null &&
+      prevActiveTrackRef.current.previewUrl !== currentTrackState.previewUrl;
+
+    // Detect segment boundary crossing within same source (cut/trim segments)
+    const isSameSourceSegmentChange =
+      prevActiveTrackRef.current !== null &&
+      prevActiveTrackRef.current.previewUrl === currentTrackState.previewUrl &&
+      prevActiveTrackRef.current.id !== currentTrackState.id;
+
+    prevActiveTrackRef.current = currentTrackState;
+
+    // CRITICAL: Only detect trim changes when user is actively editing,
+    // NOT when playback naturally crosses segment boundaries
     const currentTrimState: TrimState = {
       trackId: activeVideoTrack.id,
       startFrame: activeVideoTrack.startFrame,
@@ -409,56 +513,91 @@ export function useVideoPlayback({
       sourceStartTime: activeVideoTrack.sourceStartTime || 0,
     };
 
+    // User-initiated trim change detection (editing, not playback)
     const trimChanged =
-      !prevVideoTrimRef.current ||
-      prevVideoTrimRef.current.trackId !== currentTrimState.trackId ||
-      prevVideoTrimRef.current.startFrame !== currentTrimState.startFrame ||
-      prevVideoTrimRef.current.endFrame !== currentTrimState.endFrame ||
-      prevVideoTrimRef.current.sourceStartTime !==
-        currentTrimState.sourceStartTime;
+      prevVideoTrimRef.current !== null &&
+      prevVideoTrimRef.current.trackId === currentTrimState.trackId && // Same track
+      (prevVideoTrimRef.current.startFrame !== currentTrimState.startFrame ||
+        prevVideoTrimRef.current.endFrame !== currentTrimState.endFrame ||
+        prevVideoTrimRef.current.sourceStartTime !==
+          currentTrimState.sourceStartTime);
 
     prevVideoTrimRef.current = currentTrimState;
 
-    const relativeFrame = Math.max(
-      0,
-      currentFrame - activeVideoTrack.startFrame,
-    );
-    const trackTime = relativeFrame / fps;
-    const targetTime = (activeVideoTrack.sourceStartTime || 0) + trackTime;
+    // Determine if this is a scrubbing operation (paused and seeking)
+    const isScrubbing = !isPlaying && diff > tolerance;
 
-    const trackDurationSeconds =
-      (activeVideoTrack.endFrame - activeVideoTrack.startFrame) / fps;
-    const trimmedEndTime =
-      (activeVideoTrack.sourceStartTime || 0) + trackDurationSeconds;
+    // Update scrubbing state
+    if (isScrubbing !== isScrubbingRef.current) {
+      isScrubbingRef.current = isScrubbing;
+    }
 
-    const clampedTargetTime = Math.max(
-      activeVideoTrack.sourceStartTime || 0,
-      Math.min(targetTime, Math.min(trimmedEndTime, video.duration || 0)),
-    );
+    // PROFESSIONAL PLAYBACK LOGIC:
+    // During continuous playback, let the browser's video decoder handle
+    // playback naturally. Only seek when absolutely necessary.
+    const isContinuousPlayback = isPlaying && !seekInProgressRef.current;
 
-    const diff = Math.abs(video.currentTime - clampedTargetTime);
-    const tolerance = 1 / fps;
+    // Check if video is playing continuously through same source
+    // (even across cut boundaries - this is the key to smooth playback)
+    const isPlayingThroughCuts =
+      isContinuousPlayback && isSameSourceSegmentChange;
 
-    const shouldSeek = trimChanged || (!isPlaying && diff > tolerance);
+    // SEEK DECISION LOGIC:
+    // Only seek when one of these conditions is true:
+    // 1. User is scrubbing while paused
+    // 2. Source file changed (different video loaded)
+    // 3. User manually trimmed the current track (editing operation)
+    // 4. Significant drift detected during playback (> 3 frames)
+    //
+    // DO NOT SEEK when:
+    // - Playing continuously through cut boundaries in same source
+    // - Video time is within acceptable tolerance
+    const needsSeek =
+      isScrubbing || // User scrubbing
+      isSourceFileChange || // Different video file
+      trimChanged || // User edited trim points
+      (!isContinuousPlayback && diff > tolerance) || // Paused and out of sync
+      (isContinuousPlayback && diff > tolerance * 3 && !isPlayingThroughCuts); // Drift correction (but not at cuts)
 
-    if (shouldSeek && diff > tolerance) {
-      // Use debounced seek for scrubbing, immediate for trim changes
-      debouncedSeek(clampedTargetTime, trimChanged);
+    if (needsSeek && diff > tolerance) {
+      // Immediate seeks for user interactions and file changes
+      const useImmediate = isScrubbing || isSourceFileChange || trimChanged;
+
+      // Buffer invalidation only for file changes and user trim edits
+      const forceInvalidate = isSourceFileChange || trimChanged;
+
+      queueSeek(targetTime, currentFrame, useImmediate, forceInvalidate);
     }
   }, [
     currentFrame,
-    fps,
+    displayFps,
     isPlaying,
     activeVideoTrack,
     isVideoReady,
-    debouncedSeek,
+    queueSeek,
   ]);
 
   // Reset video ready state when track changes
   useEffect(() => {
     const video = videoRef.current;
     if (activeVideoTrack?.id) {
-      setIsVideoReady(false);
+      // Check if this is a segment transition (same video file, different segment)
+      const isSameVideoFile =
+        prevActiveTrackRef.current !== null &&
+        prevActiveTrackRef.current.previewUrl === activeVideoTrack.previewUrl;
+
+      if (isSameVideoFile) {
+        // Segment transition - video element is already loaded
+        // Just ensure it's ready and force a seek to the new offset
+        if (video && video.readyState >= 2) {
+          // Video is already loaded, just mark as ready
+          setIsVideoReady(true);
+        }
+      } else {
+        // Different video file - full reload required
+        setIsVideoReady(false);
+      }
+
       setVideoHealth({
         consecutiveBlackFrames: 0,
         lastFrameCheck: 0,
@@ -467,12 +606,9 @@ export function useVideoPlayback({
       });
 
       // Force video element check and reload if needed (handles undo/redo restoration)
-      if (video && activeVideoTrack.previewUrl) {
+      if (video && activeVideoTrack.previewUrl && !isSameVideoFile) {
         // If video element doesn't have the correct source, force reload
         if (!video.src || video.readyState === 0) {
-          console.log(
-            `🔄 useVideoPlayback: Force reloading video for restored track ${activeVideoTrack.id}`,
-          );
           video.src = activeVideoTrack.previewUrl;
           video.load();
         }
