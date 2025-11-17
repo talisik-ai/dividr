@@ -1470,6 +1470,170 @@ function buildFontDirectoriesParameter(fontFamilies: string[]): string {
 }
 
 /**
+ * Checks if a video has a non-zero transform position
+ */
+function hasNonZeroTransform(trackInfo: TrackInfo): boolean {
+  const hasTransform = 
+    (trackInfo.videoTransform?.x !== undefined && trackInfo.videoTransform.x !== 0) ||
+    (trackInfo.videoTransform?.y !== undefined && trackInfo.videoTransform.y !== 0);
+  
+  if (hasTransform) {
+    console.log(
+      `🎯 Video has non-zero transform: x=${trackInfo.videoTransform?.x ?? 0}, y=${trackInfo.videoTransform?.y ?? 0}`,
+    );
+  }
+  
+  return hasTransform;
+}
+
+/**
+ * Creates a background clip and overlays the video on top
+ * Used for videos with non-zero transform positions
+ * 
+ * Process:
+ * 1. Create background at SOURCE dimensions (not custom)
+ * 2. Overlay video at original size with transform positioning (same logic always)
+ * 3. If custom aspect ratio: apply the same scale+crop logic as non-transform videos
+ */
+function createBlackBackgroundWithOverlay(
+  videoStreamRef: string,
+  trackInfo: TrackInfo,
+  targetDimensions: { width: number; height: number },
+  uniqueIndex: string,
+  videoFilters: string[],
+  duration: number,
+  targetFps: number,
+  desiredOutputDimensions?: { width: number; height: number },
+): string {
+  console.log(
+    `🎬 Creating background overlay for video with transform (${trackInfo.videoTransform?.x ?? 0}, ${trackInfo.videoTransform?.y ?? 0})`,
+  );
+
+  // Step 1: Create background at SOURCE dimensions (not custom dimensions)
+  // This allows normal overlay positioning regardless of custom aspect ratio
+  const backgroundDimensions = targetDimensions;
+  
+  console.log(
+    `📐 Background dimensions (SOURCE): ${backgroundDimensions.width}x${backgroundDimensions.height}`,
+  );
+  if (desiredOutputDimensions) {
+    console.log(
+      `📐 Custom output dimensions: ${desiredOutputDimensions.width}x${desiredOutputDimensions.height} (will be applied via scale+crop after overlay)`,
+    );
+  }
+
+  // Create green background clip at SOURCE dimensions (green for debugging)
+  const blackBgRef = `[${uniqueIndex}_black_bg]`;
+  videoFilters.push(
+    `color=green:size=${backgroundDimensions.width}x${backgroundDimensions.height}:duration=${duration}:rate=${targetFps},setpts=PTS-STARTPTS,setsar=1${blackBgRef}`,
+  );
+
+  // Step 2: Keep video at original size - no scaling before overlay
+  const scaledVideoRef = videoStreamRef;
+  
+  console.log(
+    `📐 Video kept at original size (no scaling) - will only apply transform positioning`,
+  );
+
+  // Calculate overlay position based on transform (same logic always, regardless of custom aspect ratio)
+  const transformX = trackInfo.videoTransform?.x ?? 0;
+  const transformY = trackInfo.videoTransform?.y ?? 0;
+  
+  console.log(
+    `📐 Transform values: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)} (normalized -1 to 1, 0=center)`,
+  );
+  
+  // Use the same positioning logic as images
+  // Transform coordinates are normalized (-1 to 1, where 0 is center)
+  const overlayX = transformX >= 0
+    ? `(W-w)/2+${transformX}*W/2`
+    : `(W-w)/2${transformX}*W/2`;
+  const overlayY = transformY >= 0
+    ? `(H-h)/2+${transformY}*H/2`
+    : `(H-h)/2${transformY}*H/2`;
+
+  console.log(`📍 Video overlay position (same logic always):`);
+  console.log(`   - Normalized: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}`);
+  console.log(`   - Background dimensions: ${backgroundDimensions.width}x${backgroundDimensions.height}`);
+  console.log(`   - FFmpeg expression: overlay=${overlayX}:${overlayY}`);
+
+  // Overlay the video on the background at transform position
+  const overlayRef = `[${uniqueIndex}_overlay]`;
+  videoFilters.push(
+    `${blackBgRef}${scaledVideoRef}overlay=${overlayX}:${overlayY}${overlayRef}`,
+  );
+  
+  console.log(`✅ Video overlaid on background at transform position (${transformX}, ${transformY})`);
+
+  // Step 3: If custom aspect ratio is needed, simply crop to center (no scaling)
+  // Any parts beyond the video become background (green)
+  if (desiredOutputDimensions) {
+    const sourceRatio = backgroundDimensions.width / backgroundDimensions.height;
+    const desiredRatio = desiredOutputDimensions.width / desiredOutputDimensions.height;
+    
+    const ratioDifference = Math.abs(desiredRatio - sourceRatio) / sourceRatio;
+    
+    if (ratioDifference > 0.01) {
+      console.log(`📐 Applying aspect ratio conversion (center crop, no scaling): ${sourceRatio.toFixed(3)} → ${desiredRatio.toFixed(3)}`);
+      
+      // Calculate crop dimensions based on desired aspect ratio
+      // DO NOT scale - just crop what's available, rest will be background
+      let cropWidth: number;
+      let cropHeight: number;
+      
+      if (desiredRatio > sourceRatio) {
+        // Target is wider (e.g., 16:9 → 21:9)
+        // Use full width, calculate height based on ratio
+        cropWidth = Math.min(backgroundDimensions.width, desiredOutputDimensions.width);
+        cropHeight = Math.round(cropWidth / desiredRatio);
+        
+        // Clamp to available height
+        if (cropHeight > backgroundDimensions.height) {
+          cropHeight = backgroundDimensions.height;
+          cropWidth = Math.round(cropHeight * desiredRatio);
+        }
+        
+        console.log(`📐 Wider target: crop to ${cropWidth}x${cropHeight} (center crop, no scaling)`);
+      } else {
+        // Target is taller (e.g., 16:9 → 9:16)
+        // Use full height, calculate width based on ratio
+        cropHeight = Math.min(backgroundDimensions.height, desiredOutputDimensions.height);
+        cropWidth = Math.round(cropHeight * desiredRatio);
+        
+        // Clamp to available width
+        if (cropWidth > backgroundDimensions.width) {
+          cropWidth = backgroundDimensions.width;
+          cropHeight = Math.round(cropWidth / desiredRatio);
+        }
+        
+        console.log(`📐 Taller target (landscape→portrait): crop to ${cropWidth}x${cropHeight} (center crop, no scaling, rest is background)`);
+      }
+      
+      // Center crop - crop to the center of the overlaid video
+      const cropX = Math.round((backgroundDimensions.width - cropWidth) / 2);
+      const cropY = Math.round((backgroundDimensions.height - cropHeight) / 2);
+      
+      console.log(`📐 Center crop positioning: crop offset(${cropX}, ${cropY})`);
+      console.log(`📐 Crop: ${cropWidth}x${cropHeight} at (${cropX}, ${cropY})`);
+      console.log(`📐 Note: Areas beyond video will show green background`);
+      
+      // Apply crop filter - just crop to center, no scaling
+      const croppedRef = `[${uniqueIndex}_aspect_cropped]`;
+      videoFilters.push(
+        `${overlayRef}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},setsar=1${croppedRef}`,
+      );
+      
+      console.log(`✅ Aspect ratio conversion applied (center crop only, background fills rest)`);
+      return croppedRef;
+    } else {
+      console.log(`📐 No aspect ratio conversion needed (difference: ${(ratioDifference * 100).toFixed(2)}%)`);
+    }
+  }
+  
+  return overlayRef;
+}
+
+/**
  * Processes a single layer's timeline segments and returns concat inputs
  */
 function processLayerSegments(
@@ -1540,9 +1704,29 @@ function processLayerSegments(
           videoStreamRef = fpsResult.filterRef;
         }
 
-        // Scale to match target dimensions if needed
         const isVideoFile = FILE_EXTENSIONS.VIDEO.test(trackInfo.path);
         const isImageFile = FILE_EXTENSIONS.IMAGE.test(trackInfo.path);
+        
+        // Check if this video has a non-zero transform position
+        const hasTransform = isVideoFile && hasNonZeroTransform(trackInfo);
+
+        if (hasTransform) {
+          // Video has non-zero transform - create background and overlay
+          // Pass desired output dimensions so background is at final resolution
+          const duration = trackInfo.duration || segment.duration || 1;
+          const desiredOutputDimensions = job.videoDimensions || targetDimensions;
+          videoStreamRef = createBlackBackgroundWithOverlay(
+            videoStreamRef,
+            trackInfo,
+            targetDimensions,
+            uniqueIndex,
+            videoFilters,
+            duration,
+            targetFps,
+            desiredOutputDimensions,
+          );
+        } else {
+          // No transform - use standard scaling logic
         const needsScaling =
           (isVideoFile || isImageFile) &&
           trackInfo.width &&
@@ -1571,6 +1755,7 @@ function processLayerSegments(
             );
           }
           videoStreamRef = scaleRef;
+          }
         }
 
         // Normalize SAR (Sample Aspect Ratio) to 1:1 for concat compatibility
@@ -1678,7 +1863,7 @@ function buildSeparateTimelineFilterComplex(
     ? determineTargetDimensions(firstVideoTimeline, job)
     : job.videoDimensions || VIDEO_DEFAULTS.SIZE;
   const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
-
+  
   // Extract target aspect ratio
   // Priority 1: Use job.operations.aspect (set by useExportJob based on custom canvas dimensions)
   // Priority 2: Fall back to trackInfo.aspectRatio (source video aspect ratio)
@@ -1700,9 +1885,9 @@ function buildSeparateTimelineFilterComplex(
   }
 
   console.log('🎬 Building filter complex with multi-layer support:');
-  console.log(
+    console.log(
     `📊 Video layers: ${videoLayers.size}, Image layers: ${imageLayers.size}`,
-  );
+    );
 
   // Collect all image segments for overlay processing (images are NOT concatenated like video)
   const allImageSegments: ProcessedTimelineSegment[] = [];
@@ -1739,7 +1924,7 @@ function buildSeparateTimelineFilterComplex(
         const inputRef = concatInputs[0].replace('[', '').replace(']', '');
         videoFilters.push(`[${inputRef}]null[${layerLabel}]`);
       } else {
-        videoFilters.push(
+    videoFilters.push(
           `${concatInputs.join('')}concat=n=${concatInputs.length}:v=1:a=0[${layerLabel}]`,
         );
       }
@@ -1902,8 +2087,8 @@ function buildSeparateTimelineFilterComplex(
     const firstLayer = Array.from(videoLayers.values())[0];
     if (firstLayer.segments.length > 0) {
       const firstSegment = firstLayer.segments[0];
-      videoPositionX = firstSegment.input.videoPositionX;
-      videoPositionY = firstSegment.input.videoPositionY;
+      videoPositionX = firstSegment.input.videoTransform?.x;
+      videoPositionY = firstSegment.input.videoTransform?.y;
       
       if (videoPositionX !== undefined || videoPositionY !== undefined) {
         console.log(
@@ -1913,7 +2098,26 @@ function buildSeparateTimelineFilterComplex(
     }
   }
   
-  if (hasVideoContent) {
+  // Check if the first video has a transform - if so, skip aspect ratio crop
+  // because the background overlay already handles the aspect ratio
+  let videoHasTransform = false;
+  if (videoLayers.size > 0) {
+    const firstLayer = Array.from(videoLayers.values())[0];
+    if (firstLayer.segments.length > 0) {
+      const firstSegment = firstLayer.segments[0];
+      videoHasTransform = hasNonZeroTransform(firstSegment.input);
+    }
+  }
+  
+  if (videoHasTransform) {
+    // Video has transform - aspect ratio conversion is handled inside createBlackBackgroundWithOverlay
+    // using the same scale+crop logic as non-transform videos
+    aspectRatioCroppedDimensions = desiredOutputDimensions;
+    console.log(`📐 Video has transform - aspect ratio conversion handled in createBlackBackgroundWithOverlay (same logic as non-transform)`);
+    console.log(`📐 Final dimensions after transform overlay + crop: ${desiredOutputDimensions.width}x${desiredOutputDimensions.height}`);
+  }
+  
+  if (hasVideoContent && !videoHasTransform) {
     // Always check if aspect ratio conversion is needed based on desired output dimensions
     const sourceRatio = targetDimensions.width / targetDimensions.height;
     const desiredRatio = desiredOutputDimensions.width / desiredOutputDimensions.height;
@@ -2391,7 +2595,7 @@ function handlePreset(
   if (!job.operations.preset) return;
 
   cmd.args.push('-preset', job.operations.preset);
-  cmd.args.push('-crf', '29');
+  cmd.args.push('-crf', '28');
   cmd.args.push('-b:a', '96k');
 
   console.log(`🚀 Applied software encoding preset: ${job.operations.preset}`);
