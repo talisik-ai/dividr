@@ -384,9 +384,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
   // Auto-fit video tracks when canvas aspect ratio changes
   // This ensures video content automatically adapts to new canvas dimensions
+  // Works in both directions: landscape ↔ portrait, and any aspect ratio change
   const prevCanvasDimensionsRef = useRef<{
     width: number;
     height: number;
+    aspectRatio: number;
   } | null>(null);
 
   useEffect(() => {
@@ -400,20 +402,29 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       return;
     }
 
-    // Check if canvas dimensions actually changed
+    const currentAspectRatio = preview.canvasWidth / preview.canvasHeight;
+
+    // Check if canvas dimensions or aspect ratio actually changed
     const prevDimensions = prevCanvasDimensionsRef.current;
-    if (
-      prevDimensions &&
-      prevDimensions.width === preview.canvasWidth &&
-      prevDimensions.height === preview.canvasHeight
-    ) {
-      return; // No change, skip auto-fit
+    const hasDimensionChange =
+      !prevDimensions ||
+      prevDimensions.width !== preview.canvasWidth ||
+      prevDimensions.height !== preview.canvasHeight;
+
+    const hasAspectRatioChange =
+      !prevDimensions ||
+      Math.abs(prevDimensions.aspectRatio - currentAspectRatio) > 0.001;
+
+    // If neither dimensions nor aspect ratio changed, skip auto-fit
+    if (!hasDimensionChange && !hasAspectRatioChange) {
+      return;
     }
 
-    // Store current dimensions for next comparison
+    // Store current dimensions and aspect ratio for next comparison
     prevCanvasDimensionsRef.current = {
       width: preview.canvasWidth,
       height: preview.canvasHeight,
+      aspectRatio: currentAspectRatio,
     };
 
     // Skip auto-fit on initial mount (when prevDimensions is null)
@@ -433,17 +444,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
     // Auto-fit each video track
     videoTracks.forEach((track) => {
-      // Get original video dimensions
-      // Priority: track.width/height > video element dimensions > canvas dimensions
+      // Get original video dimensions (always use source video dimensions, not current transform)
+      // Priority: track.width/height > video element dimensions
       let originalWidth: number;
       let originalHeight: number;
 
       if (track.width && track.height) {
-        // Use stored track dimensions (most reliable)
+        // Use stored track dimensions (most reliable - these are the original video dimensions)
         originalWidth = track.width;
         originalHeight = track.height;
       } else if (videoRef.current && videoRef.current.videoWidth > 0) {
-        // Fallback to video element dimensions
+        // Fallback to video element dimensions (only for active video track)
+        // Note: This only works for the currently active video track
         originalWidth = videoRef.current.videoWidth;
         originalHeight = videoRef.current.videoHeight;
       } else {
@@ -452,6 +464,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       }
 
       // Calculate new dimensions that fit within canvas while preserving aspect ratio
+      // This works for both landscape->portrait and portrait->landscape transitions
       const fittedDimensions = calculateFitDimensions(
         originalWidth,
         originalHeight,
@@ -469,11 +482,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         height: originalHeight,
       };
 
-      // Only update if dimensions actually changed
-      if (
-        currentTransform.width !== fittedDimensions.width ||
-        currentTransform.height !== fittedDimensions.height
-      ) {
+      // Always update when canvas changes to ensure video fits correctly
+      // This handles both dimension changes and aspect ratio changes
+      // The comparison ensures we don't update unnecessarily if dimensions are already correct
+      const needsUpdate =
+        Math.abs(currentTransform.width - fittedDimensions.width) > 0.5 ||
+        Math.abs(currentTransform.height - fittedDimensions.height) > 0.5;
+
+      if (needsUpdate) {
         // Update transform with new dimensions, preserving other properties
         handleVideoTransformUpdate(track.id, {
           width: fittedDimensions.width,
