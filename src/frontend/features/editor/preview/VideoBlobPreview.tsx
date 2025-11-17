@@ -580,7 +580,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         })(),
       )}
       style={
-        !activeVideoTrack && !activeAudioTrack
+        !tracks.length
           ? {
               height: '374px',
               maxWidth: '66.67%',
@@ -617,14 +617,18 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       tabIndex={0}
     >
       {/* Black Canvas Overlay */}
-      {activeVideoTrack && (
-        <CanvasOverlay
-          actualWidth={actualWidth}
-          actualHeight={actualHeight}
-          panX={preview.panX}
-          panY={preview.panY}
-        />
-      )}
+      {/* Show canvas when any track exists, regardless of type */}
+      {/* Canvas dimensions come from preview.canvasWidth/Height (defaults to 800x540 for non-video tracks) */}
+      {tracks.length > 0 &&
+        preview.canvasWidth > 0 &&
+        preview.canvasHeight > 0 && (
+          <CanvasOverlay
+            actualWidth={actualWidth}
+            actualHeight={actualHeight}
+            panX={preview.panX}
+            panY={preview.panY}
+          />
+        )}
 
       {/* Video Overlay */}
       <VideoOverlay
