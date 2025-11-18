@@ -1514,7 +1514,6 @@ function createBlackBackgroundWithOverlay(
     `📐 Background dimensions: ${targetDimensions.width}x${targetDimensions.height}`,
   );
 
-  // Create black background clip
   const blackBgRef = `[${uniqueIndex}_black_bg]`;
   videoFilters.push(
     `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${duration}:rate=${targetFps},setpts=PTS-STARTPTS,setsar=1${blackBgRef}`,
@@ -1525,8 +1524,6 @@ function createBlackBackgroundWithOverlay(
   const needsScaling = trackInfo.width !== targetDimensions.width || trackInfo.height !== targetDimensions.height;
   
   if (needsScaling) {
-    // Scale video to fit the background while maintaining aspect ratio, then pad to exact dimensions
-    // Use 'decrease' to ensure video fits, then pad to ensure exact output dimensions for concat
     scaledVideoRef = `[${uniqueIndex}_video_scaled]`;
     videoFilters.push(
       `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaledVideoRef}`,
@@ -1697,7 +1694,6 @@ function processLayerSegments(
               `📐 Layer ${layerIndex}: Scaled image (preserving transparency) to fit ${targetDimensions.width}x${targetDimensions.height}`,
             );
           } else {
-            // For videos, use black padding
             videoFilters.push(
               `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`,
             );
@@ -1898,52 +1894,59 @@ function buildSeparateTimelineFilterComplex(
   }
 
   // Process audio timeline segments IN ORDER
-  audioTimeline.segments.forEach((segment, segmentIndex) => {
-    const { input: trackInfo } = segment;
+  // Skip audio processing if there are only image inputs (no video inputs)
+  const hasVideoInputs = videoLayers.size > 0;
+  
+  if (hasVideoInputs) {
+    audioTimeline.segments.forEach((segment, segmentIndex) => {
+      const { input: trackInfo } = segment;
 
-    console.log(
-      `🎵 Processing audio segment ${segmentIndex}: ${trackInfo.path} [${segment.startTime.toFixed(2)}s-${segment.endTime.toFixed(2)}s]`,
-    );
-
-    if (isGapInput(trackInfo.path)) {
-      // Audio gap - create silent audio
-      const silentResult = createSilentAudioFilters(
-        segmentIndex,
-        trackInfo.duration || 1,
-      );
-      audioFilters.push(...silentResult.filters);
-      audioConcatInputs.push(silentResult.filterRef);
-      console.log(`🎵 Added audio gap: ${silentResult.filterRef}`);
-    } else {
-      // Regular audio file - find the original file index
-      const fileIndex = findFileIndexForSegment(
-        segment,
-        categorizedInputs,
-        'audio',
+      console.log(
+        `🎵 Processing audio segment ${segmentIndex}: ${trackInfo.path} [${segment.startTime.toFixed(2)}s-${segment.endTime.toFixed(2)}s]`,
       );
 
-      if (fileIndex !== undefined) {
-        console.log(
-          `🎵 Processing audio segment ${segmentIndex} with fileIndex ${fileIndex}`,
+      if (isGapInput(trackInfo.path)) {
+        // Audio gap - create silent audio
+        const silentResult = createSilentAudioFilters(
+          segmentIndex,
+          trackInfo.duration || 1,
         );
-
-        const context: AudioProcessingContext = {
-          trackInfo,
-          originalIndex: segmentIndex,
-          fileIndex,
-          inputStreamRef: `[${fileIndex}:a]`,
-        };
-
-        const trimResult = createAudioTrimFilters(context);
-        audioFilters.push(...trimResult.filters);
-        audioConcatInputs.push(trimResult.filterRef);
+        audioFilters.push(...silentResult.filters);
+        audioConcatInputs.push(silentResult.filterRef);
+        console.log(`🎵 Added audio gap: ${silentResult.filterRef}`);
       } else {
-        console.warn(
-          `❌ Could not find file index for audio segment ${segmentIndex}`,
+        // Regular audio file - find the original file index
+        const fileIndex = findFileIndexForSegment(
+          segment,
+          categorizedInputs,
+          'audio',
         );
+
+        if (fileIndex !== undefined) {
+          console.log(
+            `🎵 Processing audio segment ${segmentIndex} with fileIndex ${fileIndex}`,
+          );
+
+          const context: AudioProcessingContext = {
+            trackInfo,
+            originalIndex: segmentIndex,
+            fileIndex,
+            inputStreamRef: `[${fileIndex}:a]`,
+          };
+
+          const trimResult = createAudioTrimFilters(context);
+          audioFilters.push(...trimResult.filters);
+          audioConcatInputs.push(trimResult.filterRef);
+        } else {
+          console.warn(
+            `❌ Could not find file index for audio segment ${segmentIndex}`,
+          );
+        }
       }
-    }
-  });
+    });
+  } else {
+    console.log('ℹ️ Skipping audio processing - only image inputs detected (no video inputs)');
+  }
 
   // Composite layers from bottom to top
   let currentVideoLabel = '';
@@ -2504,16 +2507,29 @@ function handleFilterComplex(
     // 2. Subtitles are applied after crop: [video_cropped] -> [video]
     // So we always map [video] as the final output
     
+    // Check if we have video inputs (not just images) to determine if we should map audio
+    const hasVideoInputs = videoLayers.size > 0;
+    
     // Add hardware upload filter for VAAPI if needed
     if (hwAccel?.type === 'vaapi') {
       console.log('🎮 Adding VAAPI hardware upload filter');
       filterComplex +=
         ';[video]format=nv12,hwupload=extra_hw_frames=64:derive_device=vaapi[video_hw]';
       cmd.args.push('-filter_complex', filterComplex);
-      cmd.args.push('-map', '[video_hw]', '-map', '[audio]');
+      if (hasVideoInputs) {
+        cmd.args.push('-map', '[video_hw]', '-map', '[audio]');
+      } else {
+        cmd.args.push('-map', '[video_hw]');
+        console.log('ℹ️ Not mapping audio - only image inputs detected');
+      }
     } else {
       cmd.args.push('-filter_complex', filterComplex);
-      cmd.args.push('-map', '[video]', '-map', '[audio]');
+      if (hasVideoInputs) {
+        cmd.args.push('-map', '[video]', '-map', '[audio]');
+      } else {
+        cmd.args.push('-map', '[video]');
+        console.log('ℹ️ Not mapping audio - only image inputs detected');
+      }
     }
   }
 }
