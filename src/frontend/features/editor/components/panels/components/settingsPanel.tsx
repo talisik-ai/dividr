@@ -1,0 +1,504 @@
+import { Button } from '@/frontend/components/ui/button';
+import { Input } from '@/frontend/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/frontend/components/ui/select';
+import { Separator } from '@/frontend/components/ui/separator';
+import { cn } from '@/frontend/utils/utils';
+import { RotateCcw } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { BasePanel } from '../../../components/panels/basePanel';
+import { CustomPanelProps } from '../../../components/panels/panelRegistry';
+import { useVideoEditorStore } from '../../../stores/videoEditor/index';
+import {
+  ASPECT_RATIO_PRESETS,
+  detectAspectRatio,
+  getAspectRatioDisplayLabel,
+} from '../../../stores/videoEditor/utils/aspectRatioHelpers';
+import { FpsWarningDialog } from '../../dialogs/fpsWarningDialog';
+
+const FRAME_RATES = [24, 25, 30, 48, 50, 60] as const;
+
+export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
+  const {
+    preview,
+    timeline,
+    tracks,
+    setCanvasSize,
+    setFps,
+    updateTrack,
+    resetCanvasSize,
+  } = useVideoEditorStore();
+
+  // Use local state for input fields to prevent reset during typing
+  const [customWidth, setCustomWidth] = useState<string>(
+    preview.canvasWidth.toString(),
+  );
+  const [customHeight, setCustomHeight] = useState<string>(
+    preview.canvasHeight.toString(),
+  );
+
+  // Track whether user is actively editing to prevent external updates
+  const [isEditingWidth, setIsEditingWidth] = useState(false);
+  const [isEditingHeight, setIsEditingHeight] = useState(false);
+
+  // FPS warning dialog state
+  const [showFpsWarning, setShowFpsWarning] = useState(false);
+  const [pendingFps, setPendingFps] = useState<number | null>(null);
+
+  // Get the first selected video or image track
+  const selectedTrack = useMemo(() => {
+    const selectedTrackIds = timeline.selectedTrackIds;
+    if (selectedTrackIds.length === 0) return null;
+
+    // Find the first video or image track in selection
+    return (
+      tracks.find(
+        (track) =>
+          selectedTrackIds.includes(track.id) &&
+          (track.type === 'video' || track.type === 'image'),
+      ) || null
+    );
+  }, [tracks, timeline.selectedTrackIds]);
+
+  // Detect the source FPS from video tracks
+  const sourceFps = useMemo(() => {
+    const videoTracks = tracks.filter((track) => track.type === 'video');
+    if (videoTracks.length === 0) return null;
+
+    // Use the first video track's source FPS or fall back to the current timeline FPS
+    const firstVideoTrack = videoTracks[0];
+    return firstVideoTrack.sourceFps || timeline.fps;
+  }, [tracks, timeline.fps]);
+
+  // Sync settings panel inputs with canvas dimensions
+  // CRITICAL: Always show the current canvas dimensions, not track dimensions
+  // This ensures the input reflects what the user is actually editing (the canvas/preview size)
+  useEffect(() => {
+    // Don't update inputs while user is actively typing
+    if (isEditingWidth || isEditingHeight) {
+      return;
+    }
+
+    // Always sync with canvas dimensions (this is what the user is controlling)
+    setCustomWidth(preview.canvasWidth.toString());
+    setCustomHeight(preview.canvasHeight.toString());
+  }, [
+    preview.canvasWidth,
+    preview.canvasHeight,
+    isEditingWidth,
+    isEditingHeight,
+  ]);
+
+  // Determine if a preset is active based on canvas dimensions
+  // Canvas dimensions are the source of truth since that's what the user controls in this panel
+  const activePreset = useMemo(() => {
+    return ASPECT_RATIO_PRESETS.find(
+      (ratio) =>
+        ratio.width === preview.canvasWidth &&
+        ratio.height === preview.canvasHeight,
+    );
+  }, [preview.canvasWidth, preview.canvasHeight]);
+
+  // Determine which preset matches the selected track's detected aspect ratio
+  const detectedPreset = useMemo(() => {
+    if (selectedTrack?.detectedAspectRatioLabel) {
+      return ASPECT_RATIO_PRESETS.find(
+        (preset) => preset.label === selectedTrack.detectedAspectRatioLabel,
+      );
+    }
+    return null;
+  }, [selectedTrack?.detectedAspectRatioLabel]);
+
+  // Get the display label for the detected aspect ratio
+  // This will show either a preset label (e.g., "16:9") or a computed ratio (e.g., "1.48:1")
+  const detectedAspectRatioLabel = useMemo(() => {
+    if (!selectedTrack) return null;
+
+    // If we have a preset label stored, use it
+    if (selectedTrack.detectedAspectRatioLabel) {
+      return selectedTrack.detectedAspectRatioLabel;
+    }
+
+    // Otherwise, compute the exact ratio from dimensions
+    if (selectedTrack.width && selectedTrack.height) {
+      return getAspectRatioDisplayLabel(
+        selectedTrack.width,
+        selectedTrack.height,
+      );
+    }
+
+    return null;
+  }, [
+    selectedTrack,
+    selectedTrack?.detectedAspectRatioLabel,
+    selectedTrack?.width,
+    selectedTrack?.height,
+  ]);
+
+  // Determine if controls should be disabled (no track selected or canvas dimensions match a preset perfectly)
+  const hasTrackSelected = selectedTrack !== null;
+
+  // Determine if the selected track is a video (aspect ratio controls only apply to videos)
+  const isVideoTrackSelected = selectedTrack?.type === 'video';
+
+  // Check if we have original dimensions to enable reset button
+  const hasOriginalDimensions =
+    preview.originalCanvasWidth && preview.originalCanvasHeight;
+
+  // Check if current dimensions differ from original (to show reset button)
+  const dimensionsChanged =
+    hasOriginalDimensions &&
+    (preview.canvasWidth !== preview.originalCanvasWidth ||
+      preview.canvasHeight !== preview.originalCanvasHeight);
+
+  // Handle preset selection
+  const handlePresetSelect = (
+    preset: (typeof ASPECT_RATIO_PRESETS)[number],
+  ) => {
+    // Always update canvas size
+    setCanvasSize(preset.width, preset.height);
+
+    // If a video/image track is selected, update its metadata
+    if (selectedTrack) {
+      updateTrack(selectedTrack.id, {
+        aspectRatio: preset.ratio,
+        detectedAspectRatioLabel: preset.label,
+      });
+    }
+  };
+
+  // Handle custom width change with real-time preview
+  const handleCustomWidthChange = (value: string) => {
+    // Only allow numeric input or empty string (for clearing)
+    if (value === '' || /^\d+$/.test(value)) {
+      setCustomWidth(value);
+
+      // Update preview in real-time if we have a valid number
+      const numValue = parseInt(value);
+      if (numValue > 0 && !isNaN(numValue)) {
+        const newHeight = parseInt(customHeight);
+        if (newHeight > 0) {
+          // Update canvas size for real-time preview
+          setCanvasSize(numValue, newHeight);
+
+          // Update selected track's aspect ratio metadata if a track is selected
+          if (selectedTrack) {
+            const newRatio = numValue / newHeight;
+            // Detect if the custom dimensions match a preset aspect ratio
+            const detectedAspectRatio = detectAspectRatio(numValue, newHeight);
+            updateTrack(selectedTrack.id, {
+              aspectRatio: newRatio,
+              detectedAspectRatioLabel: detectedAspectRatio?.label || undefined,
+            });
+          }
+        }
+      }
+    }
+  };
+
+  // Handle custom height change with real-time preview
+  const handleCustomHeightChange = (value: string) => {
+    // Only allow numeric input or empty string (for clearing)
+    if (value === '' || /^\d+$/.test(value)) {
+      setCustomHeight(value);
+
+      // Update preview in real-time if we have a valid number
+      const numValue = parseInt(value);
+      if (numValue > 0 && !isNaN(numValue)) {
+        const newWidth = parseInt(customWidth);
+        if (newWidth > 0) {
+          // Update canvas size for real-time preview
+          setCanvasSize(newWidth, numValue);
+
+          // Update selected track's aspect ratio metadata if a track is selected
+          if (selectedTrack) {
+            const newRatio = newWidth / numValue;
+            // Detect if the custom dimensions match a preset aspect ratio
+            const detectedAspectRatio = detectAspectRatio(newWidth, numValue);
+            updateTrack(selectedTrack.id, {
+              aspectRatio: newRatio,
+              detectedAspectRatioLabel: detectedAspectRatio?.label || undefined,
+            });
+          }
+        }
+      }
+    }
+  };
+
+  // Handle reset to original dimensions
+  const handleResetDimensions = () => {
+    // Reset canvas size in the store
+    resetCanvasSize();
+
+    // Immediately update input fields to reflect the reset
+    // This ensures instant visual feedback without waiting for useEffect
+    if (preview.originalCanvasWidth && preview.originalCanvasHeight) {
+      setCustomWidth(preview.originalCanvasWidth.toString());
+      setCustomHeight(preview.originalCanvasHeight.toString());
+    }
+  };
+
+  // Handle frame rate change
+  const handleFrameRateChange = (value: string) => {
+    const fps = parseInt(value);
+    if (isNaN(fps)) return;
+
+    // Check if the new FPS is higher than the source FPS
+    if (sourceFps && fps > sourceFps) {
+      // Show warning dialog
+      setPendingFps(fps);
+      setShowFpsWarning(true);
+    } else {
+      // Apply FPS change directly
+      setFps(fps);
+    }
+  };
+
+  // Handle FPS warning confirmation
+  const handleFpsWarningConfirm = (enableInterpolation: boolean) => {
+    if (pendingFps) {
+      setFps(pendingFps);
+      // TODO: Store interpolation preference for export
+      // This could be added to the timeline state or export settings
+      console.log(
+        'FPS set to:',
+        pendingFps,
+        'Interpolation:',
+        enableInterpolation,
+      );
+      setPendingFps(null);
+    }
+  };
+
+  // Handle FPS warning dialog close
+  const handleFpsWarningClose = (open: boolean) => {
+    if (!open) {
+      setPendingFps(null);
+    }
+    setShowFpsWarning(open);
+  };
+
+  return (
+    <BasePanel
+      title="Settings"
+      description="Configure project and export settings"
+      className={className}
+    >
+      <div className="flex flex-col flex-1 min-h-0 overflow-y-auto gap-6">
+        {/* Aspect Ratio Section */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-muted-foreground">
+                Aspect Ratio
+              </label>
+              {dimensionsChanged && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResetDimensions}
+                  className="h-6 px-2 text-xs gap-1"
+                  title="Reset to original dimensions"
+                >
+                  <RotateCcw className="size-3" />
+                  Reset
+                </Button>
+              )}
+            </div>
+            {detectedAspectRatioLabel && isVideoTrackSelected && (
+              <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
+                Detected: {detectedAspectRatioLabel}
+              </span>
+            )}
+          </div>
+
+          {/* Show message when image track is selected */}
+          {hasTrackSelected && !isVideoTrackSelected && (
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-4 text-center">
+              Aspect ratio controls are not available for image tracks. Use the
+              Image Properties Panel for scaling and cropping.
+            </div>
+          )}
+
+          {/* Show message when no track is selected */}
+          {!hasTrackSelected && (
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-4 text-center">
+              Select a video track to adjust aspect ratio
+            </div>
+          )}
+
+          {/* Show aspect ratio controls only for video tracks */}
+          {isVideoTrackSelected && (
+            <>
+              {/* Show current canvas dimensions */}
+              <div className="text-xs text-muted-foreground">
+                Canvas: {preview.canvasWidth} × {preview.canvasHeight}
+                {hasOriginalDimensions &&
+                  (preview.canvasWidth !== preview.originalCanvasWidth ||
+                    preview.canvasHeight !== preview.originalCanvasHeight) && (
+                    <span className="ml-1 text-muted-foreground/60">
+                      (Original: {preview.originalCanvasWidth} ×{' '}
+                      {preview.originalCanvasHeight})
+                    </span>
+                  )}
+              </div>
+
+              {/* Preset Grid */}
+              <div className="grid grid-cols-4 gap-2">
+                {ASPECT_RATIO_PRESETS.map((ratio) => {
+                  const isActive = activePreset?.label === ratio.label;
+                  const isSuggested = detectedPreset?.label === ratio.label;
+                  const aspectValue = ratio.width / ratio.height;
+
+                  return (
+                    <Button
+                      key={ratio.label}
+                      variant="outline"
+                      onClick={() => handlePresetSelect(ratio)}
+                      className={cn(
+                        'flex flex-col items-center border-none justify-end gap-2 h-auto py-3 transition-all rounded-md relative',
+                        isActive && 'bg-primary/10 dark:bg-primary/10',
+                        isSuggested &&
+                          !isActive &&
+                          'ring-2 ring-blue-500/40 dark:ring-blue-400/40',
+                      )}
+                    >
+                      {/* Visual shape representation */}
+                      <div
+                        className={cn(
+                          'border-2 rounded transition-colors',
+                          isActive
+                            ? 'border-primary'
+                            : isSuggested
+                              ? 'border-blue-500 dark:border-blue-400'
+                              : 'border-muted-foreground/40',
+                        )}
+                        style={{
+                          width:
+                            aspectValue >= 1 ? '32px' : `${32 * aspectValue}px`,
+                          height:
+                            aspectValue <= 1 ? '32px' : `${32 / aspectValue}px`,
+                        }}
+                      />
+                      <span
+                        className={cn(
+                          'text-xs font-medium',
+                          isSuggested &&
+                            !isActive &&
+                            'text-blue-600 dark:text-blue-400',
+                        )}
+                      >
+                        {ratio.label}
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+
+              {/* Custom Dimensions */}
+              <div className="flex items-center pt-2 justify-between">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Custom
+                </label>
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground block text-center">
+                      W
+                    </span>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={customWidth}
+                      onChange={(e) => handleCustomWidthChange(e.target.value)}
+                      onFocus={() => setIsEditingWidth(true)}
+                      onBlur={() => setIsEditingWidth(false)}
+                      placeholder="Width"
+                      style={{ fieldSizing: 'content' } as React.CSSProperties}
+                      className="max-w-20"
+                    />
+                  </div>
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground block text-center">
+                      H
+                    </span>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={customHeight}
+                      onChange={(e) => handleCustomHeightChange(e.target.value)}
+                      onFocus={() => setIsEditingHeight(true)}
+                      onBlur={() => setIsEditingHeight(false)}
+                      placeholder="Height"
+                      style={{ fieldSizing: 'content' } as React.CSSProperties}
+                      className="max-w-20"
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <Separator />
+
+        {/* Frame Rate Section */}
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <label className="text-xs font-medium text-muted-foreground">
+              Frame Rate
+            </label>
+            <Select
+              value={timeline.fps.toString()}
+              onValueChange={handleFrameRateChange}
+            >
+              <SelectTrigger className="min-w-[166px]">
+                <SelectValue placeholder="Select frame rate" />
+              </SelectTrigger>
+              <SelectContent>
+                {FRAME_RATES.map((fps) => (
+                  <SelectItem key={fps} value={fps.toString()}>
+                    {fps} fps
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Display source FPS and current FPS with warning indicator */}
+          {sourceFps && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                Source: {sourceFps} fps
+              </span>
+              {timeline.fps > sourceFps && (
+                <span className="text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded flex items-center gap-1">
+                  ⚠️ Interpolation required
+                </span>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            FPS affects export interpretation only. Timeline and playback remain
+            stable.
+          </p>
+        </div>
+      </div>
+
+      {/* FPS Warning Dialog */}
+      <FpsWarningDialog
+        open={showFpsWarning}
+        onOpenChange={handleFpsWarningClose}
+        originalFps={sourceFps || timeline.fps}
+        newFps={pendingFps || timeline.fps}
+        onConfirm={handleFpsWarningConfirm}
+        showInterpolationOption={false}
+      />
+    </BasePanel>
+  );
+};
