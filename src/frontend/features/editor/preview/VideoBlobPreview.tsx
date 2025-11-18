@@ -51,6 +51,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const [pendingEditTextId, setPendingEditTextId] = useState<string | null>(
     null,
   );
+  // Track pending empty text tracks that should be auto-discarded
+  const [pendingEmptyTextId, setPendingEmptyTextId] = useState<string | null>(
+    null,
+  );
 
   // Initialize preview shortcuts
   usePreviewShortcuts(isPreviewFocused);
@@ -75,6 +79,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     currentTranscribingTrackId,
     transcriptionProgress,
     addTextClip,
+    removeTrack,
   } = useVideoEditorStore();
 
   // Active media determination
@@ -228,6 +233,56 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     },
   );
 
+  // Clear non-text selections when switching to Text Tool
+  useEffect(() => {
+    if (preview.interactionMode === 'text-edit') {
+      const nonTextSelectedTracks = timeline.selectedTrackIds.filter((id) => {
+        const track = tracks.find((t) => t.id === id);
+        return track && track.type !== 'text';
+      });
+
+      if (nonTextSelectedTracks.length > 0) {
+        // Keep only text tracks selected, or clear all if no text tracks selected
+        const textSelectedTracks = timeline.selectedTrackIds.filter((id) => {
+          const track = tracks.find((t) => t.id === id);
+          return track && track.type === 'text';
+        });
+        setSelectedTracks(textSelectedTracks);
+      }
+    }
+  }, [preview.interactionMode, timeline.selectedTrackIds, tracks, setSelectedTracks]);
+
+  // Auto-discard empty text tracks when switching away from Text Tool or on Escape
+  useEffect(() => {
+    if (preview.interactionMode !== 'text-edit' && pendingEmptyTextId) {
+      const track = tracks.find((t) => t.id === pendingEmptyTextId);
+      // Only delete if text is still empty/default
+      if (track && (!track.textContent || track.textContent === 'New Text')) {
+        removeTrack(pendingEmptyTextId);
+      }
+      setPendingEmptyTextId(null);
+    }
+  }, [preview.interactionMode, pendingEmptyTextId, tracks, removeTrack]);
+
+  // Handle Escape key to discard empty text
+  useEffect(() => {
+    if (!isPreviewFocused || !pendingEmptyTextId) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && preview.interactionMode === 'text-edit') {
+        const track = tracks.find((t) => t.id === pendingEmptyTextId);
+        if (track && (!track.textContent || track.textContent === 'New Text')) {
+          removeTrack(pendingEmptyTextId);
+          setPendingEmptyTextId(null);
+          setPendingEditTextId(null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isPreviewFocused, pendingEmptyTextId, preview.interactionMode, tracks, removeTrack]);
+
   // Get active tracks - memoize to prevent unnecessary re-renders
   const activeSubtitles = React.useMemo(
     () =>
@@ -323,20 +378,24 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [tracks, updateTrack],
   );
 
-  // Handle text selection
+  // Handle text selection - only allow in select mode or text-edit mode
   const handleTextSelect = useCallback(
     (trackId: string) => {
+      // Only allow selection in select mode or text-edit mode
+      if (preview.interactionMode === 'pan') return;
       setSelectedTracks([trackId]);
     },
-    [setSelectedTracks],
+    [setSelectedTracks, preview.interactionMode],
   );
 
-  // Handle image selection
+  // Handle image selection - only allow in select mode
   const handleImageSelect = useCallback(
     (trackId: string) => {
+      // Only allow selection in select mode
+      if (preview.interactionMode !== 'select') return;
       setSelectedTracks([trackId]);
     },
-    [setSelectedTracks],
+    [setSelectedTracks, preview.interactionMode],
   );
 
   // Handle video transform updates
@@ -374,12 +433,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [tracks, updateTrack, baseVideoWidth, baseVideoHeight],
   );
 
-  // Handle video selection
+  // Handle video selection - only allow in select mode
   const handleVideoSelect = useCallback(
     (trackId: string) => {
+      // Only allow selection in select mode
+      if (preview.interactionMode !== 'select') return;
       setSelectedTracks([trackId]);
     },
-    [setSelectedTracks],
+    [setSelectedTracks, preview.interactionMode],
   );
 
   // Auto-fit video tracks when canvas aspect ratio changes
@@ -537,12 +598,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [textStyle.globalSubtitlePosition, setGlobalSubtitlePosition],
   );
 
-  // Handle subtitle selection
+  // Handle subtitle selection - only allow in select mode or text-edit mode
   const handleSubtitleSelect = useCallback(
     (trackId: string) => {
+      // Only allow selection in select mode or text-edit mode
+      if (preview.interactionMode === 'pan') return;
       setSelectedTracks([trackId]);
     },
-    [setSelectedTracks],
+    [setSelectedTracks, preview.interactionMode],
   );
 
   // Handle subtitle text updates
@@ -558,34 +621,42 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     async (e: React.MouseEvent) => {
       const target = e.target as HTMLElement;
 
-      // Check if clicking on empty canvas space
-      if (
-        target === containerRef.current ||
-        target.classList.contains('preview-background') ||
-        target.tagName === 'VIDEO'
-      ) {
-        const hasInteractiveLayerSelected = timeline.selectedTrackIds.some(
-          (id) => {
-            const track = tracks.find((t) => t.id === id);
-            return (
-              track?.type === 'text' ||
-              track?.type === 'image' ||
-              track?.type === 'subtitle'
-            );
-          },
-        );
+      // Pan Tool: Do nothing except pan (handled by handlePanStart)
+      if (preview.interactionMode === 'pan') {
+        return;
+      }
 
-        // If something is selected, deselect it
-        if (hasInteractiveLayerSelected) {
-          setSelectedTracks([]);
+      // Text Tool: Check if clicking on a text element
+      // If clicking on text element, let it handle the click (for editing)
+      // If clicking anywhere else (including video/image overlays), create new text
+      if (preview.interactionMode === 'text-edit') {
+        // Check if clicking on a text element or text editor
+        const isTextElement =
+          target.closest('[data-text-element]') !== null ||
+          target.closest('[contenteditable="true"]') !== null ||
+          target.classList.contains('text-content') ||
+          (target.tagName === 'DIV' && target.contentEditable === 'true');
+
+        // If clicking on text element, don't create new text (let text element handle it)
+        if (isTextElement) {
           return;
         }
 
-        // Only create new text if in text-edit mode AND we have video content
-        if (
-          (activeVideoTrack || activeAudioTrack) &&
-          preview.interactionMode === 'text-edit'
-        ) {
+        // Check if clicking on transform handles or UI controls
+        const isUIControl =
+          target.classList.contains('transform-handle') ||
+          target.closest('.transform-handle') !== null ||
+          target.classList.contains('selection-boundary') ||
+          target.closest('.selection-boundary') !== null;
+
+        if (isUIControl) {
+          return;
+        }
+
+        // In Text Tool mode, create text on ANY click that isn't on a text element or UI control
+        // This includes clicks on video/image overlays (which have pointer-events: none in Text Tool mode)
+        // The click will pass through overlays to the container, allowing text creation anywhere
+        if (activeVideoTrack || activeAudioTrack) {
           // Get click position relative to container
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect) return;
@@ -631,6 +702,35 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
             // Mark this text as pending edit (will trigger auto-edit after render)
             setPendingEditTextId(trackId);
+            // Mark as pending empty text for auto-discard
+            setPendingEmptyTextId(trackId);
+          }
+        }
+        return;
+      }
+
+      // Select Tool: Handle deselection on empty canvas space
+      if (preview.interactionMode === 'select') {
+        // Check if clicking on empty canvas space
+        if (
+          target === containerRef.current ||
+          target.classList.contains('preview-background') ||
+          target.tagName === 'VIDEO'
+        ) {
+          const hasInteractiveLayerSelected = timeline.selectedTrackIds.some(
+            (id) => {
+              const track = tracks.find((t) => t.id === id);
+              return (
+                track?.type === 'text' ||
+                track?.type === 'image' ||
+                track?.type === 'subtitle'
+              );
+            },
+          );
+
+          // If something is selected, deselect it
+          if (hasInteractiveLayerSelected) {
+            setSelectedTracks([]);
           }
         }
       }
@@ -645,6 +745,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       preview.panX,
       preview.panY,
       preview.previewScale,
+      preview.interactionMode,
       actualWidth,
       actualHeight,
       addTextClip,
@@ -680,6 +781,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     baseVideoWidth,
     baseVideoHeight,
     coordinateSystem, // Pass the fixed coordinate system to all overlays
+    interactionMode: preview.interactionMode, // Pass interaction mode to overlays
   };
 
   // Get rotation for rotation badge (works for text, image, and video)
@@ -725,11 +827,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onDragOver={handleDrag}
       onDrop={handleDrop}
       onMouseDown={(e) => {
+        // Pan Tool: Always handle panning (works regardless of what's under cursor)
+        // Overlays have pointer-events: none in Pan Tool mode, so clicks reach container
         if (preview.interactionMode === 'pan' && preview.previewScale > 1) {
           handlePanStart(e);
-        } else {
-          handlePreviewClick(e);
+          return;
         }
+        // Text Tool and Select Tool: Handle clicks
+        handlePreviewClick(e);
       }}
       onMouseMove={handlePanMove}
       onMouseUp={handlePanEnd}
@@ -823,7 +928,13 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         onRotationStateChange={setIsRotating}
         onDragStateChange={handleDragStateChange}
         pendingEditTextId={pendingEditTextId}
-        onEditStarted={() => setPendingEditTextId(null)}
+        onEditStarted={() => {
+          setPendingEditTextId(null);
+          // Clear pending empty text when user starts editing
+          if (pendingEmptyTextId) {
+            setPendingEmptyTextId(null);
+          }
+        }}
       />
 
       {/* Alignment Guides */}

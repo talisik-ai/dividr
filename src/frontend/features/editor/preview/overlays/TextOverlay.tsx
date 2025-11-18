@@ -60,6 +60,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
   baseVideoWidth,
   baseVideoHeight,
   coordinateSystem,
+  interactionMode,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
@@ -180,6 +181,7 @@ export const TextOverlay: React.FC<TextOverlayProps> = ({
                 videoHeight={baseVideoHeight}
                 renderScale={renderScale}
                 isTextEditMode={isTextEditMode}
+                interactionMode={interactionMode}
                 onTransformUpdate={onTransformUpdate}
                 onSelect={onSelect}
                 onTextUpdate={onTextUpdate}
