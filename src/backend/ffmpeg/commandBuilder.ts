@@ -1503,39 +1503,46 @@ function createBlackBackgroundWithOverlay(
   videoFilters: string[],
   duration: number,
   targetFps: number,
-  desiredOutputDimensions?: { width: number; height: number },
 ): string {
   console.log(
     `🎬 Creating background overlay for video with transform (${trackInfo.videoTransform?.x ?? 0}, ${trackInfo.videoTransform?.y ?? 0})`,
   );
 
-  // Step 1: Create background at SOURCE dimensions (not custom dimensions)
-  // This allows normal overlay positioning regardless of custom aspect ratio
-  const backgroundDimensions = targetDimensions;
-  
+  // Create background at target dimensions (which are already the export dimensions)
+  // This ensures all clips can be concatenated at the same dimensions
   console.log(
-    `📐 Background dimensions (SOURCE): ${backgroundDimensions.width}x${backgroundDimensions.height}`,
+    `📐 Background dimensions: ${targetDimensions.width}x${targetDimensions.height}`,
   );
-  if (desiredOutputDimensions) {
+
+  // Create black background clip
+  const blackBgRef = `[${uniqueIndex}_black_bg]`;
+  videoFilters.push(
+    `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${duration}:rate=${targetFps},setpts=PTS-STARTPTS,setsar=1${blackBgRef}`,
+  );
+
+  // Step 2: Scale video only if dimensions don't match target
+  let scaledVideoRef: string;
+  const needsScaling = trackInfo.width !== targetDimensions.width || trackInfo.height !== targetDimensions.height;
+  
+  if (needsScaling) {
+    // Scale video to fit the background while maintaining aspect ratio, then pad to exact dimensions
+    // Use 'decrease' to ensure video fits, then pad to ensure exact output dimensions for concat
+    scaledVideoRef = `[${uniqueIndex}_video_scaled]`;
+    videoFilters.push(
+      `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaledVideoRef}`,
+    );
     console.log(
-      `📐 Custom output dimensions: ${desiredOutputDimensions.width}x${desiredOutputDimensions.height} (will be applied via scale+crop after overlay)`,
+      `📐 Video scaled from ${trackInfo.width}x${trackInfo.height} to fit ${targetDimensions.width}x${targetDimensions.height} with black padding (maintaining aspect ratio)`,
+    );
+  } else {
+    // Video already at target dimensions, no scaling needed
+    scaledVideoRef = videoStreamRef;
+    console.log(
+      `📐 Video already at target dimensions ${targetDimensions.width}x${targetDimensions.height}, no scaling needed`,
     );
   }
 
-  // Create green background clip at SOURCE dimensions (green for debugging)
-  const blackBgRef = `[${uniqueIndex}_black_bg]`;
-  videoFilters.push(
-    `color=green:size=${backgroundDimensions.width}x${backgroundDimensions.height}:duration=${duration}:rate=${targetFps},setpts=PTS-STARTPTS,setsar=1${blackBgRef}`,
-  );
-
-  // Step 2: Keep video at original size - no scaling before overlay
-  const scaledVideoRef = videoStreamRef;
-  
-  console.log(
-    `📐 Video kept at original size (no scaling) - will only apply transform positioning`,
-  );
-
-  // Calculate overlay position based on transform (same logic always, regardless of custom aspect ratio)
+  // Calculate overlay position based on transform
   const transformX = trackInfo.videoTransform?.x ?? 0;
   const transformY = trackInfo.videoTransform?.y ?? 0;
   
@@ -1543,8 +1550,15 @@ function createBlackBackgroundWithOverlay(
     `📐 Transform values: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)} (normalized -1 to 1, 0=center)`,
   );
   
-  // Use the same positioning logic as images
-  // Transform coordinates are normalized (-1 to 1, where 0 is center)
+  // Calculate pixel coordinates for logging
+  const pixelOffsetX = (transformX * targetDimensions.width) / 2;
+  const pixelOffsetY = (transformY * targetDimensions.height) / 2;
+  const centerX = targetDimensions.width / 2;
+  const centerY = targetDimensions.height / 2;
+  const estimatedPixelX = Math.round(centerX + pixelOffsetX);
+  const estimatedPixelY = Math.round(centerY + pixelOffsetY);
+  
+  // Apply transform positioning
   const overlayX = transformX >= 0
     ? `(W-w)/2+${transformX}*W/2`
     : `(W-w)/2${transformX}*W/2`;
@@ -1552,84 +1566,23 @@ function createBlackBackgroundWithOverlay(
     ? `(H-h)/2+${transformY}*H/2`
     : `(H-h)/2${transformY}*H/2`;
 
-  console.log(`📍 Video overlay position (same logic always):`);
+  console.log(`📍 Video overlay position (with transform):`);
   console.log(`   - Normalized: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}`);
-  console.log(`   - Background dimensions: ${backgroundDimensions.width}x${backgroundDimensions.height}`);
+  console.log(`   - Pixel offset: x=${pixelOffsetX.toFixed(2)}px, y=${pixelOffsetY.toFixed(2)}px`);
+  console.log(`   - Estimated position: x≈${estimatedPixelX}px, y≈${estimatedPixelY}px`);
+  console.log(`   - Background dimensions: ${targetDimensions.width}x${targetDimensions.height}`);
   console.log(`   - FFmpeg expression: overlay=${overlayX}:${overlayY}`);
 
-  // Overlay the video on the background at transform position
+  // Overlay the video on the background
   const overlayRef = `[${uniqueIndex}_overlay]`;
   videoFilters.push(
     `${blackBgRef}${scaledVideoRef}overlay=${overlayX}:${overlayY}${overlayRef}`,
   );
   
   console.log(`✅ Video overlaid on background at transform position (${transformX}, ${transformY})`);
+  console.log(`✅ Output dimensions: ${targetDimensions.width}x${targetDimensions.height} (ready for concat)`);
 
-  // Step 3: If custom aspect ratio is needed, simply crop to center (no scaling)
-  // Any parts beyond the video become background (green)
-  if (desiredOutputDimensions) {
-    const sourceRatio = backgroundDimensions.width / backgroundDimensions.height;
-    const desiredRatio = desiredOutputDimensions.width / desiredOutputDimensions.height;
-    
-    const ratioDifference = Math.abs(desiredRatio - sourceRatio) / sourceRatio;
-    
-    if (ratioDifference > 0.01) {
-      console.log(`📐 Applying aspect ratio conversion (center crop, no scaling): ${sourceRatio.toFixed(3)} → ${desiredRatio.toFixed(3)}`);
-      
-      // Calculate crop dimensions based on desired aspect ratio
-      // DO NOT scale - just crop what's available, rest will be background
-      let cropWidth: number;
-      let cropHeight: number;
-      
-      if (desiredRatio > sourceRatio) {
-        // Target is wider (e.g., 16:9 → 21:9)
-        // Use full width, calculate height based on ratio
-        cropWidth = Math.min(backgroundDimensions.width, desiredOutputDimensions.width);
-        cropHeight = Math.round(cropWidth / desiredRatio);
-        
-        // Clamp to available height
-        if (cropHeight > backgroundDimensions.height) {
-          cropHeight = backgroundDimensions.height;
-          cropWidth = Math.round(cropHeight * desiredRatio);
-        }
-        
-        console.log(`📐 Wider target: crop to ${cropWidth}x${cropHeight} (center crop, no scaling)`);
-      } else {
-        // Target is taller (e.g., 16:9 → 9:16)
-        // Use full height, calculate width based on ratio
-        cropHeight = Math.min(backgroundDimensions.height, desiredOutputDimensions.height);
-        cropWidth = Math.round(cropHeight * desiredRatio);
-        
-        // Clamp to available width
-        if (cropWidth > backgroundDimensions.width) {
-          cropWidth = backgroundDimensions.width;
-          cropHeight = Math.round(cropWidth / desiredRatio);
-        }
-        
-        console.log(`📐 Taller target (landscape→portrait): crop to ${cropWidth}x${cropHeight} (center crop, no scaling, rest is background)`);
-      }
-      
-      // Center crop - crop to the center of the overlaid video
-      const cropX = Math.round((backgroundDimensions.width - cropWidth) / 2);
-      const cropY = Math.round((backgroundDimensions.height - cropHeight) / 2);
-      
-      console.log(`📐 Center crop positioning: crop offset(${cropX}, ${cropY})`);
-      console.log(`📐 Crop: ${cropWidth}x${cropHeight} at (${cropX}, ${cropY})`);
-      console.log(`📐 Note: Areas beyond video will show green background`);
-      
-      // Apply crop filter - just crop to center, no scaling
-      const croppedRef = `[${uniqueIndex}_aspect_cropped]`;
-      videoFilters.push(
-        `${overlayRef}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},setsar=1${croppedRef}`,
-      );
-      
-      console.log(`✅ Aspect ratio conversion applied (center crop only, background fills rest)`);
-      return croppedRef;
-    } else {
-      console.log(`📐 No aspect ratio conversion needed (difference: ${(ratioDifference * 100).toFixed(2)}%)`);
-    }
-  }
-  
+  // Return the overlay - it's already at targetDimensions and ready for concatenation
   return overlayRef;
 }
 
@@ -1712,9 +1665,8 @@ function processLayerSegments(
 
         if (hasTransform) {
           // Video has non-zero transform - create background and overlay
-          // Pass desired output dimensions so background is at final resolution
+          // targetDimensions is already set to export dimensions if specified
           const duration = trackInfo.duration || segment.duration || 1;
-          const desiredOutputDimensions = job.videoDimensions || targetDimensions;
           videoStreamRef = createBlackBackgroundWithOverlay(
             videoStreamRef,
             trackInfo,
@@ -1723,7 +1675,6 @@ function processLayerSegments(
             videoFilters,
             duration,
             targetFps,
-            desiredOutputDimensions,
           );
         } else {
           // No transform - use standard scaling logic
@@ -1751,7 +1702,7 @@ function processLayerSegments(
               `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`,
             );
             console.log(
-              `📐 Layer ${layerIndex}: Scaled video segment to ${targetDimensions.width}x${targetDimensions.height}`,
+              `📐 Layer ${layerIndex}: Scaled video segment to ${targetDimensions.width}x${targetDimensions.height} with black padding`,
             );
           }
           videoStreamRef = scaleRef;
@@ -1850,18 +1801,31 @@ function buildSeparateTimelineFilterComplex(
   const audioFilters: string[] = [];
   const audioConcatInputs: string[] = [];
 
-  // Determine target dimensions from first available video layer
-  let firstVideoTimeline: ProcessedTimeline | undefined;
-  const sortedVideoLayers = Array.from(videoLayers.entries()).sort(
-    (a, b) => a[0] - b[0],
-  );
-  if (sortedVideoLayers.length > 0) {
-    firstVideoTimeline = sortedVideoLayers[0][1];
+  // Determine target dimensions for processing
+  // Priority 1: Use job.videoDimensions if explicitly set (export dimensions)
+  // Priority 2: Fall back to first video's dimensions
+  let targetDimensions: { width: number; height: number };
+  
+  if (job.videoDimensions) {
+    // Export dimensions are explicitly set - use these as target for ALL clips
+    targetDimensions = job.videoDimensions;
+    console.log(`📐 Using explicit export dimensions as target: ${targetDimensions.width}x${targetDimensions.height}`);
+  } else {
+    // No explicit export dimensions - determine from first video
+    let firstVideoTimeline: ProcessedTimeline | undefined;
+    const sortedVideoLayers = Array.from(videoLayers.entries()).sort(
+      (a, b) => a[0] - b[0],
+    );
+    if (sortedVideoLayers.length > 0) {
+      firstVideoTimeline = sortedVideoLayers[0][1];
+    }
+    
+    targetDimensions = firstVideoTimeline
+      ? determineTargetDimensions(firstVideoTimeline, job)
+      : VIDEO_DEFAULTS.SIZE;
+    console.log(`📐 Determined target dimensions from first video: ${targetDimensions.width}x${targetDimensions.height}`);
   }
-
-  const targetDimensions = firstVideoTimeline
-    ? determineTargetDimensions(firstVideoTimeline, job)
-    : job.videoDimensions || VIDEO_DEFAULTS.SIZE;
+  
   const targetFps = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
   
   // Extract target aspect ratio
@@ -2144,82 +2108,109 @@ function buildSeparateTimelineFilterComplex(
     console.log(`📐 Ratio difference (source vs desired output): ${(ratioDifference * 100).toFixed(2)}%`);
     
     if (ratioDifference > 0.01) {
-      // Calculate scale and crop dimensions based on desired output ratio
-      let scaleWidth: number;
-      let scaleHeight: number;
-      let cropWidth: number;
-      let cropHeight: number;
-
-      // Strategy: Crop to match the desired aspect ratio, then the final downscale will handle sizing
-      // The crop dimensions should have the EXACT same aspect ratio as the desired output
-      // to prevent any distortion during the final downscale
+      // Determine conversion type
+      const isPortraitToLandscape = sourceRatio < 1 && desiredRatio > 1;
+      const isLandscapeToPortrait = sourceRatio > 1 && desiredRatio < 1;
       
-      if (desiredRatio > sourceRatio) {
-        // Target is wider than source (e.g., portrait 9:16 → landscape 2.31:1)
-        // Preserve width, crop height
-        cropWidth = targetDimensions.width;
-        cropHeight = Math.round(cropWidth / desiredRatio);
+      if (isPortraitToLandscape) {
+        // Portrait → Landscape: NO CROP, just pad/scale to fit
+        console.log(`📐 Portrait → Landscape conversion: NO CROP, scale to fit with padding`);
         
-        // Check if crop height fits within source
-        if (cropHeight > targetDimensions.height) {
-          // Crop height too large, switch to preserving height
-          cropHeight = targetDimensions.height;
-          cropWidth = Math.round(cropHeight * desiredRatio);
-        }
+        // Don't apply crop filter - let the video maintain its aspect ratio
+        // The final downscale will handle fitting it into the landscape frame
+        console.log(`📐 Skipping crop for portrait→landscape (will be handled by final downscale with padding)`);
         
-        // Ensure exact aspect ratio match by adjusting cropHeight to match cropWidth
-        // This prevents rounding errors from causing distortion
-        cropHeight = Math.round(cropWidth / desiredRatio);
+        // Set aspectRatioCroppedDimensions to source dimensions (no crop applied)
+        aspectRatioCroppedDimensions = targetDimensions;
+      } else if (isLandscapeToPortrait) {
+        // Landscape → Portrait: NO CROP (inverse of portrait→landscape)
+        // Center the landscape video, allow width to be cropped, add padding top/bottom
+        console.log(`📐 Landscape → Portrait conversion: NO CROP, scale to fit with padding (inverse of portrait→landscape)`);
         
-        console.log(`📐 Wider target: preserving width (${cropWidth}), cropping height to ${cropHeight}`);
+        // Don't apply crop filter - let the video maintain its aspect ratio
+        // The final downscale will handle fitting it into the portrait frame with padding
+        console.log(`📐 Skipping crop for landscape→portrait (will be handled by final downscale with padding)`);
+        
+        // Set aspectRatioCroppedDimensions to source dimensions (no crop applied)
+        aspectRatioCroppedDimensions = targetDimensions;
       } else {
-        // Target is taller than source (e.g., landscape 16:9 → portrait 9:16)
-        // Preserve height, crop width
-        cropHeight = targetDimensions.height;
-        cropWidth = Math.round(cropHeight * desiredRatio);
+        // Landscape → Portrait OR same orientation: Apply crop
+        let scaleWidth: number;
+        let scaleHeight: number;
+        let cropWidth: number;
+        let cropHeight: number;
+
+        // Strategy: Crop to match the desired aspect ratio, then the final downscale will handle sizing
+        // The crop dimensions should have the EXACT same aspect ratio as the desired output
+        // to prevent any distortion during the final downscale
         
-        // Check if crop width fits within source
-        if (cropWidth > targetDimensions.width) {
-          // Crop width too large, switch to preserving width
+        if (desiredRatio > sourceRatio) {
+          // Target is wider than source
+          // Preserve width, crop height
           cropWidth = targetDimensions.width;
           cropHeight = Math.round(cropWidth / desiredRatio);
+          
+          // Check if crop height fits within source
+          if (cropHeight > targetDimensions.height) {
+            // Crop height too large, switch to preserving height
+            cropHeight = targetDimensions.height;
+            cropWidth = Math.round(cropHeight * desiredRatio);
+          }
+          
+          // Ensure exact aspect ratio match by adjusting cropHeight to match cropWidth
+          // This prevents rounding errors from causing distortion
+          cropHeight = Math.round(cropWidth / desiredRatio);
+          
+          console.log(`📐 Wider target: preserving width (${cropWidth}), cropping height to ${cropHeight}`);
+        } else {
+          // Target is taller than source (e.g., landscape 16:9 → portrait 9:16)
+          // Preserve height, crop width
+          cropHeight = targetDimensions.height;
+          cropWidth = Math.round(cropHeight * desiredRatio);
+          
+          // Check if crop width fits within source
+          if (cropWidth > targetDimensions.width) {
+            // Crop width too large, switch to preserving width
+            cropWidth = targetDimensions.width;
+            cropHeight = Math.round(cropWidth / desiredRatio);
+          }
+          
+          // Ensure exact aspect ratio match by adjusting cropWidth to match cropHeight
+          // This prevents rounding errors from causing distortion
+          cropWidth = Math.round(cropHeight * desiredRatio);
+          
+          console.log(`📐 Taller target (landscape→portrait): preserving height (${cropHeight}), cropping width to ${cropWidth}`);
         }
         
-        // Ensure exact aspect ratio match by adjusting cropWidth to match cropHeight
-        // This prevents rounding errors from causing distortion
-        cropWidth = Math.round(cropHeight * desiredRatio);
+        // No scaling needed before crop - we crop directly from the source dimensions
+        scaleWidth = targetDimensions.width;
+        scaleHeight = targetDimensions.height;
+
+        // Calculate dynamic crop position based on video position within canvas
+        // Defaults to center crop if videoPositionX/videoPositionY are undefined or 0
+        const cropX = calculateDynamicCropX(scaleWidth, cropWidth, videoPositionX);
+        const cropY = calculateDynamicCropY(scaleHeight, cropHeight, videoPositionY);
+
+        // Log crop positioning info
+        if (videoPositionX !== undefined || videoPositionY !== undefined) {
+          console.log(
+            `📐 Dynamic crop positioning: video position in canvas(${videoPositionX ?? 0}, ${videoPositionY ?? 0}) → crop offset(${cropX}, ${cropY})`,
+          );
+        } else {
+          console.log(`📐 Center crop positioning (default): crop offset(${cropX}, ${cropY})`);
+        }
+
+        // Apply crop filter directly (no scale needed since we're cropping from source dimensions)
+        // Also set SAR to 1:1 to ensure square pixels
+        aspectRatioCropFilter = `[${currentVideoLabel}]crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},setsar=1[video_cropped]`;
+        croppedVideoLabel = 'video_cropped';
+        aspectRatioCroppedDimensions = { width: cropWidth, height: cropHeight };
         
-        console.log(`📐 Taller target: preserving height (${cropHeight}), cropping width to ${cropWidth}`);
+        const croppedAspectRatio = cropWidth / cropHeight;
+        console.log(`📐 Crop filter (no pre-scale): crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},setsar=1`);
+        console.log(`📐 Dimensions after aspect ratio crop: ${cropWidth}x${cropHeight}`);
+        console.log(`📐 Cropped aspect ratio: ${croppedAspectRatio.toFixed(4)} (should be ${desiredRatio.toFixed(4)})`);
       }
-      
-      // No scaling needed before crop - we crop directly from the source dimensions
-      scaleWidth = targetDimensions.width;
-      scaleHeight = targetDimensions.height;
-
-      // Calculate dynamic crop position based on video position within canvas
-      // Defaults to center crop if videoPositionX/videoPositionY are undefined or 0
-      const cropX = calculateDynamicCropX(scaleWidth, cropWidth, videoPositionX);
-      const cropY = calculateDynamicCropY(scaleHeight, cropHeight, videoPositionY);
-
-      // Log crop positioning info
-      if (videoPositionX !== undefined || videoPositionY !== undefined) {
-        console.log(
-          `📐 Dynamic crop positioning: video position in canvas(${videoPositionX ?? 0}, ${videoPositionY ?? 0}) → crop offset(${cropX}, ${cropY})`,
-        );
-      } else {
-        console.log(`📐 Center crop positioning (default): crop offset(${cropX}, ${cropY})`);
-      }
-
-      // Apply crop filter directly (no scale needed since we're cropping from source dimensions)
-      // Also set SAR to 1:1 to ensure square pixels
-      aspectRatioCropFilter = `[${currentVideoLabel}]crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},setsar=1[video_cropped]`;
-      croppedVideoLabel = 'video_cropped';
-      aspectRatioCroppedDimensions = { width: cropWidth, height: cropHeight };
-      
-      const croppedAspectRatio = cropWidth / cropHeight;
-      console.log(`📐 Crop filter (no pre-scale): crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},setsar=1`);
-      console.log(`📐 Dimensions after aspect ratio crop: ${cropWidth}x${cropHeight}`);
-      console.log(`📐 Cropped aspect ratio: ${croppedAspectRatio.toFixed(4)} (should be ${desiredRatio.toFixed(4)})`);
     } else {
       console.log(
         `📐 Aspect ratios are similar (${(ratioDifference * 100).toFixed(2)}% difference), no conversion needed`,
@@ -2305,13 +2296,15 @@ function buildSeparateTimelineFilterComplex(
     if (aspectRatioDiff > 0.001) {
       console.warn(`⚠️ Aspect ratio mismatch detected! This may cause distortion.`);
       // Use force_original_aspect_ratio to prevent distortion, then pad to exact size
-      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[video_downscaled]`;
-      console.log(`📐 Using scale with force_original_aspect_ratio due to aspect ratio mismatch`);
+      // Using GREEN padding for testing/debugging
+      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:green,setsar=1[video_downscaled]`;
+      console.log(`📐 Using scale with force_original_aspect_ratio due to aspect ratio mismatch (GREEN padding for testing)`);
     } else {
       // Aspect ratios match, but still use force_original_aspect_ratio as a safety measure
       // This ensures FFmpeg won't distort even if there are tiny rounding differences
-      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,setsar=1[video_downscaled]`;
-      console.log(`📐 Using scale with force_original_aspect_ratio=decrease to prevent any distortion`);
+      // Add GREEN padding for portrait→landscape conversions (testing/debugging)
+      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:green,setsar=1[video_downscaled]`;
+      console.log(`📐 Using scale with force_original_aspect_ratio=decrease with GREEN padding (testing)`);
     }
     videoLabelAfterDownscale = 'video_downscaled';
   } else {
