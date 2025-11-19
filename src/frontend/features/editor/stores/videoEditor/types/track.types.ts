@@ -42,6 +42,7 @@ export interface VideoTrack {
   linkedTrackId?: string;
   isLinked?: boolean;
   layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
+  trackRowIndex?: number; // Row index within the same media type (0 = bottom row, higher = upper rows)
   // For subtitle tracks: reference to the source video/audio track they were generated from
   linkedVideoTrackId?: string;
   // Precise subtitle timing from original SRT file (in seconds with millisecond precision)

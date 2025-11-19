@@ -32,6 +32,12 @@ import {
   getRowHeight,
 } from './utils/timelineConstants';
 import {
+  generateDynamicRows,
+  getTrackRowId,
+  migrateTracksWithRowIndex,
+  parseRowId,
+} from './utils/dynamicTrackRows';
+import {
   calculateFrameFromPosition,
   handleTimelineMouseDown as centralizedHandleMouseDown,
   ClickInfo,
@@ -91,6 +97,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
     );
     const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
+
+    // Generate dynamic rows for vertical drag detection
+    const migratedTracks = useMemo(() => migrateTracksWithRowIndex(tracks), [tracks]);
+    const dynamicRows = useMemo(() => generateDynamicRows(migratedTracks), [migratedTracks]);
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
     );
@@ -483,26 +493,38 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           ),
         );
 
-        // Find which row the cursor is over
+        // Find which specific row (with index) the cursor is over
         const mouseRelativeY = clientY - rect.top;
 
         // Calculate centering offset and adjust mouse Y position
         const centeringOffset = calculateCenteringOffset(visibleTrackRows);
         const adjustedMouseY = mouseRelativeY - centeringOffset;
 
-        let targetRow: string | null = null;
+        let targetRowId: string | null = null;
 
-        for (const rowType of visibleTrackRows) {
-          const rowTop = getTrackRowTop(rowType, visibleTrackRows);
-          const rowHeight = getRowHeight(rowType);
-          if (adjustedMouseY >= rowTop && adjustedMouseY < rowTop + rowHeight) {
-            targetRow = rowType;
+        // Check each dynamic row to find which one the cursor is over
+        let cumulativeTop = 0;
+        for (const row of dynamicRows) {
+          const mediaType = row.trackTypes[0];
+
+          // Skip if this media type is not visible
+          if (!visibleTrackRows.includes(mediaType)) {
+            continue;
+          }
+
+          const rowHeight = getRowHeight(mediaType);
+          const rowBottom = cumulativeTop + rowHeight;
+
+          if (adjustedMouseY >= cumulativeTop && adjustedMouseY < rowBottom) {
+            targetRowId = row.id; // e.g., "video-1", "text-0"
             break;
           }
+
+          cumulativeTop = rowBottom;
         }
 
-        // Update drag ghost state
-        updateDragGhostPosition(clientX, clientY, targetRow, targetFrame);
+        // Update drag ghost state with specific row ID
+        updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
       };
 
       const handleMouseMove = (e: MouseEvent) => {
@@ -522,6 +544,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       dragGhost?.offsetX,
       frameWidth,
       visibleTrackRows,
+      dynamicRows,
       updateDragGhostPosition,
     ]);
 
@@ -1448,6 +1471,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   // Calculate the offset for each track from the primary track
                   const primaryTrackStartFrame = primaryTrack.startFrame;
 
+                  // Parse target row to validate drop
+                  const targetRowParsed = parseRowId(dragGhost.targetRow);
+                  const isValidDrop =
+                    targetRowParsed && targetRowParsed.type === primaryTrack.type;
+
                   return (
                     <>
                       {draggedTracks.map((track) => {
@@ -1460,16 +1488,24 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                           targetStartFrame +
                           (track.endFrame - track.startFrame);
 
+                        // Each track shows in its own row (maintaining relative positions)
+                        // But we use the target row from drag ghost for the primary track
+                        const trackTargetRow =
+                          track.id === primaryTrack.id
+                            ? dragGhost.targetRow
+                            : getTrackRowId(track);
+
                         return (
                           <DropZoneIndicator
                             key={`drop-zone-${track.id}`}
-                            targetRow={track.type}
+                            targetRow={trackTargetRow}
                             startFrame={targetStartFrame}
                             endFrame={targetEndFrame}
                             frameWidth={frameWidth}
                             scrollX={timeline.scrollX}
                             visibleTrackRows={visibleTrackRows}
-                            isValidDrop={true}
+                            dynamicRows={dynamicRows}
+                            isValidDrop={isValidDrop || false}
                           />
                         );
                       })}

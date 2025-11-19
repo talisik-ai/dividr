@@ -1,15 +1,16 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useMemo } from 'react';
 import { getRowHeight, getTrackItemHeight } from './utils/timelineConstants';
-import { getTrackRowTop, TRACK_ROW_ORDER } from './utils/trackRowPositions';
+import { parseRowId, TrackRowDefinition } from './utils/dynamicTrackRows';
 
 interface DropZoneIndicatorProps {
-  targetRow: string;
+  targetRow: string; // Now accepts row IDs like "video-1", "text-0"
   startFrame: number;
   endFrame: number;
   frameWidth: number;
   scrollX: number;
-  visibleTrackRows: string[];
+  visibleTrackRows: string[]; // Still media types like ['video', 'audio']
+  dynamicRows: TrackRowDefinition[]; // Dynamic row definitions for positioning
   isValidDrop: boolean;
 }
 
@@ -31,43 +32,82 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
     frameWidth,
     scrollX,
     visibleTrackRows,
+    dynamicRows,
     isValidDrop,
   }) => {
-    // Calculate centering offset when < 5 tracks are visible
-    const centeringOffset = useMemo(() => {
-      const visibleRowsInOrder = TRACK_ROW_ORDER.filter((rowId) =>
-        visibleTrackRows.includes(rowId),
-      );
+    // Parse the target row ID to get media type
+    const parsedTargetRow = useMemo(() => parseRowId(targetRow), [targetRow]);
 
-      // If all 5 tracks are visible, no centering
-      if (visibleRowsInOrder.length >= TRACK_ROW_ORDER.length) {
-        return 0;
+    // Calculate position using dynamic rows
+    const { top, height, centeringOffset } = useMemo(() => {
+      if (!parsedTargetRow) {
+        return { top: 0, height: 0, centeringOffset: 0 };
       }
 
-      // Calculate baseline height (all 5 tracks)
-      const baselineHeight = TRACK_ROW_ORDER.reduce((sum, rowId) => {
-        return sum + getRowHeight(rowId);
+      const mediaType = parsedTargetRow.type;
+
+      // Filter visible dynamic rows
+      const visibleDynamicRows = dynamicRows.filter((row) => {
+        const rowMediaType = row.trackTypes[0];
+        return visibleTrackRows.includes(rowMediaType);
+      });
+
+      // Calculate baseline height (all dynamic rows)
+      const baselineHeight = dynamicRows.reduce((sum, row) => {
+        const rowMediaType = row.trackTypes[0];
+        return sum + getRowHeight(rowMediaType);
       }, 0);
 
-      // Calculate total height of visible tracks
-      const totalVisibleHeight = visibleRowsInOrder.reduce((sum, rowId) => {
-        return sum + getRowHeight(rowId);
+      // Calculate total height of visible rows
+      const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
+        const rowMediaType = row.trackTypes[0];
+        return sum + getRowHeight(rowMediaType);
       }, 0);
 
-      // Return centering offset
-      return (baselineHeight - totalVisibleHeight) / 2;
-    }, [visibleTrackRows]);
+      // Calculate centering offset
+      const centeringOffset =
+        visibleDynamicRows.length < dynamicRows.length
+          ? (baselineHeight - totalVisibleHeight) / 2
+          : 0;
 
-    // Calculate position and dimensions
+      // Find the target row's position
+      let cumulativeTop = 0;
+      for (const row of dynamicRows) {
+        if (row.id === targetRow) {
+          // Found the target row
+          const rowMediaType = row.trackTypes[0];
+          const rowHeight = getRowHeight(rowMediaType);
+          const trackItemHeight = getTrackItemHeight(rowMediaType);
+
+          // Center the drop zone vertically within the row
+          const top =
+            cumulativeTop +
+            centeringOffset +
+            (rowHeight - trackItemHeight) / 2;
+
+          return { top, height: trackItemHeight, centeringOffset };
+        }
+
+        // Skip invisible rows
+        const rowMediaType = row.trackTypes[0];
+        if (visibleTrackRows.includes(rowMediaType)) {
+          cumulativeTop += getRowHeight(rowMediaType);
+        }
+      }
+
+      // Fallback if row not found
+      const rowHeight = getRowHeight(mediaType);
+      const trackItemHeight = getTrackItemHeight(mediaType);
+      return {
+        top: centeringOffset + (rowHeight - trackItemHeight) / 2,
+        height: trackItemHeight,
+        centeringOffset,
+      };
+    }, [targetRow, parsedTargetRow, dynamicRows, visibleTrackRows]);
+
+    // Calculate horizontal position
     const left = startFrame * frameWidth - scrollX;
     const width = Math.max(1, (endFrame - startFrame) * frameWidth);
-    const rowTop = getTrackRowTop(targetRow, visibleTrackRows);
-    const rowHeight = getRowHeight(targetRow);
-    const trackItemHeight = getTrackItemHeight(targetRow);
-
-    // Center the drop zone vertically within the row, accounting for centering offset
-    const top = rowTop + centeringOffset + (rowHeight - trackItemHeight) / 2;
-    const height = trackItemHeight;
 
     return (
       <div

@@ -250,7 +250,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         setSelectedTracks(textSelectedTracks);
       }
     }
-  }, [preview.interactionMode, timeline.selectedTrackIds, tracks, setSelectedTracks]);
+  }, [
+    preview.interactionMode,
+    timeline.selectedTrackIds,
+    tracks,
+    setSelectedTracks,
+  ]);
 
   // Auto-discard empty text tracks when switching away from Text Tool or on Escape
   useEffect(() => {
@@ -281,7 +286,13 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isPreviewFocused, pendingEmptyTextId, preview.interactionMode, tracks, removeTrack]);
+  }, [
+    isPreviewFocused,
+    pendingEmptyTextId,
+    preview.interactionMode,
+    tracks,
+    removeTrack,
+  ]);
 
   // Get active tracks - memoize to prevent unnecessary re-renders
   const activeSubtitles = React.useMemo(

@@ -13,6 +13,13 @@ import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
 import {
+  generateDynamicRows,
+  getTrackRowId,
+  migrateTracksWithRowIndex,
+  parseRowId,
+  TrackRowDefinition,
+} from './utils/dynamicTrackRows';
+import {
   getRowHeight,
   getRowHeightClasses,
   getTrackItemHeight,
@@ -36,14 +43,7 @@ interface TimelineTracksProps {
   isSplitModeActive: boolean;
 }
 
-export interface TrackRowDefinition {
-  id: string;
-  name: string;
-  trackTypes: VideoTrack['type'][];
-  color: string;
-  icon: string;
-}
-
+// Legacy static track rows - kept for backward compatibility with non-dynamic code
 export const TRACK_ROWS: TrackRowDefinition[] = [
   {
     id: 'text',
@@ -739,8 +739,51 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     );
 
     const handleMouseUp = useCallback(() => {
-      const { endDraggingTrack, clearDragGhost } =
-        useVideoEditorStore.getState();
+      const state = useVideoEditorStore.getState();
+      const { playback, endDraggingTrack, clearDragGhost, moveTrackToRow } =
+        state;
+
+      // Check if vertical row change happened during drag
+      if (
+        isDragging &&
+        dragThresholdMetRef.current &&
+        playback.dragGhost?.isActive &&
+        playback.dragGhost.targetRow
+      ) {
+        const targetRowId = playback.dragGhost.targetRow;
+        const targetFrame = playback.dragGhost.targetFrame;
+
+        // Parse the target row to get the row index
+        const parsedRow = parseRowId(targetRowId);
+
+        if (parsedRow) {
+          const currentRowIndex = track.trackRowIndex ?? 0;
+
+          // Check if the row changed (vertical movement)
+          if (parsedRow.rowIndex !== currentRowIndex) {
+            // Validate that the target row is the same media type
+            if (parsedRow.type === track.type) {
+              console.log(
+                `🔄 Vertical drop detected: ${track.type} from row ${currentRowIndex} to row ${parsedRow.rowIndex}`,
+              );
+
+              // Move track to new row (this will handle linked tracks too)
+              moveTrackToRow(
+                track.id,
+                parsedRow.rowIndex,
+                targetFrame !== null && targetFrame !== undefined
+                  ? targetFrame
+                  : undefined,
+              );
+            } else {
+              console.warn(
+                `⚠️ Invalid drop: Cannot move ${track.type} to ${parsedRow.type} row`,
+              );
+            }
+          }
+        }
+      }
+
       endDraggingTrack();
       clearDragGhost();
 
@@ -753,7 +796,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-    }, []);
+    }, [isDragging, track.id, track.type, track.trackRowIndex]);
 
     useEffect(() => {
       if (isResizing || isDragging) {
@@ -1159,6 +1202,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
     const {
       moveTrack,
       moveSelectedTracks,
+      moveTrackToRow,
       resizeTrack,
       importMediaToTimeline,
       importMediaFromDialog,
@@ -1169,24 +1213,39 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
     );
 
-    // Calculate baseline height (5 tracks) and whether we should center
+    // Migrate tracks to ensure they have trackRowIndex
+    // This is for backward compatibility with existing projects
+    const migratedTracks = useMemo(
+      () => migrateTracksWithRowIndex(tracks),
+      [tracks],
+    );
+
+    // Generate dynamic rows based on existing tracks
+    const dynamicRows = useMemo(
+      () => generateDynamicRows(migratedTracks),
+      [migratedTracks],
+    );
+
+    // Calculate baseline height based on dynamic rows and whether we should center
     const { baselineHeight, shouldCenter } = useMemo(() => {
       // Calculate height for each visible row
-      const visibleRowsInOrder = TRACK_ROWS.filter((row) =>
-        visibleTrackRows.includes(row.id),
-      );
+      const visibleRowsInOrder = dynamicRows.filter((row) => {
+        const mediaType = row.trackTypes[0];
+        return visibleTrackRows.includes(mediaType);
+      });
 
-      // Baseline height = height of ALL 5 track rows (even if not visible)
-      // This ensures the grid always shows space for 5 tracks
-      const baseline = TRACK_ROWS.reduce((sum, row) => {
-        return sum + getRowHeight(row.id);
+      // Baseline height = height of ALL dynamic track rows
+      // This ensures the grid shows space for all rows
+      const baseline = dynamicRows.reduce((sum, row) => {
+        const mediaType = row.trackTypes[0];
+        return sum + getRowHeight(mediaType);
       }, 0);
 
       return {
         baselineHeight: baseline,
-        shouldCenter: visibleRowsInOrder.length < TRACK_ROWS.length,
+        shouldCenter: visibleRowsInOrder.length < dynamicRows.length,
       };
-    }, [visibleTrackRows]);
+    }, [visibleTrackRows, dynamicRows]);
 
     const handleTrackSelect = useCallback(
       (trackId: string, multiSelect = false) => {
@@ -1314,24 +1373,38 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       }
     }, [importMediaFromDialog]);
 
-    // Group tracks by their designated rows with subtitle optimization
+    // Group tracks by their designated rows (using dynamic rows)
     const tracksByRow = useMemo(() => {
       const grouped: Record<string, VideoTrack[]> = {};
 
-      TRACK_ROWS.forEach((row) => {
-        grouped[row.id] = tracks.filter((track) =>
-          row.trackTypes.includes(track.type),
-        );
+      // Initialize empty arrays for all dynamic rows
+      dynamicRows.forEach((row) => {
+        grouped[row.id] = [];
+      });
 
-        // Sort subtitle tracks by start time for better performance and visual organization
-        if (row.id === 'subtitle' && grouped[row.id].length > 0) {
+      // Group migrated tracks by their row ID (type + row index)
+      migratedTracks.forEach((track) => {
+        const rowId = getTrackRowId(track);
+        if (!grouped[rowId]) {
+          grouped[rowId] = [];
+        }
+        grouped[rowId].push(track);
+      });
+
+      // Sort subtitle tracks by start time for better performance and visual organization
+      dynamicRows.forEach((row) => {
+        if (
+          row.trackTypes.includes('subtitle') &&
+          grouped[row.id] &&
+          grouped[row.id].length > 0
+        ) {
           grouped[row.id].sort((a, b) => a.startFrame - b.startFrame);
         }
       });
 
-      // Tracks organized by row type for rendering
+      // Tracks organized by row ID for rendering
       return grouped;
-    }, [tracks]);
+    }, [migratedTracks, dynamicRows]);
 
     // Memoize individual callback handlers to prevent re-creation
     const memoizedHandlers = useMemo(
@@ -1352,10 +1425,13 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       ],
     );
 
-    // Filter track rows to only show visible ones
-    const visibleRows = TRACK_ROWS.filter((row) =>
-      visibleTrackRows.includes(row.id),
-    );
+    // Filter dynamic rows to only show visible ones
+    // For dynamic rows, we need to check if the row's media type is visible
+    const visibleRows = dynamicRows.filter((row) => {
+      // Extract the media type from the row ID (e.g., "video-0" -> "video")
+      const mediaType = row.trackTypes[0]; // All rows have a single track type
+      return visibleTrackRows.includes(mediaType);
+    });
 
     return (
       <div
@@ -1367,7 +1443,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           height: shouldCenter ? `${baselineHeight}px` : 'auto',
         }}
       >
-        {/* Grid background for ALL 5 track rows when centering - positioned at absolute positions */}
+        {/* Grid background for all dynamic track rows when centering - positioned at absolute positions */}
         {shouldCenter && (
           <div
             className="absolute pointer-events-none"
@@ -1378,16 +1454,19 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
               height: `${baselineHeight}px`,
             }}
           >
-            {TRACK_ROWS.map((rowDef) => {
+            {dynamicRows.map((rowDef, index) => {
               // Calculate this row's top position - sum of all previous row heights
               let top = 0;
-              for (let i = 0; i < TRACK_ROWS.length; i++) {
-                if (TRACK_ROWS[i].id === rowDef.id) break;
-                top += getRowHeight(TRACK_ROWS[i].id);
+              for (let i = 0; i < index; i++) {
+                // Use the row's media type to get the correct height
+                const mediaType = dynamicRows[i].trackTypes[0];
+                top += getRowHeight(mediaType);
               }
 
-              const rowHeight = getRowHeight(rowDef.id);
-              const isVisible = visibleTrackRows.includes(rowDef.id);
+              // Use the row's media type to get the correct height
+              const mediaType = rowDef.trackTypes[0];
+              const rowHeight = getRowHeight(mediaType);
+              const isVisible = visibleTrackRows.includes(mediaType);
 
               return (
                 <div

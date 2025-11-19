@@ -263,6 +263,11 @@ export interface TracksSlice {
   updateTrack: (trackId: string, updates: Partial<VideoTrack>) => void;
   moveTrack: (trackId: string, newStartFrame: number) => void;
   moveSelectedTracks: (draggedTrackId: string, newStartFrame: number) => void;
+  moveTrackToRow: (
+    trackId: string,
+    targetRowIndex: number,
+    newStartFrame?: number,
+  ) => void;
   resizeTrack: (
     trackId: string,
     newStartFrame?: number,
@@ -332,6 +337,10 @@ export const createTracksSlice: StateCreator<
       );
       const extractedAudio = mediaItem?.extractedAudio;
 
+      // Assign trackRowIndex (default to 0 for base video track)
+      const videoRowIndex = trackData.trackRowIndex ?? 0;
+      const audioRowIndex = trackData.trackRowIndex ?? 0;
+
       const videoTrack: VideoTrack = {
         ...trackData,
         id,
@@ -345,6 +354,7 @@ export const createTracksSlice: StateCreator<
         muted: false,
         linkedTrackId: audioId,
         isLinked: true,
+        trackRowIndex: videoRowIndex,
       };
 
       const audioTrack: VideoTrack = {
@@ -365,6 +375,7 @@ export const createTracksSlice: StateCreator<
         isLinked: true,
         source: extractedAudio?.audioPath || trackData.source,
         previewUrl: extractedAudio?.previewUrl || undefined,
+        trackRowIndex: audioRowIndex,
       };
 
       set((state: any) => ({
@@ -442,6 +453,9 @@ export const createTracksSlice: StateCreator<
         };
       }
 
+      // Assign trackRowIndex (default to 0)
+      const rowIndex = trackData.trackRowIndex ?? 0;
+
       const track: VideoTrack = {
         ...trackData,
         id,
@@ -453,6 +467,7 @@ export const createTracksSlice: StateCreator<
         sourceDuration: isExtensibleTrack ? duration : duration,
         color: getTrackColor(state.tracks.length),
         muted: trackData.type === 'audio' ? false : undefined,
+        trackRowIndex: rowIndex,
         // Apply auto-fit transform for images
         ...(imageTransform && { textTransform: imageTransform }),
       };
@@ -1413,6 +1428,74 @@ export const createTracksSlice: StateCreator<
 
     const state = get() as any;
     state.markUnsavedChanges?.();
+  },
+
+  moveTrackToRow: (trackId, targetRowIndex, newStartFrame) => {
+    const state = get() as any;
+
+    // Record action for undo/redo
+    state.recordAction?.('Move Track to Row');
+
+    const trackToMove = state.tracks.find((t: VideoTrack) => t.id === trackId);
+    if (!trackToMove) {
+      console.warn(`⚠️ Track ${trackId} not found`);
+      return;
+    }
+
+    // Validate target row index is for the same media type
+    // This prevents moving video clips to audio rows, etc.
+    const currentRowIndex = trackToMove.trackRowIndex ?? 0;
+
+    if (currentRowIndex === targetRowIndex && newStartFrame === undefined) {
+      // No change needed
+      return;
+    }
+
+    // Update track with new row index and optional new start frame
+    set((state: any) => ({
+      tracks: state.tracks.map((track: VideoTrack) => {
+        if (track.id === trackId) {
+          const updates: Partial<VideoTrack> = {
+            trackRowIndex: targetRowIndex,
+          };
+
+          // If newStartFrame provided, update position as well
+          if (newStartFrame !== undefined) {
+            const duration = track.endFrame - track.startFrame;
+            updates.startFrame = Math.max(0, newStartFrame);
+            updates.endFrame = updates.startFrame + duration;
+          }
+
+          return { ...track, ...updates };
+        }
+
+        // Also move linked track to the same row
+        if (trackToMove.isLinked && trackToMove.linkedTrackId === track.id) {
+          const updates: Partial<VideoTrack> = {
+            trackRowIndex: targetRowIndex,
+          };
+
+          // If newStartFrame provided, update linked track position as well
+          if (newStartFrame !== undefined) {
+            const duration = track.endFrame - track.startFrame;
+            // Maintain the same relative position
+            const frameDelta = newStartFrame - trackToMove.startFrame;
+            updates.startFrame = Math.max(0, track.startFrame + frameDelta);
+            updates.endFrame = updates.startFrame + duration;
+          }
+
+          return { ...track, ...updates };
+        }
+
+        return track;
+      }),
+    }));
+
+    state.markUnsavedChanges?.();
+
+    console.log(
+      `✅ Moved track ${trackId} from row ${currentRowIndex} to row ${targetRowIndex}`,
+    );
   },
 
   resizeTrack: (trackId, newStartFrame, newEndFrame) => {
