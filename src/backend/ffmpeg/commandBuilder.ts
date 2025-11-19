@@ -1357,9 +1357,6 @@ function buildImageOverlayFilters(
     if (transform.rotation !== 0) {
       const rotationRadians = (transform.rotation * Math.PI) / 180;
 
-      // Calculate the bounding box size after rotation to prevent cropping
-      // When an image is rotated, its bounding box expands
-      // Formula: newWidth = |w*cos(θ)| + |h*sin(θ)|, newHeight = |w*sin(θ)| + |h*cos(θ)|
       const absRotation = Math.abs((transform.rotation * Math.PI) / 180);
       const cosTheta = Math.abs(Math.cos(absRotation));
       const sinTheta = Math.abs(Math.sin(absRotation));
@@ -1470,16 +1467,17 @@ function buildFontDirectoriesParameter(fontFamilies: string[]): string {
 }
 
 /**
- * Checks if a video has a non-zero transform position
+ * Checks if a video has a non-zero transform (position or scale)
  */
 function hasNonZeroTransform(trackInfo: TrackInfo): boolean {
   const hasTransform = 
     (trackInfo.videoTransform?.x !== undefined && trackInfo.videoTransform.x !== 0) ||
-    (trackInfo.videoTransform?.y !== undefined && trackInfo.videoTransform.y !== 0);
+    (trackInfo.videoTransform?.y !== undefined && trackInfo.videoTransform.y !== 0) ||
+    (trackInfo.videoTransform?.scale !== undefined && trackInfo.videoTransform.scale !== 1.0);
   
   if (hasTransform) {
     console.log(
-      `🎯 Video has non-zero transform: x=${trackInfo.videoTransform?.x ?? 0}, y=${trackInfo.videoTransform?.y ?? 0}`,
+      `🎯 Video has transform: x=${trackInfo.videoTransform?.x ?? 0}, y=${trackInfo.videoTransform?.y ?? 0}, scale=${trackInfo.videoTransform?.scale ?? 1.0}`,
     );
   }
   
@@ -1504,8 +1502,9 @@ function createBlackBackgroundWithOverlay(
   duration: number,
   targetFps: number,
 ): string {
+  const transformScale = trackInfo.videoTransform?.scale ?? 1.0;
   console.log(
-    `🎬 Creating background overlay for video with transform (${trackInfo.videoTransform?.x ?? 0}, ${trackInfo.videoTransform?.y ?? 0})`,
+    `🎬 Creating background overlay for video with transform (x=${trackInfo.videoTransform?.x ?? 0}, y=${trackInfo.videoTransform?.y ?? 0}, scale=${transformScale})`,
   );
 
   // Create background at target dimensions (which are already the export dimensions)
@@ -1516,26 +1515,42 @@ function createBlackBackgroundWithOverlay(
 
   const blackBgRef = `[${uniqueIndex}_black_bg]`;
   videoFilters.push(
-    `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${duration}:rate=${targetFps},setpts=PTS-STARTPTS,setsar=1${blackBgRef}`,
+    `color=green:size=${targetDimensions.width}x${targetDimensions.height}:duration=${duration}:rate=${targetFps},setpts=PTS-STARTPTS,setsar=1${blackBgRef}`,
   );
 
-  // Step 2: Scale video only if dimensions don't match target
+  // Step 2: Apply transform scale to video dimensions
+  // Calculate scaled dimensions based on transform.scale (similar to image scaling)
+  const baseWidth = trackInfo.width || targetDimensions.width;
+  const baseHeight = trackInfo.height || targetDimensions.height;
+  const scaledWidth = Math.round(baseWidth * transformScale);
+  const scaledHeight = Math.round(baseHeight * transformScale);
+  
+  console.log(
+    `📐 Transform scale: ${transformScale.toFixed(2)} (${baseWidth}x${baseHeight} → ${scaledWidth}x${scaledHeight})`,
+  );
+
+  // Step 3: Scale video to the transform-scaled dimensions
+  // Note: If scaled dimensions exceed canvas, video will overflow (zoom effect)
+  // If scaled dimensions are smaller than canvas, we'll see green background
   let scaledVideoRef: string;
-  const needsScaling = trackInfo.width !== targetDimensions.width || trackInfo.height !== targetDimensions.height;
+  const needsScaling = baseWidth !== scaledWidth || baseHeight !== scaledHeight;
   
   if (needsScaling) {
     scaledVideoRef = `[${uniqueIndex}_video_scaled]`;
+    // Scale with aspect ratio preservation
+    // Note: force_original_aspect_ratio=decrease means actual output may be smaller than target
+    // We don't add padding here because the actual scaled size may differ from our calculated size
     videoFilters.push(
-      `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaledVideoRef}`,
+      `${videoStreamRef}scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=decrease${scaledVideoRef}`,
     );
     console.log(
-      `📐 Video scaled from ${trackInfo.width}x${trackInfo.height} to fit ${targetDimensions.width}x${targetDimensions.height} with black padding (maintaining aspect ratio)`,
+      `📐 Video scaled from ${baseWidth}x${baseHeight} to fit within ${scaledWidth}x${scaledHeight} (scale factor: ${transformScale.toFixed(2)}, preserving aspect ratio)`,
     );
   } else {
-    // Video already at target dimensions, no scaling needed
+    // No scaling needed (scale = 1.0)
     scaledVideoRef = videoStreamRef;
     console.log(
-      `📐 Video already at target dimensions ${targetDimensions.width}x${targetDimensions.height}, no scaling needed`,
+      `📐 No scaling needed (scale = 1.0), video dimensions: ${baseWidth}x${baseHeight}`,
     );
   }
 
@@ -1695,10 +1710,10 @@ function processLayerSegments(
             );
           } else {
             videoFilters.push(
-              `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`,
+              `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:green${scaleRef}`,
             );
             console.log(
-              `📐 Layer ${layerIndex}: Scaled video segment to ${targetDimensions.width}x${targetDimensions.height} with black padding`,
+              `📐 Layer ${layerIndex}: Scaled video segment to ${targetDimensions.width}x${targetDimensions.height} with green padding`,
             );
           }
           videoStreamRef = scaleRef;
