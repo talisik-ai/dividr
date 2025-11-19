@@ -1489,9 +1489,10 @@ function hasNonZeroTransform(trackInfo: TrackInfo): boolean {
  * Used for videos with non-zero transform positions
  * 
  * Process:
- * 1. Create background at SOURCE dimensions (not custom)
- * 2. Overlay video at original size with transform positioning (same logic always)
- * 3. If custom aspect ratio: apply the same scale+crop logic as non-transform videos
+ * 1. Create background at target dimensions
+ * 2. Normalize video to target dimensions first (if different)
+ * 3. Apply transform scale on top of normalized dimensions
+ * 4. Overlay video with transform positioning
  */
 function createBlackBackgroundWithOverlay(
   videoStreamRef: string,
@@ -1515,42 +1516,61 @@ function createBlackBackgroundWithOverlay(
 
   const blackBgRef = `[${uniqueIndex}_black_bg]`;
   videoFilters.push(
-    `color=green:size=${targetDimensions.width}x${targetDimensions.height}:duration=${duration}:rate=${targetFps},setpts=PTS-STARTPTS,setsar=1${blackBgRef}`,
+    `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${duration}:rate=${targetFps},setpts=PTS-STARTPTS,setsar=1${blackBgRef}`,
   );
 
-  // Step 2: Apply transform scale to video dimensions
-  // Calculate scaled dimensions based on transform.scale (similar to image scaling)
-  const baseWidth = trackInfo.width || targetDimensions.width;
-  const baseHeight = trackInfo.height || targetDimensions.height;
-  const scaledWidth = Math.round(baseWidth * transformScale);
-  const scaledHeight = Math.round(baseHeight * transformScale);
+  // Step 2: First normalize video to target dimensions if source dimensions differ
+  const sourceWidth = trackInfo.width || targetDimensions.width;
+  const sourceHeight = trackInfo.height || targetDimensions.height;
+  
+  let normalizedVideoRef = videoStreamRef;
+  const needsNormalization = 
+    sourceWidth !== targetDimensions.width || 
+    sourceHeight !== targetDimensions.height;
+  
+  if (needsNormalization) {
+    normalizedVideoRef = `[${uniqueIndex}_normalized]`;
+    videoFilters.push(
+      `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${normalizedVideoRef}`,
+    );
+    console.log(
+      `📐 Step 1: Normalized video from ${sourceWidth}x${sourceHeight} to ${targetDimensions.width}x${targetDimensions.height}`,
+    );
+  } else {
+    console.log(
+      `📐 Step 1: No normalization needed - video already at target dimensions (${sourceWidth}x${sourceHeight})`,
+    );
+  }
+
+  // Step 3: Apply transform scale to the normalized dimensions
+  // Calculate scaled dimensions based on transform.scale
+  const scaledWidth = Math.round(targetDimensions.width * transformScale);
+  const scaledHeight = Math.round(targetDimensions.height * transformScale);
   
   console.log(
-    `📐 Transform scale: ${transformScale.toFixed(2)} (${baseWidth}x${baseHeight} → ${scaledWidth}x${scaledHeight})`,
+    `📐 Step 2: Transform scale: ${transformScale.toFixed(2)} (${targetDimensions.width}x${targetDimensions.height} → ${scaledWidth}x${scaledHeight})`,
   );
 
-  // Step 3: Scale video to the transform-scaled dimensions
+  // Step 4: Scale video to the transform-scaled dimensions
   // Note: If scaled dimensions exceed canvas, video will overflow (zoom effect)
-  // If scaled dimensions are smaller than canvas, we'll see green background
+  // If scaled dimensions are smaller than canvas, we'll see black background
   let scaledVideoRef: string;
-  const needsScaling = baseWidth !== scaledWidth || baseHeight !== scaledHeight;
+  const needsScaling = transformScale !== 1.0;
   
   if (needsScaling) {
     scaledVideoRef = `[${uniqueIndex}_video_scaled]`;
     // Scale with aspect ratio preservation
-    // Note: force_original_aspect_ratio=decrease means actual output may be smaller than target
-    // We don't add padding here because the actual scaled size may differ from our calculated size
     videoFilters.push(
-      `${videoStreamRef}scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=decrease${scaledVideoRef}`,
+      `${normalizedVideoRef}scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=decrease${scaledVideoRef}`,
     );
     console.log(
-      `📐 Video scaled from ${baseWidth}x${baseHeight} to fit within ${scaledWidth}x${scaledHeight} (scale factor: ${transformScale.toFixed(2)}, preserving aspect ratio)`,
+      `📐 Step 3: Scaled video to ${scaledWidth}x${scaledHeight} (scale factor: ${transformScale.toFixed(2)}, preserving aspect ratio)`,
     );
   } else {
     // No scaling needed (scale = 1.0)
-    scaledVideoRef = videoStreamRef;
+    scaledVideoRef = normalizedVideoRef;
     console.log(
-      `📐 No scaling needed (scale = 1.0), video dimensions: ${baseWidth}x${baseHeight}`,
+      `📐 Step 3: No scaling needed (scale = 1.0), video dimensions: ${targetDimensions.width}x${targetDimensions.height}`,
     );
   }
 
@@ -1690,6 +1710,8 @@ function processLayerSegments(
           );
         } else {
           // No transform - use standard scaling logic
+          // This scales video segments to match target dimensions (e.g., 608x1080 → 1080x1920)
+          // before any additional processing
         const needsScaling =
           (isVideoFile || isImageFile) &&
           trackInfo.width &&
@@ -1706,16 +1728,16 @@ function processLayerSegments(
               `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease${scaleRef}`,
             );
             console.log(
-              `📐 Layer ${layerIndex}: Scaled image (preserving transparency) to fit ${targetDimensions.width}x${targetDimensions.height}`,
+              `📐 Layer ${layerIndex}: Scaled image from ${trackInfo.width}x${trackInfo.height} to fit ${targetDimensions.width}x${targetDimensions.height} (preserving transparency)`,
             );
-          } else {
-            videoFilters.push(
-              `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:green${scaleRef}`,
-            );
-            console.log(
-              `📐 Layer ${layerIndex}: Scaled video segment to ${targetDimensions.width}x${targetDimensions.height} with green padding`,
-            );
-          }
+            } else {
+              videoFilters.push(
+                `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`,
+              );
+              console.log(
+                `📐 Layer ${layerIndex}: Scaled video segment from ${trackInfo.width}x${trackInfo.height} to ${targetDimensions.width}x${targetDimensions.height} with black padding`,
+              );
+            }
           videoStreamRef = scaleRef;
           }
         }
@@ -2314,15 +2336,13 @@ function buildSeparateTimelineFilterComplex(
     if (aspectRatioDiff > 0.001) {
       console.warn(`⚠️ Aspect ratio mismatch detected! This may cause distortion.`);
       // Use force_original_aspect_ratio to prevent distortion, then pad to exact size
-      // Using GREEN padding for testing/debugging
-      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:green,setsar=1[video_downscaled]`;
-      console.log(`📐 Using scale with force_original_aspect_ratio due to aspect ratio mismatch (GREEN padding for testing)`);
+      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[video_downscaled]`;
+      console.log(`📐 Using scale with force_original_aspect_ratio due to aspect ratio mismatch (black padding)`);
     } else {
       // Aspect ratios match, but still use force_original_aspect_ratio as a safety measure
       // This ensures FFmpeg won't distort even if there are tiny rounding differences
-      // Add GREEN padding for portrait→landscape conversions (testing/debugging)
-      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:green,setsar=1[video_downscaled]`;
-      console.log(`📐 Using scale with force_original_aspect_ratio=decrease with GREEN padding (testing)`);
+      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[video_downscaled]`;
+      console.log(`📐 Using scale with force_original_aspect_ratio=decrease with black padding`);
     }
     videoLabelAfterDownscale = 'video_downscaled';
   } else {
