@@ -1,7 +1,7 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useMemo } from 'react';
-import { getRowHeight, getTrackItemHeight } from './utils/timelineConstants';
 import { parseRowId, TrackRowDefinition } from './utils/dynamicTrackRows';
+import { getRowHeight, getTrackItemHeight } from './utils/timelineConstants';
 
 interface DropZoneIndicatorProps {
   targetRow: string; // Now accepts row IDs like "video-1", "text-0"
@@ -39,7 +39,7 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
     const parsedTargetRow = useMemo(() => parseRowId(targetRow), [targetRow]);
 
     // Calculate position using dynamic rows
-    const { top, height, centeringOffset } = useMemo(() => {
+    const { top, height } = useMemo(() => {
       if (!parsedTargetRow) {
         return { top: 0, height: 0, centeringOffset: 0 };
       }
@@ -72,18 +72,19 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
 
       // Find the target row's position
       let cumulativeTop = 0;
+      let rowFound = false;
+
       for (const row of dynamicRows) {
         if (row.id === targetRow) {
           // Found the target row
+          rowFound = true;
           const rowMediaType = row.trackTypes[0];
           const rowHeight = getRowHeight(rowMediaType);
           const trackItemHeight = getTrackItemHeight(rowMediaType);
 
           // Center the drop zone vertically within the row
           const top =
-            cumulativeTop +
-            centeringOffset +
-            (rowHeight - trackItemHeight) / 2;
+            cumulativeTop + centeringOffset + (rowHeight - trackItemHeight) / 2;
 
           return { top, height: trackItemHeight, centeringOffset };
         }
@@ -95,7 +96,70 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
         }
       }
 
-      // Fallback if row not found
+      // Handle virtual rows (rows that don't exist yet but are being created)
+      if (!rowFound && parsedTargetRow) {
+        const mediaType = parsedTargetRow.type;
+        const targetRowIndex = parsedTargetRow.rowIndex;
+
+        // Find all existing rows of the same type
+        const sameTypeRows = dynamicRows.filter(
+          (row) => row.trackTypes[0] === mediaType,
+        );
+
+        if (sameTypeRows.length > 0) {
+          // Get the highest and lowest row indices for this type
+          const rowIndices = sameTypeRows.map((row) => {
+            const parsed = parseRowId(row.id);
+            return parsed ? parsed.rowIndex : 0;
+          });
+          const maxIndex = Math.max(...rowIndices);
+          const minIndex = Math.min(...rowIndices);
+
+          // Calculate position for virtual row
+          const rowHeight = getRowHeight(mediaType);
+          const trackItemHeight = getTrackItemHeight(mediaType);
+
+          // If dragging above (higher index than max)
+          if (targetRowIndex > maxIndex) {
+            // Position above the topmost row of this type
+            let topPosition = 0;
+            for (const row of dynamicRows) {
+              const rowMediaType = row.trackTypes[0];
+              if (row.id === sameTypeRows[sameTypeRows.length - 1].id) {
+                break;
+              }
+              if (visibleTrackRows.includes(rowMediaType)) {
+                topPosition += getRowHeight(rowMediaType);
+              }
+            }
+            const top =
+              topPosition + centeringOffset + (rowHeight - trackItemHeight) / 2;
+            return { top, height: trackItemHeight, centeringOffset };
+          }
+
+          // If dragging below (lower index than min)
+          if (targetRowIndex < minIndex) {
+            // Position below the bottommost row of this type
+            let bottomPosition = 0;
+            for (const row of dynamicRows) {
+              const rowMediaType = row.trackTypes[0];
+              if (visibleTrackRows.includes(rowMediaType)) {
+                bottomPosition += getRowHeight(rowMediaType);
+              }
+              if (row.id === sameTypeRows[0].id) {
+                break;
+              }
+            }
+            const top =
+              bottomPosition +
+              centeringOffset +
+              (rowHeight - trackItemHeight) / 2;
+            return { top, height: trackItemHeight, centeringOffset };
+          }
+        }
+      }
+
+      // Final fallback if row not found and no virtual row logic applies
       const rowHeight = getRowHeight(mediaType);
       const trackItemHeight = getTrackItemHeight(mediaType);
       return {

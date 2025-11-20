@@ -1451,12 +1451,81 @@ export const createTracksSlice: StateCreator<
       return;
     }
 
+    // Check if we need to auto-create or insert a new row
+    const existingIndices = state.tracks
+      .filter((t: VideoTrack) => t.type === trackToMove.type)
+      .map((t: VideoTrack) => t.trackRowIndex ?? 0);
+
+    const maxIndex =
+      existingIndices.length > 0 ? Math.max(...existingIndices) : 0;
+    const minIndex =
+      existingIndices.length > 0 ? Math.min(...existingIndices) : 0;
+
+    let finalTargetRowIndex = targetRowIndex;
+    let needsRowInsertion = false;
+
+    // Check if target row already exists
+    if (!existingIndices.includes(targetRowIndex)) {
+      // Dragging above highest row → create new row at maxIndex + 1
+      if (targetRowIndex > maxIndex) {
+        finalTargetRowIndex = maxIndex + 1;
+        console.log(
+          `🆕 Creating new row above: ${trackToMove.type}-${finalTargetRowIndex}`,
+        );
+      }
+      // Dragging below lowest row → create new row at minIndex - 1 (or 0)
+      else if (targetRowIndex < minIndex) {
+        finalTargetRowIndex = Math.max(0, minIndex - 1);
+        console.log(
+          `🆕 Creating new row below: ${trackToMove.type}-${finalTargetRowIndex}`,
+        );
+      }
+      // Dragging between two rows → insert new row between them
+      else {
+        needsRowInsertion = true;
+        finalTargetRowIndex = targetRowIndex;
+        console.log(
+          `🆕 Inserting new row between: ${trackToMove.type}-${finalTargetRowIndex}`,
+        );
+      }
+    }
+
     // Update track with new row index and optional new start frame
-    set((state: any) => ({
-      tracks: state.tracks.map((track: VideoTrack) => {
+    set((state: any) => {
+      let updatedTracks = [...state.tracks];
+
+      // If we need to insert a row between existing rows, shift existing rows first
+      if (needsRowInsertion) {
+        updatedTracks = updatedTracks.map((track: VideoTrack) => {
+          // Only affect tracks of the same type
+          if (track.type !== trackToMove.type) {
+            return track;
+          }
+
+          const trackRowIndex = track.trackRowIndex ?? 0;
+
+          // Skip the track being moved
+          if (track.id === trackId) {
+            return track;
+          }
+
+          // Shift rows at or above the insertion point
+          if (trackRowIndex >= finalTargetRowIndex) {
+            return {
+              ...track,
+              trackRowIndex: trackRowIndex + 1,
+            };
+          }
+
+          return track;
+        });
+      }
+
+      // Now update the moved track and its linked track
+      updatedTracks = updatedTracks.map((track: VideoTrack) => {
         if (track.id === trackId) {
           const updates: Partial<VideoTrack> = {
-            trackRowIndex: targetRowIndex,
+            trackRowIndex: finalTargetRowIndex,
           };
 
           // If newStartFrame provided, update position as well
@@ -1472,7 +1541,7 @@ export const createTracksSlice: StateCreator<
         // Also move linked track to the same row
         if (trackToMove.isLinked && trackToMove.linkedTrackId === track.id) {
           const updates: Partial<VideoTrack> = {
-            trackRowIndex: targetRowIndex,
+            trackRowIndex: finalTargetRowIndex,
           };
 
           // If newStartFrame provided, update linked track position as well
@@ -1488,13 +1557,15 @@ export const createTracksSlice: StateCreator<
         }
 
         return track;
-      }),
-    }));
+      });
+
+      return { tracks: updatedTracks };
+    });
 
     state.markUnsavedChanges?.();
 
     console.log(
-      `✅ Moved track ${trackId} from row ${currentRowIndex} to row ${targetRowIndex}`,
+      `✅ Moved track ${trackId} from row ${currentRowIndex} to row ${finalTargetRowIndex}`,
     );
   },
 

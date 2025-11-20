@@ -28,15 +28,15 @@ import { TimelineRuler } from './timelineRuler';
 import { TimelineTrackControllers } from './timelineTrackControllers';
 import { TimelineTracks } from './timelineTracks';
 import {
-  calculateCenteringOffset,
-  getRowHeight,
-} from './utils/timelineConstants';
-import {
   generateDynamicRows,
   getTrackRowId,
   migrateTracksWithRowIndex,
   parseRowId,
 } from './utils/dynamicTrackRows';
+import {
+  calculateCenteringOffset,
+  getRowHeight,
+} from './utils/timelineConstants';
 import {
   calculateFrameFromPosition,
   handleTimelineMouseDown as centralizedHandleMouseDown,
@@ -99,8 +99,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
 
     // Generate dynamic rows for vertical drag detection
-    const migratedTracks = useMemo(() => migrateTracksWithRowIndex(tracks), [tracks]);
-    const dynamicRows = useMemo(() => generateDynamicRows(migratedTracks), [migratedTracks]);
+    const migratedTracks = useMemo(
+      () => migrateTracksWithRowIndex(tracks),
+      [tracks],
+    );
+    const dynamicRows = useMemo(
+      () => generateDynamicRows(migratedTracks),
+      [migratedTracks],
+    );
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
     );
@@ -381,23 +387,26 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     }, []);
 
     // Global safety net: Reset drag state if user releases mouse anywhere
-    // Use capture phase to ensure this runs AFTER child handlers
+    // Use bubble phase (NOT capture) to ensure this runs AFTER child handlers
     useEffect(() => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const handleGlobalMouseUp = (e: MouseEvent) => {
-        const { playback, endDraggingTrack, clearDragGhost } =
-          useVideoEditorStore.getState();
+        // Delay cleanup slightly to allow track handlers to process first
+        setTimeout(() => {
+          const { playback, endDraggingTrack, clearDragGhost } =
+            useVideoEditorStore.getState();
 
-        if (playback.isDraggingTrack || playback.dragGhost?.isActive) {
-          console.log('🛡️ Global cleanup: Ending stuck drag operation');
+          if (playback.isDraggingTrack || playback.dragGhost?.isActive) {
+            console.log('🛡️ Global cleanup: Ending stuck drag operation');
 
-          // Clear all drag state
-          endDraggingTrack(true); // Record undo
-          clearDragGhost();
+            // Clear all drag state
+            endDraggingTrack(true); // Record undo
+            clearDragGhost();
 
-          // Clear any local mouse tracking
-          setAutoScrollMousePos(null);
-        }
+            // Clear any local mouse tracking
+            setAutoScrollMousePos(null);
+          }
+        }, 0); // Defer to next tick to allow track handlers to run first
       };
 
       const handleGlobalMouseLeave = (e: MouseEvent) => {
@@ -413,13 +422,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       };
 
       // Listen on document AND window for maximum coverage
-      document.addEventListener('mouseup', handleGlobalMouseUp, true); // Capture phase
-      window.addEventListener('mouseup', handleGlobalMouseUp, true);
+      // Use bubble phase (false) to run AFTER child handlers
+      document.addEventListener('mouseup', handleGlobalMouseUp, false);
+      window.addEventListener('mouseup', handleGlobalMouseUp, false);
       document.addEventListener('mouseleave', handleGlobalMouseLeave);
 
       return () => {
-        document.removeEventListener('mouseup', handleGlobalMouseUp, true);
-        window.removeEventListener('mouseup', handleGlobalMouseUp, true);
+        document.removeEventListener('mouseup', handleGlobalMouseUp, false);
+        window.removeEventListener('mouseup', handleGlobalMouseUp, false);
         document.removeEventListener('mouseleave', handleGlobalMouseLeave);
       };
     }, []);
@@ -502,8 +512,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         let targetRowId: string | null = null;
 
+        // Get the track being dragged to determine its type
+        const draggedTrack = tracks.find((t) => t.id === dragGhost.trackId);
+        if (!draggedTrack) return;
+
+        // Filter dynamic rows to only those of the same type as the dragged track
+        const sameTypeRows = dynamicRows.filter(
+          (row) => row.trackTypes[0] === draggedTrack.type,
+        );
+
         // Check each dynamic row to find which one the cursor is over
         let cumulativeTop = 0;
+        let foundRow = false;
         for (const row of dynamicRows) {
           const mediaType = row.trackTypes[0];
 
@@ -517,10 +537,84 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
           if (adjustedMouseY >= cumulativeTop && adjustedMouseY < rowBottom) {
             targetRowId = row.id; // e.g., "video-1", "text-0"
+            foundRow = true;
             break;
           }
 
           cumulativeTop = rowBottom;
+        }
+
+        // If no row found, check if dragging above or below existing rows of the same type
+        if (!foundRow && sameTypeRows.length > 0) {
+          // Get the first and last row of the same type
+          const firstSameTypeRow = sameTypeRows[sameTypeRows.length - 1]; // Highest index (top)
+          const lastSameTypeRow = sameTypeRows[0]; // Lowest index (bottom)
+
+          // Calculate positions of same-type rows
+          let sameTypeTop = 0;
+          let sameTypeBottom = 0;
+          let currentTop = 0;
+
+          for (const row of dynamicRows) {
+            const mediaType = row.trackTypes[0];
+            if (!visibleTrackRows.includes(mediaType)) continue;
+
+            const rowHeight = getRowHeight(mediaType);
+
+            if (row.id === firstSameTypeRow.id) {
+              sameTypeTop = currentTop;
+            }
+            if (row.id === lastSameTypeRow.id) {
+              sameTypeBottom = currentTop + rowHeight;
+            }
+
+            currentTop += rowHeight;
+          }
+
+          // Check if dragging above the topmost row of this type
+          if (adjustedMouseY < sameTypeTop) {
+            // Create virtual row ID for "above" - use highest index + 1
+            const parsedFirst = parseRowId(firstSameTypeRow.id);
+            if (parsedFirst) {
+              targetRowId = `${parsedFirst.type}-${parsedFirst.rowIndex + 1}`;
+              console.log(
+                `🔼 Dragging above: Creating virtual row ${targetRowId}`,
+              );
+            }
+          }
+          // Check if dragging below the bottommost row of this type
+          else if (adjustedMouseY >= sameTypeBottom) {
+            // Create virtual row ID for "below"
+            // In CapCut, dragging below creates a new row at the bottom
+            // We need to find the next available index below the lowest
+            const parsedLast = parseRowId(lastSameTypeRow.id);
+            if (parsedLast) {
+              // Get all existing indices for this type
+              const existingIndices = sameTypeRows.map((row) => {
+                const parsed = parseRowId(row.id);
+                return parsed ? parsed.rowIndex : 0;
+              });
+              const minIndex = Math.min(...existingIndices);
+
+              // Create a new row below the minimum
+              // If minIndex is 0, we can't go lower, so we insert at 0 and shift others up
+              const newRowIndex = minIndex > 0 ? minIndex - 1 : 0;
+              targetRowId = `${parsedLast.type}-${newRowIndex}`;
+              console.log(
+                `🔽 Dragging below: Creating virtual row ${targetRowId} (min was ${minIndex})`,
+              );
+            }
+          }
+        }
+
+        // Debug logging for drag ghost updates
+        if (targetRowId) {
+          const parsedTarget = parseRowId(targetRowId);
+          if (parsedTarget && draggedTrack) {
+            console.log(
+              `🎯 Drag target: ${targetRowId} (type: ${parsedTarget.type}, rowIndex: ${parsedTarget.rowIndex}, valid: ${parsedTarget.type === draggedTrack.type})`,
+            );
+          }
         }
 
         // Update drag ghost state with specific row ID
@@ -1474,7 +1568,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   // Parse target row to validate drop
                   const targetRowParsed = parseRowId(dragGhost.targetRow);
                   const isValidDrop =
-                    targetRowParsed && targetRowParsed.type === primaryTrack.type;
+                    targetRowParsed &&
+                    targetRowParsed.type === primaryTrack.type;
 
                   return (
                     <>

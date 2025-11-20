@@ -708,11 +708,16 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             }
 
             // Update drag ghost position with target row detection
-            // For now, keep it in the same row (cross-row will be added in Timeline component)
+            // Use the current drag ghost's targetRow to preserve virtual row IDs
+            // (Timeline component sets virtual rows like "video-1" for above/below drags)
+            const currentTargetRow =
+              useVideoEditorStore.getState().playback.dragGhost?.targetRow ||
+              getTrackRowId(track);
+
             updateDragGhostPosition(
               e.clientX,
               e.clientY,
-              track.type,
+              currentTargetRow,
               newStartFrame,
             );
 
@@ -743,6 +748,13 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       const { playback, endDraggingTrack, clearDragGhost, moveTrackToRow } =
         state;
 
+      console.log('🖱️ Mouse up - checking drop conditions:', {
+        isDragging,
+        dragThresholdMet: dragThresholdMetRef.current,
+        dragGhostActive: playback.dragGhost?.isActive,
+        targetRow: playback.dragGhost?.targetRow,
+      });
+
       // Check if vertical row change happened during drag
       if (
         isDragging &&
@@ -753,11 +765,24 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         const targetRowId = playback.dragGhost.targetRow;
         const targetFrame = playback.dragGhost.targetFrame;
 
+        console.log('✅ Drop conditions met, processing drop:', {
+          targetRowId,
+          targetFrame,
+        });
+
         // Parse the target row to get the row index
         const parsedRow = parseRowId(targetRowId);
 
         if (parsedRow) {
           const currentRowIndex = track.trackRowIndex ?? 0;
+
+          console.log('📊 Row comparison:', {
+            currentRowIndex,
+            targetRowIndex: parsedRow.rowIndex,
+            currentType: track.type,
+            targetType: parsedRow.type,
+            rowChanged: parsedRow.rowIndex !== currentRowIndex,
+          });
 
           // Check if the row changed (vertical movement)
           if (parsedRow.rowIndex !== currentRowIndex) {
@@ -780,8 +805,14 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
                 `⚠️ Invalid drop: Cannot move ${track.type} to ${parsedRow.type} row`,
               );
             }
+          } else {
+            console.log('ℹ️ No row change detected (same row)');
           }
+        } else {
+          console.warn('⚠️ Failed to parse target row ID:', targetRowId);
         }
+      } else {
+        console.log('❌ Drop conditions not met');
       }
 
       endDraggingTrack();
@@ -1025,6 +1056,21 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     const isSubtitleRowTranscribing =
       rowDef.id === 'subtitle' && !!currentTranscribingTrackId;
 
+    // Parse row ID to get row index for alternating backgrounds
+    const parsedRow = useMemo(() => {
+      const match = rowDef.id.match(
+        /^(video|audio|image|text|subtitle)-(\d+)$/,
+      );
+      if (!match) return { type: rowDef.id, rowIndex: 0 };
+      return {
+        type: match[1],
+        rowIndex: parseInt(match[2], 10),
+      };
+    }, [rowDef.id]);
+
+    // Alternating row background (even/odd)
+    const isEvenRow = parsedRow.rowIndex % 2 === 0;
+
     // Viewport culling for performance optimization
     const visibleTracks = useMemo(() => {
       if (!window || tracks.length === 0) return tracks;
@@ -1076,7 +1122,9 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           getRowHeightClasses(rowDef.id),
           isDragOver
             ? 'bg-secondary/10 border-l-secondary'
-            : 'bg-transparent border-l-transparent',
+            : isEvenRow
+              ? 'bg-transparent'
+              : 'bg-muted/20', // Alternating background for odd rows
         )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1202,7 +1250,6 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
     const {
       moveTrack,
       moveSelectedTracks,
-      moveTrackToRow,
       resizeTrack,
       importMediaToTimeline,
       importMediaFromDialog,

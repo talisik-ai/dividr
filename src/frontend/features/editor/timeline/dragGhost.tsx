@@ -1,10 +1,9 @@
 import { cn } from '@/frontend/utils/utils';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
-import { getRowHeight, getTrackItemHeightClasses } from './utils/timelineConstants';
-import { TRACK_ROW_ORDER } from './utils/trackRowPositions';
+import { getTrackItemHeightClasses } from './utils/timelineConstants';
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 interface DragGhostProps {
