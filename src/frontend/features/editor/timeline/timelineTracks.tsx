@@ -1220,7 +1220,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           track.muted === nextTrack.muted &&
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
-          track.previewUrl === nextTrack.previewUrl
+          track.previewUrl === nextTrack.previewUrl &&
+          track.trackRowIndex === nextTrack.trackRowIndex // CRITICAL: Track row reordering
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -1593,7 +1594,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           track.muted === nextTrack.muted &&
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
-          track.previewUrl === nextTrack.previewUrl
+          track.previewUrl === nextTrack.previewUrl &&
+          track.trackRowIndex === nextTrack.trackRowIndex // CRITICAL: Track row reordering
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&

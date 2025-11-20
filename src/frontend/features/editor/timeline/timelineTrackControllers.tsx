@@ -540,7 +540,8 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         prevTrack.id === nextTrack.id &&
         prevTrack.visible === nextTrack.visible &&
         prevTrack.muted === nextTrack.muted &&
-        prevTrack.type === nextTrack.type
+        prevTrack.type === nextTrack.type &&
+        prevTrack.trackRowIndex === nextTrack.trackRowIndex // CRITICAL: Track row reordering
       );
     });
   },
@@ -712,7 +713,8 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
           prevTrack.id === nextTrack.id &&
           prevTrack.visible === nextTrack.visible &&
           prevTrack.muted === nextTrack.muted &&
-          prevTrack.type === nextTrack.type
+          prevTrack.type === nextTrack.type &&
+          prevTrack.trackRowIndex === nextTrack.trackRowIndex // CRITICAL: Track row reordering
         );
       });
     },
