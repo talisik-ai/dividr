@@ -21,6 +21,7 @@ import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 import { DragGhost } from './dragGhost';
 import { DropZoneIndicator } from './dropZoneIndicator';
 import { useAutoScroll } from './hooks/useAutoScroll';
+import { InsertionLineIndicator } from './insertionLineIndicator';
 import { ProjectThumbnailSetter } from './projectThumbnailSetter';
 import { TimelineControls } from './timelineControls';
 import { TimelinePlayhead } from './timelinePlayhead';
@@ -28,6 +29,7 @@ import { TimelineRuler } from './timelineRuler';
 import { TimelineTrackControllers } from './timelineTrackControllers';
 import { TimelineTracks } from './timelineTracks';
 import {
+  detectInsertionPoint,
   generateDynamicRows,
   getTrackRowId,
   migrateTracksWithRowIndex,
@@ -87,6 +89,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       startY: number;
       currentX: number;
       currentY: number;
+    } | null>(null);
+    const [insertionPoint, setInsertionPoint] = useState<{
+      yPosition: number;
+      isValid: boolean;
+      targetRowIndex: number;
+      trackType: VideoTrack['type'];
     } | null>(null);
 
     // Selectively subscribe to store to prevent unnecessary re-renders
@@ -179,7 +187,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           // Always start at frame 0 when dragging from MediaImportPanel
           const dropFrame = 0;
 
-          console.log(`🎯 Dropping media library item at frame ${dropFrame}`);
           addTrackFromMediaLibrary(mediaId, dropFrame).catch(console.error);
           return;
         }
@@ -187,7 +194,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         // Check if this is a file drop (external)
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
           const files = Array.from(e.dataTransfer.files);
-          console.log(`🎯 Dropping ${files.length} files onto timeline`);
 
           // Show immediate loading toast with promise
           const importPromise = importMediaToTimeline(files);
@@ -222,7 +228,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           try {
             await importPromise;
           } catch (error) {
-            console.error('❌ Error importing files to timeline:', error);
+            // Error is already handled by toast in importMediaToTimeline
           }
         }
       },
@@ -397,14 +403,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             useVideoEditorStore.getState();
 
           if (playback.isDraggingTrack || playback.dragGhost?.isActive) {
-            console.log('🛡️ Global cleanup: Ending stuck drag operation');
-
             // Clear all drag state
             endDraggingTrack(true); // Record undo
             clearDragGhost();
 
             // Clear any local mouse tracking
             setAutoScrollMousePos(null);
+            setInsertionPoint(null);
           }
         }, 0); // Defer to next tick to allow track handlers to run first
       };
@@ -510,115 +515,87 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         const centeringOffset = calculateCenteringOffset(visibleTrackRows);
         const adjustedMouseY = mouseRelativeY - centeringOffset;
 
-        let targetRowId: string | null = null;
-
         // Get the track being dragged to determine its type
         const draggedTrack = tracks.find((t) => t.id === dragGhost.trackId);
         if (!draggedTrack) return;
 
-        // Filter dynamic rows to only those of the same type as the dragged track
-        const sameTypeRows = dynamicRows.filter(
-          (row) => row.trackTypes[0] === draggedTrack.type,
-        );
+        // Build row bounds for insertion point detection
+        // CRITICAL: Must match the exact logic used in DropZoneIndicator
+        // Iterate through ALL dynamicRows, but only increment position for VISIBLE rows
+        const rowBounds: Array<{
+          rowId: string;
+          top: number;
+          bottom: number;
+          type: VideoTrack['type'];
+          rowIndex: number;
+        }> = [];
 
-        // Check each dynamic row to find which one the cursor is over
         let cumulativeTop = 0;
-        let foundRow = false;
         for (const row of dynamicRows) {
           const mediaType = row.trackTypes[0];
+          const parsed = parseRowId(row.id);
 
-          // Skip if this media type is not visible
-          if (!visibleTrackRows.includes(mediaType)) {
-            continue;
-          }
-
-          const rowHeight = getRowHeight(mediaType);
-          const rowBottom = cumulativeTop + rowHeight;
-
-          if (adjustedMouseY >= cumulativeTop && adjustedMouseY < rowBottom) {
-            targetRowId = row.id; // e.g., "video-1", "text-0"
-            foundRow = true;
-            break;
-          }
-
-          cumulativeTop = rowBottom;
-        }
-
-        // If no row found, check if dragging above or below existing rows of the same type
-        if (!foundRow && sameTypeRows.length > 0) {
-          // Get the first and last row of the same type
-          const firstSameTypeRow = sameTypeRows[sameTypeRows.length - 1]; // Highest index (top)
-          const lastSameTypeRow = sameTypeRows[0]; // Lowest index (bottom)
-
-          // Calculate positions of same-type rows
-          let sameTypeTop = 0;
-          let sameTypeBottom = 0;
-          let currentTop = 0;
-
-          for (const row of dynamicRows) {
-            const mediaType = row.trackTypes[0];
-            if (!visibleTrackRows.includes(mediaType)) continue;
-
+          // Add to bounds if this row is visible
+          if (visibleTrackRows.includes(mediaType) && parsed) {
             const rowHeight = getRowHeight(mediaType);
+            rowBounds.push({
+              rowId: row.id,
+              top: cumulativeTop,
+              bottom: cumulativeTop + rowHeight,
+              type: parsed.type,
+              rowIndex: parsed.rowIndex,
+            });
 
-            if (row.id === firstSameTypeRow.id) {
-              sameTypeTop = currentTop;
-            }
-            if (row.id === lastSameTypeRow.id) {
-              sameTypeBottom = currentTop + rowHeight;
-            }
-
-            currentTop += rowHeight;
-          }
-
-          // Check if dragging above the topmost row of this type
-          if (adjustedMouseY < sameTypeTop) {
-            // Create virtual row ID for "above" - use highest index + 1
-            const parsedFirst = parseRowId(firstSameTypeRow.id);
-            if (parsedFirst) {
-              targetRowId = `${parsedFirst.type}-${parsedFirst.rowIndex + 1}`;
-              console.log(
-                `🔼 Dragging above: Creating virtual row ${targetRowId}`,
-              );
-            }
-          }
-          // Check if dragging below the bottommost row of this type
-          else if (adjustedMouseY >= sameTypeBottom) {
-            // Create virtual row ID for "below"
-            // In CapCut, dragging below creates a new row at the bottom
-            // We need to find the next available index below the lowest
-            const parsedLast = parseRowId(lastSameTypeRow.id);
-            if (parsedLast) {
-              // Get all existing indices for this type
-              const existingIndices = sameTypeRows.map((row) => {
-                const parsed = parseRowId(row.id);
-                return parsed ? parsed.rowIndex : 0;
-              });
-              const minIndex = Math.min(...existingIndices);
-
-              // Create a new row below the minimum
-              // If minIndex is 0, we can't go lower, so we insert at 0 and shift others up
-              const newRowIndex = minIndex > 0 ? minIndex - 1 : 0;
-              targetRowId = `${parsedLast.type}-${newRowIndex}`;
-              console.log(
-                `🔽 Dragging below: Creating virtual row ${targetRowId} (min was ${minIndex})`,
-              );
-            }
+            // Only increment cumulative position for visible rows
+            cumulativeTop += rowHeight;
           }
         }
 
-        // Debug logging for drag ghost updates
-        if (targetRowId) {
-          const parsedTarget = parseRowId(targetRowId);
-          if (parsedTarget && draggedTrack) {
-            console.log(
-              `🎯 Drag target: ${targetRowId} (type: ${parsedTarget.type}, rowIndex: ${parsedTarget.rowIndex}, valid: ${parsedTarget.type === draggedTrack.type})`,
-            );
+        // Detect insertion point using the new utility
+        const insertion = detectInsertionPoint(
+          adjustedMouseY,
+          rowBounds,
+          draggedTrack.type,
+        );
+
+        // Update insertion point state for rendering the insertion line
+        if (insertion) {
+          // INSERTION MODE: Show insertion line, hide dropzone
+          setInsertionPoint({
+            yPosition: insertion.yPosition,
+            isValid: insertion.isValid,
+            targetRowIndex: insertion.targetRowIndex,
+            trackType: insertion.trackType,
+          });
+
+          // Create target row ID for drag ghost
+          const targetRowId = `${insertion.trackType}-${insertion.targetRowIndex}`;
+
+          // Update drag ghost with target row (dropzone will be hidden by insertionPoint check)
+          updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
+        } else {
+          // DROPZONE MODE: Show dropzone, hide insertion line
+          let targetRowId: string | null = null;
+
+          for (const bound of rowBounds) {
+            if (
+              adjustedMouseY >= bound.top &&
+              adjustedMouseY < bound.bottom &&
+              bound.type === draggedTrack.type
+            ) {
+              targetRowId = bound.rowId;
+              break;
+            }
+          }
+
+          // Clear insertion point to hide insertion line
+          setInsertionPoint(null);
+
+          // Update drag ghost with target row to show dropzone
+          if (targetRowId) {
+            updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
           }
         }
-
-        // Update drag ghost state with specific row ID
-        updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
       };
 
       const handleMouseMove = (e: MouseEvent) => {
@@ -636,9 +613,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     }, [
       dragGhost?.isActive,
       dragGhost?.offsetX,
+      dragGhost?.trackId,
       frameWidth,
       visibleTrackRows,
       dynamicRows,
+      tracks,
       updateDragGhostPosition,
     ]);
 
@@ -1544,11 +1523,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               )}
 
               {/* Drop Zone Indicator - shows where all clips will land */}
+              {/* ONLY shown when NOT in insertion mode (mutually exclusive with insertion line) */}
               {dragGhost?.isActive &&
                 dragGhost.targetRow &&
                 dragGhost.targetFrame !== null &&
                 dragGhost.selectedTrackIds &&
                 tracksRef.current &&
+                !insertionPoint && // CRITICAL: Hide dropzone when insertion line is active
                 (() => {
                   // Get all tracks being dragged
                   const draggedTracks = tracks.filter((t) =>
@@ -1607,6 +1588,17 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     </>
                   );
                 })()}
+
+              {/* Insertion Line Indicator - shows where new row will be created */}
+              {/* ONLY shown when in insertion mode (mutually exclusive with dropzone) */}
+              {insertionPoint && dragGhost?.isActive && tracksRef.current && (
+                <InsertionLineIndicator
+                  top={insertionPoint.yPosition}
+                  width={tracksRef.current.scrollWidth}
+                  scrollX={timeline.scrollX}
+                  isValid={insertionPoint.isValid}
+                />
+              )}
             </div>
           </div>
         </div>

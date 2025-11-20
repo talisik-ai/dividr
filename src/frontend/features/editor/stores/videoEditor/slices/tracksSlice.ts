@@ -393,9 +393,6 @@ export const createTracksSlice: StateCreator<
         videoTrack.width &&
         videoTrack.height
       ) {
-        console.log(
-          `🎬 Setting canvas size to match first video track: ${videoTrack.width}×${videoTrack.height}`,
-        );
         state.setCanvasSize(videoTrack.width, videoTrack.height);
       }
 
@@ -482,13 +479,11 @@ export const createTracksSlice: StateCreator<
         setTimeout(() => {
           const currentState = get() as any;
           currentState.ensureTrackRowVisible?.('subtitle');
-          console.log('📝 Auto-created Subtitle track row');
         }, 0);
       } else if (trackData.type === 'image') {
         setTimeout(() => {
           const currentState = get() as any;
           currentState.ensureTrackRowVisible?.('image');
-          console.log('🖼️ Auto-created Image/Overlay track row');
         }, 0);
       }
 
@@ -613,9 +608,6 @@ export const createTracksSlice: StateCreator<
         firstVideoInBatch.width &&
         firstVideoInBatch.height
       ) {
-        console.log(
-          `🎬 Setting canvas size to match first video track (batch): ${firstVideoInBatch.width}×${firstVideoInBatch.height}`,
-        );
         currentState.setCanvasSize(
           firstVideoInBatch.width,
           firstVideoInBatch.height,
@@ -629,12 +621,9 @@ export const createTracksSlice: StateCreator<
           const latestState = get() as any;
           trackTypesToEnsureVisible.forEach((trackType) => {
             latestState.ensureTrackRowVisible?.(trackType);
-            console.log(`📝 Auto-created ${trackType} track row (batch)`);
           });
         }, 0);
       }
-
-      console.log(`✅ Added ${newTracks.length} tracks in batch`);
     } finally {
       // End grouped transaction
       state.endGroup?.();
@@ -649,7 +638,6 @@ export const createTracksSlice: StateCreator<
       (item: any) => item.id === mediaId,
     );
     if (!mediaItem) {
-      console.error('Media item not found in library:', mediaId);
       return '';
     }
 
@@ -892,6 +880,7 @@ export const createTracksSlice: StateCreator<
         `⚠️ Attempted to mutate sourceFps on track ${trackId}. sourceFps is immutable and cannot be changed. Ignoring this update.`,
       );
       // Remove sourceFps from updates to prevent mutation
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { sourceFps: _removed, ...rest } = updates as any;
       safeUpdates = rest;
     }
@@ -1442,8 +1431,6 @@ export const createTracksSlice: StateCreator<
       return;
     }
 
-    // Validate target row index is for the same media type
-    // This prevents moving video clips to audio rows, etc.
     const currentRowIndex = trackToMove.trackRowIndex ?? 0;
 
     if (currentRowIndex === targetRowIndex && newStartFrame === undefined) {
@@ -1451,78 +1438,13 @@ export const createTracksSlice: StateCreator<
       return;
     }
 
-    // Check if we need to auto-create or insert a new row
-    const existingIndices = state.tracks
-      .filter((t: VideoTrack) => t.type === trackToMove.type)
-      .map((t: VideoTrack) => t.trackRowIndex ?? 0);
-
-    const maxIndex =
-      existingIndices.length > 0 ? Math.max(...existingIndices) : 0;
-    const minIndex =
-      existingIndices.length > 0 ? Math.min(...existingIndices) : 0;
-
-    let finalTargetRowIndex = targetRowIndex;
-    let needsRowInsertion = false;
-
-    // Check if target row already exists
-    if (!existingIndices.includes(targetRowIndex)) {
-      // Dragging above highest row → create new row at maxIndex + 1
-      if (targetRowIndex > maxIndex) {
-        finalTargetRowIndex = maxIndex + 1;
-        console.log(
-          `🆕 Creating new row above: ${trackToMove.type}-${finalTargetRowIndex}`,
-        );
-      }
-      // Dragging below lowest row → create new row at minIndex - 1 (or 0)
-      else if (targetRowIndex < minIndex) {
-        finalTargetRowIndex = Math.max(0, minIndex - 1);
-        console.log(
-          `🆕 Creating new row below: ${trackToMove.type}-${finalTargetRowIndex}`,
-        );
-      }
-      // Dragging between two rows → insert new row between them
-      else {
-        needsRowInsertion = true;
-        finalTargetRowIndex = targetRowIndex;
-        console.log(
-          `🆕 Inserting new row between: ${trackToMove.type}-${finalTargetRowIndex}`,
-        );
-      }
-    }
+    // With free reordering, we simply assign the target row index
+    // No need for complex insertion logic - the visual order is determined by trackRowIndex
+    const finalTargetRowIndex = targetRowIndex;
 
     // Update track with new row index and optional new start frame
     set((state: any) => {
-      let updatedTracks = [...state.tracks];
-
-      // If we need to insert a row between existing rows, shift existing rows first
-      if (needsRowInsertion) {
-        updatedTracks = updatedTracks.map((track: VideoTrack) => {
-          // Only affect tracks of the same type
-          if (track.type !== trackToMove.type) {
-            return track;
-          }
-
-          const trackRowIndex = track.trackRowIndex ?? 0;
-
-          // Skip the track being moved
-          if (track.id === trackId) {
-            return track;
-          }
-
-          // Shift rows at or above the insertion point
-          if (trackRowIndex >= finalTargetRowIndex) {
-            return {
-              ...track,
-              trackRowIndex: trackRowIndex + 1,
-            };
-          }
-
-          return track;
-        });
-      }
-
-      // Now update the moved track and its linked track
-      updatedTracks = updatedTracks.map((track: VideoTrack) => {
+      const updatedTracks = state.tracks.map((track: VideoTrack) => {
         if (track.id === trackId) {
           const updates: Partial<VideoTrack> = {
             trackRowIndex: finalTargetRowIndex,

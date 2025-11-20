@@ -748,13 +748,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       const { playback, endDraggingTrack, clearDragGhost, moveTrackToRow } =
         state;
 
-      console.log('🖱️ Mouse up - checking drop conditions:', {
-        isDragging,
-        dragThresholdMet: dragThresholdMetRef.current,
-        dragGhostActive: playback.dragGhost?.isActive,
-        targetRow: playback.dragGhost?.targetRow,
-      });
-
       // Check if vertical row change happened during drag
       if (
         isDragging &&
@@ -765,33 +758,16 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         const targetRowId = playback.dragGhost.targetRow;
         const targetFrame = playback.dragGhost.targetFrame;
 
-        console.log('✅ Drop conditions met, processing drop:', {
-          targetRowId,
-          targetFrame,
-        });
-
         // Parse the target row to get the row index
         const parsedRow = parseRowId(targetRowId);
 
         if (parsedRow) {
           const currentRowIndex = track.trackRowIndex ?? 0;
 
-          console.log('📊 Row comparison:', {
-            currentRowIndex,
-            targetRowIndex: parsedRow.rowIndex,
-            currentType: track.type,
-            targetType: parsedRow.type,
-            rowChanged: parsedRow.rowIndex !== currentRowIndex,
-          });
-
           // Check if the row changed (vertical movement)
           if (parsedRow.rowIndex !== currentRowIndex) {
             // Validate that the target row is the same media type
             if (parsedRow.type === track.type) {
-              console.log(
-                `🔄 Vertical drop detected: ${track.type} from row ${currentRowIndex} to row ${parsedRow.rowIndex}`,
-              );
-
               // Move track to new row (this will handle linked tracks too)
               moveTrackToRow(
                 track.id,
@@ -800,19 +776,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
                   ? targetFrame
                   : undefined,
               );
-            } else {
-              console.warn(
-                `⚠️ Invalid drop: Cannot move ${track.type} to ${parsedRow.type} row`,
-              );
             }
-          } else {
-            console.log('ℹ️ No row change detected (same row)');
           }
-        } else {
-          console.warn('⚠️ Failed to parse target row ID:', targetRowId);
         }
-      } else {
-        console.log('❌ Drop conditions not met');
       }
 
       endDraggingTrack();
@@ -1397,10 +1363,6 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         if (validFiles.length > 0) {
           // Import files using the proper import method that saves to disk and adds to library
           await importMediaToTimeline(validFiles);
-        } else {
-          console.warn(
-            `No valid ${rowDef.trackTypes.join('/')} files found for ${rowId} row`,
-          );
         }
       },
       [importMediaToTimeline],
@@ -1410,12 +1372,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       const result = await importMediaFromDialog();
       if (!result || (!result.success && !result.error)) return;
 
-      if (result.success && result.importedFiles.length > 0) {
-        console.log(
-          'Files imported successfully from timeline placeholder:',
-          result.importedFiles,
-        );
-      } else if (result.error) {
+      if (result.error) {
         // Only show error if there's an actual error (not on cancel)
         toast.error(result.error);
       }

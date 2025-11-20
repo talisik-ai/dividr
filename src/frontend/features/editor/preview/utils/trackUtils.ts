@@ -1,52 +1,48 @@
 import { VideoTrack } from '../../stores/videoEditor/index';
-import { TRACK_ROW_ORDER, Z_INDEX_SPACING } from '../core/constants';
 
 /**
  * Utility functions for track management
  */
 
 /**
- * Get z-index based on timeline track row positioning WITH trackRowIndex support
- * Timeline visual order (top to bottom): Text → Subtitle → Image → Video → Audio
- * Rendering order (bottom to top): Audio → Video → Image → Subtitle → Text
- * 
- * NEW: Higher trackRowIndex = renders in FRONT (on top)
- * Lower trackRowIndex = renders BEHIND (below)
- * 
- * This replaces the old import-order based layering with proper row-based layering
+ * Get z-index based on timeline track row positioning WITH free reordering support
+ *
+ * With free reordering enabled:
+ * - Non-audio tracks: z-index is ONLY determined by trackRowIndex (higher = in front)
+ * - Audio tracks: Always render below non-audio tracks, z-index by trackRowIndex within audio group
+ *
+ * This allows text, image, video, and subtitle tracks to be freely reordered
+ * while keeping audio tracks pinned at the bottom.
  */
-export function getTrackZIndex(
-  track: VideoTrack,
-  allTracks: VideoTrack[],
-): number {
-  // Base z-index for each track type (500 units apart for fine-grained control)
-  const baseZIndex = TRACK_ROW_ORDER[track.type] * Z_INDEX_SPACING;
-
-  // NEW: Use trackRowIndex for within-type ordering
-  // Higher row index = higher z-index (renders on top)
+export function getTrackZIndex(track: VideoTrack): number {
   const rowIndex = track.trackRowIndex ?? 0;
 
-  // Add the row index multiplied by a factor to ensure proper spacing
-  // This ensures tracks in higher rows appear on top of tracks in lower rows
-  return baseZIndex + (rowIndex * 10);
+  // Audio tracks: Base z-index 0-999 (always below non-audio)
+  if (track.type === 'audio') {
+    return rowIndex * 10; // 0, 10, 20, 30...
+  }
+
+  // Non-audio tracks: Base z-index 1000+ (always above audio)
+  // Higher row index = higher z-index (renders on top)
+  return 1000 + rowIndex * 10; // 1000, 1010, 1020, 1030...
 }
 
 /**
  * Sort tracks for rendering based on z-index (trackRowIndex + type)
  * This is the SOC helper for preview rendering
- * 
+ *
  * Returns tracks sorted by render order (back to front):
  * - Lower z-index first (renders behind)
  * - Higher z-index last (renders in front)
- * 
+ *
  * @param tracks - All tracks to sort
  * @returns Sorted array of tracks (back to front render order)
  */
 export function getSortedRenderableTracks(tracks: VideoTrack[]): VideoTrack[] {
   return [...tracks].sort((a, b) => {
-    const zIndexA = getTrackZIndex(a, tracks);
-    const zIndexB = getTrackZIndex(b, tracks);
-    
+    const zIndexA = getTrackZIndex(a);
+    const zIndexB = getTrackZIndex(b);
+
     // Sort ascending: lower z-index first (renders behind)
     return zIndexA - zIndexB;
   });
@@ -91,11 +87,12 @@ export function hasVideoPositionGap(
 }
 
 /**
- * Get active tracks at current frame, sorted by render order (trackRowIndex)
- * 
- * Returns tracks sorted from back to front:
- * - Lower trackRowIndex first (renders behind)
- * - Higher trackRowIndex last (renders in front)
+ * Get active tracks at current frame, sorted by render order (z-index)
+ *
+ * With free reordering:
+ * - Returns tracks sorted by z-index (back to front)
+ * - Audio tracks always render below non-audio tracks
+ * - Within each group, higher trackRowIndex renders in front
  */
 export function getActiveTracksAtFrame(
   tracks: VideoTrack[],
@@ -111,10 +108,10 @@ export function getActiveTracksAtFrame(
       currentFrame < track.endFrame,
   );
 
-  // Sort by trackRowIndex (lower index = renders behind, higher index = renders in front)
+  // Sort by z-index (lower z-index = renders behind, higher z-index = renders in front)
   return activeTracks.sort((a, b) => {
-    const rowIndexA = a.trackRowIndex ?? 0;
-    const rowIndexB = b.trackRowIndex ?? 0;
-    return rowIndexA - rowIndexB; // Ascending order
+    const zIndexA = getTrackZIndex(a);
+    const zIndexB = getTrackZIndex(b);
+    return zIndexA - zIndexB; // Ascending order
   });
 }
