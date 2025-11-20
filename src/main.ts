@@ -5,12 +5,12 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { buildFfmpegCommand } from './backend/ffmpeg/commandBuilder';
+import { buildFfmpegCommand } from './backend/ffmpeg/export/commandBuilder';
 import {
   cancelCurrentFfmpeg,
   runFfmpeg,
   runFfmpegWithProgress,
-} from './backend/ffmpeg/ffmpegRunner';
+} from './backend/ffmpeg/export/ffmpegRunner';
 import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
 // Import old Whisper.cpp runner (keeping for backward compatibility if needed)
 // import {
