@@ -556,25 +556,42 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           adjustedMouseY,
           rowBounds,
           draggedTrack.type,
+          tracks,
         );
 
         // Update insertion point state for rendering the insertion line
         if (insertion) {
-          // INSERTION MODE: Show insertion line, hide dropzone
-          setInsertionPoint({
-            yPosition: insertion.yPosition,
-            isValid: insertion.isValid,
-            targetRowIndex: insertion.targetRowIndex,
-            trackType: insertion.trackType,
-          });
+          if (insertion.type === 'inside') {
+            // INSIDE MODE: Merging with existing row, show dropzone
+            setInsertionPoint(null);
 
-          // Create target row ID for drag ghost
-          const targetRowId = `${insertion.trackType}-${insertion.targetRowIndex}`;
+            // Use the existing row ID
+            const targetRowId =
+              insertion.existingRowId ||
+              `${insertion.trackType}-${Math.round(insertion.targetRowIndex)}`;
 
-          // Update drag ghost with target row (dropzone will be hidden by insertionPoint check)
-          updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
+            updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
+          } else {
+            // INSERTION MODE: Creating new row, show insertion line
+            setInsertionPoint({
+              yPosition: insertion.yPosition,
+              isValid: insertion.isValid,
+              targetRowIndex: insertion.targetRowIndex,
+              trackType: insertion.trackType,
+            });
+
+            // Create target row ID for drag ghost (use fractional index)
+            const targetRowId = `${insertion.trackType}-${insertion.targetRowIndex}`;
+
+            // Update drag ghost with target row (dropzone will be hidden by insertionPoint check)
+            updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
+          }
         } else {
-          // DROPZONE MODE: Show dropzone, hide insertion line
+          // FALLBACK MODE: No valid insertion point detected
+          // Clear insertion point to hide insertion line
+          setInsertionPoint(null);
+
+          // Try to find a matching row for dropzone
           let targetRowId: string | null = null;
 
           for (const bound of rowBounds) {
@@ -587,9 +604,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               break;
             }
           }
-
-          // Clear insertion point to hide insertion line
-          setInsertionPoint(null);
 
           // Update drag ghost with target row to show dropzone
           if (targetRowId) {
@@ -1485,27 +1499,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                       top: 0,
                       bottom: 0,
                       width: '1px',
-                      background:
-                        'color-mix(in srgb, currentColor 50%, transparent)',
                       pointerEvents: 'none',
                       zIndex: 10,
                     }}
-                  />
-                  {/* Magnetic snap region - glowing area */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: `${playback.magneticSnapFrame * frameWidth - timeline.scrollX}px`,
-                      top: 0,
-                      bottom: 0,
-                      width: '8px',
-                      transform: 'translateX(-50%)',
-                      background:
-                        'linear-gradient(90deg, transparent, color-mix(in srgb, currentColor 15%, transparent) 50%, transparent)',
-                      pointerEvents: 'none',
-                      zIndex: 9,
-                      opacity: 0.8,
-                    }}
+                    className="bg-secondary"
                   />
                 </>
               )}

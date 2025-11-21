@@ -233,30 +233,39 @@ export function generateDynamicRows(
 
 /**
  * Get the row ID for a specific track
+ * Supports fractional indices for temporary positioning during drag operations
  *
  * @param track - The track to get the row ID for
- * @returns The row ID string (e.g., "video-0", "text-2")
+ * @returns The row ID string (e.g., "video-0", "text-2", "text-1.5")
  */
 export function getTrackRowId(track: VideoTrack): string {
   const rowIndex = track.trackRowIndex ?? 0;
+  // Keep fractional indices in the row ID
+  // This allows proper visual separation during drag operations
   return `${track.type}-${rowIndex}`;
 }
 
 /**
  * Parse a row ID into type and index components
+ * Now supports fractional indices (e.g., "text-1.5") and negative indices (e.g., "text--0.5")
  *
- * @param rowId - Row ID string (e.g., "video-0", "text-2")
+ * @param rowId - Row ID string (e.g., "video-0", "text-2", "text-1.5", "text--0.5")
  * @returns Object with type and rowIndex, or null if invalid
  */
 export function parseRowId(
   rowId: string,
 ): { type: VideoTrack['type']; rowIndex: number } | null {
-  const match = rowId.match(/^(video|audio|image|text|subtitle)-(\d+)$/);
+  // Support integer, fractional, and negative indices (including negative fractional)
+  // Pattern: type-number or type--number (for negatives)
+  const match = rowId.match(/^(video|audio|image|text|subtitle)-(-?[\d.]+)$/);
   if (!match) return null;
+
+  const rowIndex = parseFloat(match[2]);
+  if (isNaN(rowIndex)) return null;
 
   return {
     type: match[1] as VideoTrack['type'],
-    rowIndex: parseInt(match[2], 10),
+    rowIndex,
   };
 }
 
@@ -502,6 +511,103 @@ export function normalizeRowIndices(tracks: VideoTrack[]): VideoTrack[] {
 }
 
 /**
+ * Normalize row indices after drag-drop operation
+ * Converts fractional indices to sequential integers while preserving visual order
+ * This is the final step after a drag operation completes
+ *
+ * Key differences from normalizeRowIndices:
+ * - Preserves the exact visual order established by fractional indices
+ * - Does not enforce hierarchy (assumes it's already correct)
+ * - Handles fractional indices properly
+ *
+ * @param tracks - All tracks (may have fractional trackRowIndex values)
+ * @returns Tracks with normalized integer row indices
+ */
+export function normalizeAfterDrop(tracks: VideoTrack[]): VideoTrack[] {
+  console.log(
+    '🔄 normalizeAfterDrop - Before:',
+    tracks.map((t) => `${t.type}-${t.trackRowIndex}`),
+  );
+
+  // Group tracks by type
+  const tracksByType = new Map<VideoTrack['type'], VideoTrack[]>();
+
+  tracks.forEach((track) => {
+    if (!tracksByType.has(track.type)) {
+      tracksByType.set(track.type, []);
+    }
+    const typeList = tracksByType.get(track.type);
+    if (typeList) {
+      typeList.push(track);
+    }
+  });
+
+  const normalizedTracks: VideoTrack[] = [];
+
+  tracksByType.forEach((typeTracks) => {
+    // Sort by current row index (descending - higher indices = higher visual position)
+    // This preserves the order established by fractional indices
+    const sorted = [...typeTracks].sort(
+      (a, b) => (b.trackRowIndex ?? 0) - (a.trackRowIndex ?? 0),
+    );
+
+    // CRITICAL FIX: Group tracks by their EXACT row index (including fractional)
+    // Only tracks with the EXACT same index should be grouped together
+    // This prevents 0.5 from merging with 0 or 1
+    const rowGroups = new Map<number, VideoTrack[]>();
+    sorted.forEach((track) => {
+      const exactIndex = track.trackRowIndex ?? 0;
+      if (!rowGroups.has(exactIndex)) {
+        rowGroups.set(exactIndex, []);
+      }
+      const group = rowGroups.get(exactIndex);
+      if (group) {
+        group.push(track);
+      }
+    });
+
+    // Convert row groups to sequential integers while preserving visual order
+    // Sort by the exact fractional indices (descending - highest first)
+    const sortedGroupIndices = Array.from(rowGroups.keys()).sort(
+      (a, b) => b - a,
+    );
+
+    console.log(
+      `  📊 Sorted indices for ${typeTracks[0]?.type}: [${sortedGroupIndices}]`,
+    );
+
+    // Assign new sequential integer indices starting from 0
+    // The highest visual row (highest index) becomes the highest integer
+    // The lowest visual row (lowest index, possibly negative) becomes 0
+    sortedGroupIndices.forEach((originalIndex, arrayPosition) => {
+      const group = rowGroups.get(originalIndex);
+      if (group) {
+        // Calculate new integer index based on position in sorted array
+        // arrayPosition 0 = highest index = highest visual position
+        // arrayPosition n-1 = lowest index = lowest visual position (becomes 0)
+        const newRowIndex = sortedGroupIndices.length - 1 - arrayPosition;
+        console.log(
+          `    ${originalIndex} (pos ${arrayPosition}) → ${newRowIndex}`,
+        );
+        group.forEach((track) => {
+          normalizedTracks.push({
+            ...track,
+            trackRowIndex: newRowIndex,
+          });
+        });
+      }
+    });
+  });
+
+  console.log(
+    '🔄 normalizeAfterDrop - After:',
+    normalizedTracks.map((t) => `${t.type}-${t.trackRowIndex}`),
+  );
+
+  return normalizedTracks;
+}
+
+/**
  * Insert a new row at a specific index, shifting existing rows
  * This is used when dragging between two rows
  *
@@ -567,8 +673,8 @@ export function getRowDisplayLabel(
 
 export interface InsertionPoint {
   /** Type of insertion: above a row, between rows, or below a row */
-  type: 'above' | 'between' | 'below';
-  /** The row index where insertion will occur */
+  type: 'above' | 'between' | 'below' | 'inside';
+  /** The row index where insertion will occur (can be fractional for temporary positioning) */
   targetRowIndex: number;
   /** Y position for the insertion line indicator */
   yPosition: number;
@@ -576,14 +682,129 @@ export interface InsertionPoint {
   isValid: boolean;
   /** The track type being inserted */
   trackType: VideoTrack['type'];
+  /** The existing row being targeted (for inside drops) */
+  existingRowId?: string;
+}
+
+/**
+ * Calculate fractional row index for insertion between two rows
+ * Uses array insertion semantics rather than snapping to existing rows
+ *
+ * @param tracks - All tracks in the timeline
+ * @param trackType - Type of track being inserted
+ * @param insertionType - Type of insertion (above, below, between)
+ * @param referenceRowIndex - The row index being used as reference
+ * @returns Fractional row index for temporary positioning
+ */
+export function calculateInsertionRowIndex(
+  tracks: VideoTrack[],
+  trackType: VideoTrack['type'],
+  insertionType: 'above' | 'below' | 'between',
+  referenceRowIndex: number,
+): number {
+  // Get all existing row indices for this type, sorted descending (visual order)
+  const existingIndices = tracks
+    .filter((t) => t.type === trackType)
+    .map((t) => t.trackRowIndex ?? 0)
+    .sort((a, b) => b - a);
+
+  console.log(
+    `📍 calculateInsertionRowIndex: type=${trackType}, insertionType=${insertionType}, ref=${referenceRowIndex}, existing=[${existingIndices}]`,
+  );
+
+  if (existingIndices.length === 0) {
+    // No tracks of this type exist, start at 0
+    return 0;
+  }
+
+  const maxIndex = Math.max(...existingIndices);
+
+  switch (insertionType) {
+    case 'above': {
+      // Inserting above means higher visual position = higher index
+      // Use maxIndex + 1 to place above all existing rows
+      return maxIndex + 1;
+    }
+
+    case 'below': {
+      // Inserting below means lower visual position = lower index
+      // Use fractional index to insert between referenceRowIndex and the row below it
+      // Find the next lower index
+      const lowerIndices = existingIndices.filter(
+        (idx) => idx < referenceRowIndex,
+      );
+      if (lowerIndices.length === 0) {
+        // No rows below reference - create fractional index below it
+        // CRITICAL: Use fractional to avoid merging with reference row
+        // If reference is 0, we can't go negative, so we need to shift everything up
+        if (referenceRowIndex === 0) {
+          // Special case: dragging below row 0
+          // We need to create a new row below 0, but can't use negative indices
+          // Solution: Use -0.5 temporarily, normalization will fix it
+          console.log(`  ➡️ Returning -0.5 (below row 0)`);
+          return -0.5;
+        }
+        // For other cases, use fractional below reference
+        const result = referenceRowIndex - 0.5;
+        console.log(
+          `  ➡️ Returning ${result} (no rows below ${referenceRowIndex})`,
+        );
+        return result;
+      }
+      const nextLowerIndex = Math.max(...lowerIndices);
+      // Use fractional index between reference and next lower
+      const result =
+        referenceRowIndex - (referenceRowIndex - nextLowerIndex) / 2;
+      console.log(
+        `  ➡️ Returning ${result} (between ${referenceRowIndex} and ${nextLowerIndex})`,
+      );
+      return result;
+    }
+
+    case 'between': {
+      // Inserting between two rows
+      // Find the next lower index
+      const lowerIndicesForBetween = existingIndices.filter(
+        (idx) => idx < referenceRowIndex,
+      );
+      if (lowerIndicesForBetween.length === 0) {
+        // No rows below reference
+        // CRITICAL: Same logic as 'below' case for consistency
+        if (referenceRowIndex === 0) {
+          // Special case: inserting below row 0
+          console.log(`  ➡️ Returning -0.5 (between, below row 0)`);
+          return -0.5;
+        }
+        // For other cases, use fractional below reference
+        const result = referenceRowIndex - 0.5;
+        console.log(
+          `  ➡️ Returning ${result} (between, no rows below ${referenceRowIndex})`,
+        );
+        return result;
+      }
+      const nextLowerForBetween = Math.max(...lowerIndicesForBetween);
+      // Use fractional index between reference and next lower
+      const result =
+        referenceRowIndex - (referenceRowIndex - nextLowerForBetween) / 2;
+      console.log(
+        `  ➡️ Returning ${result} (between ${referenceRowIndex} and ${nextLowerForBetween})`,
+      );
+      return result;
+    }
+
+    default:
+      return referenceRowIndex;
+  }
 }
 
 /**
  * Detect insertion point based on cursor Y position relative to existing rows
+ * Now uses fractional indices for proper array insertion semantics
  *
  * @param cursorY - Y position of cursor in timeline coordinates
  * @param rowBounds - Array of row boundaries with their metadata
  * @param draggedTrackType - Type of track being dragged
+ * @param tracks - All tracks (needed to calculate fractional indices)
  * @returns InsertionPoint or null if no valid insertion point
  */
 export function detectInsertionPoint(
@@ -596,10 +817,12 @@ export function detectInsertionPoint(
     rowIndex: number;
   }>,
   draggedTrackType: VideoTrack['type'],
+  tracks: VideoTrack[],
 ): InsertionPoint | null {
   if (rowBounds.length === 0) return null;
 
-  // Define insertion threshold (10% of row height)
+  // Define insertion threshold (10% of row height for insertion zones)
+  // 80% in the middle is the "inside" zone for merging with existing row
   const INSERTION_THRESHOLD = 0.1;
 
   // Check if dragging above the topmost non-audio row
@@ -609,9 +832,15 @@ export function detectInsertionPoint(
   if (nonAudioRows.length > 0 && cursorY < nonAudioRows[0].top) {
     // Dragging above all non-audio tracks
     const maxRowIndex = Math.max(...nonAudioRows.map((r) => r.rowIndex));
+    const targetIndex = calculateInsertionRowIndex(
+      tracks,
+      draggedTrackType,
+      'above',
+      maxRowIndex,
+    );
     return {
       type: 'above',
-      targetRowIndex: maxRowIndex + 1,
+      targetRowIndex: targetIndex,
       yPosition: nonAudioRows[0].top,
       isValid: !AUDIO_GROUP_TYPES.includes(draggedTrackType),
       trackType: draggedTrackType,
@@ -632,10 +861,15 @@ export function detectInsertionPoint(
     (!firstAudioRow || cursorY < firstAudioRow.top)
   ) {
     // Dragging in the gap between non-audio and audio groups
-    const minRowIndex = Math.min(...nonAudioRows.map((r) => r.rowIndex));
+    const targetIndex = calculateInsertionRowIndex(
+      tracks,
+      draggedTrackType,
+      'below',
+      lastNonAudioRow.rowIndex,
+    );
     return {
       type: 'below',
-      targetRowIndex: Math.max(0, minRowIndex - 1),
+      targetRowIndex: targetIndex,
       yPosition: lastNonAudioRow.bottom,
       isValid: !AUDIO_GROUP_TYPES.includes(draggedTrackType),
       trackType: draggedTrackType,
@@ -649,7 +883,7 @@ export function detectInsertionPoint(
     const upperThreshold = row.top + rowHeight * INSERTION_THRESHOLD;
     const lowerThreshold = row.bottom - rowHeight * INSERTION_THRESHOLD;
 
-    // Check if cursor is in the upper insertion zone
+    // Check if cursor is in the upper insertion zone (top 10%)
     if (cursorY >= row.top && cursorY <= upperThreshold) {
       // Check if we can insert above this row
       const isAudioRow = AUDIO_GROUP_TYPES.includes(row.type);
@@ -665,16 +899,65 @@ export function detectInsertionPoint(
         return null;
       }
 
+      // Calculate fractional index for insertion above this row
+      let targetIndex = calculateInsertionRowIndex(
+        tracks,
+        draggedTrackType,
+        'between',
+        row.rowIndex,
+      );
+
+      // CRITICAL: When inserting above a row, we add 1 to get the space above it
+      // EXCEPT when the result is negative (inserting below row 0)
+      // In that case, keep the negative value
+      if (targetIndex >= 0 || row.rowIndex > 0) {
+        targetIndex = targetIndex + 1;
+      }
+
+      console.log(
+        `  🔼 Upper zone of row ${row.rowIndex}: targetIndex=${targetIndex}`,
+      );
+
       return {
         type: i === 0 ? 'above' : 'between',
-        targetRowIndex: row.rowIndex + 1,
+        targetRowIndex: targetIndex,
         yPosition: row.top,
         isValid: true,
         trackType: draggedTrackType,
       };
     }
 
-    // Check if cursor is in the lower insertion zone
+    // Check if cursor is in the middle zone (80% - inside the row)
+    if (cursorY > upperThreshold && cursorY < lowerThreshold) {
+      // Inside zone - merge with existing row
+      const isAudioRow = AUDIO_GROUP_TYPES.includes(row.type);
+      const isDraggingAudio = AUDIO_GROUP_TYPES.includes(draggedTrackType);
+
+      // Type checking
+      if (row.type !== draggedTrackType) {
+        continue; // Skip to next row
+      }
+
+      // Prevent boundary violations
+      if (isAudioRow && !isDraggingAudio) {
+        return null;
+      }
+      if (!isAudioRow && isDraggingAudio) {
+        return null;
+      }
+
+      // Return existing row index (no insertion, merge into row)
+      return {
+        type: 'inside',
+        targetRowIndex: row.rowIndex,
+        yPosition: row.top + rowHeight / 2,
+        isValid: true,
+        trackType: draggedTrackType,
+        existingRowId: row.rowId,
+      };
+    }
+
+    // Check if cursor is in the lower insertion zone (bottom 10%)
     if (cursorY >= lowerThreshold && cursorY <= row.bottom) {
       const nextRow = i < rowBounds.length - 1 ? rowBounds[i + 1] : null;
       const isAudioRow = AUDIO_GROUP_TYPES.includes(row.type);
@@ -688,12 +971,13 @@ export function detectInsertionPoint(
         return null;
       }
 
-      // CRITICAL FIX: When hovering at the bottom of a row, we want to insert BELOW it
-      // Lower rowIndex = visually below (e.g., row-2 is above row-1)
-      // So we need to target row.rowIndex - 1 to insert below
-      const targetIndex = nextRow
-        ? nextRow.rowIndex // If there's a next row, drop onto it
-        : Math.max(0, row.rowIndex - 1); // Otherwise create new row below
+      // Calculate fractional index for insertion below this row
+      const targetIndex = calculateInsertionRowIndex(
+        tracks,
+        draggedTrackType,
+        'below',
+        row.rowIndex,
+      );
 
       return {
         type: nextRow ? 'between' : 'below',

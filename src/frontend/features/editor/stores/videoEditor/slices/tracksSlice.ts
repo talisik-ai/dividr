@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
+import { normalizeAfterDrop } from '../../../timeline/utils/dynamicTrackRows';
 import { VideoTrack } from '../types';
 import { detectAspectRatio } from '../utils/aspectRatioHelpers';
 import { SUBTITLE_EXTENSIONS } from '../utils/constants';
@@ -1433,18 +1434,24 @@ export const createTracksSlice: StateCreator<
 
     const currentRowIndex = trackToMove.trackRowIndex ?? 0;
 
+    console.log(
+      `🎯 moveTrackToRow called: trackId=${trackId.substring(0, 8)}, current=${currentRowIndex}, target=${targetRowIndex}, newStartFrame=${newStartFrame}`,
+    );
+
     if (currentRowIndex === targetRowIndex && newStartFrame === undefined) {
       // No change needed
+      console.log(`  ⏭️ Skipping - no change needed`);
       return;
     }
 
-    // With free reordering, we simply assign the target row index
-    // No need for complex insertion logic - the visual order is determined by trackRowIndex
+    // CRITICAL: Support fractional indices for array insertion semantics
+    // The targetRowIndex can be fractional (e.g., 1.5) to insert between rows
+    // This allows proper "below" behavior without snapping to existing rows
     const finalTargetRowIndex = targetRowIndex;
 
     // Update track with new row index and optional new start frame
     set((state: any) => {
-      const updatedTracks = state.tracks.map((track: VideoTrack) => {
+      let updatedTracks = state.tracks.map((track: VideoTrack) => {
         if (track.id === trackId) {
           const updates: Partial<VideoTrack> = {
             trackRowIndex: finalTargetRowIndex,
@@ -1481,13 +1488,17 @@ export const createTracksSlice: StateCreator<
         return track;
       });
 
+      // CRITICAL: Normalize row indices after drop to convert fractional indices to integers
+      // This ensures proper array-like behavior while maintaining visual order
+      updatedTracks = normalizeAfterDrop(updatedTracks);
+
       return { tracks: updatedTracks };
     });
 
     state.markUnsavedChanges?.();
 
     console.log(
-      `✅ Moved track ${trackId} from row ${currentRowIndex} to row ${finalTargetRowIndex}`,
+      `✅ Moved track ${trackId} from row ${currentRowIndex} to row ${finalTargetRowIndex} (normalized after drop)`,
     );
   },
 
