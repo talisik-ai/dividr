@@ -1434,13 +1434,8 @@ export const createTracksSlice: StateCreator<
 
     const currentRowIndex = trackToMove.trackRowIndex ?? 0;
 
-    console.log(
-      `🎯 moveTrackToRow called: trackId=${trackId.substring(0, 8)}, current=${currentRowIndex}, target=${targetRowIndex}, newStartFrame=${newStartFrame}`,
-    );
-
     if (currentRowIndex === targetRowIndex && newStartFrame === undefined) {
       // No change needed
-      console.log(`  ⏭️ Skipping - no change needed`);
       return;
     }
 
@@ -1496,10 +1491,6 @@ export const createTracksSlice: StateCreator<
     });
 
     state.markUnsavedChanges?.();
-
-    console.log(
-      `✅ Moved track ${trackId} from row ${currentRowIndex} to row ${finalTargetRowIndex} (normalized after drop)`,
-    );
   },
 
   resizeTrack: (trackId, newStartFrame, newEndFrame) => {

@@ -525,83 +525,81 @@ export function normalizeRowIndices(tracks: VideoTrack[]): VideoTrack[] {
  */
 export function normalizeAfterDrop(tracks: VideoTrack[]): VideoTrack[] {
   console.log(
-    '🔄 normalizeAfterDrop - Before:',
-    tracks.map((t) => `${t.type}-${t.trackRowIndex}`),
+    `🔄 NORMALIZE: Before -`,
+    tracks.map((t) => `${t.type}-${t.trackRowIndex}`).join(', '),
   );
 
-  // Group tracks by type
-  const tracksByType = new Map<VideoTrack['type'], VideoTrack[]>();
+  // CRITICAL: For cross-type reordering, we need to preserve absolute positions
+  // Don't normalize each type independently - just round fractional indices
 
+  // First, collect all unique indices (rounded) to build a mapping
+  const allIndices = new Set<number>();
   tracks.forEach((track) => {
-    if (!tracksByType.has(track.type)) {
-      tracksByType.set(track.type, []);
-    }
-    const typeList = tracksByType.get(track.type);
-    if (typeList) {
-      typeList.push(track);
-    }
+    const currentIndex = track.trackRowIndex ?? 0;
+    // Use floor for negative, ceil for positive to avoid collisions
+    const roundedIndex =
+      currentIndex < 0 ? Math.floor(currentIndex) : Math.ceil(currentIndex);
+    allIndices.add(roundedIndex);
   });
 
-  const normalizedTracks: VideoTrack[] = [];
+  // Sort indices descending (higher = visually higher)
+  const sortedIndices = Array.from(allIndices).sort((a, b) => b - a);
 
-  tracksByType.forEach((typeTracks) => {
-    // Sort by current row index (descending - higher indices = higher visual position)
-    // This preserves the order established by fractional indices
-    const sorted = [...typeTracks].sort(
-      (a, b) => (b.trackRowIndex ?? 0) - (a.trackRowIndex ?? 0),
-    );
+  // CRITICAL: Separate non-audio and audio indices for proper hierarchy
+  // video-0 and audio-0 must stay at their base positions
+  const nonAudioIndices = sortedIndices.filter((idx) => idx >= 0);
+  const negativeIndices = sortedIndices.filter((idx) => idx < 0);
 
-    // CRITICAL FIX: Group tracks by their EXACT row index (including fractional)
-    // Only tracks with the EXACT same index should be grouped together
-    // This prevents 0.5 from merging with 0 or 1
-    const rowGroups = new Map<number, VideoTrack[]>();
-    sorted.forEach((track) => {
-      const exactIndex = track.trackRowIndex ?? 0;
-      if (!rowGroups.has(exactIndex)) {
-        rowGroups.set(exactIndex, []);
-      }
-      const group = rowGroups.get(exactIndex);
-      if (group) {
-        group.push(track);
-      }
-    });
+  // Create mapping: negative indices become 0, 1, 2... and non-negative stay as-is
+  const indexMap = new Map<number, number>();
 
-    // Convert row groups to sequential integers while preserving visual order
-    // Sort by the exact fractional indices (descending - highest first)
-    const sortedGroupIndices = Array.from(rowGroups.keys()).sort(
-      (a, b) => b - a,
-    );
+  // Map negative indices to low positions (0, 1, 2...)
+  negativeIndices.reverse().forEach((oldIndex, position) => {
+    indexMap.set(oldIndex, position);
+  });
 
-    console.log(
-      `  📊 Sorted indices for ${typeTracks[0]?.type}: [${sortedGroupIndices}]`,
-    );
-
-    // Assign new sequential integer indices starting from 0
-    // The highest visual row (highest index) becomes the highest integer
-    // The lowest visual row (lowest index, possibly negative) becomes 0
-    sortedGroupIndices.forEach((originalIndex, arrayPosition) => {
-      const group = rowGroups.get(originalIndex);
-      if (group) {
-        // Calculate new integer index based on position in sorted array
-        // arrayPosition 0 = highest index = highest visual position
-        // arrayPosition n-1 = lowest index = lowest visual position (becomes 0)
-        const newRowIndex = sortedGroupIndices.length - 1 - arrayPosition;
-        console.log(
-          `    ${originalIndex} (pos ${arrayPosition}) → ${newRowIndex}`,
-        );
-        group.forEach((track) => {
-          normalizedTracks.push({
-            ...track,
-            trackRowIndex: newRowIndex,
-          });
-        });
-      }
-    });
+  // Map non-negative indices, offset by the count of negative indices
+  const offset = negativeIndices.length;
+  nonAudioIndices.reverse().forEach((oldIndex, position) => {
+    indexMap.set(oldIndex, position + offset);
   });
 
   console.log(
-    '🔄 normalizeAfterDrop - After:',
-    normalizedTracks.map((t) => `${t.type}-${t.trackRowIndex}`),
+    `   Index mapping:`,
+    Array.from(indexMap.entries())
+      .map(([old, newIdx]) => `${old}→${newIdx}`)
+      .join(', '),
+  );
+
+  const normalizedTracks: VideoTrack[] = tracks.map((track) => {
+    const currentIndex = track.trackRowIndex ?? 0;
+    const roundedIndex =
+      currentIndex < 0 ? Math.floor(currentIndex) : Math.ceil(currentIndex);
+    let newIndex = indexMap.get(roundedIndex) ?? 0;
+
+    // CRITICAL: video-0 and audio-0 are base tracks and must stay at index 0
+    // Don't shift them even if there are negative indices
+    if (track.type === 'video' && roundedIndex === 0) {
+      newIndex = 0;
+      console.log(`   ${track.type}: ${currentIndex} → 0 (base video track)`);
+    } else if (track.type === 'audio' && roundedIndex === 0) {
+      newIndex = 0;
+      console.log(`   ${track.type}: ${currentIndex} → 0 (base audio track)`);
+    } else {
+      console.log(
+        `   ${track.type}: ${currentIndex} → ${roundedIndex} → ${newIndex}`,
+      );
+    }
+
+    return {
+      ...track,
+      trackRowIndex: newIndex,
+    };
+  });
+
+  console.log(
+    `🔄 NORMALIZE: After -`,
+    normalizedTracks.map((t) => `${t.type}-${t.trackRowIndex}`).join(', '),
   );
 
   return normalizedTracks;
@@ -708,13 +706,30 @@ export function calculateInsertionRowIndex(
     .map((t) => t.trackRowIndex ?? 0)
     .sort((a, b) => b - a);
 
+  // CRITICAL: For cross-type reordering (e.g., image → text row position)
+  // We need to use the reference row index directly when no tracks of this type exist
+  // This allows free reordering across different track types
+  const allNonAudioIndices = tracks
+    .filter((t) => !AUDIO_GROUP_TYPES.includes(t.type))
+    .map((t) => t.trackRowIndex ?? 0)
+    .sort((a, b) => b - a);
+
   console.log(
-    `📍 calculateInsertionRowIndex: type=${trackType}, insertionType=${insertionType}, ref=${referenceRowIndex}, existing=[${existingIndices}]`,
+    `🎯 INSERTION: dragType=${trackType}, insertionType=${insertionType}, refRow=${referenceRowIndex}`,
   );
+  console.log(`   Same-type indices: [${existingIndices}]`);
+  console.log(`   All non-audio: [${allNonAudioIndices}]`);
+
+  // CRITICAL: video-0 is the base track and cannot have videos below it
+  const isVideoType = trackType === 'video';
+  const minAllowedIndex = isVideoType ? 0 : -Infinity;
 
   if (existingIndices.length === 0) {
-    // No tracks of this type exist, start at 0
-    return 0;
+    // No tracks of this type exist - use reference position for cross-type reordering
+    console.log(
+      `   ➡️ No ${trackType} tracks exist, using refRow=${referenceRowIndex}`,
+    );
+    return referenceRowIndex;
   }
 
   const maxIndex = Math.max(...existingIndices);
@@ -722,72 +737,82 @@ export function calculateInsertionRowIndex(
   switch (insertionType) {
     case 'above': {
       // Inserting above means higher visual position = higher index
-      // Use maxIndex + 1 to place above all existing rows
-      return maxIndex + 1;
+      // CRITICAL: For cross-type reordering, use the reference row position
+      // if it's higher than our same-type max (e.g., image above text-2)
+      const result = Math.max(maxIndex + 1, referenceRowIndex + 1);
+      console.log(
+        `   ➡️ ${result} (above: max(${maxIndex + 1}, ${referenceRowIndex + 1}))`,
+      );
+      return result;
     }
 
     case 'below': {
       // Inserting below means lower visual position = lower index
       // Use fractional index to insert between referenceRowIndex and the row below it
-      // Find the next lower index
       const lowerIndices = existingIndices.filter(
         (idx) => idx < referenceRowIndex,
       );
       if (lowerIndices.length === 0) {
-        // No rows below reference - create fractional index below it
-        // CRITICAL: Use fractional to avoid merging with reference row
-        // If reference is 0, we can't go negative, so we need to shift everything up
+        // No rows of same type below reference
         if (referenceRowIndex === 0) {
           // Special case: dragging below row 0
-          // We need to create a new row below 0, but can't use negative indices
-          // Solution: Use -0.5 temporarily, normalization will fix it
-          console.log(`  ➡️ Returning -0.5 (below row 0)`);
+          if (isVideoType) {
+            // video-0 is base - cannot go below
+            console.log(`   ➡️ 0.5 (video can't go below video-0)`);
+            return 0.5;
+          }
+          console.log(`   ➡️ -0.5 (below row 0)`);
           return -0.5;
         }
-        // For other cases, use fractional below reference
-        const result = referenceRowIndex - 0.5;
+        // Use fractional below reference
+        const result = Math.max(minAllowedIndex, referenceRowIndex - 0.5);
         console.log(
-          `  ➡️ Returning ${result} (no rows below ${referenceRowIndex})`,
+          `   ➡️ ${result} (no same-type below ref=${referenceRowIndex})`,
         );
         return result;
       }
       const nextLowerIndex = Math.max(...lowerIndices);
-      // Use fractional index between reference and next lower
-      const result =
-        referenceRowIndex - (referenceRowIndex - nextLowerIndex) / 2;
+      const result = Math.max(
+        minAllowedIndex,
+        referenceRowIndex - (referenceRowIndex - nextLowerIndex) / 2,
+      );
       console.log(
-        `  ➡️ Returning ${result} (between ${referenceRowIndex} and ${nextLowerIndex})`,
+        `   ➡️ ${result} (between ref=${referenceRowIndex} and ${nextLowerIndex})`,
       );
       return result;
     }
 
     case 'between': {
       // Inserting between two rows
-      // Find the next lower index
       const lowerIndicesForBetween = existingIndices.filter(
         (idx) => idx < referenceRowIndex,
       );
       if (lowerIndicesForBetween.length === 0) {
-        // No rows below reference
-        // CRITICAL: Same logic as 'below' case for consistency
+        // No rows of same type below reference
         if (referenceRowIndex === 0) {
           // Special case: inserting below row 0
-          console.log(`  ➡️ Returning -0.5 (between, below row 0)`);
+          if (isVideoType) {
+            // video-0 is base - cannot go below
+            console.log(`   ➡️ 0.5 (video can't go below video-0)`);
+            return 0.5;
+          }
+          console.log(`   ➡️ -0.5 (between, below row 0)`);
           return -0.5;
         }
-        // For other cases, use fractional below reference
-        const result = referenceRowIndex - 0.5;
+        // Use fractional below reference
+        const result = Math.max(minAllowedIndex, referenceRowIndex - 0.5);
         console.log(
-          `  ➡️ Returning ${result} (between, no rows below ${referenceRowIndex})`,
+          `   ➡️ ${result} (between, no same-type below ref=${referenceRowIndex})`,
         );
         return result;
       }
       const nextLowerForBetween = Math.max(...lowerIndicesForBetween);
-      // Use fractional index between reference and next lower
-      const result =
-        referenceRowIndex - (referenceRowIndex - nextLowerForBetween) / 2;
+      const result = Math.max(
+        minAllowedIndex,
+        referenceRowIndex - (referenceRowIndex - nextLowerForBetween) / 2,
+      );
       console.log(
-        `  ➡️ Returning ${result} (between ${referenceRowIndex} and ${nextLowerForBetween})`,
+        `   ➡️ ${result} (between ref=${referenceRowIndex} and ${nextLowerForBetween})`,
       );
       return result;
     }
@@ -913,10 +938,6 @@ export function detectInsertionPoint(
       if (targetIndex >= 0 || row.rowIndex > 0) {
         targetIndex = targetIndex + 1;
       }
-
-      console.log(
-        `  🔼 Upper zone of row ${row.rowIndex}: targetIndex=${targetIndex}`,
-      );
 
       return {
         type: i === 0 ? 'above' : 'between',

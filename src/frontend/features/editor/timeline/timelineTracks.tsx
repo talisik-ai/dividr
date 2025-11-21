@@ -758,15 +758,11 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         const targetRowId = playback.dragGhost.targetRow;
         const targetFrame = playback.dragGhost.targetFrame;
 
-        console.log(
-          `🖱️ handleMouseUp: isDragging=${isDragging}, targetRowId=${targetRowId}`,
-        );
-
         // Parse the target row to get the row index
         const parsedRow = parseRowId(targetRowId);
 
         console.log(
-          `🖱️ parsedRow=${parsedRow ? `${parsedRow.type}-${parsedRow.rowIndex}` : 'null'}, currentRowIndex=${track.trackRowIndex ?? 0}`,
+          `🎬 DROP: track=${track.type}, currentRow=${track.trackRowIndex ?? 0}, targetRow=${parsedRow ? parsedRow.rowIndex : 'null'}`,
         );
 
         if (parsedRow) {
@@ -774,11 +770,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
           // Check if the row changed (vertical movement)
           if (parsedRow.rowIndex !== currentRowIndex) {
-            console.log(
-              `  ✅ Row changed: ${currentRowIndex} → ${parsedRow.rowIndex}`,
-            );
             // Validate that the target row is the same media type
             if (parsedRow.type === track.type) {
+              console.log(`   ✅ Moving ${track.type} from ${currentRowIndex} → ${parsedRow.rowIndex}`);
               // Move track to new row (this will handle linked tracks too)
               moveTrackToRow(
                 track.id,
@@ -788,10 +782,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
                   : undefined,
               );
             }
-          } else {
-            console.log(
-              `  ⏭️ Row unchanged: ${currentRowIndex} === ${parsedRow.rowIndex}`,
-            );
           }
         }
       }
