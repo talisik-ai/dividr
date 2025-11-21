@@ -16,7 +16,7 @@ interface InsertionLineIndicatorProps {
  * InsertionLineIndicator - CapCut-style thin line showing where a new track row will be inserted
  *
  * Features:
- * - Thin 2px bright blue/teal line
+ * - Thin 1px bright blue/teal line
  * - Spans full timeline width
  * - Smooth fade-in animation (150ms)
  * - Only shows during drag operations
@@ -35,7 +35,7 @@ export const InsertionLineIndicator: React.FC<InsertionLineIndicatorProps> =
           left: `${-scrollX}px`,
           top: `${top}px`,
           width: `${width}px`,
-          height: '2px',
+          height: '1px',
         }}
       ></div>
     );

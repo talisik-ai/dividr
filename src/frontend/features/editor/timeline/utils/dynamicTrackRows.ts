@@ -205,12 +205,12 @@ export function generateDynamicRows(
     audioRowMap.set('audio-0', []);
   }
 
-  // Convert to array and sort by rowIndex (descending)
+  // Convert to array and sort by rowIndex (ascending - audio-0, audio-1, audio-2)
   const audioRowEntries = Array.from(audioRowMap.entries()).sort((a, b) => {
     const aRowId = parseRowId(a[0]);
     const bRowId = parseRowId(b[0]);
     if (!aRowId || !bRowId) return 0;
-    return bRowId.rowIndex - aRowId.rowIndex;
+    return aRowId.rowIndex - bRowId.rowIndex; // Ascending order for audio
   });
 
   // Add audio rows
@@ -599,8 +599,8 @@ export function detectInsertionPoint(
 ): InsertionPoint | null {
   if (rowBounds.length === 0) return null;
 
-  // Define insertion threshold (20% of row height)
-  const INSERTION_THRESHOLD = 0.2;
+  // Define insertion threshold (10% of row height)
+  const INSERTION_THRESHOLD = 0.1;
 
   // Check if dragging above the topmost non-audio row
   const nonAudioRows = rowBounds.filter(
@@ -688,9 +688,16 @@ export function detectInsertionPoint(
         return null;
       }
 
+      // CRITICAL FIX: When hovering at the bottom of a row, we want to insert BELOW it
+      // Lower rowIndex = visually below (e.g., row-2 is above row-1)
+      // So we need to target row.rowIndex - 1 to insert below
+      const targetIndex = nextRow
+        ? nextRow.rowIndex // If there's a next row, drop onto it
+        : Math.max(0, row.rowIndex - 1); // Otherwise create new row below
+
       return {
         type: nextRow ? 'between' : 'below',
-        targetRowIndex: row.rowIndex,
+        targetRowIndex: targetIndex,
         yPosition: row.bottom,
         isValid: true,
         trackType: draggedTrackType,

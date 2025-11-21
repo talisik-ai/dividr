@@ -274,8 +274,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const canRemoveRow =
       rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
 
-    console.log(rowDef.id, hasLinkedAudioVideo);
-
     // Parse row ID to get row index and type for label
     const parsedRow = useMemo(() => {
       const match = rowDef.id.match(
