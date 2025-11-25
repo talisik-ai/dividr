@@ -46,6 +46,7 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
   baseVideoWidth,
   baseVideoHeight,
   coordinateSystem,
+  interactionMode,
   onLoadedMetadata,
   onTransformUpdate,
   onSelect,
@@ -216,6 +217,7 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
         videoWidth={baseVideoWidth}
         videoHeight={baseVideoHeight}
         renderScale={renderScale}
+        interactionMode={interactionMode}
         onTransformUpdate={onTransformUpdate}
         onSelect={onSelect}
         onRotationStateChange={onRotationStateChange}
@@ -230,7 +232,13 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
             width: `${(videoTransform.width || activeVideoTrack.width || baseVideoWidth) * renderScale}px`,
             height: `${(videoTransform.height || activeVideoTrack.height || baseVideoHeight) * renderScale}px`,
             visibility: isVisuallyHidden ? 'hidden' : 'visible',
-            pointerEvents: isVisuallyHidden ? 'none' : 'auto',
+            // Disable pointer events in Pan Tool or Text Tool mode (allow panning/text creation on top)
+            pointerEvents:
+              isVisuallyHidden ||
+              interactionMode === 'pan' ||
+              interactionMode === 'text-edit'
+                ? 'none'
+                : 'auto',
           }}
         >
           <video

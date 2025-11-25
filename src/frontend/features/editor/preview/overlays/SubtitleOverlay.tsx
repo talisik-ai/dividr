@@ -58,6 +58,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
   baseVideoWidth,
   baseVideoHeight,
   coordinateSystem,
+  interactionMode,
   onTransformUpdate,
   onSelect,
   onTextUpdate,
@@ -121,6 +122,7 @@ export const SubtitleOverlay: React.FC<SubtitleOverlayProps> = ({
       zIndexOverlay={Z_INDEX_SUBTITLE_OVERLAY}
       renderScale={renderScale}
       isTextEditMode={isTextEditMode}
+      interactionMode={interactionMode}
       onTransformUpdate={(_, transform) => {
         // Pass the first selected subtitle's ID (or first subtitle if none selected)
         const trackId = selectedSubtitle?.id || activeSubtitles[0].id;

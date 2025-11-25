@@ -43,6 +43,7 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
   baseVideoWidth,
   baseVideoHeight,
   coordinateSystem,
+  interactionMode,
   onTransformUpdate,
   onSelect,
   onRotationStateChange,
@@ -105,6 +106,7 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
             videoWidth={baseVideoWidth}
             videoHeight={baseVideoHeight}
             renderScale={renderScale}
+            interactionMode={interactionMode}
             onTransformUpdate={onTransformUpdate}
             onSelect={onSelect}
             onRotationStateChange={onRotationStateChange}
@@ -122,6 +124,11 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
                   track.textStyle?.opacity !== undefined
                     ? track.textStyle.opacity / 100
                     : 1,
+                // Disable pointer events in Pan Tool or Text Tool mode (allow panning/text creation on top)
+                pointerEvents:
+                  interactionMode === 'pan' || interactionMode === 'text-edit'
+                    ? 'none'
+                    : 'auto',
               }}
             >
               <img

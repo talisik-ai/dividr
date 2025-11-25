@@ -13,6 +13,7 @@ interface VideoTransformBoundaryProps {
   videoWidth: number;
   videoHeight: number;
   renderScale?: number; // The actual render scale from coordinate system (baseScale)
+  interactionMode?: 'select' | 'pan' | 'text-edit'; // Current interaction mode
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -55,6 +56,7 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
   videoWidth,
   videoHeight,
   renderScale,
+  interactionMode = 'select',
   onTransformUpdate,
   onSelect,
   onRotationStateChange,
@@ -273,6 +275,12 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
   // Handle mouse down on the video element (start dragging)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // Only allow interaction in select mode
+      if (interactionMode !== 'select') {
+        e.stopPropagation();
+        return;
+      }
+
       e.stopPropagation();
       e.preventDefault();
 
@@ -297,13 +305,14 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
         startDraggingTransform();
       }
     },
-    [isSelected, track.id, transform, onSelect, startDraggingTransform],
+    [isSelected, track.id, transform, onSelect, startDraggingTransform, interactionMode],
   );
 
   // Handle mouse down on scale handles
   const handleScaleMouseDown = useCallback(
     (e: React.MouseEvent, handle: HandleType) => {
-      if (!isSelected) return;
+      // Only allow interaction in select mode
+      if (interactionMode !== 'select' || !isSelected) return;
 
       e.stopPropagation();
       e.preventDefault();
@@ -318,13 +327,14 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
         startDraggingTransform();
       }
     },
-    [isSelected, transform, startDraggingTransform],
+    [isSelected, transform, startDraggingTransform, interactionMode],
   );
 
   // Handle mouse down on rotation handle
   const handleRotateMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (!isSelected) return;
+      // Only allow interaction in select mode
+      if (interactionMode !== 'select' || !isSelected) return;
 
       e.stopPropagation();
       e.preventDefault();
@@ -339,7 +349,7 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
         startDraggingTransform();
       }
     },
-    [isSelected, transform, onRotationStateChange, startDraggingTransform],
+    [isSelected, transform, onRotationStateChange, startDraggingTransform, interactionMode],
   );
 
   // Handle mouse move for all interactions
@@ -612,6 +622,13 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
   // This keeps handles at reasonable size without over-scaling at normal zoom levels
   const handleScale = previewScale < 0.5 ? 0.5 : 1;
 
+  // Determine pointer events based on interaction mode
+  // Pan Tool: disable all interactions
+  // Text Tool: disable video interactions (allow text tool to create text on top)
+  // Select Tool: enable all interactions
+  const shouldDisablePointerEvents =
+    interactionMode === 'pan' || interactionMode === 'text-edit';
+
   // Content component - may be wrapped in clipping layer
   const contentComponent = (
     <div
@@ -623,7 +640,7 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
         transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`,
         transformOrigin: 'center center',
         cursor: getCursorStyle(),
-        pointerEvents: 'auto',
+        pointerEvents: shouldDisablePointerEvents ? 'none' : 'auto',
         zIndex: isSelected ? 1000 : 1,
         userSelect: 'none',
         WebkitUserSelect: 'none',
@@ -635,7 +652,7 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
         ref={contentRef}
         className="relative"
         style={{
-          pointerEvents: 'auto',
+          pointerEvents: shouldDisablePointerEvents ? 'none' : 'auto',
           // Maintain aspect ratio for video
           aspectRatio: `${videoAspectRatio}`,
         }}
@@ -669,7 +686,8 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
 
       {/* Selection Boundary - Rendered separately to avoid scale transform */}
       {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
-      {isSelected && containerSize.width > 0 && (
+      {/* Only show transform handles in select mode */}
+      {isSelected && interactionMode === 'select' && containerSize.width > 0 && (
         <div
           ref={boundaryRef}
           className="absolute"
