@@ -28,7 +28,6 @@ import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AddTrackButton } from './addTrackButton';
 import {
   generateDynamicRows,
-  getRowDisplayLabel,
   getTrackRowId,
   migrateTracksWithRowIndex,
   TrackRowDefinition,
@@ -287,20 +286,20 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     }, [rowDef.id]);
 
     // Get display label (e.g., "Video 1", "Video 2", "Text 1")
-    const displayLabel = useMemo(() => {
-      // Validate the type before calling getRowDisplayLabel
-      const validTypes: VideoTrack['type'][] = [
-        'video',
-        'audio',
-        'image',
-        'subtitle',
-        'text',
-      ];
-      const type = validTypes.includes(parsedRow.type as VideoTrack['type'])
-        ? (parsedRow.type as VideoTrack['type'])
-        : 'video';
-      return getRowDisplayLabel(type, parsedRow.rowIndex);
-    }, [parsedRow.type, parsedRow.rowIndex]);
+    // const displayLabel = useMemo(() => {
+    //   // Validate the type before calling getRowDisplayLabel
+    //   const validTypes: VideoTrack['type'][] = [
+    //     'video',
+    //     'audio',
+    //     'image',
+    //     'subtitle',
+    //     'text',
+    //   ];
+    //   const type = validTypes.includes(parsedRow.type as VideoTrack['type'])
+    //     ? (parsedRow.type as VideoTrack['type'])
+    //     : 'video';
+    //   return getRowDisplayLabel(type, parsedRow.rowIndex);
+    // }, [parsedRow.type, parsedRow.rowIndex]);
 
     // Alternating row background (even/odd)
     const isEvenRow = parsedRow.rowIndex % 2 === 0;
@@ -369,7 +368,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         )}
       >
         {/* Track type info with row label */}
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        {/* <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <span className="text-xs" title={displayLabel}>
             {rowDef.icon}
           </span>
@@ -381,7 +380,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               {tracks.length}
             </span>
           )}
-        </div>
+        </div> */}
 
         {/* Track controls */}
         <div className="flex items-center justify-center gap-0.5">
