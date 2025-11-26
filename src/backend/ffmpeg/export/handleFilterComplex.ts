@@ -333,13 +333,16 @@ function buildImageOverlayFilters(
         ? `[video_with_images]`
         : `[overlay${index}]`;
 
-    // Step 1: Prepare image - trim to duration and reset timestamps
+    // Step 1: Prepare image - trim to duration
+    // ✅ OPTIMIZATION: Don't apply timestamp filters on images (images don't carry PTS)
     // Static images don't need loop filter - trim alone will hold the frame for the duration
     // Add transparent padding at the start to align with timeline position
     // Also normalize SAR to 1:1 for consistency
+    const tpadFilter = startTime > 0 
+      ? `,tpad=start_duration=${startTime}:start_mode=add:color=black@0.0`
+      : '';
     filters.push(
-      `${imageInputRef}trim=duration=${duration},setpts=PTS-STARTPTS,setsar=1,` +
-        `tpad=start_duration=${startTime}:start_mode=add:color=black@0.0${imagePreparedRef}`,
+      `${imageInputRef}trim=duration=${duration},setsar=1${tpadFilter}${imagePreparedRef}`,
     );
 
     // Step 2: Apply scaling if needed
@@ -620,6 +623,8 @@ function createBlackBackgroundWithOverlay(
 
 /**
  * Processes a single layer's timeline segments and returns concat inputs
+ * OPTIMIZED: Only trim clips and generate gaps before concat
+ * FPS, setsar, overlay are applied AFTER concat
  */
 export function processLayerSegments(
   timeline: ProcessedTimeline,
@@ -694,17 +699,10 @@ export function processLayerSegments(
 
         let videoStreamRef = trimResult.filterRef;
 
-        // Apply FPS normalization if needed
-        if (job.operations.normalizeFrameRate) {
-          const fpsResult = createFpsNormalizationFilters(
-            9000 + layerIndex * 1000 + segmentIndex,
-            videoStreamRef,
-            targetFps,
-          );
-          videoFilters.push(...fpsResult.filters);
-          videoStreamRef = fpsResult.filterRef;
-        }
-
+        // ✅ OPTIMIZATION: Don't apply FPS per-segment
+        // FPS will be applied AFTER concat for better performance
+        // However, setsar MUST be applied before concat for compatibility
+        
         const isVideoFile = FILE_EXTENSIONS.VIDEO.test(trackInfo.path);
         const isImageFile = FILE_EXTENSIONS.IMAGE.test(trackInfo.path);
         
@@ -759,16 +757,14 @@ export function processLayerSegments(
           }
         }
 
-        // Normalize SAR (Sample Aspect Ratio) to 1:1 for concat compatibility
-        // This ensures all video streams have the same SAR before concatenation
-        const sarResult = createSarNormalizationFilters(
-          9000 + layerIndex * 1000 + segmentIndex,
-          videoStreamRef,
-        );
-        videoFilters.push(...sarResult.filters);
-        videoStreamRef = sarResult.filterRef;
+        // ⚠️ IMPORTANT: Normalize SAR BEFORE concat (required for concat compatibility)
+        // The concat filter requires all inputs to have the same SAR
+        // Scale/pad operations can change SAR, so we must normalize it here
+        const sarRef = `[${uniqueIndex}_sar]`;
+        videoFilters.push(`${videoStreamRef}setsar=1${sarRef}`);
+        videoStreamRef = sarRef;
         console.log(
-          `📐 Layer ${layerIndex}: Normalized SAR to 1:1 for segment ${segmentIndex}`,
+          `📐 Layer ${layerIndex}: Normalized SAR to 1:1 for segment ${segmentIndex} (required before concat)`,
         );
 
         // Note: Aspect ratio cropping is now applied to the final output video
@@ -970,25 +966,67 @@ export function buildSeparateTimelineFilterComplex(
 
     // Build concatenation filter for this layer
     if (concatInputs.length > 0) {
-      const layerLabel = `layer_${layerNum}`;
+      let layerLabel = `layer_${layerNum}`;
+      let layerLabelBeforePostProcessing = `layer_${layerNum}_raw`;
+      
       if (concatInputs.length === 1) {
+        // ✅ OPTIMIZATION: Skip concat for single input (no-op)
+        // Just use the input directly as the layer label
         const inputRef = concatInputs[0].replace('[', '').replace(']', '');
-        videoFilters.push(`[${inputRef}]null[${layerLabel}]`);
+        // Rename to layerLabelBeforePostProcessing for consistency
+        layerLabelBeforePostProcessing = inputRef;
       } else {
-    videoFilters.push(
-          `${concatInputs.join('')}concat=n=${concatInputs.length}:v=1:a=0[${layerLabel}]`,
+        videoFilters.push(
+          `${concatInputs.join('')}concat=n=${concatInputs.length}:v=1:a=0[${layerLabelBeforePostProcessing}]`,
         );
       }
+      
+      // ✅ OPTIMIZATION: Apply FPS AFTER concat (once per layer, not per segment)
+      // Note: setsar is applied BEFORE concat (required for concat compatibility)
+      let postProcessedLabel = layerLabelBeforePostProcessing;
+      
+      // Apply FPS normalization if needed
+      if (job.operations.normalizeFrameRate) {
+        const fpsLabel = `layer_${layerNum}_fps`;
+        videoFilters.push(`[${postProcessedLabel}]fps=${targetFps}:start_time=0[${fpsLabel}]`);
+        postProcessedLabel = fpsLabel;
+        console.log(`✅ Layer ${layerNum}: Applied FPS normalization AFTER concat`);
+      }
+      
+      // Rename to final layer label if needed
+      if (postProcessedLabel !== layerLabel) {
+        videoFilters.push(`[${postProcessedLabel}]copy[${layerLabel}]`);
+      } else {
+        // If no post-processing was done, use postProcessedLabel as the final label
+        layerLabel = postProcessedLabel;
+      }
+      
       layerConcatOutputs.set(layerNum, layerLabel);
-      console.log(`✅ Layer ${layerNum} concatenated to [${layerLabel}]`);
+      console.log(`✅ Layer ${layerNum} concatenated and post-processed to [${layerLabel}]`);
     }
   }
 
-  // Process audio timeline segments IN ORDER
+  // Process audio timeline segments with support for overlapping
   // Skip audio processing if there are only image inputs (no video inputs)
   const hasVideoInputs = videoLayers.size > 0;
   
+  // Calculate total duration from all layers for audio base
+  let totalDuration = audioTimeline.totalDuration;
+  for (const timeline of videoLayers.values()) {
+    totalDuration = Math.max(totalDuration, timeline.totalDuration);
+  }
+  for (const timeline of imageLayers.values()) {
+    totalDuration = Math.max(totalDuration, timeline.totalDuration);
+  }
+  
   if (hasVideoInputs) {
+    // Group audio segments by time to detect overlaps
+    const audioSegmentsWithTiming: Array<{
+      segment: ProcessedTimelineSegment;
+      segmentIndex: number;
+      filterRef: string;
+    }> = [];
+    
     audioTimeline.segments.forEach((segment, segmentIndex) => {
       const { input: trackInfo } = segment;
 
@@ -997,14 +1035,9 @@ export function buildSeparateTimelineFilterComplex(
       );
 
       if (isGapInput(trackInfo.path)) {
-        // Audio gap - create silent audio
-        const silentResult = createSilentAudioFilters(
-          segmentIndex,
-          trackInfo.duration || 1,
-        );
-        audioFilters.push(...silentResult.filters);
-        audioConcatInputs.push(silentResult.filterRef);
-        console.log(`🎵 Added audio gap: ${silentResult.filterRef}`);
+        // Skip silent gaps - we'll use adelay to position audio instead
+        console.log(`🎵 Skipping audio gap (will use adelay for positioning)`);
+        return;
       } else {
         // Regular audio file - find the original file index
         const fileIndex = findFileIndexForSegment(
@@ -1027,7 +1060,24 @@ export function buildSeparateTimelineFilterComplex(
 
           const trimResult = createAudioTrimFilters(context);
           audioFilters.push(...trimResult.filters);
-          audioConcatInputs.push(trimResult.filterRef);
+          
+          // Add delay to position audio at correct timeline position
+          const delayMs = Math.round(segment.startTime * 1000);
+          const delayedRef = `[a${segmentIndex}_delayed]`;
+          
+          if (delayMs > 0) {
+            audioFilters.push(`${trimResult.filterRef}adelay=${delayMs}|${delayMs}${delayedRef}`);
+            console.log(`🎵 Added ${delayMs}ms delay to position audio at ${segment.startTime.toFixed(2)}s`);
+          } else {
+            // No delay needed - use acopy for audio
+            audioFilters.push(`${trimResult.filterRef}acopy${delayedRef}`);
+          }
+          
+          audioSegmentsWithTiming.push({
+            segment,
+            segmentIndex,
+            filterRef: delayedRef,
+          });
         } else {
           console.warn(
             `❌ Could not find file index for audio segment ${segmentIndex}`,
@@ -1035,6 +1085,31 @@ export function buildSeparateTimelineFilterComplex(
         }
       }
     });
+    
+    // Mix overlapping audio streams using amix
+    if (audioSegmentsWithTiming.length > 0) {
+      console.log(`🎵 Mixing ${audioSegmentsWithTiming.length} audio streams (supports overlapping)`);
+      
+      if (audioSegmentsWithTiming.length === 1) {
+        // Single audio stream - just pad to total duration
+        const inputRef = audioSegmentsWithTiming[0].filterRef.replace('[', '').replace(']', '');
+        audioConcatInputs.push(`[${inputRef}]`);
+      } else {
+        // Multiple audio streams - use amix for overlapping support
+        const mixInputs = audioSegmentsWithTiming.map(a => a.filterRef).join('');
+        const mixRef = '[audio_mixed]';
+        
+        // amix filter: inputs=N:duration=longest:dropout_transition=0
+        // - inputs=N: number of input streams
+        // - duration=longest: output duration is the longest input
+        // - dropout_transition=0: no fade when streams start/end
+        audioFilters.push(
+          `${mixInputs}amix=inputs=${audioSegmentsWithTiming.length}:duration=longest:dropout_transition=0:normalize=0${mixRef}`,
+        );
+        audioConcatInputs.push(mixRef);
+        console.log(`✅ Created audio mix with ${audioSegmentsWithTiming.length} overlapping streams`);
+      }
+    }
   } else {
     console.log('ℹ️ Skipping audio processing - only image inputs detected (no video inputs)');
   }
@@ -1080,9 +1155,10 @@ export function buildSeparateTimelineFilterComplex(
       }
     }
 
-    // If we didn't end with 'video_base', rename it
+    // ✅ OPTIMIZATION: If we didn't end with 'video_base', just use current label
+    // Skip null filter (no-op)
     if (currentVideoLabel !== 'video_base') {
-      videoFilters.push(`[${currentVideoLabel}]null[video_base]`);
+      videoFilters.push(`[${currentVideoLabel}]copy[video_base]`);
       currentVideoLabel = 'video_base';
     }
 
@@ -1098,15 +1174,15 @@ export function buildSeparateTimelineFilterComplex(
     hasVideoContent = true;
   }
 
-  // Build audio concatenation filter
+  // Build final audio filter (already mixed if multiple streams)
   let audioConcatFilter = '';
   if (audioConcatInputs.length > 0) {
-    if (audioConcatInputs.length === 1) {
-      const inputRef = audioConcatInputs[0].replace('[', '').replace(']', '');
-      audioConcatFilter = `[${inputRef}]anull[audio]`;
-    } else {
-      audioConcatFilter = `${audioConcatInputs.join('')}concat=n=${audioConcatInputs.length}:v=0:a=1[audio]`;
+    // Audio is already mixed/processed, just rename to [audio]
+    const inputRef = audioConcatInputs[0].replace('[', '').replace(']', '');
+    if (inputRef !== 'audio') {
+      audioConcatFilter = `[${inputRef}]acopy[audio]`;
     }
+    console.log(`✅ Final audio output: [audio]`);
   }
 
   // Note: Image overlays will be applied AFTER aspect ratio crop
@@ -1437,11 +1513,12 @@ export function buildSeparateTimelineFilterComplex(
       console.log(`📝 Added subtitles filter (format: ${fileExtension}) - applied AFTER downscale at final output dimensions`);
     }
   } else if (hasVideoContent) {
-    // No subtitles - just rename current label to video
+    // ✅ OPTIMIZATION: No subtitles - skip null filter (no-op)
+    // Just rename the label if needed
     if (videoLabelAfterDownscale !== 'video') {
-      subtitleFilter = `[${videoLabelAfterDownscale}]null[video]`;
+      subtitleFilter = `[${videoLabelAfterDownscale}]copy[video]`;
     }
-    console.log('ℹ️ No subtitles, using null passthrough or skipping');
+    console.log('ℹ️ No subtitles, using copy passthrough or skipping');
   }
 
   // Combine all filters in the correct order:

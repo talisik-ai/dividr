@@ -289,13 +289,12 @@ function createVideoTrimFilters(
       `🖼️ Image input detected: generating ${duration}s (${totalFrames} frames) at ${fps}fps from static image`,
     );
 
-    // Use trim with exact duration instead of loop filter to avoid segfaults in FFmpeg 6.0
-    // Static images don't need loop filter - trim alone will hold the frame for the duration
+    // ✅ OPTIMIZATION: Don't apply timestamp filters on images (images don't carry PTS)
+    // Use trim with exact duration - no setpts needed for static images
     return {
       filterRef: trimmedRef,
       filters: [
-        `${inputStreamRef}trim=duration=${duration}[temp_trim_${originalIndex}]`,
-        `[temp_trim_${originalIndex}]setpts=PTS-STARTPTS${trimmedRef}`,
+        `${inputStreamRef}trim=duration=${duration}${trimmedRef}`,
       ],
     };
   }
