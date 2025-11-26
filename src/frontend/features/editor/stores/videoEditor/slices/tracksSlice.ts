@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
-import { normalizeAfterDrop } from '../../../timeline/utils/dynamicTrackRows';
+import {
+  getNextAvailableRowIndex,
+  normalizeAfterDrop,
+} from '../../../timeline/utils/dynamicTrackRows';
 import { VideoTrack } from '../types';
 import { detectAspectRatio } from '../utils/aspectRatioHelpers';
 import { SUBTITLE_EXTENSIONS } from '../utils/constants';
@@ -338,9 +341,14 @@ export const createTracksSlice: StateCreator<
       );
       const extractedAudio = mediaItem?.extractedAudio;
 
-      // Assign trackRowIndex (default to 0 for base video track)
-      const videoRowIndex = trackData.trackRowIndex ?? 0;
-      const audioRowIndex = trackData.trackRowIndex ?? 0;
+      // Assign trackRowIndex - new tracks go to the TOP (highest row index)
+      // If explicitly provided, use that; otherwise calculate the next available (highest + 1)
+      const videoRowIndex =
+        trackData.trackRowIndex ??
+        getNextAvailableRowIndex(state.tracks, 'video');
+      const audioRowIndex =
+        trackData.trackRowIndex ??
+        getNextAvailableRowIndex(state.tracks, 'audio');
 
       const videoTrack: VideoTrack = {
         ...trackData,
@@ -451,8 +459,11 @@ export const createTracksSlice: StateCreator<
         };
       }
 
-      // Assign trackRowIndex (default to 0)
-      const rowIndex = trackData.trackRowIndex ?? 0;
+      // Assign trackRowIndex - new tracks go to the TOP (highest row index)
+      // If explicitly provided, use that; otherwise calculate the next available (highest + 1)
+      const rowIndex =
+        trackData.trackRowIndex ??
+        getNextAvailableRowIndex(state.tracks, trackData.type);
 
       const track: VideoTrack = {
         ...trackData,
@@ -538,6 +549,23 @@ export const createTracksSlice: StateCreator<
           );
           const extractedAudio = mediaItem?.extractedAudio;
 
+          // Calculate row indices - new tracks go to the TOP (highest row index)
+          // Account for tracks already added in this batch
+          const allTracksForVideoRow = [
+            ...state.tracks,
+            ...newTracks.filter((t: VideoTrack) => t.type === 'video'),
+          ];
+          const allTracksForAudioRow = [
+            ...state.tracks,
+            ...newTracks.filter((t: VideoTrack) => t.type === 'audio'),
+          ];
+          const videoRowIndex =
+            trackData.trackRowIndex ??
+            getNextAvailableRowIndex(allTracksForVideoRow, 'video');
+          const audioRowIndex =
+            trackData.trackRowIndex ??
+            getNextAvailableRowIndex(allTracksForAudioRow, 'audio');
+
           const videoTrack: VideoTrack = {
             ...trackData,
             id,
@@ -550,6 +578,7 @@ export const createTracksSlice: StateCreator<
             muted: false,
             linkedTrackId: audioId,
             isLinked: true,
+            trackRowIndex: videoRowIndex,
           };
 
           const audioTrack: VideoTrack = {
@@ -566,17 +595,27 @@ export const createTracksSlice: StateCreator<
             isLinked: true,
             source: extractedAudio?.audioPath || trackData.source,
             previewUrl: extractedAudio?.previewUrl || trackData.previewUrl,
+            trackRowIndex: audioRowIndex,
           };
 
           newTracks.push(videoTrack);
           newTracks.push(audioTrack);
           trackIds.push(id, audioId);
         } else {
-          // For non-video tracks
+          // For non-video tracks - calculate row index for TOP placement
+          const allTracksForRow = [
+            ...state.tracks,
+            ...newTracks.filter((t: VideoTrack) => t.type === trackData.type),
+          ];
+          const rowIndex =
+            trackData.trackRowIndex ??
+            getNextAvailableRowIndex(allTracksForRow, trackData.type);
+
           const newTrack: VideoTrack = {
             ...trackData,
             id,
             color: getTrackColor(state.tracks.length + newTracks.length),
+            trackRowIndex: rowIndex,
           };
 
           newTracks.push(newTrack);

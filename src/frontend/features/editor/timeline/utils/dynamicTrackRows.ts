@@ -995,7 +995,17 @@ export function detectInsertionPoint(
         // There's a row above - insert between row[i-1] and row[i]
         const aboveRow = rowBounds[i - 1];
         // Midpoint between the row above and this row
-        targetIndex = (aboveRow.rowIndex + row.rowIndex) / 2;
+        const midpoint = (aboveRow.rowIndex + row.rowIndex) / 2;
+
+        // CRITICAL FIX: If rows have same or very close indices (midpoint equals either),
+        // create a fractional index ABOVE the current row to ensure movement happens
+        if (midpoint <= row.rowIndex) {
+          // Same indices or midpoint would be at/below current row
+          // Create fractional index above the current row
+          targetIndex = row.rowIndex + 0.5;
+        } else {
+          targetIndex = midpoint;
+        }
       }
 
       console.log(
@@ -1063,7 +1073,23 @@ export function detectInsertionPoint(
       } else {
         // There's a row below - insert between row[i] and row[i+1]
         // Midpoint between this row and the row below
-        targetIndex = (row.rowIndex + nextRow.rowIndex) / 2;
+        const midpoint = (row.rowIndex + nextRow.rowIndex) / 2;
+
+        // CRITICAL FIX: If rows have same or very close indices (midpoint equals either),
+        // create a fractional index BELOW the current row to ensure movement happens
+        if (midpoint >= row.rowIndex) {
+          // Same indices or midpoint would be at/above current row
+          // Create fractional index below the current row (but above the next row conceptually)
+          // Use a small offset below current row
+          targetIndex = row.rowIndex - 0.5;
+
+          // Ensure we don't go below minAllowed for video
+          if (isVideoType && draggedTrackType === 'video' && targetIndex < 0) {
+            targetIndex = 0.5; // Stay just above base
+          }
+        } else {
+          targetIndex = midpoint;
+        }
       }
 
       console.log(
