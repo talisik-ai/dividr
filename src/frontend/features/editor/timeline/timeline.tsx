@@ -69,6 +69,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     } | null>(null);
     const lastClickTimeRef = useRef<number>(0);
     const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const lastValidTargetRef = useRef<{
+      rowId: string;
+      rowIndex: number;
+      frame: number;
+    } | null>(null);
+
     const [, setDropActive] = useState(false);
     const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
     const [autoScrollMousePos, setAutoScrollMousePos] = useState<{
@@ -397,21 +404,20 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     useEffect(() => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const handleGlobalMouseUp = (e: MouseEvent) => {
-        // Delay cleanup slightly to allow track handlers to process first
         setTimeout(() => {
           const { playback, endDraggingTrack, clearDragGhost } =
             useVideoEditorStore.getState();
 
           if (playback.isDraggingTrack || playback.dragGhost?.isActive) {
-            // Clear all drag state
-            endDraggingTrack(true); // Record undo
+            endDraggingTrack(true);
             clearDragGhost();
-
-            // Clear any local mouse tracking
             setAutoScrollMousePos(null);
             setInsertionPoint(null);
+
+            // Clear last valid target
+            lastValidTargetRef.current = null;
           }
-        }, 0); // Defer to next tick to allow track handlers to run first
+        }, 0);
       };
 
       const handleGlobalMouseLeave = (e: MouseEvent) => {
@@ -499,7 +505,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         const currentScrollX = tracksRef.current.scrollLeft;
         const mouseRelativeX = clientX - rect.left;
 
-        // Calculate target frame accounting for current scroll AND offset
+        // Calculate target frame
         const targetFrame = Math.max(
           0,
           Math.floor(
@@ -508,20 +514,17 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           ),
         );
 
-        // Find which specific row (with index) the cursor is over
+        // Mouse Y relative to tracks container (no scroll adjustment for Y)
         const mouseRelativeY = clientY - rect.top;
 
-        // Calculate centering offset and adjust mouse Y position
-        const centeringOffset = calculateCenteringOffset(visibleTrackRows);
-        const adjustedMouseY = mouseRelativeY - centeringOffset;
-
-        // Get the track being dragged to determine its type
+        // Get the track being dragged
         const draggedTrack = tracks.find((t) => t.id === dragGhost.trackId);
         if (!draggedTrack) return;
 
-        // Build row bounds for insertion point detection
-        // CRITICAL: Must match the exact logic used in DropZoneIndicator
-        // Iterate through ALL dynamicRows, but only increment position for VISIBLE rows
+        // ========================================
+        // BUILD ROW BOUNDS - MATCHING DropZoneIndicator EXACTLY
+        // ========================================
+
         const rowBounds: Array<{
           rowId: string;
           top: number;
@@ -530,49 +533,100 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           rowIndex: number;
         }> = [];
 
+        // Filter visible dynamic rows
+        const visibleDynamicRows = dynamicRows.filter((row) => {
+          const rowMediaType = row.trackTypes[0];
+          return visibleTrackRows.includes(rowMediaType);
+        });
+
+        // Calculate baseline height (all dynamic rows)
+        const baselineHeight = dynamicRows.reduce((sum, row) => {
+          const rowMediaType = row.trackTypes[0];
+          return sum + getRowHeight(rowMediaType);
+        }, 0);
+
+        // Calculate total height of visible rows
+        const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
+          const rowMediaType = row.trackTypes[0];
+          return sum + getRowHeight(rowMediaType);
+        }, 0);
+
+        // Calculate centering offset (MATCHES DropZoneIndicator)
+        const centeringOffset =
+          visibleDynamicRows.length < dynamicRows.length
+            ? (baselineHeight - totalVisibleHeight) / 2
+            : 0;
+
+        // Build bounds (MATCHES DropZoneIndicator iteration)
         let cumulativeTop = 0;
         for (const row of dynamicRows) {
           const mediaType = row.trackTypes[0];
           const parsed = parseRowId(row.id);
 
-          // Add to bounds if this row is visible
           if (visibleTrackRows.includes(mediaType) && parsed) {
             const rowHeight = getRowHeight(mediaType);
+            const rowTop = cumulativeTop + centeringOffset;
+
             rowBounds.push({
               rowId: row.id,
-              top: cumulativeTop,
-              bottom: cumulativeTop + rowHeight,
+              top: rowTop,
+              bottom: rowTop + rowHeight,
               type: parsed.type,
               rowIndex: parsed.rowIndex,
             });
 
-            // Only increment cumulative position for visible rows
             cumulativeTop += rowHeight;
           }
         }
 
-        // Detect insertion point using the new utility
+        // ========================================
+        // DETECT INSERTION POINT
+        // ========================================
+
         const insertion = detectInsertionPoint(
-          adjustedMouseY,
-          rowBounds,
+          mouseRelativeY, // Raw mouse Y (no adjustment)
+          rowBounds, // Bounds with centering already included
           draggedTrack.type,
           tracks,
         );
 
-        // Update insertion point state for rendering the insertion line
+        // DEBUG logging
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🎯 DRAG:`, {
+            mouseY: mouseRelativeY.toFixed(0),
+            centeringOffset: centeringOffset.toFixed(0),
+            firstRowTop: rowBounds[0]?.top.toFixed(0),
+            insertion: insertion
+              ? {
+                  type: insertion.type,
+                  y: insertion.yPosition.toFixed(0),
+                  rowIdx: insertion.targetRowIndex,
+                }
+              : null,
+          });
+        }
+
+        // ========================================
+        // UPDATE STATE
+        // ========================================
+
         if (insertion) {
           if (insertion.type === 'inside') {
-            // INSIDE MODE: Merging with existing row, show dropzone
             setInsertionPoint(null);
 
-            // Use the existing row ID
             const targetRowId =
               insertion.existingRowId ||
               `${insertion.trackType}-${Math.round(insertion.targetRowIndex)}`;
 
+            // Store last valid target
+            lastValidTargetRef.current = {
+              rowId: targetRowId,
+              rowIndex: insertion.targetRowIndex,
+              frame: targetFrame,
+            };
+
             updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
           } else {
-            // INSERTION MODE: Creating new row, show insertion line
             setInsertionPoint({
               yPosition: insertion.yPosition,
               isValid: insertion.isValid,
@@ -580,35 +634,28 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               trackType: insertion.trackType,
             });
 
-            // Create target row ID for drag ghost (use fractional index)
             const targetRowId = `${insertion.trackType}-${insertion.targetRowIndex}`;
 
-            // Update drag ghost with target row (dropzone will be hidden by insertionPoint check)
+            // Store last valid target
+            lastValidTargetRef.current = {
+              rowId: targetRowId,
+              rowIndex: insertion.targetRowIndex,
+              frame: targetFrame,
+            };
+
             updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
           }
         } else {
-          // FALLBACK MODE: No valid insertion point detected
-          // Clear insertion point to hide insertion line
+          // NO valid insertion - keep track in its current row
           setInsertionPoint(null);
 
-          // Try to find a matching row for dropzone
-          let targetRowId: string | null = null;
+          // CRITICAL: Update drag ghost to current track's row to prevent stale target
+          const currentRowId = getTrackRowId(draggedTrack);
+          updateDragGhostPosition(clientX, clientY, currentRowId, targetFrame);
 
-          for (const bound of rowBounds) {
-            if (
-              adjustedMouseY >= bound.top &&
-              adjustedMouseY < bound.bottom &&
-              bound.type === draggedTrack.type
-            ) {
-              targetRowId = bound.rowId;
-              break;
-            }
-          }
-
-          // Update drag ghost with target row to show dropzone
-          if (targetRowId) {
-            updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
-          }
+          // Clear last valid target since we're now over an invalid area
+          // (Or you could keep it if you want "last valid wins" behavior)
+          // lastValidTargetRef.current = null;
         }
       };
 

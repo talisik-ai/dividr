@@ -757,8 +757,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       ) {
         const targetRowId = playback.dragGhost.targetRow;
         const targetFrame = playback.dragGhost.targetFrame;
-
-        // Parse the target row to get the row index
         const parsedRow = parseRowId(targetRowId);
 
         console.log(
@@ -768,20 +766,35 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         if (parsedRow) {
           const currentRowIndex = track.trackRowIndex ?? 0;
 
-          // Check if the row changed (vertical movement)
+          // CRITICAL: Validate that target row type matches track type
+          if (parsedRow.type !== track.type) {
+            console.log(
+              `   ❌ INVALID: Cannot drop ${track.type} on ${parsedRow.type} row`,
+            );
+            // Don't move - just end drag
+            endDraggingTrack();
+            clearDragGhost();
+            setIsResizing(false);
+            setIsDragging(false);
+            hasAutoSelectedRef.current = false;
+            dragThresholdMetRef.current = false;
+            return;
+          }
+
+          // Check if the row actually changed
           if (parsedRow.rowIndex !== currentRowIndex) {
-            // Validate that the target row is the same media type
-            if (parsedRow.type === track.type) {
-              console.log(`   ✅ Moving ${track.type} from ${currentRowIndex} → ${parsedRow.rowIndex}`);
-              // Move track to new row (this will handle linked tracks too)
-              moveTrackToRow(
-                track.id,
-                parsedRow.rowIndex,
-                targetFrame !== null && targetFrame !== undefined
-                  ? targetFrame
-                  : undefined,
-              );
-            }
+            console.log(
+              `   ✅ Moving ${track.type} from ${currentRowIndex} → ${parsedRow.rowIndex}`,
+            );
+            moveTrackToRow(
+              track.id,
+              parsedRow.rowIndex,
+              targetFrame !== null && targetFrame !== undefined
+                ? targetFrame
+                : undefined,
+            );
+          } else {
+            console.log(`   ⏸️ No row change (same row ${currentRowIndex})`);
           }
         }
       }

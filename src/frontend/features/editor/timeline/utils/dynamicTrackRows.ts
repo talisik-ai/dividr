@@ -529,80 +529,85 @@ export function normalizeAfterDrop(tracks: VideoTrack[]): VideoTrack[] {
     tracks.map((t) => `${t.type}-${t.trackRowIndex}`).join(', '),
   );
 
-  // CRITICAL: For cross-type reordering, we need to preserve absolute positions
-  // Don't normalize each type independently - just round fractional indices
+  // Separate tracks into non-audio and audio groups
+  const nonAudioTracks = tracks.filter(
+    (t) => !AUDIO_GROUP_TYPES.includes(t.type),
+  );
+  const audioTracks = tracks.filter((t) => AUDIO_GROUP_TYPES.includes(t.type));
 
-  // First, collect all unique indices (rounded) to build a mapping
-  const allIndices = new Set<number>();
-  tracks.forEach((track) => {
-    const currentIndex = track.trackRowIndex ?? 0;
-    // Use floor for negative, ceil for positive to avoid collisions
-    const roundedIndex =
-      currentIndex < 0 ? Math.floor(currentIndex) : Math.ceil(currentIndex);
-    allIndices.add(roundedIndex);
+  // ========================================
+  // NORMALIZE NON-AUDIO TRACKS
+  // ========================================
+
+  // Collect all unique indices (including fractional)
+  const nonAudioIndices = nonAudioTracks.map((t) => t.trackRowIndex ?? 0);
+  const uniqueIndices = [...new Set(nonAudioIndices)].sort((a, b) => a - b);
+
+  // Create mapping: sorted position → new sequential index
+  // This preserves relative order while making indices sequential
+  const indexMapping = new Map<number, number>();
+  uniqueIndices.forEach((oldIndex, position) => {
+    indexMapping.set(oldIndex, position);
   });
 
-  // Sort indices descending (higher = visually higher)
-  const sortedIndices = Array.from(allIndices).sort((a, b) => b - a);
-
-  // CRITICAL: Separate non-audio and audio indices for proper hierarchy
-  // video-0 and audio-0 must stay at their base positions
-  const nonAudioIndices = sortedIndices.filter((idx) => idx >= 0);
-  const negativeIndices = sortedIndices.filter((idx) => idx < 0);
-
-  // Create mapping: negative indices become 0, 1, 2... and non-negative stay as-is
-  const indexMap = new Map<number, number>();
-
-  // Map negative indices to low positions (0, 1, 2...)
-  negativeIndices.reverse().forEach((oldIndex, position) => {
-    indexMap.set(oldIndex, position);
-  });
-
-  // Map non-negative indices, offset by the count of negative indices
-  const offset = negativeIndices.length;
-  nonAudioIndices.reverse().forEach((oldIndex, position) => {
-    indexMap.set(oldIndex, position + offset);
-  });
-
+  console.log(`   Unique indices: [${uniqueIndices.join(', ')}]`);
   console.log(
     `   Index mapping:`,
-    Array.from(indexMap.entries())
+    Array.from(indexMapping.entries())
       .map(([old, newIdx]) => `${old}→${newIdx}`)
       .join(', '),
   );
 
-  const normalizedTracks: VideoTrack[] = tracks.map((track) => {
-    const currentIndex = track.trackRowIndex ?? 0;
-    const roundedIndex =
-      currentIndex < 0 ? Math.floor(currentIndex) : Math.ceil(currentIndex);
-    let newIndex = indexMap.get(roundedIndex) ?? 0;
+  // Apply mapping to non-audio tracks
+  const normalizedNonAudio = nonAudioTracks.map((track) => {
+    const oldIndex = track.trackRowIndex ?? 0;
+    let newIndex = indexMapping.get(oldIndex) ?? 0;
 
-    // CRITICAL: video-0 and audio-0 are base tracks and must stay at index 0
-    // Don't shift them even if there are negative indices
-    if (track.type === 'video' && roundedIndex === 0) {
-      newIndex = 0;
-      console.log(`   ${track.type}: ${currentIndex} → 0 (base video track)`);
-    } else if (track.type === 'audio' && roundedIndex === 0) {
-      newIndex = 0;
-      console.log(`   ${track.type}: ${currentIndex} → 0 (base audio track)`);
-    } else {
-      console.log(
-        `   ${track.type}: ${currentIndex} → ${roundedIndex} → ${newIndex}`,
-      );
+    // CRITICAL: Ensure base video track stays at index 0
+    // If video-0 got displaced, we need to adjust
+    if (track.type === 'video' && oldIndex === 0) {
+      // Check if index 0 is still available
+      const indexZeroMapping = indexMapping.get(0);
+      if (indexZeroMapping !== undefined) {
+        newIndex = indexZeroMapping;
+      }
     }
 
-    return {
-      ...track,
-      trackRowIndex: newIndex,
-    };
+    console.log(`   ${track.type}: ${oldIndex} → ${newIndex}`);
+    return { ...track, trackRowIndex: newIndex };
   });
 
+  // ========================================
+  // NORMALIZE AUDIO TRACKS (same logic)
+  // ========================================
+
+  const audioIndices = audioTracks.map((t) => t.trackRowIndex ?? 0);
+  const uniqueAudioIndices = [...new Set(audioIndices)].sort((a, b) => a - b);
+
+  const audioIndexMapping = new Map<number, number>();
+  uniqueAudioIndices.forEach((oldIndex, position) => {
+    audioIndexMapping.set(oldIndex, position);
+  });
+
+  const normalizedAudio = audioTracks.map((track) => {
+    const oldIndex = track.trackRowIndex ?? 0;
+    const newIndex = audioIndexMapping.get(oldIndex) ?? 0;
+
+    // Ensure base audio track stays at index 0
+    if (track.type === 'audio' && oldIndex === 0) {
+      return { ...track, trackRowIndex: audioIndexMapping.get(0) ?? 0 };
+    }
+
+    return { ...track, trackRowIndex: newIndex };
+  });
+
+  const result = [...normalizedNonAudio, ...normalizedAudio];
   console.log(
     `🔄 NORMALIZE: After -`,
-    normalizedTracks.map((t) => `${t.type}-${t.trackRowIndex}`).join(', '),
+    result.map((t) => `${t.type}-${t.trackRowIndex}`).join(', '),
   );
 
-  return normalizedTracks;
+  return result;
 }
 
 /**
