@@ -554,11 +554,12 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
 interface TimelineTrackControllersProps {
   tracks: VideoTrack[];
   className?: string;
+  scrollbarHeight: number;
 }
 
 export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
   React.memo(
-    ({ tracks, className }) => {
+    ({ tracks, className, scrollbarHeight }) => {
       // Subscribe to visible track rows from timeline state with fallback
       const visibleTrackRows = useVideoEditorStore(
         (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
@@ -628,10 +629,10 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
 
       return (
         <div className={cn('', className)}>
-          {/* Header with Add Track button */}
+          {/* Header with Add Track button - STICKY */}
           <div
             className={cn(
-              'border-b border-border/20 flex items-center justify-center px-2',
+              'sticky top-0 z-20 dark:bg-zinc-900 bg-zinc-100 border-b border-border/20 flex items-center justify-center px-2',
               TIMELINE_HEADER_HEIGHT_CLASSES,
             )}
           >
@@ -693,13 +694,45 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
                 justifyContent: shouldCenter ? 'center' : 'flex-start',
               }}
             >
-              {visibleRows.map((rowDef) => (
-                <TrackControllerRow
-                  key={rowDef.id}
-                  rowDef={rowDef}
-                  tracks={tracksByRow[rowDef.id] || []}
-                />
-              ))}
+              <div
+                className="flex flex-col items-center relative"
+                style={{
+                  height: shouldCenter ? `${baselineHeight}px` : 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: shouldCenter ? 'center' : 'flex-start',
+                }}
+              >
+                {visibleRows.map((rowDef) => {
+                  // Check if this is video-0
+                  const isVideoZero = rowDef.id === 'video-0';
+
+                  return (
+                    <div
+                      key={rowDef.id}
+                      className={cn(isVideoZero && 'sticky bottom-0 z-30')}
+                      style={
+                        isVideoZero
+                          ? {
+                              boxShadow: `0 ${scrollbarHeight + 10}px 0 0 var(--timeline-sticky-bg)`,
+                            }
+                          : undefined
+                      }
+                    >
+                      <div
+                        className={cn(
+                          isVideoZero && 'dark:bg-zinc-900 bg-zinc-100',
+                        )}
+                      >
+                        <TrackControllerRow
+                          rowDef={rowDef}
+                          tracks={tracksByRow[rowDef.id] || []}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

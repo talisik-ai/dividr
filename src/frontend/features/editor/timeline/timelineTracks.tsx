@@ -1466,7 +1466,6 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           width: timelineWidth,
           minWidth: timelineWidth,
           minHeight: shouldCenter ? `${baselineHeight}px` : 'auto',
-          height: shouldCenter ? `${baselineHeight}px` : 'auto',
         }}
       >
         {/* Grid background for all dynamic track rows when centering - positioned at absolute positions */}
@@ -1529,26 +1528,38 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           }}
         >
           {/* Render only visible track rows */}
-          {visibleRows.map((rowDef) => (
-            <TrackRow
-              key={rowDef.id}
-              rowDef={rowDef}
-              tracks={tracksByRow[rowDef.id] || []}
-              frameWidth={frameWidth}
-              timelineWidth={timelineWidth}
-              scrollX={scrollX}
-              zoomLevel={zoomLevel}
-              selectedTrackIds={selectedTrackIds}
-              onTrackSelect={memoizedHandlers.onTrackSelect}
-              onTrackMove={memoizedHandlers.onTrackMove}
-              onTrackResize={memoizedHandlers.onTrackResize}
-              onDrop={memoizedHandlers.onDrop}
-              allTracksCount={tracks.length}
-              onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
-              isSplitModeActive={isSplitModeActive}
-              shouldCenter={shouldCenter}
-            />
-          ))}
+          {visibleRows.map((rowDef) => {
+            // Check if this is video-0
+            const isVideoZero = rowDef.id === 'video-0';
+
+            return (
+              <div
+                key={rowDef.id}
+                className={cn(
+                  isVideoZero &&
+                    'sticky bottom-0 z-30 dark:bg-zinc-900 bg-zinc-100',
+                )}
+              >
+                <TrackRow
+                  rowDef={rowDef}
+                  tracks={tracksByRow[rowDef.id] || []}
+                  frameWidth={frameWidth}
+                  timelineWidth={timelineWidth}
+                  scrollX={scrollX}
+                  zoomLevel={zoomLevel}
+                  selectedTrackIds={selectedTrackIds}
+                  onTrackSelect={memoizedHandlers.onTrackSelect}
+                  onTrackMove={memoizedHandlers.onTrackMove}
+                  onTrackResize={memoizedHandlers.onTrackResize}
+                  onDrop={memoizedHandlers.onDrop}
+                  allTracksCount={tracks.length}
+                  onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
+                  isSplitModeActive={isSplitModeActive}
+                  shouldCenter={shouldCenter}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     );
