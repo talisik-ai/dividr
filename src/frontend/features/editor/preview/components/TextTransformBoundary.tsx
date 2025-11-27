@@ -44,6 +44,7 @@ interface TextTransformBoundaryProps {
   disableScaleTransform?: boolean; // Whether to disable CSS scale transform (for vector-sharp text)
   boundaryOnly?: boolean; // Whether to only render the boundary, not the content
   contentOnly?: boolean; // Whether to only render the content, not the boundary
+  disableAutoSizeUpdates?: boolean; // Skip auto width/height sync when rendering boundaries only
 }
 
 type HandleType =
@@ -83,6 +84,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   disableScaleTransform = false,
   boundaryOnly = false,
   contentOnly = false,
+  disableAutoSizeUpdates = false,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
   // This ensures consistent positioning across different container sizes
@@ -382,6 +384,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   // Update dimensions in the store when content size changes
   // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
   useEffect(() => {
+    if (disableAutoSizeUpdates) return;
+
     // Detect if renderScale changed (e.g., entering/exiting fullscreen)
     const renderScaleChanged =
       prevRenderScaleRef.current !== effectiveRenderScale;
@@ -422,6 +426,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     track.id,
     onTransformUpdate,
     effectiveRenderScale,
+    disableAutoSizeUpdates,
   ]);
 
   // Handle mouse down on the text element (start dragging with delay to allow double-click)

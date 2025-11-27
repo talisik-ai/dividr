@@ -466,6 +466,7 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
           clipWidth={actualWidth}
           clipHeight={actualHeight}
           boundaryOnly={true} // Only render boundary, not content
+          disableAutoSizeUpdates={true}
         >
           {/* Invisible content for boundary sizing */}
           <div
@@ -522,6 +523,7 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
           clipWidth={actualWidth}
           clipHeight={actualHeight}
           boundaryOnly={true} // Only render boundary, not content
+          disableAutoSizeUpdates={true}
         >
           {/* Invisible content for boundary sizing */}
           <div
@@ -615,6 +617,7 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
           autoEnterEditMode={pendingEditTextId === track.id}
           onEditStarted={onEditStarted}
           boundaryOnly={true} // Only render boundary, not content
+          disableAutoSizeUpdates={true}
         >
           {/* Invisible content for boundary sizing */}
           <div style={completeStyle}>{track.textContent}</div>

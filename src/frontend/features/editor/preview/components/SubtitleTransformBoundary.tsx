@@ -197,7 +197,7 @@ export const SubtitleTransformBoundary: React.FC<
     observer.observe(containerRef.current);
 
     return () => observer.disconnect();
-  }, [children]);
+  }, []); // Empty dependency array - ResizeObserver handles all size changes
 
   // Helper to enter edit mode
   const enterEditMode = useCallback(

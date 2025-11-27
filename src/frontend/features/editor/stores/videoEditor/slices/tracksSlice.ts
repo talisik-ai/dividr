@@ -1473,8 +1473,15 @@ export const createTracksSlice: StateCreator<
 
     const currentRowIndex = trackToMove.trackRowIndex ?? 0;
 
-    if (currentRowIndex === targetRowIndex && newStartFrame === undefined) {
-      // No change needed
+    // CRITICAL: Compare normalized indices to prevent unnecessary updates
+    // targetRowIndex can be fractional (e.g., 0.5 when dragging between rows),
+    // but after normalization it becomes an integer. If the normalized index
+    // equals the current index, no actual change is needed.
+    const normalizedTargetIndex = Math.round(targetRowIndex);
+    if (
+      currentRowIndex === normalizedTargetIndex &&
+      newStartFrame === undefined
+    ) {
       return;
     }
 

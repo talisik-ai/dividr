@@ -37,6 +37,7 @@ interface ImageTransformBoundaryProps {
   clipHeight?: number; // Height of the clipping area
   boundaryOnly?: boolean; // Whether to only render the boundary, not the content
   contentOnly?: boolean; // Whether to only render the content, not the boundary
+  disableAutoSizeUpdates?: boolean; // Skip auto width/height sync when rendering boundaries only
 }
 
 type HandleType =
@@ -69,6 +70,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   clipHeight,
   boundaryOnly = false,
   contentOnly = false,
+  disableAutoSizeUpdates = false,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
   const effectiveRenderScale = renderScale ?? previewScale;
@@ -233,6 +235,8 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   // Update dimensions in the store when content size changes
   // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
   useEffect(() => {
+    if (disableAutoSizeUpdates) return;
+
     // Detect if renderScale changed (e.g., entering/exiting fullscreen)
     const renderScaleChanged =
       prevRenderScaleRef.current !== effectiveRenderScale;
@@ -273,6 +277,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     track.id,
     onTransformUpdate,
     effectiveRenderScale,
+    disableAutoSizeUpdates,
   ]);
 
   // Handle mouse down on the image element (start dragging)

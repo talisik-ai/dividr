@@ -782,10 +782,11 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           }
 
           // Check if the row actually changed
-          if (parsedRow.rowIndex !== currentRowIndex) {
-            console.log(
-              `   ✅ Moving ${track.type} from ${currentRowIndex} → ${parsedRow.rowIndex}`,
-            );
+          // CRITICAL: Compare using Math.round() because parsedRow.rowIndex can be fractional
+          // (e.g., 0.5 when dragging between rows), but after normalization it becomes an integer.
+          // This prevents unnecessary updates when dropping back to the original row.
+          const normalizedTargetIndex = Math.round(parsedRow.rowIndex);
+          if (normalizedTargetIndex !== currentRowIndex) {
             moveTrackToRow(
               track.id,
               parsedRow.rowIndex,
@@ -794,7 +795,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
                 : undefined,
             );
           } else {
-            console.log(`   ⏸️ No row change (same row ${currentRowIndex})`);
+            console.log(
+              `   ⏸️ No row change (same row ${currentRowIndex}, target was ${parsedRow.rowIndex})`,
+            );
           }
         }
       }
