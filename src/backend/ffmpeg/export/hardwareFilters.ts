@@ -1,4 +1,4 @@
-import type { HardwareAcceleration } from '../hardwareAccelerationDetector';
+import type { HardwareAcceleration } from './hardwareAccelerationDetector';
 
 /**
  * Hardware-accelerated filter helpers for FFmpeg
@@ -16,9 +16,19 @@ import type { HardwareAcceleration } from '../hardwareAccelerationDetector';
 
 /**
  * Checks if NVENC/CUDA hardware acceleration is available
+ * NVENC uses CUDA for hardware-accelerated filters (scale_cuda, overlay_cuda)
  */
 export function isNVENCAvailable(hwAccel: HardwareAcceleration | null): boolean {
-  return hwAccel?.type === 'nvenc';
+  return hwAccel?.type === 'nvenc' && hwAccel?.hwaccel === 'cuda';
+}
+
+/**
+ * Checks if CUDA filters are supported
+ * Returns true if hardware acceleration supports CUDA-based filters
+ */
+export function supportsCUDAFilters(hwAccel: HardwareAcceleration | null): boolean {
+  // Only NVENC supports CUDA filters (scale_cuda, overlay_cuda, etc.)
+  return hwAccel?.type === 'nvenc' && hwAccel?.hwaccel === 'cuda';
 }
 
 /**
@@ -55,9 +65,9 @@ export function buildScaleFilter(
     ? `:force_original_aspect_ratio=${options.forceOriginalAspectRatio}` 
     : '';
   
-  if (isNVENCAvailable(hwAccel)) {
+  if (supportsCUDAFilters(hwAccel)) {
     // GPU scaling - assumes input is already on GPU
-    console.log(`🎮 Using CUDA hardware scaling: ${width}x${height}`);
+    console.log(`🎮 Using CUDA hardware scaling: ${width}x${height} (NVENC with CUDA filters)`);
     
     let filter = `${inputRef}scale_cuda=${width}:${height}${forceAspect}`;
     
@@ -71,7 +81,8 @@ export function buildScaleFilter(
     return filter;
   } else {
     // CPU scaling with fast_bilinear
-    console.log(`💻 Using CPU scaling (fast_bilinear): ${width}x${height}`);
+    const hwType = hwAccel?.type || 'none';
+    console.log(`💻 Using CPU scaling (fast_bilinear): ${width}x${height} (hardware: ${hwType})`);
     
     let filter = `${inputRef}scale=${width}:${height}${forceAspect}:flags=fast_bilinear`;
     
@@ -117,12 +128,14 @@ export function buildOverlayFilter(
 ): string {
   const enableParam = options?.enable ? `:enable='${options.enable}'` : '';
   
-  if (isNVENCAvailable(hwAccel)) {
+  if (supportsCUDAFilters(hwAccel)) {
     // GPU overlay - assumes both inputs are already on GPU
-    console.log(`🎮 Using CUDA hardware overlay`);
+    console.log(`🎮 Using CUDA hardware overlay (NVENC with CUDA filters)`);
     return `${baseRef}${overlayRef}overlay_cuda=${x}:${y}${enableParam}${outputRef}`;
   } else {
     // CPU overlay
+    const hwType = hwAccel?.type || 'none';
+    console.log(`💻 Using CPU overlay (hardware: ${hwType})`);
     return `${baseRef}${overlayRef}overlay=${x}:${y}${enableParam}${outputRef}`;
   }
 }
@@ -253,9 +266,24 @@ export function buildGPUDownload(
  * Gets the scaling algorithm name for logging
  */
 export function getScalingAlgorithmName(hwAccel: HardwareAcceleration | null): string {
-  if (isNVENCAvailable(hwAccel)) {
+  if (supportsCUDAFilters(hwAccel)) {
     return 'CUDA (GPU)';
   }
   return 'fast_bilinear (CPU)';
+}
+
+/**
+ * Gets a description of the current hardware acceleration status
+ */
+export function getHardwareAccelerationStatus(hwAccel: HardwareAcceleration | null): string {
+  if (!hwAccel || hwAccel.type === 'none') {
+    return 'No hardware acceleration (CPU only)';
+  }
+  
+  if (supportsCUDAFilters(hwAccel)) {
+    return `NVENC with CUDA filters (GPU-accelerated encoding and filters)`;
+  }
+  
+  return `${hwAccel.type.toUpperCase()} (GPU-accelerated encoding only, CPU filters)`;
 }
 

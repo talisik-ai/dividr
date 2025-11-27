@@ -9,7 +9,7 @@ import {
   AudioTrimResult,
 } from '../schema/ffmpegConfig';
 import { getFontDirectoriesForFamilies } from '../subtitles/fontMapper';
-import type { HardwareAcceleration } from '../hardwareAccelerationDetector';
+import type { HardwareAcceleration } from './hardwareAccelerationDetector';
 import {
   buildScaleFilter,
   buildOverlayFilter,
@@ -18,6 +18,8 @@ import {
   buildGPUUpload,
   buildGPUDownload,
   isNVENCAvailable,
+  supportsCUDAFilters,
+  getHardwareAccelerationStatus,
 } from './hardwareFilters';
 
 const VIDEO_DEFAULTS = {
@@ -985,6 +987,10 @@ export function buildSeparateTimelineFilterComplex(
     }
   }
 
+  // Log hardware acceleration status
+  const hwStatus = getHardwareAccelerationStatus(hwAccel);
+  console.log(`🎮 Hardware Acceleration: ${hwStatus}`);
+  
   console.log('🎬 Building filter complex with multi-layer support:');
     console.log(
     `📊 Video layers: ${videoLayers.size}, Image layers: ${imageLayers.size}`,

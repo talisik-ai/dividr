@@ -3,7 +3,7 @@ import {
   getHardwareAcceleration,
   getSpecificHardwareAcceleration,
   type HardwareAcceleration,
-} from '../hardwareAccelerationDetector';
+} from './hardwareAccelerationDetector';
 import {
   AudioProcessingContext,
   AudioTrimResult,
