@@ -23,6 +23,7 @@ import {
   CanvasOverlay,
   UnifiedOverlayRenderer,
 } from './overlays';
+import { TransformBoundaryLayer } from './overlays/TransformBoundaryLayer';
 import {
   calculateContentScale,
   calculateFitDimensions,
@@ -598,6 +599,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [updateTrack],
   );
 
+  // Handle edit mode change from transform boundary layer
+  const handleEditModeChange = useCallback(
+    (isEditing: boolean) => {
+      if (isEditing) {
+        setPreviewInteractionMode('text-edit');
+      }
+    },
+    [setPreviewInteractionMode],
+  );
+
   // Handle click outside to deselect or add text
   const handlePreviewClick = useCallback(
     async (e: React.MouseEvent) => {
@@ -855,7 +866,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         onLoadedMetadata={handleAudioLoadedMetadata}
       />
 
-      {/* Unified Overlay Renderer - renders all visual tracks in dynamic z-order */}
+      {/* 
+        LAYER 1: Content Layer
+        Unified Overlay Renderer - renders all visual tracks in dynamic z-order
+        Selected tracks render content only (no boundary) - boundary is in TransformBoundaryLayer
+      */}
       <UnifiedOverlayRenderer
         {...overlayProps}
         // Video props
@@ -894,6 +909,49 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         // State callbacks
         onRotationStateChange={setIsRotating}
         onDragStateChange={handleDragStateChange}
+      />
+
+      {/* 
+        LAYER 2: Transform Boundary Layer
+        Renders selection boxes, resize handles, and rotation controls for selected tracks.
+        Always on top (z-index: 10000), regardless of track z-order.
+        This ensures transform controls are always accessible, matching CapCut behavior.
+      */}
+      <TransformBoundaryLayer
+        {...overlayProps}
+        // Common props
+        allTracks={tracks}
+        selectedTrackIds={timeline.selectedTrackIds}
+        currentFrame={timeline.currentFrame}
+        isTextEditMode={preview.interactionMode === 'text-edit'}
+        // Video props
+        onVideoTransformUpdate={handleVideoTransformUpdate}
+        onVideoSelect={handleVideoSelect}
+        // Subtitle props
+        getTextStyleForSubtitle={getTextStyleForSubtitle}
+        activeStyle={textStyle.activeStyle}
+        globalSubtitlePosition={textStyle.globalSubtitlePosition}
+        onSubtitleTransformUpdate={handleSubtitleTransformUpdate}
+        onSubtitleSelect={handleSubtitleSelect}
+        onSubtitleTextUpdate={handleSubtitleTextUpdate}
+        // Image props
+        onImageTransformUpdate={handleImageTransformUpdate}
+        onImageSelect={handleImageSelect}
+        // Text props
+        onTextTransformUpdate={handleTextTransformUpdate}
+        onTextSelect={handleTextSelect}
+        onTextUpdate={handleTextUpdate}
+        pendingEditTextId={pendingEditTextId}
+        onEditStarted={() => {
+          setPendingEditTextId(null);
+          if (pendingEmptyTextId) {
+            setPendingEmptyTextId(null);
+          }
+        }}
+        // State callbacks
+        onRotationStateChange={setIsRotating}
+        onDragStateChange={handleDragStateChange}
+        onEditModeChange={handleEditModeChange}
       />
 
       {/* Alignment Guides */}
