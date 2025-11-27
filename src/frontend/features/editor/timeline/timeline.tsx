@@ -22,7 +22,6 @@ import { DragGhost } from './dragGhost';
 import { DropZoneIndicator } from './dropZoneIndicator';
 import { useAutoScroll } from './hooks/useAutoScroll';
 import { InsertionLineIndicator } from './insertionLineIndicator';
-import { ProjectThumbnailSetter } from './projectThumbnailSetter';
 import { TimelineControls } from './timelineControls';
 import { TimelinePlayhead } from './timelinePlayhead';
 import { TimelineRuler } from './timelineRuler';
@@ -754,7 +753,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       const contentWidth = effectiveEndFrame * frameWidth;
       // Use the larger of content width or viewport width to ensure full grid coverage
       // Account for sidebar width (~200px track controllers + ~200px left padding)
-      const effectiveViewportWidth = viewportWidth - 200;
+      const effectiveViewportWidth = viewportWidth;
       return Math.max(contentWidth, effectiveViewportWidth);
     }, [effectiveEndFrame, frameWidth, viewportWidth]);
 
@@ -1382,9 +1381,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           )}
 
           {/* Project Thumbnail Setter - Only show if there are video tracks */}
-          {tracks.some((track) => track.type === 'video') && (
+          {/* {tracks.some((track) => track.type === 'video') && (
             <ProjectThumbnailSetter key={`thumbnail-${layoutKey}`} />
-          )}
+          )} */}
           {/* Timeline Content Area */}
           <div className="flex flex-col flex-1 relative overflow-hidden">
             {/* Timeline Ruler - Fixed at top but scrolls horizontally */}

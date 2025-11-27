@@ -16,7 +16,6 @@ import {
   Eye,
   EyeOff,
   MoreHorizontal,
-  Plus,
   Trash2,
   Volume2,
   VolumeX,
@@ -25,7 +24,6 @@ import {
 import React, { useCallback, useMemo, useState } from 'react';
 import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
-import { AddTrackButton } from './addTrackButton';
 import {
   generateDynamicRows,
   getTrackRowId,
@@ -490,7 +488,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
           )}
 
           {/* Add Track button for creating new rows */}
-          <Tooltip>
+          {/* <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
@@ -502,7 +500,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               </Button>
             </TooltipTrigger>
             <TooltipContent>Add new {parsedRow.type} track row</TooltipContent>
-          </Tooltip>
+          </Tooltip> */}
         </div>
 
         {/* Karaoke Confirmation Dialog */}
@@ -628,7 +626,7 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
               TIMELINE_HEADER_HEIGHT_CLASSES,
             )}
           >
-            <AddTrackButton />
+            {/* <AddTrackButton /> */}
           </div>
 
           {/* Track controller rows wrapper - with centering when <5 tracks */}
