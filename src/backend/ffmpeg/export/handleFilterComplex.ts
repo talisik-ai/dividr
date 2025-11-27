@@ -10,6 +10,12 @@ import {
 } from '../schema/ffmpegConfig';
 import { getFontDirectoriesForFamilies } from '../subtitles/fontMapper';
 import type { HardwareAcceleration } from '../hardwareAccelerationDetector';
+import {
+  buildScaleFilter,
+  buildOverlayFilter,
+  buildCropFilter,
+  buildAspectRatioScaleFilter,
+} from './hardwareFilters';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -277,6 +283,7 @@ function buildImageOverlayFilters(
   targetFps: number,
   totalDuration: number,
   baseVideoLabel: string,
+  hwAccel: HardwareAcceleration | null,
 ): { filters: string[]; outputLabel: string } {
   const filters: string[] = [];
   let currentLabel = baseVideoLabel;
@@ -358,9 +365,15 @@ function buildImageOverlayFilters(
     if (transform.scale !== 1.0) {
       // Use scale with force_original_aspect_ratio to preserve aspect ratio
       // This ensures the image fits within the target dimensions without distortion
-      filters.push(
-        `${imagePreparedRef}scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=decrease${imageScaledRef}`,
+      const scaleFilter = buildScaleFilter(
+        imagePreparedRef,
+        imageScaledRef,
+        scaledWidth,
+        scaledHeight,
+        hwAccel,
+        { forceOriginalAspectRatio: 'decrease', pad: false },
       );
+      filters.push(scaleFilter);
       currentImageRef = imageScaledRef;
       currentWidth = scaledWidth;
       currentHeight = scaledHeight;
@@ -424,9 +437,16 @@ function buildImageOverlayFilters(
 
     // Step 5: Overlay the image onto the current video with time-based enable
     // The overlay is only active between startTime and endTime
-    filters.push(
-      `[${currentLabel}]${currentImageRef}overlay=${overlayX}:${overlayY}:enable='between(t,${startTime},${endTime})'${overlayOutputRef}`,
+    const overlayFilter = buildOverlayFilter(
+      `[${currentLabel}]`,
+      currentImageRef,
+      overlayOutputRef,
+      overlayX,
+      overlayY,
+      hwAccel,
+      { enable: `between(t,${startTime},${endTime})` },
     );
+    filters.push(overlayFilter);
 
     currentLabel = overlayOutputRef.replace('[', '').replace(']', '');
 
@@ -500,6 +520,7 @@ function createBlackBackgroundWithOverlay(
   videoFilters: string[],
   duration: number,
   targetFps: number,
+  hwAccel: HardwareAcceleration | null,
   createGapVideoFilters: (
     originalIndex: number,
     duration: number,
@@ -534,9 +555,15 @@ function createBlackBackgroundWithOverlay(
   
   if (needsNormalization) {
     normalizedVideoRef = `[${uniqueIndex}_normalized]`;
-    videoFilters.push(
-      `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${normalizedVideoRef}`,
+    const scaleFilter = buildScaleFilter(
+      videoStreamRef,
+      normalizedVideoRef,
+      targetDimensions.width,
+      targetDimensions.height,
+      hwAccel,
+      { forceOriginalAspectRatio: 'decrease', pad: true, padColor: 'black' },
     );
+    videoFilters.push(scaleFilter);
     console.log(
       `📐 Step 1: Normalized video from ${sourceWidth}x${sourceHeight} to ${targetDimensions.width}x${targetDimensions.height}`,
     );
@@ -564,9 +591,15 @@ function createBlackBackgroundWithOverlay(
   if (needsScaling) {
     scaledVideoRef = `[${uniqueIndex}_video_scaled]`;
     // Scale with aspect ratio preservation
-    videoFilters.push(
-      `${normalizedVideoRef}scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=decrease${scaledVideoRef}`,
+    const scaleFilter = buildScaleFilter(
+      normalizedVideoRef,
+      scaledVideoRef,
+      scaledWidth,
+      scaledHeight,
+      hwAccel,
+      { forceOriginalAspectRatio: 'decrease', pad: false },
     );
+    videoFilters.push(scaleFilter);
     console.log(
       `📐 Step 3: Scaled video to ${scaledWidth}x${scaledHeight} (scale factor: ${transformScale.toFixed(2)}, preserving aspect ratio)`,
     );
@@ -611,9 +644,15 @@ function createBlackBackgroundWithOverlay(
 
   // Overlay the video on the background
   const overlayRef = `[${uniqueIndex}_overlay]`;
-  videoFilters.push(
-    `${blackBgRef}${scaledVideoRef}overlay=${overlayX}:${overlayY}${overlayRef}`,
+  const overlayFilter = buildOverlayFilter(
+    blackBgRef,
+    scaledVideoRef,
+    overlayRef,
+    overlayX,
+    overlayY,
+    hwAccel,
   );
+  videoFilters.push(overlayFilter);
   
   console.log(`✅ Video overlaid on background at transform position (${transformX}, ${transformY})`);
   console.log(`✅ Output dimensions: ${targetDimensions.width}x${targetDimensions.height} (ready for concat)`);
@@ -636,6 +675,7 @@ export function processLayerSegments(
   targetDimensions: { width: number; height: number },
   targetFps: number,
   videoFilters: string[],
+  hwAccel: HardwareAcceleration | null,
   createGapVideoFilters: (
     originalIndex: number,
     duration: number,
@@ -722,6 +762,7 @@ export function processLayerSegments(
             videoFilters,
             duration,
             targetFps,
+            hwAccel,
             createGapVideoFilters,
           );
         } else {
@@ -740,16 +781,28 @@ export function processLayerSegments(
           if (isImageFile) {
             // For images, scale without padding to preserve transparency
             // Images will be overlaid at their natural size, centered on the video
-            videoFilters.push(
-              `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease${scaleRef}`,
+            const scaleFilter = buildScaleFilter(
+              videoStreamRef,
+              scaleRef,
+              targetDimensions.width,
+              targetDimensions.height,
+              hwAccel,
+              { forceOriginalAspectRatio: 'decrease', pad: false },
             );
+            videoFilters.push(scaleFilter);
             console.log(
               `📐 Layer ${layerIndex}: Scaled image from ${trackInfo.width}x${trackInfo.height} to fit ${targetDimensions.width}x${targetDimensions.height} (preserving transparency)`,
             );
             } else {
-              videoFilters.push(
-                `${videoStreamRef}scale=${targetDimensions.width}:${targetDimensions.height}:force_original_aspect_ratio=decrease,pad=${targetDimensions.width}:${targetDimensions.height}:(ow-iw)/2:(oh-ih)/2:black${scaleRef}`,
+              const scaleFilter = buildScaleFilter(
+                videoStreamRef,
+                scaleRef,
+                targetDimensions.width,
+                targetDimensions.height,
+                hwAccel,
+                { forceOriginalAspectRatio: 'decrease', pad: true, padColor: 'black' },
               );
+              videoFilters.push(scaleFilter);
               console.log(
                 `📐 Layer ${layerIndex}: Scaled video segment from ${trackInfo.width}x${trackInfo.height} to ${targetDimensions.width}x${targetDimensions.height} with black padding`,
               );
@@ -848,6 +901,7 @@ export function buildSeparateTimelineFilterComplex(
   audioTimeline: ProcessedTimeline,
   job: VideoEditJob,
   categorizedInputs: CategorizedInputs,
+  hwAccel: HardwareAcceleration | null,
   createGapVideoFilters: (
     originalIndex: number,
     duration: number,
@@ -959,6 +1013,7 @@ export function buildSeparateTimelineFilterComplex(
       targetDimensions,
       targetFps,
       videoFilters,
+      hwAccel,
       createGapVideoFilters,
       createVideoTrimFilters,
       createFpsNormalizationFilters,
@@ -1373,7 +1428,14 @@ export function buildSeparateTimelineFilterComplex(
 
         // Apply crop filter directly (no scale needed since we're cropping from source dimensions)
         // Also set SAR to 1:1 to ensure square pixels
-        aspectRatioCropFilter = `[${currentVideoLabel}]crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},setsar=1[video_cropped]`;
+        aspectRatioCropFilter = buildCropFilter(
+          `[${currentVideoLabel}]`,
+          '[video_cropped]',
+          cropWidth,
+          cropHeight,
+          cropX,
+          cropY,
+        );
         croppedVideoLabel = 'video_cropped';
         aspectRatioCroppedDimensions = { width: cropWidth, height: cropHeight };
         
@@ -1424,6 +1486,7 @@ export function buildSeparateTimelineFilterComplex(
       targetFps,
       totalDuration,
       croppedVideoLabel, // Apply to cropped video
+      hwAccel,
     );
 
     if (imageOverlayResult.filters.length > 0) {
@@ -1466,15 +1529,18 @@ export function buildSeparateTimelineFilterComplex(
     // If there's a mismatch, log a warning
     if (aspectRatioDiff > 0.001) {
       console.warn(`⚠️ Aspect ratio mismatch detected! This may cause distortion.`);
-      // Use force_original_aspect_ratio to prevent distortion, then pad to exact size
-      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[video_downscaled]`;
-      console.log(`📐 Using scale with force_original_aspect_ratio due to aspect ratio mismatch (black padding)`);
-    } else {
-      // Aspect ratios match, but still use force_original_aspect_ratio as a safety measure
-      // This ensures FFmpeg won't distort even if there are tiny rounding differences
-      finalDownscaleFilter = `[${videoLabelAfterImages}]scale=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:force_original_aspect_ratio=decrease,pad=${desiredOutputDimensions.width}:${desiredOutputDimensions.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[video_downscaled]`;
-      console.log(`📐 Using scale with force_original_aspect_ratio=decrease with black padding`);
     }
+    
+    // Use hardware-accelerated scaling with padding
+    finalDownscaleFilter = buildAspectRatioScaleFilter(
+      `[${videoLabelAfterImages}]`,
+      '[video_downscaled]',
+      desiredOutputDimensions.width,
+      desiredOutputDimensions.height,
+      hwAccel,
+    );
+    // Add setsar=1 after the scale
+    finalDownscaleFilter = finalDownscaleFilter.replace('[video_downscaled]', ',setsar=1[video_downscaled]');
     videoLabelAfterDownscale = 'video_downscaled';
   } else {
     console.log('📐 No final downscale needed, dimensions match');
@@ -1595,6 +1661,7 @@ export function handleFilterComplex(
     audioTimeline,
     job,
     categorizedInputs,
+    hwAccel,
     createGapVideoFilters,
     createSilentAudioFilters,
     createAudioTrimFilters,
