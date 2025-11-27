@@ -2,8 +2,16 @@ import type { HardwareAcceleration } from '../hardwareAccelerationDetector';
 
 /**
  * Hardware-accelerated filter helpers for FFmpeg
- * Provides GPU-accelerated scaling and overlay operations for NVENC/CUDA
- * Falls back to CPU operations with fast_bilinear for other hardware or when unavailable
+ * 
+ * Strategy for GPU acceleration (NVENC/CUDA):
+ * - Upload to GPU once at the start
+ * - Keep frames on GPU for all operations (scale_cuda, overlay_cuda, etc.)
+ * - Download from GPU once at the end
+ * - This minimizes expensive CPU↔GPU transfers
+ * 
+ * For CPU fallback:
+ * - Uses fast_bilinear scaling algorithm (20-40% faster than default)
+ * - Standard overlay operations
  */
 
 /**
@@ -14,23 +22,22 @@ export function isNVENCAvailable(hwAccel: HardwareAcceleration | null): boolean 
 }
 
 /**
- * Builds a scale filter with GPU acceleration if available (NVENC/CUDA only)
- * Falls back to CPU scaling with fast_bilinear for other cases
+ * Builds a scale filter with GPU acceleration (CUDA) or CPU fallback
+ * 
+ * IMPORTANT: For GPU, this assumes input is ALREADY on GPU (uploaded via hwupload_cuda).
+ * It does NOT download - caller must handle hwdownload at the end of the pipeline.
  * 
  * @param inputRef - Input stream reference (e.g., "[input]")
  * @param outputRef - Output stream reference (e.g., "[output]")
  * @param width - Target width
  * @param height - Target height
- * @param hwAccel - Hardware acceleration info (null for CPU)
+ * @param hwAccel - Hardware acceleration info
  * @param options - Optional scaling parameters
  * @returns FFmpeg filter string
  * 
  * @example
- * // GPU scaling (NVENC):
- * "[input]hwupload_cuda,scale_cuda=1920:1080,hwdownload,format=nv12[output]"
- * 
- * // CPU scaling (fallback):
- * "[input]scale=1920:1080:flags=fast_bilinear[output]"
+ * // GPU (assumes input already on GPU): "[input_gpu]scale_cuda=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black[output_gpu]"
+ * // CPU: "[input]scale=1920:1080:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black[output]"
  */
 export function buildScaleFilter(
   inputRef: string,
@@ -49,25 +56,21 @@ export function buildScaleFilter(
     : '';
   
   if (isNVENCAvailable(hwAccel)) {
-    // GPU-accelerated scaling with CUDA
+    // GPU scaling - assumes input is already on GPU
     console.log(`🎮 Using CUDA hardware scaling: ${width}x${height}`);
     
-    // Upload to GPU, scale on GPU, download back to CPU
-    let filter = `${inputRef}hwupload_cuda,scale_cuda=${width}:${height}${forceAspect}`;
+    let filter = `${inputRef}scale_cuda=${width}:${height}${forceAspect}`;
     
     if (options?.pad) {
       const padColor = options.padColor || 'black';
-      // Download from GPU for padding (pad filter doesn't have CUDA version)
-      filter += `,hwdownload,format=nv12,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:${padColor}`;
-    } else {
-      // Download from GPU
-      filter += ',hwdownload,format=nv12';
+      // scale_cuda supports padding directly
+      filter += `,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=${padColor}`;
     }
     
     filter += outputRef;
     return filter;
   } else {
-    // CPU scaling with fast_bilinear for speed
+    // CPU scaling with fast_bilinear
     console.log(`💻 Using CPU scaling (fast_bilinear): ${width}x${height}`);
     
     let filter = `${inputRef}scale=${width}:${height}${forceAspect}:flags=fast_bilinear`;
@@ -83,24 +86,23 @@ export function buildScaleFilter(
 }
 
 /**
- * Builds an overlay filter with GPU acceleration if available (NVENC/CUDA only)
- * Falls back to CPU overlay for other cases
+ * Builds an overlay filter with GPU acceleration (CUDA) or CPU fallback
+ * 
+ * IMPORTANT: For GPU, this assumes BOTH inputs are ALREADY on GPU.
+ * It does NOT download - caller must handle hwdownload at the end of the pipeline.
  * 
  * @param baseRef - Base video stream reference (e.g., "[base]")
  * @param overlayRef - Overlay stream reference (e.g., "[overlay]")
  * @param outputRef - Output stream reference (e.g., "[output]")
  * @param x - X position expression (e.g., "(W-w)/2" for center)
  * @param y - Y position expression (e.g., "(H-h)/2" for center)
- * @param hwAccel - Hardware acceleration info (null for CPU)
+ * @param hwAccel - Hardware acceleration info
  * @param options - Optional overlay parameters
  * @returns FFmpeg filter string
  * 
  * @example
- * // GPU overlay (NVENC):
- * "[base]hwupload_cuda[base_cu];[overlay]hwupload_cuda[overlay_cu];[base_cu][overlay_cu]overlay_cuda=x=(W-w)/2:y=(H-h)/2,hwdownload,format=nv12[output]"
- * 
- * // CPU overlay (fallback):
- * "[base][overlay]overlay=(W-w)/2:(H-h)/2[output]"
+ * // GPU (assumes both inputs on GPU): "[base_gpu][overlay_gpu]overlay_cuda=(W-w)/2:(H-h)/2[output_gpu]"
+ * // CPU: "[base][overlay]overlay=(W-w)/2:(H-h)/2[output]"
  */
 export function buildOverlayFilter(
   baseRef: string,
@@ -116,12 +118,9 @@ export function buildOverlayFilter(
   const enableParam = options?.enable ? `:enable='${options.enable}'` : '';
   
   if (isNVENCAvailable(hwAccel)) {
-    // GPU-accelerated overlay with CUDA
+    // GPU overlay - assumes both inputs are already on GPU
     console.log(`🎮 Using CUDA hardware overlay`);
-    
-    // Upload both streams to GPU, overlay on GPU, download result
-    // Note: overlay_cuda requires both inputs to be in CUDA format
-    return `${baseRef}hwupload_cuda${baseRef}_cu];${overlayRef}hwupload_cuda${overlayRef}_cu];${baseRef}_cu]${overlayRef}_cu]overlay_cuda=x=${x}:y=${y}${enableParam},hwdownload,format=nv12${outputRef}`;
+    return `${baseRef}${overlayRef}overlay_cuda=${x}:${y}${enableParam}${outputRef}`;
   } else {
     // CPU overlay
     return `${baseRef}${overlayRef}overlay=${x}:${y}${enableParam}${outputRef}`;
@@ -208,14 +207,46 @@ export function buildCropAndScaleFilter(
   scaleHeight: number,
   hwAccel: HardwareAcceleration | null,
 ): string {
-  // Crop is CPU-only, but we can use GPU for the scale afterwards
-  if (isNVENCAvailable(hwAccel)) {
-    console.log(`🎮 Using crop (CPU) + scale_cuda (GPU): crop ${cropWidth}x${cropHeight} → scale ${scaleWidth}x${scaleHeight}`);
-    return `${inputRef}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},hwupload_cuda,scale_cuda=${scaleWidth}:${scaleHeight},hwdownload,format=nv12,setsar=1${outputRef}`;
-  } else {
-    console.log(`💻 Using crop + scale (CPU, fast_bilinear): crop ${cropWidth}x${cropHeight} → scale ${scaleWidth}x${scaleHeight}`);
-    return `${inputRef}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${scaleWidth}:${scaleHeight}:flags=fast_bilinear,setsar=1${outputRef}`;
-  }
+  // Always use CPU for crop + scale
+  // GPU upload/download overhead negates any scaling benefit
+  console.log(`💻 Using crop + scale (CPU, fast_bilinear): crop ${cropWidth}x${cropHeight} → scale ${scaleWidth}x${scaleHeight}`);
+  return `${inputRef}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${scaleWidth}:${scaleHeight}:flags=fast_bilinear,setsar=1${outputRef}`;
+}
+
+/**
+ * Uploads a frame to GPU (CUDA)
+ * Only call this once at the start of GPU pipeline
+ * 
+ * @param inputRef - Input stream reference (CPU frame)
+ * @param outputRef - Output stream reference (GPU frame)
+ * @returns FFmpeg filter string
+ * 
+ * @example
+ * // "[input]hwupload_cuda[input_gpu]"
+ */
+export function buildGPUUpload(
+  inputRef: string,
+  outputRef: string,
+): string {
+  return `${inputRef}hwupload_cuda${outputRef}`;
+}
+
+/**
+ * Downloads a frame from GPU (CUDA)
+ * Only call this once at the end of GPU pipeline
+ * 
+ * @param inputRef - Input stream reference (GPU frame)
+ * @param outputRef - Output stream reference (CPU frame)
+ * @returns FFmpeg filter string
+ * 
+ * @example
+ * // "[input_gpu]hwdownload,format=nv12[output]"
+ */
+export function buildGPUDownload(
+  inputRef: string,
+  outputRef: string,
+): string {
+  return `${inputRef}hwdownload,format=nv12${outputRef}`;
 }
 
 /**

@@ -15,6 +15,9 @@ import {
   buildOverlayFilter,
   buildCropFilter,
   buildAspectRatioScaleFilter,
+  buildGPUUpload,
+  buildGPUDownload,
+  isNVENCAvailable,
 } from './hardwareFilters';
 
 const VIDEO_DEFAULTS = {
