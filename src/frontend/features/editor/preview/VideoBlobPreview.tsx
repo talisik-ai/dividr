@@ -21,16 +21,12 @@ import {
 import {
   AudioOverlay,
   CanvasOverlay,
-  ImageOverlay,
-  SubtitleOverlay,
-  TextOverlay,
-  VideoOverlay,
+  UnifiedOverlayRenderer,
 } from './overlays';
 import {
   calculateContentScale,
   calculateFitDimensions,
 } from './utils/scalingUtils';
-import { getActiveTracksAtFrame } from './utils/trackUtils';
 
 interface VideoBlobPreviewProps {
   className?: string;
@@ -293,31 +289,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     tracks,
     removeTrack,
   ]);
-
-  // Get active tracks - memoize to prevent unnecessary re-renders
-  const activeSubtitles = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'subtitle').filter(
-        (track) => track.subtitleText,
-      ),
-    [tracks, timeline.currentFrame],
-  );
-
-  const activeTexts = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'text').filter(
-        (track) => track.textContent,
-      ),
-    [tracks, timeline.currentFrame],
-  );
-
-  const activeImages = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'image').filter(
-        (track) => track.previewUrl || track.source,
-      ),
-    [tracks, timeline.currentFrame],
-  );
 
   // Handle text transform updates
   const handleTextTransformUpdate = useCallback(
@@ -877,67 +848,41 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           />
         )}
 
-      {/* Video Overlay */}
-      <VideoOverlay
-        {...overlayProps}
-        videoRef={videoRef}
-        activeVideoTrack={activeVideoTrack}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        onLoadedMetadata={handleVideoLoadedMetadata}
-        onTransformUpdate={handleVideoTransformUpdate}
-        onSelect={handleVideoSelect}
-        onRotationStateChange={setIsRotating}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Audio Overlay */}
+      {/* Audio Overlay (non-visual, handles audio playback) */}
       <AudioOverlay
         audioRef={audioRef}
         independentAudioTrack={independentAudioTrack}
         onLoadedMetadata={handleAudioLoadedMetadata}
       />
 
-      {/* Subtitle Overlay */}
-      <SubtitleOverlay
+      {/* Unified Overlay Renderer - renders all visual tracks in dynamic z-order */}
+      <UnifiedOverlayRenderer
         {...overlayProps}
-        activeSubtitles={activeSubtitles}
+        // Video props
+        videoRef={videoRef}
+        activeVideoTrack={activeVideoTrack}
+        onVideoLoadedMetadata={handleVideoLoadedMetadata}
+        onVideoTransformUpdate={handleVideoTransformUpdate}
+        onVideoSelect={handleVideoSelect}
+        // Common props
         allTracks={tracks}
         selectedTrackIds={timeline.selectedTrackIds}
+        currentFrame={timeline.currentFrame}
         isTextEditMode={preview.interactionMode === 'text-edit'}
+        // Subtitle props
         getTextStyleForSubtitle={getTextStyleForSubtitle}
         activeStyle={textStyle.activeStyle}
         globalSubtitlePosition={textStyle.globalSubtitlePosition}
-        onTransformUpdate={handleSubtitleTransformUpdate}
-        onSelect={handleSubtitleSelect}
-        onTextUpdate={handleSubtitleTextUpdate}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Image Overlay */}
-      <ImageOverlay
-        {...overlayProps}
-        activeImages={activeImages}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        onTransformUpdate={handleImageTransformUpdate}
-        onSelect={handleImageSelect}
-        onRotationStateChange={setIsRotating}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Text Overlay */}
-      <TextOverlay
-        {...overlayProps}
-        activeTexts={activeTexts}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        isTextEditMode={preview.interactionMode === 'text-edit'}
-        onTransformUpdate={handleTextTransformUpdate}
-        onSelect={handleTextSelect}
+        onSubtitleTransformUpdate={handleSubtitleTransformUpdate}
+        onSubtitleSelect={handleSubtitleSelect}
+        onSubtitleTextUpdate={handleSubtitleTextUpdate}
+        // Image props
+        onImageTransformUpdate={handleImageTransformUpdate}
+        onImageSelect={handleImageSelect}
+        // Text props
+        onTextTransformUpdate={handleTextTransformUpdate}
+        onTextSelect={handleTextSelect}
         onTextUpdate={handleTextUpdate}
-        onRotationStateChange={setIsRotating}
-        onDragStateChange={handleDragStateChange}
         pendingEditTextId={pendingEditTextId}
         onEditStarted={() => {
           setPendingEditTextId(null);
@@ -946,6 +891,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             setPendingEmptyTextId(null);
           }
         }}
+        // State callbacks
+        onRotationStateChange={setIsRotating}
+        onDragStateChange={handleDragStateChange}
       />
 
       {/* Alignment Guides */}

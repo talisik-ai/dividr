@@ -7,4 +7,5 @@ export * from './CanvasOverlay';
 export * from './ImageOverlay';
 export * from './SubtitleOverlay';
 export * from './TextOverlay';
+export * from './UnifiedOverlayRenderer';
 export * from './VideoOverlay';
