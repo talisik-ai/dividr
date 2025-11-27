@@ -26,6 +26,7 @@ import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirma
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import {
   generateDynamicRows,
+  getRowDisplayIcon,
   getTrackRowId,
   migrateTracksWithRowIndex,
   TrackRowDefinition,
@@ -283,6 +284,21 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       };
     }, [rowDef.id]);
 
+    const displayIcon = useMemo(() => {
+      const validTypes: VideoTrack['type'][] = [
+        'video',
+        'audio',
+        'image',
+        'subtitle',
+        'text',
+      ];
+      const type = validTypes.includes(parsedRow.type as VideoTrack['type'])
+        ? (parsedRow.type as VideoTrack['type'])
+        : 'video';
+
+      // return BASE_ROW_DEFINITIONS[type]?.icon;
+    }, [rowDef.icon]);
+
     // Get display label (e.g., "Video 1", "Video 2", "Text 1")
     // const displayLabel = useMemo(() => {
     //   // Validate the type before calling getRowDisplayLabel
@@ -303,85 +319,78 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const isEvenRow = parsedRow.rowIndex % 2 === 0;
 
     // Handler to add a new track row for this media type
-    const handleAddTrackRow = useCallback(async () => {
-      const state = useVideoEditorStore.getState();
+    // const handleAddTrackRow = useCallback(async () => {
+    //   const state = useVideoEditorStore.getState();
 
-      // Get all existing row indices for this type
-      const existingIndices = state.tracks
-        .filter((t: VideoTrack) => t.type === parsedRow.type)
-        .map((t: VideoTrack) => t.trackRowIndex ?? 0);
+    //   // Get all existing row indices for this type
+    //   const existingIndices = state.tracks
+    //     .filter((t: VideoTrack) => t.type === parsedRow.type)
+    //     .map((t: VideoTrack) => t.trackRowIndex ?? 0);
 
-      const maxIndex =
-        existingIndices.length > 0 ? Math.max(...existingIndices) : 0;
-      const newRowIndex = maxIndex + 1;
+    //   const maxIndex =
+    //     existingIndices.length > 0 ? Math.max(...existingIndices) : 0;
+    //   const newRowIndex = maxIndex + 1;
 
-      console.log(`➕ Adding new row: ${parsedRow.type}-${newRowIndex}`);
+    //   console.log(`➕ Adding new row: ${parsedRow.type}-${newRowIndex}`);
 
-      // Create a placeholder track to reserve the new row
-      // This track will be tiny (1 frame) and positioned at the end of the timeline
-      const { timeline, addTrack } = state;
-      const currentEndFrame = Math.max(
-        ...state.tracks.map((t: VideoTrack) => t.endFrame),
-        timeline.totalFrames,
-      );
+    //   // Create a placeholder track to reserve the new row
+    //   // This track will be tiny (1 frame) and positioned at the end of the timeline
+    //   const { timeline, addTrack } = state;
+    //   const currentEndFrame = Math.max(
+    //     ...state.tracks.map((t: VideoTrack) => t.endFrame),
+    //     timeline.totalFrames,
+    //   );
 
-      // Create appropriate placeholder based on media type
-      const placeholderTrack: Partial<VideoTrack> = {
-        type: parsedRow.type as VideoTrack['type'],
-        name: `${parsedRow.type.charAt(0).toUpperCase() + parsedRow.type.slice(1)} Track ${newRowIndex + 1}`,
-        startFrame: currentEndFrame,
-        endFrame: currentEndFrame + 30, // 1 second at 30fps
-        duration: 30,
-        trackRowIndex: newRowIndex,
-        visible: true,
-        locked: false,
-        muted: parsedRow.type === 'audio' ? false : undefined,
-        source: '', // Empty source for placeholder
-        previewUrl: undefined,
-      };
+    //   // Create appropriate placeholder based on media type
+    //   const placeholderTrack: Partial<VideoTrack> = {
+    //     type: parsedRow.type as VideoTrack['type'],
+    //     name: `${parsedRow.type.charAt(0).toUpperCase() + parsedRow.type.slice(1)} Track ${newRowIndex + 1}`,
+    //     startFrame: currentEndFrame,
+    //     endFrame: currentEndFrame + 30, // 1 second at 30fps
+    //     duration: 30,
+    //     trackRowIndex: newRowIndex,
+    //     visible: true,
+    //     locked: false,
+    //     muted: parsedRow.type === 'audio' ? false : undefined,
+    //     source: '', // Empty source for placeholder
+    //     previewUrl: undefined,
+    //   };
 
-      // Add type-specific properties
-      if (parsedRow.type === 'text') {
-        placeholderTrack.textContent = 'New Text';
-      } else if (parsedRow.type === 'subtitle') {
-        placeholderTrack.subtitleText = 'New Subtitle';
-      }
+    //   // Add type-specific properties
+    //   if (parsedRow.type === 'text') {
+    //     placeholderTrack.textContent = 'New Text';
+    //   } else if (parsedRow.type === 'subtitle') {
+    //     placeholderTrack.subtitleText = 'New Subtitle';
+    //   }
 
-      try {
-        await addTrack(placeholderTrack as Omit<VideoTrack, 'id'>);
-        console.log(
-          `✅ Created placeholder track for new row: ${parsedRow.type}-${newRowIndex}`,
-        );
-      } catch (error) {
-        console.error('Failed to create new track row:', error);
-      }
-    }, [parsedRow.type]);
+    //   try {
+    //     await addTrack(placeholderTrack as Omit<VideoTrack, 'id'>);
+    //     console.log(
+    //       `✅ Created placeholder track for new row: ${parsedRow.type}-${newRowIndex}`,
+    //     );
+    //   } catch (error) {
+    //     console.error('Failed to create new track row:', error);
+    //   }
+    // }, [parsedRow.type]);
 
     return (
       <div
         className={cn(
-          'flex items-center justify-between px-2 border-b border-border/20',
+          'flex items-center justify-between px-2 gap-6 border-b border-border/20',
           getRowHeightClasses(rowDef.id),
           isEvenRow ? 'bg-transparent' : 'bg-muted/20', // Alternating background
         )}
       >
         {/* Track type info with row label */}
-        {/* <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          <span className="text-xs" title={displayLabel}>
-            {rowDef.icon}
-          </span>
-          <span className="text-[10px] font-medium text-muted-foreground truncate">
-            {displayLabel}
-          </span>
-          {tracks.length > 0 && (
-            <span className="text-[9px] text-muted-foreground/60 bg-accent px-1 rounded">
-              {tracks.length}
-            </span>
+        <div className="flex-1 min-w-0">
+          {getRowDisplayIcon(
+            parsedRow.type as VideoTrack['type'],
+            parsedRow.rowIndex,
           )}
-        </div> */}
+        </div>
 
         {/* Track controls */}
-        <div className="flex items-center justify-center gap-0.5">
+        <div className="flex items-center justify-center gap-2">
           {/* Show visibility toggle for video, image, and subtitle tracks only */}
           {(rowDef.trackTypes.includes('video') ||
             rowDef.trackTypes.includes('image') ||

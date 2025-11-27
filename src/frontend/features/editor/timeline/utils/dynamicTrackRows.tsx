@@ -1,3 +1,5 @@
+import { ClosedCaption, Image, Music, Type, Video } from 'lucide-react';
+import React from 'react';
 import { VideoTrack } from '../../stores/videoEditor/types';
 
 export interface TrackRowDefinition {
@@ -668,6 +670,39 @@ export function getRowDisplayLabel(
   // For row 0, just show the base label
   // For higher rows, show "Label N" where N = rowIndex + 1
   return rowIndex === 0 ? baseLabel : `${baseLabel} ${rowIndex + 1}`;
+}
+
+/**
+ * Get the display icon for a row (e.g., "🎬", "🎵", "🖼️", "🔤", "💬")
+ *
+ * @param type - Media type
+ * @param rowIndex - Row index
+ * @returns Display icon React node
+ */
+export function getRowDisplayIcon(
+  type: VideoTrack['type'],
+  rowIndex: number,
+): React.ReactNode {
+  const baseIcons: Record<VideoTrack['type'], React.ElementType> = {
+    video: Video,
+    audio: Music,
+    image: Image,
+    text: Type,
+    subtitle: ClosedCaption,
+  };
+
+  const IconComponent = baseIcons[type];
+
+  if (!IconComponent) return null;
+
+  // Create the icon element
+  const icon = <IconComponent className="size-4 text-muted-foreground/60" />;
+
+  // Row 0 → icon only
+  if (rowIndex === 0) return icon;
+
+  // Higher row → icon + number
+  return <span className="flex items-center gap-1">{icon}</span>;
 }
 
 /**
