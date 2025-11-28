@@ -28,6 +28,10 @@ import { TimelineRuler } from './timelineRuler';
 import { TimelineTrackControllers } from './timelineTrackControllers';
 import { TimelineTracks } from './timelineTracks';
 import {
+  findNearestAvailablePositionInRowWithPlayhead,
+  hasCollision,
+} from './utils/collisionDetection';
+import {
   detectInsertionPoint,
   generateDynamicRows,
   getTrackRowId,
@@ -159,6 +163,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     );
     const updateDragGhostPosition = useVideoEditorStore(
       (state) => state.updateDragGhostPosition,
+    );
+    const magneticSnapFrame = useVideoEditorStore(
+      (state) => state.playback.magneticSnapFrame,
     );
     // Calculate effective timeline duration based on actual track content - memoized
     const effectiveEndFrame = useMemo(() => {
@@ -411,16 +418,73 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const handleGlobalMouseUp = (e: MouseEvent) => {
         setTimeout(() => {
-          const { playback, endDraggingTrack, clearDragGhost } =
-            useVideoEditorStore.getState();
+          const {
+            playback,
+            endDraggingTrack,
+            clearDragGhost,
+            tracks,
+            moveTrackToRow,
+          } = useVideoEditorStore.getState();
 
           if (playback.isDraggingTrack || playback.dragGhost?.isActive) {
+            const dragGhost = playback.dragGhost;
+
+            // If we have a valid drop target, apply the move with collision detection
+            if (
+              dragGhost &&
+              dragGhost.targetRow &&
+              dragGhost.targetFrame !== null
+            ) {
+              const targetRowParsed = parseRowId(dragGhost.targetRow);
+              const primaryTrack = tracks.find(
+                (t: VideoTrack) => t.id === dragGhost.trackId,
+              );
+
+              if (primaryTrack && targetRowParsed) {
+                const duration =
+                  primaryTrack.endFrame - primaryTrack.startFrame;
+                const excludeIds = dragGhost.selectedTrackIds || [
+                  dragGhost.trackId,
+                ];
+
+                // Check for collision at drop position
+                const wouldCollide = hasCollision(
+                  dragGhost.targetFrame,
+                  dragGhost.targetFrame + duration,
+                  primaryTrack.type,
+                  targetRowParsed.rowIndex,
+                  tracks,
+                  { excludeTrackIds: excludeIds },
+                );
+
+                let finalStartFrame = dragGhost.targetFrame;
+
+                if (wouldCollide) {
+                  // Find nearest available position
+                  finalStartFrame =
+                    findNearestAvailablePositionInRowWithPlayhead(
+                      dragGhost.targetFrame,
+                      duration,
+                      primaryTrack.type,
+                      targetRowParsed.rowIndex,
+                      tracks,
+                      excludeIds,
+                    );
+                }
+
+                // Apply the move
+                moveTrackToRow(
+                  dragGhost.trackId,
+                  targetRowParsed.rowIndex,
+                  finalStartFrame,
+                );
+              }
+            }
+
             endDraggingTrack(true);
             clearDragGhost();
             setAutoScrollMousePos(null);
             setInsertionPoint(null);
-
-            // Clear last valid target
             lastValidTargetRef.current = null;
           }
         }, 0);
@@ -1660,6 +1724,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   visible={timeline.playheadVisible}
                   timelineScrollElement={tracksRef.current}
                   onStartDrag={handlePlayheadDragStart}
+                  magneticSnapFrame={magneticSnapFrame}
                 />
 
                 {/* Split Indicator Line - confined to hovered track row */}
@@ -1782,10 +1847,31 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
                     // Parse target row to validate drop
                     const targetRowParsed = parseRowId(dragGhost.targetRow);
-                    const isValidDrop =
+                    let isValidDrop =
                       targetRowParsed &&
                       targetRowParsed.type === primaryTrack.type;
 
+                    // Additionally check for collisions at the drop position
+                    if (isValidDrop && targetRowParsed) {
+                      const duration =
+                        primaryTrack.endFrame - primaryTrack.startFrame;
+                      const proposedStart = dragGhost.targetFrame;
+                      const proposedEnd = proposedStart + duration;
+
+                      // Check if dropping here would cause a collision
+                      const wouldCollide = hasCollision(
+                        proposedStart,
+                        proposedEnd,
+                        primaryTrack.type,
+                        targetRowParsed.rowIndex,
+                        tracks,
+                        { excludeTrackIds: dragGhost.selectedTrackIds },
+                      );
+
+                      if (wouldCollide) {
+                        isValidDrop = false;
+                      }
+                    }
                     // Get current scroll position for viewport clipping
                     const currentScrollY = tracksRef.current?.scrollTop || 0;
                     const viewportHeight = tracksRef.current?.clientHeight || 0;
@@ -1828,6 +1914,20 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                       </>
                     );
                   })()}
+
+                {/* Magnetic Snap Indicator Line */}
+                {magneticSnapFrame !== null && tracksRef.current && (
+                  <div
+                    className="absolute w-px bg-secondary pointer-events-none"
+                    style={{
+                      left: `${magneticSnapFrame * frameWidth - timeline.scrollX}px`,
+                      top: 0,
+                      bottom: 0,
+                      height: '100%',
+                      zIndex: 100,
+                    }}
+                  />
+                )}
 
                 {/* Insertion Line Indicator - shows where new row will be created */}
                 {/* ONLY shown when in insertion mode (mutually exclusive with dropzone) */}

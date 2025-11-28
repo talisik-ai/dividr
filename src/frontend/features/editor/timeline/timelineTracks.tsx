@@ -13,6 +13,10 @@ import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
 import {
+  checkSnapPosition,
+  findAllSnapPoints,
+} from './utils/collisionDetection';
+import {
   generateDynamicRows,
   getTrackRowId,
   migrateTracksWithRowIndex,
@@ -340,118 +344,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       ],
     );
 
-    // Helper to find magnetic snap points when Shift is held
-    // Searches across ALL tracks for nearest edge and considers BOTH edges of moving clip
-    const findMagneticSnapPoint = useCallback(
-      (
-        newStartFrame: number,
-        newEndFrame: number,
-        currentSnapFrame: number | null,
-      ): { snapFrame: number; delta: number } | null => {
-        const { tracks: allTracks, timeline } = useVideoEditorStore.getState();
-        const SNAP_THRESHOLD = 8; // Tighter threshold for more precise snapping
-        const MIN_DISTANCE = 1; // Minimum distance to trigger snap (prevents false positives at 0)
-        const HYSTERESIS = 2; // Extra buffer to prevent flickering when already snapped
-
-        // Get all selected track IDs (to exclude from snap candidates)
-        const selectedTrackIds = timeline.selectedTrackIds;
-
-        // Collect all edges from ALL tracks (multi-track aware)
-        // Exclude: self, linked track, and any selected tracks (for multi-select)
-        const candidateEdges: Array<{
-          frame: number;
-          trackId: string;
-          isStart: boolean;
-        }> = [];
-
-        allTracks.forEach((t) => {
-          // Skip the current track being dragged
-          if (t.id === track.id) return;
-          // Skip linked track to current track
-          if (t.id === track.linkedTrackId) return;
-          // Skip any other selected tracks (for multi-select drag)
-          if (selectedTrackIds.includes(t.id)) return;
-
-          // Validate that this is a real track with valid frame range
-          if (
-            typeof t.startFrame !== 'number' ||
-            typeof t.endFrame !== 'number' ||
-            t.startFrame < 0 ||
-            t.endFrame <= t.startFrame
-          ) {
-            return; // Skip invalid tracks
-          }
-
-          // Add both start and end edges as snap candidates with metadata
-          candidateEdges.push(
-            { frame: t.startFrame, trackId: t.id, isStart: true },
-            { frame: t.endFrame, trackId: t.id, isStart: false },
-          );
-        });
-
-        // No candidates means no valid snap targets (empty timeline area)
-        if (candidateEdges.length === 0) {
-          return null;
-        }
-
-        // Apply hysteresis: if we're already snapped, give extra buffer before releasing
-        const effectiveThreshold =
-          currentSnapFrame !== null
-            ? SNAP_THRESHOLD + HYSTERESIS
-            : SNAP_THRESHOLD;
-
-        // Check both start and end edges of the moving clip
-        let bestSnap: {
-          snapFrame: number;
-          delta: number;
-          distance: number;
-        } | null = null;
-
-        // Check start edge of moving clip against all candidates
-        candidateEdges.forEach(({ frame }) => {
-          const distance = Math.abs(frame - newStartFrame);
-          // Only snap if within threshold AND not too close (prevents jitter)
-          if (distance >= MIN_DISTANCE && distance <= effectiveThreshold) {
-            const delta = frame - newStartFrame;
-            if (!bestSnap || distance < bestSnap.distance) {
-              bestSnap = { snapFrame: frame, delta, distance };
-            }
-          }
-        });
-
-        // Check end edge of moving clip against all candidates
-        candidateEdges.forEach(({ frame }) => {
-          const distance = Math.abs(frame - newEndFrame);
-          // Only snap if within threshold AND not too close (prevents jitter)
-          if (distance >= MIN_DISTANCE && distance <= effectiveThreshold) {
-            const delta = frame - newEndFrame;
-            if (!bestSnap || distance < bestSnap.distance) {
-              bestSnap = { snapFrame: frame, delta, distance };
-            }
-          }
-        });
-
-        // Additional validation: Ensure snap target is not at timeline boundaries
-        // unless we're actually near a real clip
-        if (bestSnap) {
-          const isSnapToZero = bestSnap.snapFrame === 0;
-          const hasClipAtZero = candidateEdges.some(
-            (edge) => edge.frame === 0 && edge.isStart,
-          );
-
-          // If snapping to 0, make sure there's actually a clip starting at 0
-          if (isSnapToZero && !hasClipAtZero) {
-            return null;
-          }
-
-          return { snapFrame: bestSnap.snapFrame, delta: bestSnap.delta };
-        }
-
-        return null;
-      },
-      [track.id, track.linkedTrackId],
-    );
-
     // Throttled mouse move handler using RAF
     const handleMouseMove = useCallback(
       (e: MouseEvent) => {
@@ -566,33 +458,39 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               ),
             );
 
-            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
-            const { timeline } = useVideoEditorStore.getState();
+            // Check if snapping should be active
+            const { timeline, tracks: allTracks } =
+              useVideoEditorStore.getState();
             const shouldSnap = e.shiftKey || timeline.snapEnabled;
 
             if (shouldSnap) {
-              // Use unified magnetic snap logic
-              const currentSnap =
-                useVideoEditorStore.getState().playback.magneticSnapFrame;
-              const duration = dragStart.endFrame - dragStart.startFrame;
-              const newEndFrame = newStartFrame + duration;
-              const snapResult = findMagneticSnapPoint(
-                newStartFrame,
-                newEndFrame,
-                currentSnap,
+              // Build exclude list
+              const excludeIds = [track.id];
+              if (track.linkedTrackId) excludeIds.push(track.linkedTrackId);
+              timeline.selectedTrackIds.forEach((id: string) => {
+                if (!excludeIds.includes(id)) excludeIds.push(id);
+              });
+
+              // Get all snap points (global - all tracks regardless of type/row)
+              const allSnapPoints = findAllSnapPoints(
+                allTracks,
+                excludeIds,
+                timeline.currentFrame,
               );
 
-              if (snapResult !== null) {
-                // Apply snap only if it keeps the clip valid
-                const snappedStart = newStartFrame + snapResult.delta;
-                if (snappedStart >= 0 && snappedStart < dragStart.endFrame) {
-                  newStartFrame = snappedStart;
-                  useVideoEditorStore
-                    .getState()
-                    .setMagneticSnapFrame(snapResult.snapFrame);
-                } else {
-                  useVideoEditorStore.getState().setMagneticSnapFrame(null);
-                }
+              // Check if start frame snaps
+              const snapResult = checkSnapPosition(
+                newStartFrame,
+                allSnapPoints,
+                8,
+              );
+              if (
+                snapResult !== null &&
+                snapResult >= 0 &&
+                snapResult < dragStart.endFrame
+              ) {
+                newStartFrame = snapResult;
+                useVideoEditorStore.getState().setMagneticSnapFrame(snapResult);
               } else {
                 useVideoEditorStore.getState().setMagneticSnapFrame(null);
               }
@@ -607,33 +505,35 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               dragStart.endFrame + deltaFrames,
             );
 
-            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
-            const { timeline } = useVideoEditorStore.getState();
+            // Check if snapping should be active
+            const { timeline, tracks: allTracks } =
+              useVideoEditorStore.getState();
             const shouldSnap = e.shiftKey || timeline.snapEnabled;
 
             if (shouldSnap) {
-              // Use unified magnetic snap logic
-              const currentSnap =
-                useVideoEditorStore.getState().playback.magneticSnapFrame;
-              const duration = dragStart.endFrame - dragStart.startFrame;
-              const newStartFrame = newEndFrame - duration;
-              const snapResult = findMagneticSnapPoint(
-                newStartFrame,
-                newEndFrame,
-                currentSnap,
+              // Build exclude list
+              const excludeIds = [track.id];
+              if (track.linkedTrackId) excludeIds.push(track.linkedTrackId);
+              timeline.selectedTrackIds.forEach((id: string) => {
+                if (!excludeIds.includes(id)) excludeIds.push(id);
+              });
+
+              // Get all snap points (global - all tracks regardless of type/row)
+              const allSnapPoints = findAllSnapPoints(
+                allTracks,
+                excludeIds,
+                timeline.currentFrame,
               );
 
-              if (snapResult !== null) {
-                // Apply snap only if it keeps the clip valid
-                const snappedEnd = newEndFrame + snapResult.delta;
-                if (snappedEnd > dragStart.startFrame) {
-                  newEndFrame = snappedEnd;
-                  useVideoEditorStore
-                    .getState()
-                    .setMagneticSnapFrame(snapResult.snapFrame);
-                } else {
-                  useVideoEditorStore.getState().setMagneticSnapFrame(null);
-                }
+              // Check if end frame snaps
+              const snapResult = checkSnapPosition(
+                newEndFrame,
+                allSnapPoints,
+                8,
+              );
+              if (snapResult !== null && snapResult > dragStart.startFrame) {
+                newEndFrame = snapResult;
+                useVideoEditorStore.getState().setMagneticSnapFrame(snapResult);
               } else {
                 useVideoEditorStore.getState().setMagneticSnapFrame(null);
               }
@@ -644,9 +544,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             onResize(undefined, newEndFrame);
           } else if (isDragging && dragThresholdMetRef.current) {
             // DRAG: Use absolute position calculation with live scroll
-            // This ensures drop location matches visual indicator during auto-scroll
             if (!scrollContainerRect) {
-              // Fallback to delta-based if we can't find scroll container
               const newStartFrame = Math.max(
                 0,
                 dragStart.startFrame + deltaFrames,
@@ -657,8 +555,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
             const mouseRelativeX = e.clientX - scrollContainerRect.left;
 
-            // Calculate target frame accounting for current scroll AND drag offset
-            // This matches the dropzone indicator calculation in timeline.tsx
             let newStartFrame = Math.max(
               0,
               Math.floor(
@@ -672,44 +568,64 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             const duration = dragStart.endFrame - dragStart.startFrame;
             const newEndFrame = newStartFrame + duration;
 
-            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
-            const { timeline, updateDragGhostPosition } =
-              useVideoEditorStore.getState();
+            // Check if snapping should be active
+            const {
+              timeline,
+              tracks: allTracks,
+              updateDragGhostPosition,
+            } = useVideoEditorStore.getState();
             const shouldSnap = e.shiftKey || timeline.snapEnabled;
 
             if (shouldSnap) {
-              // Use unified magnetic snap logic for both modes
-              const currentSnap =
-                useVideoEditorStore.getState().playback.magneticSnapFrame;
-              const snapResult = findMagneticSnapPoint(
-                newStartFrame,
-                newEndFrame,
-                currentSnap,
+              // Build exclude list
+              const excludeIds = [track.id];
+              if (track.linkedTrackId) excludeIds.push(track.linkedTrackId);
+              timeline.selectedTrackIds.forEach((id: string) => {
+                if (!excludeIds.includes(id)) excludeIds.push(id);
+              });
+
+              // Get all snap points (global - all tracks regardless of type/row)
+              const allSnapPoints = findAllSnapPoints(
+                allTracks,
+                excludeIds,
+                timeline.currentFrame, // Include playhead as snap point
               );
 
-              if (snapResult !== null) {
-                // Apply the delta to move the entire clip
-                newStartFrame = newStartFrame + snapResult.delta;
-                // Ensure we don't go below 0
-                if (newStartFrame >= 0) {
-                  useVideoEditorStore
-                    .getState()
-                    .setMagneticSnapFrame(snapResult.snapFrame);
+              // Check start frame snap first
+              const startSnap = checkSnapPosition(
+                newStartFrame,
+                allSnapPoints,
+                8,
+              );
+              if (startSnap !== null && startSnap >= 0) {
+                newStartFrame = startSnap;
+                useVideoEditorStore.getState().setMagneticSnapFrame(startSnap);
+              } else {
+                // Check end frame snap
+                const endSnap = checkSnapPosition(
+                  newEndFrame,
+                  allSnapPoints,
+                  8,
+                );
+                if (endSnap !== null) {
+                  newStartFrame = endSnap - duration;
+                  if (newStartFrame >= 0) {
+                    useVideoEditorStore
+                      .getState()
+                      .setMagneticSnapFrame(endSnap);
+                  } else {
+                    newStartFrame = 0;
+                    useVideoEditorStore.getState().setMagneticSnapFrame(null);
+                  }
                 } else {
-                  newStartFrame = 0;
                   useVideoEditorStore.getState().setMagneticSnapFrame(null);
                 }
-              } else {
-                useVideoEditorStore.getState().setMagneticSnapFrame(null);
               }
             } else {
-              // Clear snap indicator when snapping is disabled
               useVideoEditorStore.getState().setMagneticSnapFrame(null);
             }
 
-            // Update drag ghost position with target row detection
-            // Use the current drag ghost's targetRow to preserve virtual row IDs
-            // (Timeline component sets virtual rows like "video-1" for above/below drags)
+            // Update drag ghost position
             const currentTargetRow =
               useVideoEditorStore.getState().playback.dragGhost?.targetRow ||
               getTrackRowId(track);
@@ -734,7 +650,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         onResize,
         onMove,
         onSelect,
-        findMagneticSnapPoint,
         track.id,
         track.type,
         track.linkedTrackId,
