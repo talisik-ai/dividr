@@ -5,13 +5,17 @@ interface AutoScrollConfig {
   mouseX: number;
   mouseY: number;
   scrollElement: HTMLElement | null;
+  /** Distance from edge to trigger scroll (default: 80px) */
   threshold?: number;
+  /** Base scroll speed multiplier (default: 1.0) */
   speed?: number;
   onScroll?: (newScrollX: number, newScrollY: number) => void;
   /** Enable horizontal auto-scroll (default: true) */
   enableHorizontal?: boolean;
   /** Enable vertical auto-scroll (default: false) */
   enableVertical?: boolean;
+  /** Vertical threshold override (default: uses threshold) */
+  verticalThreshold?: number;
 }
 
 interface AutoScrollResult {
@@ -30,29 +34,18 @@ interface AutoScrollResult {
  * Provides smooth, continuous scrolling with configurable threshold and speed.
  * Features acceleration - the longer the cursor stays near the edge,
  * the faster the scroll becomes for a natural feel.
- *
- * @param config - Configuration object
- * @param config.enabled - Whether auto-scroll is active
- * @param config.mouseX - Current mouse X position (clientX)
- * @param config.mouseY - Current mouse Y position (clientY)
- * @param config.scrollElement - The scrollable timeline element
- * @param config.threshold - Distance from edge to trigger scroll (default: 50px)
- * @param config.speed - Base scroll speed multiplier (default: 1.0)
- * @param config.onScroll - Callback when scroll position changes
- * @param config.enableHorizontal - Enable horizontal auto-scroll (default: true)
- * @param config.enableVertical - Enable vertical auto-scroll (default: false)
- * @returns Object with isScrolling flag and current scroll deltas
  */
 export const useAutoScroll = ({
   enabled,
   mouseX,
   mouseY,
   scrollElement,
-  threshold = 50,
+  threshold = 80,
   speed = 1.0,
   onScroll,
   enableHorizontal = true,
   enableVertical = false,
+  verticalThreshold,
 }: AutoScrollConfig): AutoScrollResult => {
   const animationFrameRef = useRef<number | null>(null);
   const lastScrollTimeRef = useRef<number>(0);
@@ -61,6 +54,9 @@ export const useAutoScroll = ({
   const scrollDeltaYRef = useRef<number>(0);
   const scrollStartTimeRef = useRef<number>(0);
   const accelerationMultiplierRef = useRef<number>(1.0);
+
+  // Use separate threshold for vertical if provided
+  const effectiveVerticalThreshold = verticalThreshold ?? threshold;
 
   // Calculate scroll deltas based on mouse position with acceleration
   const calculateScrollDeltas = useCallback(
@@ -76,32 +72,57 @@ export const useAutoScroll = ({
         const relativeX = mouseX - rect.left;
         const viewportWidth = rect.width;
 
-        if (relativeX < threshold) {
+        if (relativeX >= 0 && relativeX < threshold) {
           // Near left edge - scroll left
-          const intensity = 1 - relativeX / threshold;
-          deltaX = -intensity * 15 * speed * accelerationMultiplier;
-        } else if (relativeX > viewportWidth - threshold) {
+          const intensity = Math.pow(1 - relativeX / threshold, 1.5); // Eased intensity
+          deltaX = -intensity * 18 * speed * accelerationMultiplier;
+        } else if (
+          relativeX > viewportWidth - threshold &&
+          relativeX <= viewportWidth
+        ) {
           // Near right edge - scroll right
-          const intensity =
-            (relativeX - (viewportWidth - threshold)) / threshold;
-          deltaX = intensity * 15 * speed * accelerationMultiplier;
+          const intensity = Math.pow(
+            (relativeX - (viewportWidth - threshold)) / threshold,
+            1.5,
+          );
+          deltaX = intensity * 18 * speed * accelerationMultiplier;
         }
       }
 
-      // Vertical scroll calculation
+      // Vertical scroll calculation with extended top zone into ruler area
       if (enableVertical) {
         const relativeY = mouseY - rect.top;
         const viewportHeight = rect.height;
 
-        if (relativeY < threshold) {
-          // Near top edge - scroll up
-          const intensity = 1 - relativeY / threshold;
-          deltaY = -intensity * 15 * speed * accelerationMultiplier;
-        } else if (relativeY > viewportHeight - threshold) {
-          // Near bottom edge - scroll down
-          const intensity =
-            (relativeY - (viewportHeight - threshold)) / threshold;
-          deltaY = intensity * 15 * speed * accelerationMultiplier;
+        // TOP threshold - negative value extends INTO the ruler area above tracks
+        // -50 means trigger starts 50px ABOVE the tracks container (in ruler area)
+        // The zone extends from -50px (in ruler) to +30px (inside tracks)
+        const topTriggerStart = -50; // How far above tracks container to start triggering
+        const topTriggerEnd = 30; // How far inside tracks container to stop triggering
+        const topTriggerRange = topTriggerEnd - topTriggerStart; // Total trigger zone size
+
+        // BOTTOM threshold - normal positive value
+        const bottomThreshold = 100;
+
+        // Top zone: from topTriggerStart (negative, in ruler) to topTriggerEnd (inside tracks)
+        if (relativeY >= topTriggerStart && relativeY < topTriggerEnd) {
+          // Calculate intensity: 1.0 at topTriggerStart, 0.0 at topTriggerEnd
+          const intensity = Math.pow(
+            1 - (relativeY - topTriggerStart) / topTriggerRange,
+            1.5,
+          );
+          deltaY = -intensity * 12 * speed * accelerationMultiplier;
+        }
+        // Bottom zone: normal behavior
+        else if (
+          relativeY > viewportHeight - bottomThreshold &&
+          relativeY <= viewportHeight
+        ) {
+          const intensity = Math.pow(
+            (relativeY - (viewportHeight - bottomThreshold)) / bottomThreshold,
+            1.5,
+          );
+          deltaY = intensity * 12 * speed * accelerationMultiplier;
         }
       }
 
@@ -112,6 +133,7 @@ export const useAutoScroll = ({
       mouseY,
       scrollElement,
       threshold,
+      effectiveVerticalThreshold,
       speed,
       enableHorizontal,
       enableVertical,
@@ -158,8 +180,8 @@ export const useAutoScroll = ({
 
         // Calculate acceleration based on how long we've been scrolling
         const scrollDuration = (timestamp - scrollStartTimeRef.current) / 1000;
-        const maxAcceleration = 2.5;
-        const accelerationDuration = 2.0;
+        const maxAcceleration = 3.0; // Increased max acceleration
+        const accelerationDuration = 1.5; // Faster ramp-up
         const progress = Math.min(scrollDuration / accelerationDuration, 1.0);
         accelerationMultiplierRef.current =
           1.0 + (maxAcceleration - 1.0) * progress * progress;
@@ -220,7 +242,10 @@ export const useAutoScroll = ({
 
         // Notify parent of scroll change
         if (scrollChanged && onScroll) {
-          onScroll(newScrollX, newScrollY);
+          onScroll(
+            enableHorizontal ? newScrollX : currentScrollX,
+            enableVertical ? newScrollY : currentScrollY,
+          );
         }
 
         // Continue animation
@@ -256,6 +281,7 @@ export const useAutoScroll = ({
     mouseY,
     scrollElement,
     threshold,
+    effectiveVerticalThreshold,
     speed,
     onScroll,
     calculateScrollDeltas,

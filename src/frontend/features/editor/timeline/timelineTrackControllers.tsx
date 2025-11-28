@@ -284,21 +284,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       };
     }, [rowDef.id]);
 
-    const displayIcon = useMemo(() => {
-      const validTypes: VideoTrack['type'][] = [
-        'video',
-        'audio',
-        'image',
-        'subtitle',
-        'text',
-      ];
-      const type = validTypes.includes(parsedRow.type as VideoTrack['type'])
-        ? (parsedRow.type as VideoTrack['type'])
-        : 'video';
-
-      // return BASE_ROW_DEFINITIONS[type]?.icon;
-    }, [rowDef.icon]);
-
     // Get display label (e.g., "Video 1", "Video 2", "Text 1")
     // const displayLabel = useMemo(() => {
     //   // Validate the type before calling getRowDisplayLabel

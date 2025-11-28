@@ -88,6 +88,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     >(null);
     const [hoveredTrack, setHoveredTrack] = useState<VideoTrack | null>(null);
     const [hoveredTrackRow, setHoveredTrackRow] = useState<string | null>(null);
+    const [_verticalScrollY, setVerticalScrollY] = useState(0);
     const [linkedTrackIndicators, setLinkedTrackIndicators] = useState<
       Array<{ trackType: string; position: number }>
     >([]);
@@ -352,12 +353,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       mouseX: autoScrollMousePos?.x || 0,
       mouseY: autoScrollMousePos?.y || 0,
       scrollElement: tracksRef.current,
-      threshold: 50,
+      threshold: 80,
+      verticalThreshold: 100,
       speed: 1.2,
       enableHorizontal: true,
       enableVertical: true,
-      onScroll: (newScrollX, _newScrollY) => {
+      onScroll: (newScrollX, newScrollY) => {
         setScrollX(newScrollX);
+        setVerticalScrollY(newScrollY);
       },
     });
 
@@ -1588,12 +1591,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   onScroll={(e) => {
                     // Scroll handling
                     const scrollLeft = (e.target as HTMLElement).scrollLeft;
+                    const scrollTop = (e.target as HTMLElement).scrollTop;
                     const scrollDifference = Math.abs(
                       scrollLeft - timeline.scrollX,
                     );
 
                     // Immediately update store to keep ruler in sync
                     setScrollX(scrollLeft);
+                    setVerticalScrollY(scrollTop);
 
                     // Only handle auto-follow disabling during playback
                     if (
@@ -1671,38 +1676,73 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     />
                   )}
 
+                {/* Split Indicator Line - confined to hovered track row */}
+                {isSplitModeActive &&
+                  splitIndicatorPosition !== null &&
+                  hoveredTrackRow &&
+                  tracksRef.current &&
+                  (() => {
+                    const currentScrollY = tracksRef.current.scrollTop;
+                    const viewportHeight = tracksRef.current.clientHeight;
+                    const indicatorTop =
+                      getTrackRowTopPosition(hoveredTrackRow) - currentScrollY;
+                    const indicatorHeight =
+                      getTrackRowHeightValue(hoveredTrackRow);
+
+                    // Viewport clipping
+                    if (
+                      indicatorTop + indicatorHeight < 0 ||
+                      indicatorTop > viewportHeight
+                    ) {
+                      return null;
+                    }
+
+                    return (
+                      <div
+                        className="split-indicator"
+                        style={{
+                          left: `${splitIndicatorPosition}px`,
+                          top: `${Math.max(0, indicatorTop)}px`,
+                          height: `${indicatorHeight}px`,
+                        }}
+                      />
+                    );
+                  })()}
+
                 {/* Linked Track Indicators */}
                 {isSplitModeActive &&
-                  linkedTrackIndicators.map((indicator, index) => (
-                    <div
-                      key={`linked-indicator-${index}`}
-                      className="split-indicator"
-                      style={{
-                        left: `${indicator.position}px`,
-                        top: `${getTrackRowTopPosition(indicator.trackType)}px`,
-                        height: `${getTrackRowHeightValue(indicator.trackType)}px`,
-                      }}
-                    />
-                  ))}
+                  tracksRef.current &&
+                  linkedTrackIndicators.map((indicator, index) => {
+                    const currentScrollY = tracksRef.current!.scrollTop;
+                    const viewportHeight = tracksRef.current!.clientHeight;
+                    const indicatorTop =
+                      getTrackRowTopPosition(indicator.trackType) -
+                      currentScrollY;
+                    const indicatorHeight = getTrackRowHeightValue(
+                      indicator.trackType,
+                    );
 
-                {/* Magnetic Snap Indicator - shows when Shift + dragging/resizing */}
-                {playback.magneticSnapFrame !== null && tracksRef.current && (
-                  <>
-                    {/* Magnetic snap line - solid center */}
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: `${playback.magneticSnapFrame * frameWidth - timeline.scrollX}px`,
-                        top: 0,
-                        bottom: 0,
-                        width: '1px',
-                        pointerEvents: 'none',
-                        zIndex: 10,
-                      }}
-                      className="bg-secondary"
-                    />
-                  </>
-                )}
+                    // Viewport clipping
+                    if (
+                      indicatorTop + indicatorHeight < 0 ||
+                      indicatorTop > viewportHeight
+                    ) {
+                      return null;
+                    }
+
+                    return (
+                      <div
+                        key={`linked-indicator-${index}`}
+                        className="split-indicator"
+                        style={{
+                          left: `${indicator.position}px`,
+                          top: `${Math.max(0, indicatorTop)}px`,
+                          height: `${indicatorHeight}px`,
+                        }}
+                      />
+                    );
+                  })}
+
                 {/* Marquee Selection Box */}
                 {marqueeSelection?.isActive && tracksRef.current && (
                   <div
@@ -1746,6 +1786,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                       targetRowParsed &&
                       targetRowParsed.type === primaryTrack.type;
 
+                    // Get current scroll position for viewport clipping
+                    const currentScrollY = tracksRef.current?.scrollTop || 0;
+                    const viewportHeight = tracksRef.current?.clientHeight || 0;
+
                     return (
                       <>
                         {draggedTracks.map((track) => {
@@ -1773,7 +1817,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                               endFrame={targetEndFrame}
                               frameWidth={frameWidth}
                               scrollX={timeline.scrollX}
-                              scrollY={tracksRef.current?.scrollTop || 0}
+                              scrollY={currentScrollY}
+                              viewportHeight={viewportHeight}
                               visibleTrackRows={visibleTrackRows}
                               dynamicRows={dynamicRows}
                               isValidDrop={isValidDrop || false}
@@ -1786,14 +1831,27 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
                 {/* Insertion Line Indicator - shows where new row will be created */}
                 {/* ONLY shown when in insertion mode (mutually exclusive with dropzone) */}
-                {insertionPoint && dragGhost?.isActive && tracksRef.current && (
-                  <InsertionLineIndicator
-                    top={insertionPoint.yPosition}
-                    width={tracksRef.current.scrollWidth}
-                    scrollX={timeline.scrollX}
-                    isValid={insertionPoint.isValid}
-                  />
-                )}
+                {insertionPoint &&
+                  dragGhost?.isActive &&
+                  tracksRef.current &&
+                  (() => {
+                    const viewportHeight = tracksRef.current.clientHeight;
+                    const lineY = insertionPoint.yPosition;
+
+                    // Only show if the line is within the viewport
+                    if (lineY < -10 || lineY > viewportHeight + 10) {
+                      return null;
+                    }
+
+                    return (
+                      <InsertionLineIndicator
+                        top={lineY}
+                        width={tracksRef.current.scrollWidth}
+                        scrollX={timeline.scrollX}
+                        isValid={insertionPoint.isValid}
+                      />
+                    );
+                  })()}
               </div>
             </div>
           </div>

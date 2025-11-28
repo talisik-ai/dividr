@@ -1,30 +1,21 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useMemo } from 'react';
-import { parseRowId, TrackRowDefinition } from './utils/dynamicTrackRows';
-import { getRowHeight, getTrackItemHeight } from './utils/timelineConstants';
+import { TrackRowDefinition, parseRowId } from './utils/dynamicTrackRows';
+import { getRowHeight } from './utils/timelineConstants';
 
 interface DropZoneIndicatorProps {
-  targetRow: string; // Now accepts row IDs like "video-1", "text-0"
+  targetRow: string;
   startFrame: number;
   endFrame: number;
   frameWidth: number;
   scrollX: number;
-  scrollY: number;
-  visibleTrackRows: string[]; // Still media types like ['video', 'audio']
-  dynamicRows: TrackRowDefinition[]; // Dynamic row definitions for positioning
+  scrollY?: number;
+  viewportHeight?: number;
+  visibleTrackRows: string[];
+  dynamicRows: TrackRowDefinition[];
   isValidDrop: boolean;
 }
 
-/**
- * DropZoneIndicator - Visual feedback showing where the clip will land
- *
- * Features:
- * - Highlights the drop area with soft borders and background
- * - Resizes automatically to match dragged item's full length
- * - Shows valid (green/blue) or invalid (red) drop states
- * - Positioned accurately using track row calculations
- * - Accounts for centering when < 5 tracks are visible
- */
 export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
   ({
     targetRow,
@@ -32,41 +23,33 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
     endFrame,
     frameWidth,
     scrollX,
-    scrollY,
+    scrollY = 0,
+    viewportHeight,
     visibleTrackRows,
     dynamicRows,
     isValidDrop,
   }) => {
-    // Parse the target row ID to get media type
-    const parsedTargetRow = useMemo(() => parseRowId(targetRow), [targetRow]);
+    const position = useMemo(() => {
+      const parsed = parseRowId(targetRow);
+      if (!parsed) return null;
 
-    // Calculate position using dynamic rows
-    const { top, height } = useMemo(() => {
-      if (!parsedTargetRow) {
-        return { top: 0, height: 0, centeringOffset: 0 };
-      }
-
-      const mediaType = parsedTargetRow.type;
-
-      // Filter visible dynamic rows
+      // Filter to visible rows only
       const visibleDynamicRows = dynamicRows.filter((row) => {
-        const rowMediaType = row.trackTypes[0];
-        return visibleTrackRows.includes(rowMediaType);
+        const mediaType = row.trackTypes[0];
+        return visibleTrackRows.includes(mediaType);
       });
 
-      // Calculate baseline height (all dynamic rows)
+      // Calculate baseline and centering
       const baselineHeight = dynamicRows.reduce((sum, row) => {
-        const rowMediaType = row.trackTypes[0];
-        return sum + getRowHeight(rowMediaType);
+        const mediaType = row.trackTypes[0];
+        return sum + getRowHeight(mediaType);
       }, 0);
 
-      // Calculate total height of visible rows
       const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
-        const rowMediaType = row.trackTypes[0];
-        return sum + getRowHeight(rowMediaType);
+        const mediaType = row.trackTypes[0];
+        return sum + getRowHeight(mediaType);
       }, 0);
 
-      // Calculate centering offset
       const centeringOffset =
         visibleDynamicRows.length < dynamicRows.length
           ? (baselineHeight - totalVisibleHeight) / 2
@@ -74,136 +57,97 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
 
       // Find the target row's position
       let cumulativeTop = 0;
-      let rowFound = false;
+      let targetTop = 0;
+      let targetHeight = 0;
+      let found = false;
 
       for (const row of dynamicRows) {
-        if (row.id === targetRow) {
-          // Found the target row
-          rowFound = true;
-          const rowMediaType = row.trackTypes[0];
-          const rowHeight = getRowHeight(rowMediaType);
-          const trackItemHeight = getTrackItemHeight(rowMediaType);
+        const mediaType = row.trackTypes[0];
+        const rowParsed = parseRowId(row.id);
 
-          // Center the drop zone vertically within the row
-          const top =
-            cumulativeTop + centeringOffset + (rowHeight - trackItemHeight) / 2;
-
-          return { top, height: trackItemHeight, centeringOffset };
-        }
-
-        // Skip invisible rows
-        const rowMediaType = row.trackTypes[0];
-        if (visibleTrackRows.includes(rowMediaType)) {
-          cumulativeTop += getRowHeight(rowMediaType);
-        }
-      }
-
-      // Handle virtual rows (rows that don't exist yet but are being created)
-      if (!rowFound && parsedTargetRow) {
-        const mediaType = parsedTargetRow.type;
-        const targetRowIndex = parsedTargetRow.rowIndex;
-
-        // Find all existing rows of the same type
-        const sameTypeRows = dynamicRows.filter(
-          (row) => row.trackTypes[0] === mediaType,
-        );
-
-        if (sameTypeRows.length > 0) {
-          // Get the highest and lowest row indices for this type
-          const rowIndices = sameTypeRows.map((row) => {
-            const parsed = parseRowId(row.id);
-            return parsed ? parsed.rowIndex : 0;
-          });
-          const maxIndex = Math.max(...rowIndices);
-          const minIndex = Math.min(...rowIndices);
-
-          // Calculate position for virtual row
+        if (visibleTrackRows.includes(mediaType) && rowParsed) {
           const rowHeight = getRowHeight(mediaType);
-          const trackItemHeight = getTrackItemHeight(mediaType);
 
-          // If dragging above (higher index than max)
-          if (targetRowIndex > maxIndex) {
-            // Position above the topmost row of this type
-            let topPosition = 0;
-            for (const row of dynamicRows) {
-              const rowMediaType = row.trackTypes[0];
-              if (row.id === sameTypeRows[sameTypeRows.length - 1].id) {
-                break;
-              }
-              if (visibleTrackRows.includes(rowMediaType)) {
-                topPosition += getRowHeight(rowMediaType);
-              }
-            }
-            const top =
-              topPosition + centeringOffset + (rowHeight - trackItemHeight) / 2;
-            return { top, height: trackItemHeight, centeringOffset };
+          if (
+            rowParsed.type === parsed.type &&
+            Math.round(rowParsed.rowIndex) === Math.round(parsed.rowIndex)
+          ) {
+            targetTop = cumulativeTop + centeringOffset;
+            targetHeight = rowHeight;
+            found = true;
+            break;
           }
 
-          // If dragging below (lower index than min)
-          if (targetRowIndex < minIndex) {
-            // Position below the bottommost row of this type
-            let bottomPosition = 0;
-            for (const row of dynamicRows) {
-              const rowMediaType = row.trackTypes[0];
-              if (visibleTrackRows.includes(rowMediaType)) {
-                bottomPosition += getRowHeight(rowMediaType);
-              }
-              if (row.id === sameTypeRows[0].id) {
-                break;
-              }
-            }
-            const top =
-              bottomPosition +
-              centeringOffset +
-              (rowHeight - trackItemHeight) / 2;
-            return { top, height: trackItemHeight, centeringOffset };
-          }
+          cumulativeTop += rowHeight;
         }
       }
 
-      // Final fallback if row not found and no virtual row logic applies
-      const rowHeight = getRowHeight(mediaType);
-      const trackItemHeight = getTrackItemHeight(mediaType);
-      return {
-        top: centeringOffset + (rowHeight - trackItemHeight) / 2,
-        height: trackItemHeight,
-        centeringOffset,
-      };
-    }, [targetRow, parsedTargetRow, dynamicRows, visibleTrackRows]);
+      if (!found) {
+        // Row not found in visible rows - might be a new row being created
+        // Fall back to calculating based on type
+        targetTop = cumulativeTop + centeringOffset;
+        targetHeight = getRowHeight(parsed.type);
+      }
 
-    // Calculate horizontal position
-    const left = startFrame * frameWidth - scrollX;
-    const width = Math.max(1, (endFrame - startFrame) * frameWidth);
-    const adjustedTop = top - scrollY;
+      return {
+        top: targetTop,
+        height: targetHeight,
+        left: startFrame * frameWidth - scrollX,
+        width: Math.max(1, (endFrame - startFrame) * frameWidth),
+      };
+    }, [
+      targetRow,
+      startFrame,
+      endFrame,
+      frameWidth,
+      scrollX,
+      visibleTrackRows,
+      dynamicRows,
+    ]);
+
+    if (!position) return null;
+
+    // Convert to viewport coordinates
+    const viewportTop = position.top - scrollY;
+    const viewportBottom = viewportTop + position.height;
+
+    // Viewport clipping - don't render if completely outside
+    if (viewportHeight !== undefined) {
+      if (viewportBottom < 0 || viewportTop > viewportHeight) {
+        return null;
+      }
+    }
+
+    // Calculate visible portion (clip to viewport)
+    let clippedTop = viewportTop;
+    let clippedHeight = position.height;
+
+    if (viewportHeight !== undefined) {
+      if (viewportTop < 0) {
+        clippedHeight += viewportTop; // Reduce height by amount above viewport
+        clippedTop = 0;
+      }
+      if (viewportTop + position.height > viewportHeight) {
+        clippedHeight = viewportHeight - Math.max(0, viewportTop);
+      }
+    }
 
     return (
       <div
         className={cn(
-          'absolute pointer-events-none z-[998] rounded transition-colors duration-75',
-          'border-2',
+          'absolute pointer-events-none rounded border-2 border-dashed transition-opacity duration-150',
           isValidDrop
-            ? 'border-2 border-zinc-500 bg-zinc-500/20 dark:border-zinc-300 dark:bg-zinc-300/20 '
-            : 'border-red-400 bg-red-400/10 dark:border-red-500 dark:bg-red-500/10',
+            ? 'border-secondary/60 bg-secondary/20'
+            : 'border-destructive/60 bg-destructive/20',
         )}
         style={{
-          left: `${left}px`,
-          top: `${adjustedTop}px`,
-          width: `${width}px`,
-          height: `${height}px`,
+          top: `${clippedTop}px`,
+          left: `${position.left}px`,
+          width: `${position.width}px`,
+          height: `${Math.max(0, clippedHeight)}px`,
+          zIndex: 5,
         }}
-      >
-        {/* Inner glow effect */}
-        {/* <div
-          className={cn(
-            'absolute inset-0 rounded',
-            isValidDrop
-              ? 'shadow-[inset_0_0_20px_rgba(59,130,246,0.3)]'
-              : 'shadow-[inset_0_0_20px_rgba(239,68,68,0.3)]',
-          )}
-        /> */}
-      </div>
+      />
     );
   },
 );
-
-DropZoneIndicator.displayName = 'DropZoneIndicator';
