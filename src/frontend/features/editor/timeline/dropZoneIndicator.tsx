@@ -9,6 +9,7 @@ interface DropZoneIndicatorProps {
   endFrame: number;
   frameWidth: number;
   scrollX: number;
+  scrollY: number;
   visibleTrackRows: string[]; // Still media types like ['video', 'audio']
   dynamicRows: TrackRowDefinition[]; // Dynamic row definitions for positioning
   isValidDrop: boolean;
@@ -31,6 +32,7 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
     endFrame,
     frameWidth,
     scrollX,
+    scrollY,
     visibleTrackRows,
     dynamicRows,
     isValidDrop,
@@ -172,6 +174,7 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
     // Calculate horizontal position
     const left = startFrame * frameWidth - scrollX;
     const width = Math.max(1, (endFrame - startFrame) * frameWidth);
+    const adjustedTop = top - scrollY;
 
     return (
       <div
@@ -184,7 +187,7 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
         )}
         style={{
           left: `${left}px`,
-          top: `${top}px`,
+          top: `${adjustedTop}px`,
           width: `${width}px`,
           height: `${height}px`,
         }}

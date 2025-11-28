@@ -354,7 +354,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       scrollElement: tracksRef.current,
       threshold: 50,
       speed: 1.2,
-      onScroll: (newScrollX) => {
+      enableHorizontal: true,
+      enableVertical: true,
+      onScroll: (newScrollX, _newScrollY) => {
         setScrollX(newScrollX);
       },
     });
@@ -508,6 +510,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const frameWidth = useMemo(() => 2 * timeline.zoom, [timeline.zoom]);
 
     // track mouse position during drag for auto-scroll
+    // track mouse position during drag for auto-scroll
     useEffect(() => {
       if (!dragGhost?.isActive) {
         setAutoScrollMousePos(null);
@@ -523,6 +526,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         const rect = tracksRef.current.getBoundingClientRect();
         const currentScrollX = tracksRef.current.scrollLeft;
+        const currentScrollY = tracksRef.current.scrollTop;
         const mouseRelativeX = clientX - rect.left;
 
         // Calculate target frame
@@ -534,8 +538,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           ),
         );
 
-        // Mouse Y relative to tracks container (no scroll adjustment for Y)
-        const mouseRelativeY = clientY - rect.top;
+        // Mouse Y relative to tracks container - MUST account for vertical scroll
+        const mouseRelativeY = clientY - rect.top + currentScrollY;
 
         // Get the track being dragged
         const draggedTrack = tracks.find((t) => t.id === dragGhost.trackId);
@@ -543,6 +547,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         // ========================================
         // BUILD ROW BOUNDS - MATCHING DropZoneIndicator EXACTLY
+        // Account for vertical scroll offset
         // ========================================
 
         const rowBounds: Array<{
@@ -578,6 +583,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             : 0;
 
         // Build bounds (MATCHES DropZoneIndicator iteration)
+        // These bounds are in "content coordinates" (accounting for scroll)
         let cumulativeTop = 0;
         for (const row of dynamicRows) {
           const mediaType = row.trackTypes[0];
@@ -601,11 +607,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         // ========================================
         // DETECT INSERTION POINT
+        // mouseRelativeY now includes scroll offset, matching content coordinates
         // ========================================
 
         const insertion = detectInsertionPoint(
-          mouseRelativeY, // Raw mouse Y (no adjustment)
-          rowBounds, // Bounds with centering already included
+          mouseRelativeY, // Includes vertical scroll offset
+          rowBounds, // Bounds in content coordinates
           draggedTrack.type,
           tracks,
         );
@@ -614,6 +621,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         if (process.env.NODE_ENV === 'development') {
           console.log(`🎯 DRAG:`, {
             mouseY: mouseRelativeY.toFixed(0),
+            scrollY: currentScrollY.toFixed(0),
             centeringOffset: centeringOffset.toFixed(0),
             firstRowTop: rowBounds[0]?.top.toFixed(0),
             insertion: insertion
@@ -628,6 +636,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         // ========================================
         // UPDATE STATE
+        // Convert insertion yPosition back to viewport coordinates for rendering
         // ========================================
 
         if (insertion) {
@@ -647,8 +656,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
             updateDragGhostPosition(clientX, clientY, targetRowId, targetFrame);
           } else {
+            // Convert yPosition from content coordinates to viewport coordinates
+            // by subtracting the current scroll offset
             setInsertionPoint({
-              yPosition: insertion.yPosition,
+              yPosition: insertion.yPosition - currentScrollY,
               isValid: insertion.isValid,
               targetRowIndex: insertion.targetRowIndex,
               trackType: insertion.trackType,
@@ -672,10 +683,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           // CRITICAL: Update drag ghost to current track's row to prevent stale target
           const currentRowId = getTrackRowId(draggedTrack);
           updateDragGhostPosition(clientX, clientY, currentRowId, targetFrame);
-
-          // Clear last valid target since we're now over an invalid area
-          // (Or you could keep it if you want "last valid wins" behavior)
-          // lastValidTargetRef.current = null;
         }
       };
 
@@ -684,12 +691,28 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         updateDragGhostWithCurrentScroll(e.clientX, e.clientY);
       };
 
+      // Also update on scroll changes (for auto-scroll scenarios)
+      const handleScroll = () => {
+        if (autoScrollMousePos) {
+          updateDragGhostWithCurrentScroll(
+            autoScrollMousePos.x,
+            autoScrollMousePos.y,
+          );
+        }
+      };
+
       document.addEventListener('mousemove', handleMouseMove, {
+        passive: true,
+      });
+
+      // Listen for scroll events on the tracks container to update insertion point
+      tracksRef.current?.addEventListener('scroll', handleScroll, {
         passive: true,
       });
 
       return () => {
         document.removeEventListener('mousemove', handleMouseMove);
+        tracksRef.current?.removeEventListener('scroll', handleScroll);
       };
     }, [
       dragGhost?.isActive,
@@ -700,18 +723,21 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       dynamicRows,
       tracks,
       updateDragGhostPosition,
+      autoScrollMousePos,
     ]);
 
-    // target frame when scroll changes (even if mouse doesn't move)
+    // Recalculate target frame and insertion point when scroll changes (even if mouse doesn't move)
     useEffect(() => {
       if (!dragGhost?.isActive || !autoScrollMousePos || !tracksRef.current) {
         return;
       }
 
-      // Recalculate target frame based on current scroll
       const rect = tracksRef.current.getBoundingClientRect();
       const currentScrollX = tracksRef.current.scrollLeft;
+      const currentScrollY = tracksRef.current.scrollTop;
       const mouseRelativeX = autoScrollMousePos.x - rect.left;
+
+      // Recalculate target frame based on current scroll
       const targetFrame = Math.max(
         0,
         Math.floor(
@@ -720,7 +746,86 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         ),
       );
 
-      // Only update if frame actually changed
+      // Also recalculate insertion point for vertical scroll
+      const mouseRelativeY = autoScrollMousePos.y - rect.top + currentScrollY;
+
+      // Get the track being dragged
+      const draggedTrack = tracks.find((t) => t.id === dragGhost.trackId);
+      if (!draggedTrack) return;
+
+      // Rebuild row bounds with current scroll
+      const visibleDynamicRows = dynamicRows.filter((row) => {
+        const rowMediaType = row.trackTypes[0];
+        return visibleTrackRows.includes(rowMediaType);
+      });
+
+      const baselineHeight = dynamicRows.reduce((sum, row) => {
+        const rowMediaType = row.trackTypes[0];
+        return sum + getRowHeight(rowMediaType);
+      }, 0);
+
+      const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
+        const rowMediaType = row.trackTypes[0];
+        return sum + getRowHeight(rowMediaType);
+      }, 0);
+
+      const centeringOffset =
+        visibleDynamicRows.length < dynamicRows.length
+          ? (baselineHeight - totalVisibleHeight) / 2
+          : 0;
+
+      const rowBounds: Array<{
+        rowId: string;
+        top: number;
+        bottom: number;
+        type: VideoTrack['type'];
+        rowIndex: number;
+      }> = [];
+
+      let cumulativeTop = 0;
+      for (const row of dynamicRows) {
+        const mediaType = row.trackTypes[0];
+        const parsed = parseRowId(row.id);
+
+        if (visibleTrackRows.includes(mediaType) && parsed) {
+          const rowHeight = getRowHeight(mediaType);
+          const rowTop = cumulativeTop + centeringOffset;
+
+          rowBounds.push({
+            rowId: row.id,
+            top: rowTop,
+            bottom: rowTop + rowHeight,
+            type: parsed.type,
+            rowIndex: parsed.rowIndex,
+          });
+
+          cumulativeTop += rowHeight;
+        }
+      }
+
+      const insertion = detectInsertionPoint(
+        mouseRelativeY,
+        rowBounds,
+        draggedTrack.type,
+        tracks,
+      );
+
+      if (insertion) {
+        if (insertion.type === 'inside') {
+          setInsertionPoint(null);
+        } else {
+          setInsertionPoint({
+            yPosition: insertion.yPosition - currentScrollY,
+            isValid: insertion.isValid,
+            targetRowIndex: insertion.targetRowIndex,
+            trackType: insertion.trackType,
+          });
+        }
+      } else {
+        setInsertionPoint(null);
+      }
+
+      // Only update drag ghost if frame actually changed
       if (dragGhost.targetFrame !== targetFrame) {
         updateDragGhostPosition(
           autoScrollMousePos.x,
@@ -730,14 +835,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         );
       }
     }, [
-      timeline.scrollX, // Triggers when auto-scroll updates
+      timeline.scrollX, // Triggers when horizontal auto-scroll updates
       dragGhost?.isActive,
       dragGhost?.targetFrame,
       dragGhost?.targetRow,
       dragGhost?.offsetX,
+      dragGhost?.trackId,
       autoScrollMousePos,
       frameWidth,
       updateDragGhostPosition,
+      tracks,
+      dynamicRows,
+      visibleTrackRows,
     ]);
 
     // Track viewport width for responsive timeline grid
@@ -1556,7 +1665,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                       className="split-indicator"
                       style={{
                         left: `${splitIndicatorPosition}px`,
-                        top: `${getTrackRowTopPosition(hoveredTrackRow)}px`,
+                        top: `${getTrackRowTopPosition(hoveredTrackRow) - (tracksRef.current?.scrollTop || 0)}px`,
                         height: `${getTrackRowHeightValue(hoveredTrackRow)}px`,
                       }}
                     />
@@ -1664,6 +1773,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                               endFrame={targetEndFrame}
                               frameWidth={frameWidth}
                               scrollX={timeline.scrollX}
+                              scrollY={tracksRef.current?.scrollTop || 0}
                               visibleTrackRows={visibleTrackRows}
                               dynamicRows={dynamicRows}
                               isValidDrop={isValidDrop || false}
