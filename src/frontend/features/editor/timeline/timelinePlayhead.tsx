@@ -100,7 +100,7 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
         </div>
 
         {/* Frame indicator - also draggable */}
-        <div
+        {/* <div
           className={cn(
             'absolute top-0.5 px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-30 cursor-grab active:cursor-grabbing will-change-transform pointer-events-auto',
             isSnapping
@@ -111,7 +111,7 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
           onMouseDown={handleMouseDown}
         >
           {currentFrame}
-        </div>
+        </div> */}
       </>
     );
   },

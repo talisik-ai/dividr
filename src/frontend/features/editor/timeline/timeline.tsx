@@ -38,10 +38,7 @@ import {
   migrateTracksWithRowIndex,
   parseRowId,
 } from './utils/dynamicTrackRows';
-import {
-  calculateCenteringOffset,
-  getRowHeight,
-} from './utils/timelineConstants';
+import { getRowHeight } from './utils/timelineConstants';
 import {
   calculateFrameFromPosition,
   handleTimelineMouseDown as centralizedHandleMouseDown,
@@ -84,6 +81,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const [scrollbarHeight, setScrollbarHeight] = useState(0);
     const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
     const [autoScrollMousePos, setAutoScrollMousePos] = useState<{
+      x: number;
+      y: number;
+    } | null>(null);
+    const [marqueeAutoScrollMousePos, setMarqueeAutoScrollMousePos] = useState<{
       x: number;
       y: number;
     } | null>(null);
@@ -355,6 +356,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Record state when track drag operations complete
     useTrackDragRecording();
 
+    // Auto-scroll for track drag operations
     useAutoScroll({
       enabled: !!dragGhost?.isActive,
       mouseX: autoScrollMousePos?.x || 0,
@@ -363,6 +365,23 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       threshold: 80,
       verticalThreshold: 100,
       speed: 1.2,
+      enableHorizontal: true,
+      enableVertical: true,
+      onScroll: (newScrollX, newScrollY) => {
+        setScrollX(newScrollX);
+        setVerticalScrollY(newScrollY);
+      },
+    });
+
+    // Auto-scroll for marquee selection
+    useAutoScroll({
+      enabled: !!marqueeSelection?.isActive,
+      mouseX: marqueeAutoScrollMousePos?.x || 0,
+      mouseY: marqueeAutoScrollMousePos?.y || 0,
+      scrollElement: tracksRef.current,
+      threshold: 20, // Smaller threshold for marquee (more responsive)
+      verticalThreshold: 20,
+      speed: 1.0,
       enableHorizontal: true,
       enableVertical: true,
       onScroll: (newScrollX, newScrollY) => {
@@ -1033,31 +1052,85 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     }, [playback.isPlaying]);
 
     // Helper function to find tracks within marquee selection
+    // MIGRATED: Now uses dynamic row system with scroll offset
     const findTracksInMarquee = useCallback(
       (rect: { left: number; top: number; right: number; bottom: number }) => {
+        if (!tracksRef.current) return [];
+
         const selectedIds: string[] = [];
 
-        // Calculate centering offset to adjust track positions
-        const centeringOffset = calculateCenteringOffset(visibleTrackRows);
+        // Filter visible dynamic rows
+        const visibleDynamicRows = dynamicRows.filter((row) => {
+          const rowMediaType = row.trackTypes[0];
+          return visibleTrackRows.includes(rowMediaType);
+        });
 
+        // Calculate baseline height (all dynamic rows)
+        const baselineHeight = dynamicRows.reduce((sum, row) => {
+          const rowMediaType = row.trackTypes[0];
+          return sum + getRowHeight(rowMediaType);
+        }, 0);
+
+        // Calculate total height of visible rows
+        const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
+          const rowMediaType = row.trackTypes[0];
+          return sum + getRowHeight(rowMediaType);
+        }, 0);
+
+        // Calculate centering offset (MATCHES DropZoneIndicator)
+        const centeringOffset =
+          visibleDynamicRows.length < dynamicRows.length
+            ? (baselineHeight - totalVisibleHeight) / 2
+            : 0;
+
+        // Build row bounds in content coordinates (accounting for scroll)
+        const rowBounds: Array<{
+          rowId: string;
+          top: number;
+          bottom: number;
+          type: VideoTrack['type'];
+          rowIndex: number;
+        }> = [];
+
+        let cumulativeTop = 0;
+        for (const row of dynamicRows) {
+          const mediaType = row.trackTypes[0];
+          const parsed = parseRowId(row.id);
+
+          if (visibleTrackRows.includes(mediaType) && parsed) {
+            const rowHeight = getRowHeight(mediaType);
+            const rowTop = cumulativeTop + centeringOffset;
+
+            rowBounds.push({
+              rowId: row.id,
+              top: rowTop,
+              bottom: rowTop + rowHeight,
+              type: parsed.type,
+              rowIndex: parsed.rowIndex,
+            });
+
+            cumulativeTop += rowHeight;
+          }
+        }
+
+        // Check each track against marquee bounds
         tracks.forEach((track) => {
           const trackLeft = track.startFrame * frameWidth;
           const trackRight = track.endFrame * frameWidth;
 
-          // Use dynamic row positioning based on individual row heights
-          // Add centering offset to match the actual visual position
-          const trackTop =
-            getTrackRowTop(track.type, visibleTrackRows) + centeringOffset;
+          // Find the row bounds for this track
+          const trackRowId = getTrackRowId(track);
+          const trackRowBounds = rowBounds.find(
+            (rb) => rb.rowId === trackRowId,
+          );
 
-          // Skip if track type is not visible
-          if (
-            trackTop === centeringOffset &&
-            !visibleTrackRows.includes(track.type)
-          )
-            return;
+          if (!trackRowBounds) return;
 
-          const trackBottom = trackTop + getRowHeight(track.type);
+          // Track bounds in content coordinates
+          const trackTop = trackRowBounds.top;
+          const trackBottom = trackRowBounds.bottom;
 
+          // Marquee rect is in content coordinates (already includes scroll offset)
           // Check if track intersects with marquee
           const intersects =
             trackLeft < rect.right &&
@@ -1076,7 +1149,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         return [...new Set(selectedIds)]; // Remove duplicates
       },
-      [tracks, frameWidth, visibleTrackRows],
+      [tracks, frameWidth, visibleTrackRows, dynamicRows],
     );
 
     // Split mode handlers
@@ -1097,6 +1170,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           frameWidth,
           tracks,
           visibleTrackRows,
+          dynamicRows,
         );
 
         if (hoveredTrackAtPosition) {
@@ -1152,6 +1226,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     }, []);
 
     // Marquee selection handlers
+    // MIGRATED: Now accounts for vertical scroll offset and includes auto-scroll
     const handleMarqueeMouseMove = useCallback(
       (e: MouseEvent) => {
         if (
@@ -1162,8 +1237,17 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           return;
 
         const rect = tracksRef.current.getBoundingClientRect();
-        const currentX = e.clientX - rect.left + tracksRef.current.scrollLeft;
-        const currentY = e.clientY - rect.top;
+        const currentScrollX = tracksRef.current.scrollLeft;
+        const currentScrollY = tracksRef.current.scrollTop;
+
+        // Update mouse position for auto-scroll
+        setMarqueeAutoScrollMousePos({ x: e.clientX, y: e.clientY });
+
+        // CRITICAL: Include scroll offset for accurate positioning
+        // X: content coordinates (includes horizontal scroll)
+        const currentX = e.clientX - rect.left + currentScrollX;
+        // Y: content coordinates (includes vertical scroll)
+        const currentY = e.clientY - rect.top + currentScrollY;
 
         setMarqueeSelection({
           ...marqueeSelection,
@@ -1172,6 +1256,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         });
 
         // Real-time selection: Update selected tracks as marquee moves
+        // All coordinates are in content space (include scroll offset)
         const left = Math.min(marqueeSelection.startX, currentX);
         const right = Math.max(marqueeSelection.startX, currentX);
         const top = Math.min(marqueeSelection.startY, currentY);
@@ -1213,8 +1298,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         return;
 
       // Selection is already updated in real-time during mousemove
-      // Just clear the marquee visual
+      // Just clear the marquee visual and auto-scroll
       setMarqueeSelection(null);
+      setMarqueeAutoScrollMousePos(null);
     }, [marqueeSelection]);
 
     // Marquee selection mouse event listeners
@@ -1243,8 +1329,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           tracksRef.current
         ) {
           const rect = tracksRef.current.getBoundingClientRect();
-          const currentX = e.clientX - rect.left + tracksRef.current.scrollLeft;
-          const currentY = e.clientY - rect.top;
+          const currentScrollX = tracksRef.current.scrollLeft;
+          const currentScrollY = tracksRef.current.scrollTop;
+
+          // CRITICAL: Include scroll offset for accurate positioning
+          const currentX = e.clientX - rect.left + currentScrollX;
+          const currentY = e.clientY - rect.top + currentScrollY;
 
           // Check if mouse moved more than 3px (reduced threshold for better responsiveness)
           const deltaX = Math.abs(currentX - marqueeStartRef.current.x);
@@ -1277,8 +1367,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           handleMarqueeMouseUp();
         }
 
-        // Clear marquee start tracking
+        // Clear marquee start tracking and auto-scroll
         marqueeStartRef.current = null;
+        setMarqueeAutoScrollMousePos(null);
       };
 
       // Always attach listeners when component is mounted
@@ -1422,6 +1513,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           ) {
             // This is the second click of a double-click
             // Activate marquee immediately for double-click
+            // startX and startY are already in content coordinates (include scroll offset)
             setMarqueeSelection({
               isActive: true,
               startX,
@@ -1439,6 +1531,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
           // Store the start position but don't activate marquee yet
           // Marquee will activate only if user drags (mousemove)
+          // startX and startY are already in content coordinates (include scroll offset)
           marqueeStartRef.current = { x: startX, y: startY, hasMoved: false };
 
           if (clearSelection) {
@@ -1502,6 +1595,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           frameWidth,
           tracks,
           visibleTrackRows,
+          dynamicRows,
         );
         const frame = calculateFrameFromPosition(
           e.clientX,
@@ -1524,8 +1618,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         };
 
         // Add position info for marquee
+        // CRITICAL: Include scroll offset for accurate positioning
+        const scrollTop = tracksRef.current.scrollTop;
         (clickInfo as any).startX = clickX + scrollLeft;
-        (clickInfo as any).startY = clickY;
+        (clickInfo as any).startY = clickY + scrollTop;
 
         const timelineState = {
           isSplitModeActive,
@@ -1625,7 +1721,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               </div>
 
               {/* Timeline Tracks Area - Scrollable vertically */}
-              <div className="flex-1 relative overflow-hidden min-h-0">
+              <div className="flex-1 relative min-h-0">
                 <div
                   ref={tracksRef}
                   className={cn(
@@ -1778,8 +1874,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 {isSplitModeActive &&
                   tracksRef.current &&
                   linkedTrackIndicators.map((indicator, index) => {
-                    const currentScrollY = tracksRef.current!.scrollTop;
-                    const viewportHeight = tracksRef.current!.clientHeight;
+                    if (!tracksRef.current) return null;
+                    const currentScrollY = tracksRef.current.scrollTop;
+                    const viewportHeight = tracksRef.current.clientHeight;
                     const indicatorTop =
                       getTrackRowTopPosition(indicator.trackType) -
                       currentScrollY;
@@ -1809,12 +1906,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   })}
 
                 {/* Marquee Selection Box */}
+                {/* MIGRATED: Now accounts for scroll offset - convert content coordinates to viewport */}
                 {marqueeSelection?.isActive && tracksRef.current && (
                   <div
                     className="absolute border-2 border-zinc-500 bg-zinc-500/20 dark:border-zinc-300 dark:bg-zinc-300/20 pointer-events-none z-[1000]"
                     style={{
                       left: `${Math.min(marqueeSelection.startX, marqueeSelection.currentX) - timeline.scrollX}px`,
-                      top: `${Math.min(marqueeSelection.startY, marqueeSelection.currentY)}px`,
+                      top: `${Math.min(marqueeSelection.startY, marqueeSelection.currentY) - (tracksRef.current.scrollTop || 0)}px`,
                       width: `${Math.abs(marqueeSelection.currentX - marqueeSelection.startX)}px`,
                       height: `${Math.abs(marqueeSelection.currentY - marqueeSelection.startY)}px`,
                     }}
