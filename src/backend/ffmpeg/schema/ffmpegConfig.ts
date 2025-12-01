@@ -134,7 +134,7 @@ export interface VideoEditJob {
   subtitleContent?: string; // SRT content to be written to a temporary file
   subtitleFormat?: 'srt' | 'vtt' | 'ass'; // Subtitle format for export
   videoDimensions?: { width: number; height: number };
-  textClips?: TextClipData[]; // Text clips for rendering (heading/body)
+  textClips?: TextClipData[] | any[]; // Text clips for rendering - can be TextClipData or TextSegment from textLayers.ts
   textClipsContent?: string; // Generated ASS content for text clips
   subtitleFontFamilies?: string[]; // Font families used in subtitles (resolved to paths in main process)
 }

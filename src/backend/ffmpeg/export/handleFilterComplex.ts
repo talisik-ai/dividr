@@ -9,6 +9,7 @@ import {
   AudioTrimResult,
 } from '../schema/ffmpegConfig';
 import { getFontDirectoriesForFamilies } from '../subtitles/fontMapper';
+import { generateTextLayerFilters } from '../subtitles/textLayers';
 import type { HardwareAcceleration } from './hardwareAccelerationDetector';
 import {
   buildScaleFilter,
@@ -1556,45 +1557,76 @@ export function buildSeparateTimelineFilterComplex(
     videoLabelAfterDownscale = videoLabelAfterImages;
   }
   
-  // Apply subtitles to video stream if needed (must be in filter_complex)
-  // Note: Text clips are now bundled with subtitles in ASS format
-  // Subtitles are applied AFTER the final downscale so they match the output dimensions
+  // Apply subtitles and text layers to video stream (must be in filter_complex)
+  // NOTE: Subtitles and text layers are now processed separately for proper multi-track rendering
+  // Subtitles are applied AFTER the final downscale, then text layers as drawtext filters
   let subtitleFilter = '';
+  const textLayerFilters: string[] = [];
+  let currentVideoLabelForText = videoLabelAfterDownscale;
 
+  // Get font directories for the fonts used in subtitles
+  let fontsDirParam = '';
+  if (job.subtitleFontFamilies && job.subtitleFontFamilies.length > 0) {
+    fontsDirParam = buildFontDirectoriesParameter(job.subtitleFontFamilies);
+  }
+
+  // Step 1: Apply subtitles first (if present)
   if (job.operations.subtitles && hasVideoContent) {
-    // Use escapePathForFilter for proper filter syntax escaping
     const escapedPath = escapePathForFilter(job.operations.subtitles);
     const fileExtension = job.operations.subtitles
       .toLowerCase()
       .split('.')
       .pop();
 
-    // Get font directories for the fonts used in subtitles
-    let fontsDirParam = '';
-    if (job.subtitleFontFamilies && job.subtitleFontFamilies.length > 0) {
-      // Use the new method to build font directories parameter
-      fontsDirParam = buildFontDirectoriesParameter(job.subtitleFontFamilies);
-    }
-
     if (fileExtension === 'ass' || fileExtension === 'ssa') {
-      // Use 'subtitles' filter for ASS files with fontsdir parameter
-      // Apply to the video after downscale
-      subtitleFilter = `[${videoLabelAfterDownscale}]subtitles='${escapedPath}'${fontsDirParam}[video]`;
+      // Apply subtitles to the video after downscale
+      subtitleFilter = `[${currentVideoLabelForText}]subtitles='${escapedPath}'${fontsDirParam}[video_with_subtitles]`;
+      currentVideoLabelForText = 'video_with_subtitles';
       console.log(
-        '📝 Added ASS subtitles filter (includes text clips) with fontsdir - applied AFTER downscale at final output dimensions',
+        '📝 [Subtitles] Added ASS subtitles filter with fontsdir - applied AFTER downscale at final output dimensions',
       );
     } else {
-      // Use 'subtitles' filter for other formats
-      subtitleFilter = `[${videoLabelAfterDownscale}]subtitles='${escapedPath}'${fontsDirParam}[video]`;
-      console.log(`📝 Added subtitles filter (format: ${fileExtension}) - applied AFTER downscale at final output dimensions`);
+      subtitleFilter = `[${currentVideoLabelForText}]subtitles='${escapedPath}'${fontsDirParam}[video_with_subtitles]`;
+      currentVideoLabelForText = 'video_with_subtitles';
+      console.log(`📝 [Subtitles] Added subtitles filter (format: ${fileExtension}) - applied AFTER downscale`);
     }
-  } else if (hasVideoContent) {
-    // ✅ OPTIMIZATION: No subtitles - skip null filter (no-op)
-    // Just rename the label if needed
-    if (videoLabelAfterDownscale !== 'video') {
-      subtitleFilter = `[${videoLabelAfterDownscale}]copy[video]`;
+  }
+
+  // Step 2: Apply text layers as drawtext filters on top of subtitles (if present)
+  // Text segments are passed in job.textClips and converted to drawtext filters
+  if (job.textClips && job.textClips.length > 0 && hasVideoContent) {
+    // Type guard: ensure we have TextSegment[] (not TextClipData[])
+    // TextSegment has startTime/endTime in seconds, while TextClipData has startFrame/endFrame
+    const textSegments = job.textClips.filter((clip: any) => 
+      clip.startTime !== undefined && clip.endTime !== undefined
+    ) as any[];
+    
+    if (textSegments.length > 0) {
+      // Generate drawtext filters for each text segment
+      const drawtextFilters = generateTextLayerFilters(
+        textSegments,
+        job.operations.textStyle,
+        job.videoDimensions,
+      );
+      
+      if (drawtextFilters.length > 0) {
+        console.log(`📝 [TextLayers] Generating ${drawtextFilters.length} drawtext filters for text segments`);
+        
+        // Apply each drawtext filter sequentially
+        drawtextFilters.forEach((filter: string, index: number) => {
+          const inputLabel = index === 0 ? currentVideoLabelForText : `text_${index - 1}`;
+          const outputLabel = index === drawtextFilters.length - 1 ? 'video' : `text_${index}`;
+          
+          textLayerFilters.push(`[${inputLabel}]${filter}[${outputLabel}]`);
+        });
+        
+        console.log(`✅ [TextLayers] Added ${drawtextFilters.length} drawtext filters to filter complex`);
+      }
     }
-    console.log('ℹ️ No subtitles, using copy passthrough or skipping');
+  } else if (hasVideoContent && currentVideoLabelForText !== 'video') {
+    // No text layers - just rename the label if needed
+    textLayerFilters.push(`[${currentVideoLabelForText}]copy[video]`);
+    console.log('📝 [TextLayers] No text layers, using copy passthrough');
   }
 
   // Combine all filters in the correct order:
@@ -1604,6 +1636,7 @@ export function buildSeparateTimelineFilterComplex(
   // 4. Image overlays (applied to cropped video at intermediate resolution)
   // 5. Final downscale (if needed) - downscales to custom dimensions
   // 6. Subtitles (applied AFTER downscale at final output dimensions)
+  // 7. Text layers (applied AFTER subtitles for proper layering)
   const allFilters = [...videoFilters, ...audioFilters];
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
   if (aspectRatioCropFilter) {
@@ -1621,8 +1654,12 @@ export function buildSeparateTimelineFilterComplex(
     allFilters.push(finalDownscaleFilter);
   }
   if (subtitleFilter) {
-    console.log('📝 ✅ ADDING SUBTITLE FILTER TO CHAIN (AFTER DOWNSCALE, LAST STEP)');
+    console.log('📝 ✅ ADDING SUBTITLE FILTER TO CHAIN (AFTER DOWNSCALE)');
     allFilters.push(subtitleFilter);
+  }
+  if (textLayerFilters.length > 0) {
+    console.log(`📝 ✅ ADDING ${textLayerFilters.length} TEXT LAYER DRAWTEXT FILTERS TO CHAIN (AFTER SUBTITLES, LAST STEP)`);
+    allFilters.push(...textLayerFilters);
   }
   const filterComplex = allFilters.join(';');
 

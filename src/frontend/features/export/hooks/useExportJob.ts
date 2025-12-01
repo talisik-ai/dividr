@@ -10,6 +10,7 @@ import {
 } from '../../editor/stores/videoEditor/index';
 import { detectAspectRatio } from '../../editor/stores/videoEditor/utils/aspectRatioHelpers';
 import { generateSubtitleContent } from '../utils/subtitleUtils';
+import { generateTextLayerSegments } from '../utils/textLayerUtils';
 
 export const useExportJob = () => {
   const tracks = useVideoEditorStore((state) => state.tracks);
@@ -186,18 +187,30 @@ export const useExportJob = () => {
           `(aspect ratio: ${targetAspectRatio || 'none'})`,
       );
 
-      // Generate subtitle content (now includes text clips bundled together)
+      // Generate subtitle content (ONLY subtitles - text clips handled separately)
       // Use finalOutputDimensions so subtitles are positioned for the final output video
       // Subtitles will be applied AFTER the final downscale to match the output dimensions
       const { subtitleContent, currentTextStyle, fontFamilies } =
         generateSubtitleContent(
           subtitleTracks,
-          textTracks, // Pass text tracks to be bundled with subtitles
+          [], // Text tracks are now processed separately
           textStyle,
           getTextStyleForSubtitle,
           finalOutputDimensions, // Use final output dimensions for subtitle positioning
           timelineStartFrame, // Pass start frame for time offset adjustment
         );
+
+      // Generate text layer segments separately (for multi-track rendering)
+      // Text layers will be converted to drawtext filters in the FFmpeg filter complex
+      const textLayerResult = textTracks.length > 0 
+        ? generateTextLayerSegments(
+            textTracks,
+            textStyle,
+            getTextStyleForSubtitle,
+            finalOutputDimensions,
+            timelineStartFrame,
+          )
+        : { textSegments: [], currentTextStyle: undefined };
 
       return {
         inputs: trackInfos,
@@ -216,14 +229,11 @@ export const useExportJob = () => {
           preferHEVC: false, // Use H.264 (set to true for H.265/HEVC)
           aspect: targetAspectRatio, // Pass target aspect ratio for aspect ratio conversion
         },
-        subtitleContent, // Now includes both subtitles and text clips
-        subtitleFormat:
-          subtitleTracks.length > 0 || textTracks.length > 0
-            ? 'ass'
-            : undefined,
-        subtitleFontFamilies: fontFamilies, // Pass font families, main process will resolve paths
+        subtitleContent, // Only subtitles
+        subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+        textClips: textLayerResult.textSegments, // Text segments for drawtext filters
+        subtitleFontFamilies: fontFamilies, // Subtitle fonts
         videoDimensions: finalOutputDimensions, // Pass final output dimensions for commandBuilder
-        // textClips and textClipsContent removed - now bundled with subtitles
       };
     },
     [
