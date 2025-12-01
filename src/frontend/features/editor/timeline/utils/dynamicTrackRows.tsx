@@ -1,6 +1,7 @@
 import { ClosedCaption, Image, Music, Type, Video } from 'lucide-react';
 import React from 'react';
 import { VideoTrack } from '../../stores/videoEditor/types';
+import { getRowHeight } from './timelineConstants';
 
 export interface TrackRowDefinition {
   id: string;
@@ -1203,4 +1204,137 @@ export function getTracksByVisualOrder(tracks: VideoTrack[]): VideoTrack[] {
 
   // Non-audio tracks first, then audio tracks
   return [...sortedNonAudio, ...sortedAudio];
+}
+
+/**
+ * Calculate placeholder row counts based on dynamic rows
+ * Matches the logic in timelineTracks.tsx and timelineTrackControllers.tsx
+ *
+ * @param dynamicRows - All dynamic track rows
+ * @param maxPlaceholderRows - Maximum number of placeholder rows (default: 3)
+ * @returns Object with placeholder counts and total height
+ */
+export function calculatePlaceholderRows(
+  dynamicRows: TrackRowDefinition[],
+  maxPlaceholderRows = 3,
+): {
+  placeholderRowsAbove: number;
+  placeholderRowsBelow: number;
+  totalHeight: number;
+} {
+  // Calculate total height of dynamic rows
+  const dynamicRowsHeight = dynamicRows.reduce((sum, row) => {
+    const mediaType = row.trackTypes[0];
+    return sum + getRowHeight(mediaType);
+  }, 0);
+
+  // Calculate how many extra rows we have beyond base (video-0, audio-0)
+  const baseRowCount = 2;
+  const extraRowsCount = Math.max(0, dynamicRows.length - baseRowCount);
+  const remainingPlaceholders = Math.max(
+    0,
+    maxPlaceholderRows - extraRowsCount,
+  );
+
+  // Distribute placeholders: 2 above, 1 below (or however many remain)
+  const above = Math.min(2, remainingPlaceholders);
+  const below = Math.max(0, remainingPlaceholders - 2);
+
+  const PLACEHOLDER_ROW_HEIGHT = 48;
+  const placeholderHeight = (above + below) * PLACEHOLDER_ROW_HEIGHT;
+
+  return {
+    placeholderRowsAbove: above,
+    placeholderRowsBelow: below,
+    totalHeight: dynamicRowsHeight + placeholderHeight,
+  };
+}
+
+/**
+ * Calculate row bounds with placeholder spacing for accurate interaction coordinates
+ *
+ * CRITICAL: Placeholder rows are visual-only spacing elements that affect Y coordinates
+ * but must NOT appear in the logical row bounds array. This function:
+ * 1. Includes placeholder heights in cumulative top calculations
+ * 2. Excludes placeholder rows from the returned bounds array
+ * 3. Ensures visual Y positions match rendered layout including placeholders
+ *
+ * @param dynamicRows - All dynamic track rows (logical rows)
+ * @param visibleTrackRows - Array of visible track row types (e.g., ['video', 'audio'])
+ * @param placeholderRowsAbove - Number of placeholder rows above real tracks
+ * @param placeholderRowsBelow - Number of placeholder rows below real tracks
+ * @param placeholderRowHeight - Height of each placeholder row in pixels
+ * @returns Array of row bounds with accurate Y positions accounting for placeholder spacing
+ */
+export function calculateRowBoundsWithPlaceholders(
+  dynamicRows: TrackRowDefinition[],
+  visibleTrackRows: string[],
+  placeholderRowsAbove: number,
+  placeholderRowsBelow: number,
+  placeholderRowHeight: number,
+): Array<{
+  rowId: string;
+  top: number;
+  bottom: number;
+  type: VideoTrack['type'];
+  rowIndex: number;
+}> {
+  const rowBounds: Array<{
+    rowId: string;
+    top: number;
+    bottom: number;
+    type: VideoTrack['type'];
+    rowIndex: number;
+  }> = [];
+
+  // Filter visible dynamic rows
+  const visibleDynamicRows = dynamicRows.filter((row) => {
+    const rowMediaType = row.trackTypes[0];
+    return visibleTrackRows.includes(rowMediaType);
+  });
+
+  // Calculate baseline height (all dynamic rows)
+  const baselineHeight = dynamicRows.reduce((sum, row) => {
+    const rowMediaType = row.trackTypes[0];
+    return sum + getRowHeight(rowMediaType);
+  }, 0);
+
+  // Calculate total height of visible rows
+  const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
+    const rowMediaType = row.trackTypes[0];
+    return sum + getRowHeight(rowMediaType);
+  }, 0);
+
+  // Calculate centering offset (MATCHES DropZoneIndicator and timelineTracks.tsx)
+  const centeringOffset =
+    visibleDynamicRows.length < dynamicRows.length
+      ? (baselineHeight - totalVisibleHeight) / 2
+      : 0;
+
+  // Start cumulative top with placeholder rows above
+  let cumulativeTop = placeholderRowsAbove * placeholderRowHeight;
+
+  // Build bounds for REAL rows only (excluding placeholders)
+  // Placeholder spacing is accounted for in cumulativeTop
+  for (const row of dynamicRows) {
+    const mediaType = row.trackTypes[0];
+    const parsed = parseRowId(row.id);
+
+    if (visibleTrackRows.includes(mediaType) && parsed) {
+      const rowHeight = getRowHeight(mediaType);
+      const rowTop = cumulativeTop + centeringOffset;
+
+      rowBounds.push({
+        rowId: row.id,
+        top: rowTop,
+        bottom: rowTop + rowHeight,
+        type: parsed.type,
+        rowIndex: parsed.rowIndex,
+      });
+
+      cumulativeTop += rowHeight;
+    }
+  }
+
+  return rowBounds;
 }

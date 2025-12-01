@@ -1,6 +1,11 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useMemo } from 'react';
-import { TrackRowDefinition, parseRowId } from './utils/dynamicTrackRows';
+import {
+  calculatePlaceholderRows,
+  calculateRowBoundsWithPlaceholders,
+  TrackRowDefinition,
+  parseRowId,
+} from './utils/dynamicTrackRows';
 import { getRowHeight } from './utils/timelineConstants';
 
 interface DropZoneIndicatorProps {
@@ -33,65 +38,45 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
       const parsed = parseRowId(targetRow);
       if (!parsed) return null;
 
-      // Filter to visible rows only
-      const visibleDynamicRows = dynamicRows.filter((row) => {
-        const mediaType = row.trackTypes[0];
-        return visibleTrackRows.includes(mediaType);
-      });
+      // Calculate placeholder rows (matches timelineTracks.tsx logic)
+      const { placeholderRowsAbove, placeholderRowsBelow } =
+        calculatePlaceholderRows(dynamicRows);
+      const PLACEHOLDER_ROW_HEIGHT = 48;
 
-      // Calculate baseline and centering
-      const baselineHeight = dynamicRows.reduce((sum, row) => {
-        const mediaType = row.trackTypes[0];
-        return sum + getRowHeight(mediaType);
-      }, 0);
-
-      const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
-        const mediaType = row.trackTypes[0];
-        return sum + getRowHeight(mediaType);
-      }, 0);
-
-      const centeringOffset =
-        visibleDynamicRows.length < dynamicRows.length
-          ? (baselineHeight - totalVisibleHeight) / 2
-          : 0;
+      // Calculate row bounds with placeholder spacing
+      const rowBounds = calculateRowBoundsWithPlaceholders(
+        dynamicRows,
+        visibleTrackRows,
+        placeholderRowsAbove,
+        placeholderRowsBelow,
+        PLACEHOLDER_ROW_HEIGHT,
+      );
 
       // Find the target row's position
-      let cumulativeTop = 0;
-      let targetTop = 0;
-      let targetHeight = 0;
-      let found = false;
+      const targetRowBound = rowBounds.find(
+        (bound) =>
+          bound.type === parsed.type &&
+          Math.round(bound.rowIndex) === Math.round(parsed.rowIndex),
+      );
 
-      for (const row of dynamicRows) {
-        const mediaType = row.trackTypes[0];
-        const rowParsed = parseRowId(row.id);
-
-        if (visibleTrackRows.includes(mediaType) && rowParsed) {
-          const rowHeight = getRowHeight(mediaType);
-
-          if (
-            rowParsed.type === parsed.type &&
-            Math.round(rowParsed.rowIndex) === Math.round(parsed.rowIndex)
-          ) {
-            targetTop = cumulativeTop + centeringOffset;
-            targetHeight = rowHeight;
-            found = true;
-            break;
-          }
-
-          cumulativeTop += rowHeight;
-        }
-      }
-
-      if (!found) {
+      if (!targetRowBound) {
         // Row not found in visible rows - might be a new row being created
         // Fall back to calculating based on type
-        targetTop = cumulativeTop + centeringOffset;
-        targetHeight = getRowHeight(parsed.type);
+        const lastBound = rowBounds[rowBounds.length - 1];
+        const targetTop = lastBound ? lastBound.bottom : 0;
+        const targetHeight = getRowHeight(parsed.type);
+
+        return {
+          top: targetTop,
+          height: targetHeight,
+          left: startFrame * frameWidth - scrollX,
+          width: Math.max(1, (endFrame - startFrame) * frameWidth),
+        };
       }
 
       return {
-        top: targetTop,
-        height: targetHeight,
+        top: targetRowBound.top,
+        height: targetRowBound.bottom - targetRowBound.top,
         left: startFrame * frameWidth - scrollX,
         width: Math.max(1, (endFrame - startFrame) * frameWidth),
       };

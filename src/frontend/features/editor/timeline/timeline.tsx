@@ -32,6 +32,8 @@ import {
   hasCollision,
 } from './utils/collisionDetection';
 import {
+  calculatePlaceholderRows,
+  calculateRowBoundsWithPlaceholders,
   detectInsertionPoint,
   generateDynamicRows,
   getTrackRowId,
@@ -632,64 +634,24 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         if (!draggedTrack) return;
 
         // ========================================
-        // BUILD ROW BOUNDS - MATCHING DropZoneIndicator EXACTLY
-        // Account for vertical scroll offset
+        // BUILD ROW BOUNDS WITH PLACEHOLDER SPACING
+        // Account for vertical scroll offset and placeholder rows
         // ========================================
 
-        const rowBounds: Array<{
-          rowId: string;
-          top: number;
-          bottom: number;
-          type: VideoTrack['type'];
-          rowIndex: number;
-        }> = [];
+        // Calculate placeholder rows (matches timelineTracks.tsx logic)
+        const { placeholderRowsAbove, placeholderRowsBelow } =
+          calculatePlaceholderRows(dynamicRows);
+        const PLACEHOLDER_ROW_HEIGHT = 48;
 
-        // Filter visible dynamic rows
-        const visibleDynamicRows = dynamicRows.filter((row) => {
-          const rowMediaType = row.trackTypes[0];
-          return visibleTrackRows.includes(rowMediaType);
-        });
-
-        // Calculate baseline height (all dynamic rows)
-        const baselineHeight = dynamicRows.reduce((sum, row) => {
-          const rowMediaType = row.trackTypes[0];
-          return sum + getRowHeight(rowMediaType);
-        }, 0);
-
-        // Calculate total height of visible rows
-        const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
-          const rowMediaType = row.trackTypes[0];
-          return sum + getRowHeight(rowMediaType);
-        }, 0);
-
-        // Calculate centering offset (MATCHES DropZoneIndicator)
-        const centeringOffset =
-          visibleDynamicRows.length < dynamicRows.length
-            ? (baselineHeight - totalVisibleHeight) / 2
-            : 0;
-
-        // Build bounds (MATCHES DropZoneIndicator iteration)
-        // These bounds are in "content coordinates" (accounting for scroll)
-        let cumulativeTop = 0;
-        for (const row of dynamicRows) {
-          const mediaType = row.trackTypes[0];
-          const parsed = parseRowId(row.id);
-
-          if (visibleTrackRows.includes(mediaType) && parsed) {
-            const rowHeight = getRowHeight(mediaType);
-            const rowTop = cumulativeTop + centeringOffset;
-
-            rowBounds.push({
-              rowId: row.id,
-              top: rowTop,
-              bottom: rowTop + rowHeight,
-              type: parsed.type,
-              rowIndex: parsed.rowIndex,
-            });
-
-            cumulativeTop += rowHeight;
-          }
-        }
+        // Build row bounds with placeholder spacing
+        // This ensures visual Y positions match rendered layout including placeholders
+        const rowBounds = calculateRowBoundsWithPlaceholders(
+          dynamicRows,
+          visibleTrackRows,
+          placeholderRowsAbove,
+          placeholderRowsBelow,
+          PLACEHOLDER_ROW_HEIGHT,
+        );
 
         // ========================================
         // DETECT INSERTION POINT
@@ -708,7 +670,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           console.log(`🎯 DRAG:`, {
             mouseY: mouseRelativeY.toFixed(0),
             scrollY: currentScrollY.toFixed(0),
-            centeringOffset: centeringOffset.toFixed(0),
+            placeholderRowsAbove,
+            placeholderRowsBelow,
             firstRowTop: rowBounds[0]?.top.toFixed(0),
             insertion: insertion
               ? {
@@ -839,55 +802,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       const draggedTrack = tracks.find((t) => t.id === dragGhost.trackId);
       if (!draggedTrack) return;
 
-      // Rebuild row bounds with current scroll
-      const visibleDynamicRows = dynamicRows.filter((row) => {
-        const rowMediaType = row.trackTypes[0];
-        return visibleTrackRows.includes(rowMediaType);
-      });
+      // Rebuild row bounds with placeholder spacing
+      const { placeholderRowsAbove, placeholderRowsBelow } =
+        calculatePlaceholderRows(dynamicRows);
+      const PLACEHOLDER_ROW_HEIGHT = 48;
 
-      const baselineHeight = dynamicRows.reduce((sum, row) => {
-        const rowMediaType = row.trackTypes[0];
-        return sum + getRowHeight(rowMediaType);
-      }, 0);
-
-      const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
-        const rowMediaType = row.trackTypes[0];
-        return sum + getRowHeight(rowMediaType);
-      }, 0);
-
-      const centeringOffset =
-        visibleDynamicRows.length < dynamicRows.length
-          ? (baselineHeight - totalVisibleHeight) / 2
-          : 0;
-
-      const rowBounds: Array<{
-        rowId: string;
-        top: number;
-        bottom: number;
-        type: VideoTrack['type'];
-        rowIndex: number;
-      }> = [];
-
-      let cumulativeTop = 0;
-      for (const row of dynamicRows) {
-        const mediaType = row.trackTypes[0];
-        const parsed = parseRowId(row.id);
-
-        if (visibleTrackRows.includes(mediaType) && parsed) {
-          const rowHeight = getRowHeight(mediaType);
-          const rowTop = cumulativeTop + centeringOffset;
-
-          rowBounds.push({
-            rowId: row.id,
-            top: rowTop,
-            bottom: rowTop + rowHeight,
-            type: parsed.type,
-            rowIndex: parsed.rowIndex,
-          });
-
-          cumulativeTop += rowHeight;
-        }
-      }
+      const rowBounds = calculateRowBoundsWithPlaceholders(
+        dynamicRows,
+        visibleTrackRows,
+        placeholderRowsAbove,
+        placeholderRowsBelow,
+        PLACEHOLDER_ROW_HEIGHT,
+      );
 
       const insertion = detectInsertionPoint(
         mouseRelativeY,
