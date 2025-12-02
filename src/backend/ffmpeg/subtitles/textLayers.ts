@@ -258,11 +258,48 @@ export function generateDrawtextFilter(
   params.push(`fontcolor=${fontColor}`);
   
   // Position
+  // FFmpeg drawtext x/y coordinates:
+  // - x: left edge of text by default
+  // - For proper centering, we need to use expressions that account for text width/height
   if (segment.position) {
-    const x = Math.round(segment.position.x * playResX);
-    const y = Math.round(segment.position.y * playResY);
-    params.push(`x=${x}`);
-    params.push(`y=${y}`);
+    const normalizedX = segment.position.x; // 0-1, where 0.5 is center
+    const normalizedY = segment.position.y; // 0-1, where 0.5 is center
+    const textAlign = mergedStyle.textAlign || 'center';
+    
+    // Calculate X position based on alignment
+    // The normalized coordinate system uses 0.5 as center, so we need to account for text width
+    if (textAlign === 'center') {
+      // Center alignment: use expression that centers text, then offset by normalized position
+      // normalizedX: 0 = left, 0.5 = center, 1 = right
+      // Convert to offset from center: (normalizedX - 0.5) * playResX
+      const offsetFromCenter = (normalizedX - 0.5) * playResX;
+      if (Math.abs(offsetFromCenter) < 1) {
+        // Effectively centered
+        params.push(`x=(w-text_w)/2`);
+      } else {
+        // Offset from center
+        params.push(`x=(w-text_w)/2+${Math.round(offsetFromCenter)}`);
+      }
+    } else if (textAlign === 'right') {
+      // Right align: position from right edge
+      const xOffset = Math.round((1 - normalizedX) * playResX);
+      params.push(`x=w-text_w-${xOffset}`);
+    } else {
+      // Left align: position from left edge
+      const x = Math.round(normalizedX * playResX);
+      params.push(`x=${x}`);
+    }
+    
+    // Calculate Y position
+    // normalizedY: 0 = top, 0.5 = center, 1 = bottom
+    if (textAlign === 'center' || Math.abs(normalizedY - 0.5) < 0.01) {
+      // Center vertically: use expression that accounts for text height
+      params.push(`y=(h-text_h)/2`);
+    } else {
+      // Offset from center vertically
+      const offsetFromCenter = (normalizedY - 0.5) * playResY;
+      params.push(`y=(h-text_h)/2+${Math.round(offsetFromCenter)}`);
+    }
   } else {
     // Default center position
     params.push(`x=(w-text_w)/2`);

@@ -1592,6 +1592,14 @@ export function buildSeparateTimelineFilterComplex(
     }
   }
 
+  // Step 1.5: Force SAR=1 after subtitles to avoid aspect ratio propagation from ASS renderer
+  // This ensures clean aspect ratio before applying drawtext filters
+  if (currentVideoLabelForText === 'video_with_subtitles' && hasVideoContent) {
+    // Add setsar=1 filter after subtitles
+    textLayerFilters.push(`[${currentVideoLabelForText}]setsar=1[with_sar]`);
+    currentVideoLabelForText = 'with_sar';
+    }
+
   // Step 2: Apply text layers as drawtext filters on top of subtitles (if present)
   // Text segments are passed in job.textClips and converted to drawtext filters
   if (job.textClips && job.textClips.length > 0 && hasVideoContent) {
