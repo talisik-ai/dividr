@@ -41,6 +41,11 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
     return null;
   }
 
+  console.log(
+    'using video blob preview',
+    shouldUseDirectPreview && !directError,
+  );
+
   if (shouldUseDirectPreview && !directError) {
     try {
       return (
@@ -69,7 +74,7 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
 
   // Fallback to original canvas-based preview
   // this should be an error
-  return <VideoPreview className={className} />;
+  return null;
 };
 
 // Simple error boundary for direct preview

@@ -15,12 +15,7 @@ const config: ForgeConfig = {
     icon: './favicon.ico',
     name: 'Dividr',
     executableName: 'Dividr',
-    extraResource: [
-      './src/frontend/assets/logo',
-
-      './src/backend/scripts',
-      './transcribe-bin',
-    ],
+    extraResource: ['./src/frontend/assets/logo', './src/backend/scripts'],
     ignore: [
       // Git and docs
       /^\/\.gitignore$/,

@@ -249,7 +249,7 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
             }}
             playsInline
             controls={false}
-            preload="metadata"
+            preload="auto"
             src={getVideoSource(activeVideoTrack)}
           />
         </div>
