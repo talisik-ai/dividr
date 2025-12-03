@@ -4,6 +4,13 @@ import { TrimState } from '../core/types';
 
 /**
  * Hook for managing video element playback synchronization with enhanced reliability
+ *
+ * FIXED: Black frame flicker at segment boundaries
+ * Key changes:
+ * 1. Never reset isVideoReady during playback for same-source segments
+ * 2. Skip seeks for continuous playback through cuts (same source file)
+ * 3. Cache metadata per source URL, not per track ID
+ * 4. Log segment transitions for debugging
  */
 
 export interface UseVideoPlaybackProps {
@@ -34,6 +41,25 @@ interface SeekState {
   immediate: boolean;
 }
 
+// Cache for video metadata per source URL
+interface VideoMetadataCache {
+  duration: number;
+  videoWidth: number;
+  videoHeight: number;
+  loadedAt: number;
+}
+
+const videoMetadataCache = new Map<string, VideoMetadataCache>();
+
+// Debug logging flag - set to true to enable detailed logs
+const DEBUG_SEGMENT_TRANSITIONS = true;
+
+function logSegmentTransition(message: string, data?: any) {
+  if (DEBUG_SEGMENT_TRANSITIONS) {
+    console.log(`[VideoPlayback:SegmentTransition] ${message}`, data || '');
+  }
+}
+
 export function useVideoPlayback({
   videoRef,
   activeVideoTrack,
@@ -59,6 +85,15 @@ export function useVideoPlayback({
     sourceStartTime: number;
   } | null>(null);
 
+  // Track the previous track ID specifically for detecting clip transitions during playback
+  const prevActiveTrackIdRef = useRef<string | undefined>(undefined);
+
+  // NEW: Track the previous source URL to detect actual source file changes
+  const prevSourceUrlRef = useRef<string | undefined>(undefined);
+
+  // NEW: Track if we're in continuous playback mode (crossing segments of same source)
+  const continuousPlaybackRef = useRef<boolean>(false);
+
   // Video health monitoring state
   const [videoHealth, setVideoHealth] = useState<VideoHealthState>({
     consecutiveBlackFrames: 0,
@@ -77,6 +112,9 @@ export function useVideoPlayback({
 
   // Track if we're currently scrubbing (rapid seeks)
   const isScrubbingRef = useRef<boolean>(false);
+
+  // NEW: Track last successful frame render to detect actual black frames
+  const lastRenderedFrameRef = useRef<number>(-1);
 
   // Unified seek function with frame buffer invalidation
   const performSeek = useCallback(
@@ -97,12 +135,20 @@ export function useVideoPlayback({
         // Mark seek in progress to prevent circular updates
         seekInProgressRef.current = true;
 
-        // Force invalidate any cached frames by triggering a micro-seek
-        // This ensures the video decoder doesn't show stale frames
-        // More aggressive invalidation for trim/cut operations
-        if (forceInvalidate || diff > tolerance * 2) {
-          // For larger seeks or forced invalidation, clear decoder buffer
-          // by seeking to a slightly different position first
+        logSegmentTransition('Performing seek', {
+          from: video.currentTime,
+          to: targetTime,
+          diff,
+          immediate,
+          forceInvalidate,
+        });
+
+        // Buffer invalidation for trim edits only
+        // Clear decoder buffer to force fresh decode at new trim position
+        // NOTE: We don't do this for clip transitions to prevent black frames
+        if (forceInvalidate) {
+          // Micro-seek to clear decoder buffer and force fresh decode
+          // This prevents showing stale frames at trim boundaries
           video.currentTime = targetTime + 0.001;
         }
 
@@ -216,6 +262,31 @@ export function useVideoPlayback({
     const video = videoRef.current;
     if (!video || !activeVideoTrack) return;
 
+    const sourceUrl = activeVideoTrack.previewUrl || activeVideoTrack.source;
+
+    // Check if metadata is already cached for this source
+    const cachedMetadata = sourceUrl ? videoMetadataCache.get(sourceUrl) : null;
+
+    if (cachedMetadata) {
+      logSegmentTransition('Using cached metadata', {
+        sourceUrl,
+        cachedMetadata,
+      });
+    } else if (sourceUrl) {
+      // Cache the metadata
+      const metadata: VideoMetadataCache = {
+        duration: video.duration,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        loadedAt: Date.now(),
+      };
+      videoMetadataCache.set(sourceUrl, metadata);
+      logSegmentTransition('Cached new metadata', {
+        sourceUrl,
+        metadata,
+      });
+    }
+
     setIsVideoReady(true);
     setVideoHealth({
       consecutiveBlackFrames: 0,
@@ -244,11 +315,14 @@ export function useVideoPlayback({
       Math.min(targetTime, Math.min(trimmedEndTime, video.duration || 0)),
     );
 
-    queueSeek(clampedTargetTime, currentFrame, true);
+    // Seek immediately to correct position
+    video.currentTime = clampedTargetTime;
 
     // Auto play if timeline is playing
-    if (isPlaying && video.paused && video.readyState >= 3) {
+    // CRITICAL: Resume playback immediately to ensure smooth track transitions
+    if (isPlaying) {
       video.muted = isMuted || !!independentAudioTrack;
+      // Try to play even if readyState < 3 to enable faster transitions
       video.play().catch(() => {
         /* ignore */
       });
@@ -260,7 +334,6 @@ export function useVideoPlayback({
     isPlaying,
     isMuted,
     independentAudioTrack,
-    queueSeek,
   ]);
 
   // Keep the simplified canplay effect for auto-play only
@@ -334,9 +407,11 @@ export function useVideoPlayback({
   ]);
 
   // Black screen detection and auto-recovery using requestVideoFrameCallback
+  // OPTIMIZED: Only runs when paused to avoid performance overhead during playback
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeVideoTrack || !isVideoReady) return;
+    // Only run black frame detection when paused (performance optimization)
+    if (!video || !activeVideoTrack || !isVideoReady || isPlaying) return;
 
     let handle: number;
     const canvas = document.createElement('canvas');
@@ -346,14 +421,18 @@ export function useVideoPlayback({
     canvas.width = 32;
     canvas.height = 32;
 
+    let checkCount = 0;
+    const maxChecks = 10; // Limit checks to prevent endless loop
+
     const checkForBlackFrame = (
       _now: DOMHighResTimeStamp,
       metadata: VideoFrameCallbackMetadata,
     ) => {
-      if (!video || video.readyState < 2) {
-        handle = video.requestVideoFrameCallback(checkForBlackFrame);
-        return;
+      if (!video || video.readyState < 2 || checkCount >= maxChecks) {
+        return; // Stop checking after max attempts
       }
+
+      checkCount++;
 
       try {
         // Draw current video frame to canvas
@@ -378,7 +457,7 @@ export function useVideoPlayback({
         const shouldHaveContent =
           metadata.mediaTime > 0 && timeSinceLastSeek > 500;
 
-        if (isBlackFrame && shouldHaveContent && !isPlaying) {
+        if (isBlackFrame && shouldHaveContent) {
           setVideoHealth((prev) => {
             const newCount = prev.consecutiveBlackFrames + 1;
             // Trigger recovery after 3 consecutive black frames
@@ -402,17 +481,24 @@ export function useVideoPlayback({
             consecutiveBlackFrames: 0,
             lastFrameCheck: Date.now(),
           }));
+          // Stop checking once we have valid content
+          checkCount = maxChecks;
         }
       } catch (err) {
         // Ignore canvas errors
       }
 
-      handle = video.requestVideoFrameCallback(checkForBlackFrame);
+      // Continue checking if still within limit
+      if (checkCount < maxChecks) {
+        handle = video.requestVideoFrameCallback(checkForBlackFrame);
+      }
     };
 
     handle = video.requestVideoFrameCallback(checkForBlackFrame);
     return () => {
-      video.cancelVideoFrameCallback(handle);
+      if (handle) {
+        video.cancelVideoFrameCallback(handle);
+      }
       canvas.remove();
     };
   }, [
@@ -448,6 +534,9 @@ export function useVideoPlayback({
           trackForSync.startFrame;
         const newFrame = Math.floor(elapsedFrames);
 
+        // Update last rendered frame for tracking
+        lastRenderedFrameRef.current = newFrame;
+
         // Verify this frame update is consistent with the last seek
         const lastSeek = lastSeekStateRef.current;
         if (!lastSeek || Math.abs(newFrame - lastSeek.frame) > displayFps * 2) {
@@ -466,9 +555,13 @@ export function useVideoPlayback({
   }, [activeVideoTrack?.id, isPlaying, displayFps, setCurrentFrame]);
 
   // Sync video element on scrubbing/seek - MASTER SYNCHRONIZATION EFFECT
+  // FIXED: Prevent unnecessary seeks at segment boundaries during continuous playback
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeVideoTrack || !isVideoReady) return;
+
+    const currentSourceUrl =
+      activeVideoTrack.previewUrl || activeVideoTrack.source;
 
     // Calculate target video time from timeline frame
     // This mapping is CRITICAL for trim/cut sync:
@@ -493,16 +586,39 @@ export function useVideoPlayback({
 
     // Detect ACTUAL source file change (different video file loaded)
     const isSourceFileChange =
-      prevActiveTrackRef.current !== null &&
-      prevActiveTrackRef.current.previewUrl !== currentTrackState.previewUrl;
+      prevSourceUrlRef.current !== undefined &&
+      prevSourceUrlRef.current !== currentSourceUrl;
 
-    // Detect segment boundary crossing within same source (cut/trim segments)
-    const isSameSourceSegmentChange =
-      prevActiveTrackRef.current !== null &&
-      prevActiveTrackRef.current.previewUrl === currentTrackState.previewUrl &&
-      prevActiveTrackRef.current.id !== currentTrackState.id;
+    // Detect clip/segment transition (track ID changed, regardless of source file)
+    // This happens when:
+    // 1. Moving from one clip to another (different segments)
+    // 2. Crossing a cut point in the timeline
+    const isClipTransition =
+      prevActiveTrackIdRef.current !== undefined &&
+      prevActiveTrackIdRef.current !== activeVideoTrack.id;
 
+    // NEW: Detect if this is a continuous playback through segments of the SAME source
+    const isSameSourceSegmentTransition =
+      isClipTransition && !isSourceFileChange;
+
+    // Log segment transitions for debugging
+    if (isClipTransition) {
+      logSegmentTransition('Clip transition detected', {
+        from: prevActiveTrackIdRef.current,
+        to: activeVideoTrack.id,
+        isSourceFileChange,
+        isSameSourceSegmentTransition,
+        isPlaying,
+        currentVideoTime: video.currentTime,
+        targetTime,
+        diff,
+      });
+    }
+
+    // Update tracking refs
     prevActiveTrackRef.current = currentTrackState;
+    prevActiveTrackIdRef.current = activeVideoTrack.id;
+    prevSourceUrlRef.current = currentSourceUrl;
 
     // CRITICAL: Only detect trim changes when user is actively editing,
     // NOT when playback naturally crosses segment boundaries
@@ -535,39 +651,68 @@ export function useVideoPlayback({
     // PROFESSIONAL PLAYBACK LOGIC:
     // During continuous playback, let the browser's video decoder handle
     // playback naturally. Only seek when absolutely necessary.
-    const isContinuousPlayback = isPlaying && !seekInProgressRef.current;
 
-    // Check if video is playing continuously through same source
-    // (even across cut boundaries - this is the key to smooth playback)
-    const isPlayingThroughCuts =
-      isContinuousPlayback && isSameSourceSegmentChange;
+    // NEW: For same-source segment transitions during playback, DO NOT SEEK
+    // The video decoder is already at the correct position since it's the same file
+    // playing continuously. The only difference is the track metadata (startFrame, etc.)
+    if (isSameSourceSegmentTransition && isPlaying) {
+      logSegmentTransition('Skipping seek for same-source segment transition', {
+        videoCurrentTime: video.currentTime,
+        targetTime,
+        diff,
+      });
 
-    // SEEK DECISION LOGIC:
+      // The video is already playing the correct content - just update refs
+      // and let requestVideoFrameCallback handle timeline sync
+      continuousPlaybackRef.current = true;
+
+      // Ensure video is still playing
+      if (video.paused && video.readyState >= 3) {
+        video.play().catch(console.warn);
+      }
+
+      return; // Exit early - no seek needed
+    }
+
+    // SEEK DECISION LOGIC (OPTIMIZED FOR SMOOTH PLAYBACK):
     // Only seek when one of these conditions is true:
     // 1. User is scrubbing while paused
-    // 2. Source file changed (different video loaded)
-    // 3. User manually trimmed the current track (editing operation)
-    // 4. Significant drift detected during playback (> 3 frames)
+    // 2. User manually trimmed the current track (editing operation)
+    // 3. Video is paused and out of sync
+    // 4. Source file changed (different video)
     //
-    // DO NOT SEEK when:
-    // - Playing continuously through cut boundaries in same source
-    // - Video time is within acceptable tolerance
+    // CRITICAL: DO NOT SEEK for:
+    // - Same-source segment transitions during playback (handled above)
+    // - Continuous playback through cuts of the same source
     const needsSeek =
-      isScrubbing || // User scrubbing
-      isSourceFileChange || // Different video file
-      trimChanged || // User edited trim points
-      (!isContinuousPlayback && diff > tolerance) || // Paused and out of sync
-      (isContinuousPlayback && diff > tolerance * 3 && !isPlayingThroughCuts); // Drift correction (but not at cuts)
+      isScrubbing || // User scrubbing while paused
+      (trimChanged && !isSourceFileChange) || // User edited trim points (but not source change)
+      (!isPlaying && diff > tolerance && !isSourceFileChange) || // Paused and out of sync (but not source change)
+      isSourceFileChange; // Different video file loaded
 
     if (needsSeek && diff > tolerance) {
-      // Immediate seeks for user interactions and file changes
-      const useImmediate = isScrubbing || isSourceFileChange || trimChanged;
+      logSegmentTransition('Seeking required', {
+        reason: {
+          isScrubbing,
+          trimChanged,
+          isSourceFileChange,
+          isPausedAndOutOfSync: !isPlaying && diff > tolerance,
+        },
+        diff,
+      });
 
-      // Buffer invalidation only for file changes and user trim edits
-      const forceInvalidate = isSourceFileChange || trimChanged;
+      // Immediate seeks for user interactions, trim edits, and source changes
+      const useImmediate = isScrubbing || trimChanged || isSourceFileChange;
+
+      // Buffer invalidation ONLY for trim edits (user-initiated changes)
+      // DO NOT invalidate for clip transitions - this causes black frame flashes
+      const forceInvalidate = trimChanged && !isClipTransition;
 
       queueSeek(targetTime, currentFrame, useImmediate, forceInvalidate);
     }
+
+    // Reset continuous playback flag
+    continuousPlaybackRef.current = false;
   }, [
     currentFrame,
     displayFps,
@@ -578,24 +723,48 @@ export function useVideoPlayback({
   ]);
 
   // Reset video ready state when track changes
+  // FIXED: Don't reset isVideoReady for same-source segment transitions during playback
   useEffect(() => {
     const video = videoRef.current;
     if (activeVideoTrack?.id) {
+      const currentSourceUrl =
+        activeVideoTrack.previewUrl || activeVideoTrack.source;
+
       // Check if this is a segment transition (same video file, different segment)
       const isSameVideoFile =
-        prevActiveTrackRef.current !== null &&
-        prevActiveTrackRef.current.previewUrl === activeVideoTrack.previewUrl;
+        prevSourceUrlRef.current !== undefined &&
+        prevSourceUrlRef.current === currentSourceUrl;
+
+      logSegmentTransition('Track change effect', {
+        trackId: activeVideoTrack.id,
+        isSameVideoFile,
+        isPlaying,
+        videoReadyState: video?.readyState,
+        currentSourceUrl,
+        prevSourceUrl: prevSourceUrlRef.current,
+      });
 
       if (isSameVideoFile) {
-        // Segment transition - video element is already loaded
-        // Just ensure it's ready and force a seek to the new offset
+        // Same source file - video element is already loaded with correct content
+        // Just ensure it's marked as ready
         if (video && video.readyState >= 2) {
-          // Video is already loaded, just mark as ready
           setIsVideoReady(true);
+
+          // If playing, ensure video continues playing
+          if (isPlaying && video.paused) {
+            video.play().catch(console.warn);
+          }
         }
       } else {
-        // Different video file - full reload required
-        setIsVideoReady(false);
+        // Different video file - reload required
+        // CRITICAL FIX: Don't set isVideoReady to false during playback
+        // This prevents stuttering when transitioning between tracks
+        // The sync effect will handle the transition smoothly
+        if (!isPlaying) {
+          // Only block sync when paused (safe to wait for full load)
+          setIsVideoReady(false);
+        }
+        // During playback, keep isVideoReady true to allow smooth transitions
       }
 
       setVideoHealth({
@@ -606,15 +775,19 @@ export function useVideoPlayback({
       });
 
       // Force video element check and reload if needed (handles undo/redo restoration)
+      // Only do this for actual source file changes
       if (video && activeVideoTrack.previewUrl && !isSameVideoFile) {
         // If video element doesn't have the correct source, force reload
         if (!video.src || video.readyState === 0) {
+          logSegmentTransition('Force loading new source', {
+            newSource: activeVideoTrack.previewUrl,
+          });
           video.src = activeVideoTrack.previewUrl;
           video.load();
         }
       }
     }
-  }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl, videoRef]);
+  }, [activeVideoTrack?.id, activeVideoTrack?.previewUrl, videoRef, isPlaying]);
 
   // Cleanup seek timeout on unmount
   useEffect(() => {

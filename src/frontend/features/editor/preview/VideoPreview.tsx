@@ -444,14 +444,31 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
           track.visible && frame >= track.startFrame && frame < track.endFrame,
       );
 
+      // Sort by trackRowIndex (lower index = renders behind, higher index = renders in front)
+      // This ensures correct layering based on timeline row order
+      const sortedTracks = activeTracks.sort((a, b) => {
+        // First sort by track type (base layer order)
+        const typeOrderA = ['audio', 'video', 'image', 'subtitle', 'text'].indexOf(a.type);
+        const typeOrderB = ['audio', 'video', 'image', 'subtitle', 'text'].indexOf(b.type);
+        
+        if (typeOrderA !== typeOrderB) {
+          return typeOrderA - typeOrderB;
+        }
+        
+        // Then sort by trackRowIndex within the same type
+        const rowIndexA = a.trackRowIndex ?? 0;
+        const rowIndexB = b.trackRowIndex ?? 0;
+        return rowIndexA - rowIndexB; // Ascending order: lower row = behind
+      });
+
       // Debug logging for active tracks
-      activeTracks.forEach((track) => {
+      sortedTracks.forEach((track) => {
         if (track.type === 'video') {
-          //    console.log(`Track ${track.name}: visible=${track.visible}, frame=${frame}, start=${track.startFrame}, end=${track.endFrame}, active=true`);
+          //    console.log(`Track ${track.name}: visible=${track.visible}, frame=${frame}, start=${track.startFrame}, end=${track.endFrame}, active=true, rowIndex=${track.trackRowIndex ?? 0}`);
         }
       });
 
-      return activeTracks;
+      return sortedTracks;
     },
     [tracks],
   );

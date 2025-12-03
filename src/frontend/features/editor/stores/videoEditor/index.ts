@@ -142,6 +142,11 @@ export const useVideoEditorStore = create<VideoEditorStore>()(
   ),
 );
 
+// Expose store to window for console debugging (development only)
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (window as any).__videoEditorStore = useVideoEditorStore;
+}
+
 export * from './hooks';
 export { useShortcutRegistryInit } from './hooks/useShortcutRegistryInit';
 export * from './types';

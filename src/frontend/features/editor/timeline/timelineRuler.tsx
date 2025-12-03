@@ -94,6 +94,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
       if (pixelsPerSecond >= 1) return displayFps * 30; // 30 second intervals
       return displayFps * 60; // 1 minute intervals (very zoomed out)
     }, [frameWidth, displayFps]);
+
     // Memoize ticks calculation with real-time scroll position
     const ticks = useMemo(() => {
       const ticksArray = [];
@@ -256,12 +257,12 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
             const pixelsPerSecond = frameWidth * displayFps;
 
             // Very zoomed in (> 100px per second) - show all labels
-            if (pixelsPerSecond >= 100) {
+            if (pixelsPerSecond >= 200) {
               return true;
             }
 
             // Zoomed in (50-100px per second) - show second and minute labels
-            if (pixelsPerSecond >= 50) {
+            if (pixelsPerSecond >= 30) {
               return isSecond || isMinute || isHour;
             }
 

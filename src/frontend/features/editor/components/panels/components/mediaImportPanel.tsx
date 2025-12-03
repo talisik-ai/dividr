@@ -27,7 +27,6 @@ import { cn } from '@/frontend/utils/utils';
 import {
   Clock,
   ClosedCaption,
-  Download,
   File,
   Image,
   Loader2,
@@ -1002,8 +1001,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
             className="w-full bg-accent text-accent-foreground hover:bg-accent/80 font-normal text-sm rounded-sm"
             variant="ghost"
           >
-            Upload
-            <Download className="size-4" />
+            Import
+            <PlusCircle className="size-4" />
           </Button>
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <Tabs

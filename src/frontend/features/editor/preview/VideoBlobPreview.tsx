@@ -21,16 +21,13 @@ import {
 import {
   AudioOverlay,
   CanvasOverlay,
-  ImageOverlay,
-  SubtitleOverlay,
-  TextOverlay,
-  VideoOverlay,
+  UnifiedOverlayRenderer,
 } from './overlays';
+import { TransformBoundaryLayer } from './overlays/TransformBoundaryLayer';
 import {
   calculateContentScale,
   calculateFitDimensions,
 } from './utils/scalingUtils';
-import { getActiveTracksAtFrame } from './utils/trackUtils';
 
 interface VideoBlobPreviewProps {
   className?: string;
@@ -250,7 +247,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         setSelectedTracks(textSelectedTracks);
       }
     }
-  }, [preview.interactionMode, timeline.selectedTrackIds, tracks, setSelectedTracks]);
+  }, [
+    preview.interactionMode,
+    timeline.selectedTrackIds,
+    tracks,
+    setSelectedTracks,
+  ]);
 
   // Auto-discard empty text tracks when switching away from Text Tool or on Escape
   useEffect(() => {
@@ -281,32 +283,13 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isPreviewFocused, pendingEmptyTextId, preview.interactionMode, tracks, removeTrack]);
-
-  // Get active tracks - memoize to prevent unnecessary re-renders
-  const activeSubtitles = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'subtitle').filter(
-        (track) => track.subtitleText,
-      ),
-    [tracks, timeline.currentFrame],
-  );
-
-  const activeTexts = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'text').filter(
-        (track) => track.textContent,
-      ),
-    [tracks, timeline.currentFrame],
-  );
-
-  const activeImages = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'image').filter(
-        (track) => track.previewUrl || track.source,
-      ),
-    [tracks, timeline.currentFrame],
-  );
+  }, [
+    isPreviewFocused,
+    pendingEmptyTextId,
+    preview.interactionMode,
+    tracks,
+    removeTrack,
+  ]);
 
   // Handle text transform updates
   const handleTextTransformUpdate = useCallback(
@@ -616,6 +599,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [updateTrack],
   );
 
+  // Handle edit mode change from transform boundary layer
+  const handleEditModeChange = useCallback(
+    (isEditing: boolean) => {
+      if (isEditing) {
+        setPreviewInteractionMode('text-edit');
+      }
+    },
+    [setPreviewInteractionMode],
+  );
+
   // Handle click outside to deselect or add text
   const handlePreviewClick = useCallback(
     async (e: React.MouseEvent) => {
@@ -866,67 +859,51 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           />
         )}
 
-      {/* Video Overlay */}
-      <VideoOverlay
-        {...overlayProps}
-        videoRef={videoRef}
-        activeVideoTrack={activeVideoTrack}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        onLoadedMetadata={handleVideoLoadedMetadata}
-        onTransformUpdate={handleVideoTransformUpdate}
-        onSelect={handleVideoSelect}
-        onRotationStateChange={setIsRotating}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Audio Overlay */}
+      {/* Audio Overlay (non-visual, handles audio playback) */}
       <AudioOverlay
         audioRef={audioRef}
         independentAudioTrack={independentAudioTrack}
         onLoadedMetadata={handleAudioLoadedMetadata}
       />
 
-      {/* Subtitle Overlay */}
-      <SubtitleOverlay
+      {/* 
+        LAYER 1: Content Layer
+        Unified Overlay Renderer - renders all visual tracks in dynamic z-order
+        Selected tracks render content only (no boundary) - boundary is in TransformBoundaryLayer
+      */}
+      <UnifiedOverlayRenderer
         {...overlayProps}
-        activeSubtitles={activeSubtitles}
+        // Video props
+        videoRef={videoRef}
+        activeVideoTrack={activeVideoTrack}
+        onVideoLoadedMetadata={handleVideoLoadedMetadata}
+        onVideoTransformUpdate={handleVideoTransformUpdate}
+        onVideoSelect={handleVideoSelect}
+        // DualBufferVideo props
+        isPlaying={playback.isPlaying}
+        isMuted={playback.muted}
+        volume={playback.volume}
+        playbackRate={playback.playbackRate}
+        fps={displayFps}
+        // Common props
         allTracks={tracks}
         selectedTrackIds={timeline.selectedTrackIds}
+        currentFrame={timeline.currentFrame}
         isTextEditMode={preview.interactionMode === 'text-edit'}
+        // Subtitle props
         getTextStyleForSubtitle={getTextStyleForSubtitle}
         activeStyle={textStyle.activeStyle}
         globalSubtitlePosition={textStyle.globalSubtitlePosition}
-        onTransformUpdate={handleSubtitleTransformUpdate}
-        onSelect={handleSubtitleSelect}
-        onTextUpdate={handleSubtitleTextUpdate}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Image Overlay */}
-      <ImageOverlay
-        {...overlayProps}
-        activeImages={activeImages}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        onTransformUpdate={handleImageTransformUpdate}
-        onSelect={handleImageSelect}
-        onRotationStateChange={setIsRotating}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Text Overlay */}
-      <TextOverlay
-        {...overlayProps}
-        activeTexts={activeTexts}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        isTextEditMode={preview.interactionMode === 'text-edit'}
-        onTransformUpdate={handleTextTransformUpdate}
-        onSelect={handleTextSelect}
+        onSubtitleTransformUpdate={handleSubtitleTransformUpdate}
+        onSubtitleSelect={handleSubtitleSelect}
+        onSubtitleTextUpdate={handleSubtitleTextUpdate}
+        // Image props
+        onImageTransformUpdate={handleImageTransformUpdate}
+        onImageSelect={handleImageSelect}
+        // Text props
+        onTextTransformUpdate={handleTextTransformUpdate}
+        onTextSelect={handleTextSelect}
         onTextUpdate={handleTextUpdate}
-        onRotationStateChange={setIsRotating}
-        onDragStateChange={handleDragStateChange}
         pendingEditTextId={pendingEditTextId}
         onEditStarted={() => {
           setPendingEditTextId(null);
@@ -935,6 +912,52 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             setPendingEmptyTextId(null);
           }
         }}
+        // State callbacks
+        onRotationStateChange={setIsRotating}
+        onDragStateChange={handleDragStateChange}
+      />
+
+      {/* 
+        LAYER 2: Transform Boundary Layer
+        Renders selection boxes, resize handles, and rotation controls for selected tracks.
+        Always on top (z-index: 10000), regardless of track z-order.
+        This ensures transform controls are always accessible, matching CapCut behavior.
+      */}
+      <TransformBoundaryLayer
+        {...overlayProps}
+        // Common props
+        allTracks={tracks}
+        selectedTrackIds={timeline.selectedTrackIds}
+        currentFrame={timeline.currentFrame}
+        isTextEditMode={preview.interactionMode === 'text-edit'}
+        // Video props
+        onVideoTransformUpdate={handleVideoTransformUpdate}
+        onVideoSelect={handleVideoSelect}
+        // Subtitle props
+        getTextStyleForSubtitle={getTextStyleForSubtitle}
+        activeStyle={textStyle.activeStyle}
+        globalSubtitlePosition={textStyle.globalSubtitlePosition}
+        onSubtitleTransformUpdate={handleSubtitleTransformUpdate}
+        onSubtitleSelect={handleSubtitleSelect}
+        onSubtitleTextUpdate={handleSubtitleTextUpdate}
+        // Image props
+        onImageTransformUpdate={handleImageTransformUpdate}
+        onImageSelect={handleImageSelect}
+        // Text props
+        onTextTransformUpdate={handleTextTransformUpdate}
+        onTextSelect={handleTextSelect}
+        onTextUpdate={handleTextUpdate}
+        pendingEditTextId={pendingEditTextId}
+        onEditStarted={() => {
+          setPendingEditTextId(null);
+          if (pendingEmptyTextId) {
+            setPendingEmptyTextId(null);
+          }
+        }}
+        // State callbacks
+        onRotationStateChange={setIsRotating}
+        onDragStateChange={handleDragStateChange}
+        onEditModeChange={handleEditModeChange}
       />
 
       {/* Alignment Guides */}

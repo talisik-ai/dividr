@@ -1,3 +1,4 @@
+import { cn } from '@/frontend/utils/utils';
 import React, { useCallback, useMemo } from 'react';
 
 interface TimelinePlayheadProps {
@@ -7,6 +8,7 @@ interface TimelinePlayheadProps {
   visible: boolean;
   timelineScrollElement?: HTMLElement | null;
   onStartDrag?: (e: React.MouseEvent) => void;
+  magneticSnapFrame?: number | null;
 }
 
 export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
@@ -17,8 +19,13 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
     visible,
     timelineScrollElement,
     onStartDrag,
+    magneticSnapFrame,
   }) => {
     if (!visible) return null;
+
+    // Check if playhead is snapping (magneticSnapFrame matches currentFrame)
+    const isSnapping =
+      magneticSnapFrame !== null && magneticSnapFrame === currentFrame;
 
     const left = useMemo(
       () =>
@@ -67,7 +74,10 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
       <>
         {/* Playhead line - clickable for dragging */}
         <div
-          className="absolute top-0 w-0.5 h-full bg-primary rounded-full z-30 cursor-ew-resize will-change-transform pointer-events-auto"
+          className={cn(
+            'absolute top-0 w-0.5 h-full rounded-full z-30 cursor-ew-resize will-change-transform pointer-events-auto',
+            isSnapping ? 'bg-secondary' : 'bg-primary',
+          )}
           style={styles.line}
           onMouseDown={handleMouseDown}
         />
@@ -81,20 +91,27 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
           <svg width="24" height="24" viewBox="0 0 24 24">
             <path
               d="M6,8 A2,2 0 0,1 8,6 L16,6 A2,2 0 0,1 18,8 A2,2 0 0,1 17.5,9.5 L12.8,16.2 A1,1 0 0,1 11.2,16.2 L6.5,9.5 A2,2 0 0,1 6,8 Z"
-              fill="hsl(var(--primary))"
+              fill={
+                isSnapping ? 'hsl(var(--secondary))' : 'hsl(var(--primary))'
+              }
               stroke="none"
             />
           </svg>
         </div>
 
         {/* Frame indicator - also draggable */}
-        <div
-          className="absolute top-0.5 bg-primary/90 text-primary-foreground px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-30 cursor-grab active:cursor-grabbing will-change-transform pointer-events-auto"
+        {/* <div
+          className={cn(
+            'absolute top-0.5 px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap z-30 cursor-grab active:cursor-grabbing will-change-transform pointer-events-auto',
+            isSnapping
+              ? 'bg-secondary/90 text-secondary-foreground'
+              : 'bg-primary/90 text-primary-foreground',
+          )}
           style={styles.indicator}
           onMouseDown={handleMouseDown}
         >
           {currentFrame}
-        </div>
+        </div> */}
       </>
     );
   },
@@ -105,7 +122,8 @@ export const TimelinePlayhead: React.FC<TimelinePlayheadProps> = React.memo(
       prevProps.scrollX === nextProps.scrollX &&
       prevProps.visible === nextProps.visible &&
       prevProps.timelineScrollElement === nextProps.timelineScrollElement &&
-      prevProps.onStartDrag === nextProps.onStartDrag
+      prevProps.onStartDrag === nextProps.onStartDrag &&
+      prevProps.magneticSnapFrame === nextProps.magneticSnapFrame
     );
   },
 );

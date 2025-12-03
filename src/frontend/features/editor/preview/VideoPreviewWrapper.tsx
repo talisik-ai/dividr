@@ -69,7 +69,7 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
 
   // Fallback to original canvas-based preview
   // this should be an error
-  return <VideoPreview className={className} />;
+  return null;
 };
 
 // Simple error boundary for direct preview

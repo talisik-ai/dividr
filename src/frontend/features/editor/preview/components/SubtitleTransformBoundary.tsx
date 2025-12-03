@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useVideoEditorStore } from '../../stores/videoEditor/index';
-import { VideoTrack } from '../../stores/videoEditor/index';
+import {
+  useVideoEditorStore,
+  VideoTrack,
+} from '../../stores/videoEditor/index';
 
 interface SubtitleTransformBoundaryProps {
   track: VideoTrack;
@@ -33,6 +35,8 @@ interface SubtitleTransformBoundaryProps {
   ) => void;
   onEditModeChange?: (isEditing: boolean) => void; // Callback when edit mode changes
   children: React.ReactNode;
+  boundaryOnly?: boolean; // Whether to only render the boundary, not the content
+  contentOnly?: boolean; // Whether to only render the content, not the boundary
 }
 
 // Default subtitle position: bottom-aligned with ~7% padding from bottom
@@ -43,6 +47,7 @@ export const SubtitleTransformBoundary: React.FC<
 > = ({
   track,
   isSelected,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   isActive,
   previewScale,
   videoWidth,
@@ -61,6 +66,8 @@ export const SubtitleTransformBoundary: React.FC<
   onDragStateChange,
   onEditModeChange,
   children,
+  boundaryOnly = false,
+  contentOnly = false,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
   const effectiveRenderScale = renderScale ?? previewScale;
@@ -74,6 +81,9 @@ export const SubtitleTransformBoundary: React.FC<
   const [isDragging, setIsDragging] = useState(false);
   const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
   const [isEditing, setIsEditing] = useState(false);
+
+  const shouldRenderBoundary = isSelected && !contentOnly;
+  const shouldRenderContent = !boundaryOnly;
 
   // Get playback control methods
   const startDraggingTransform = useVideoEditorStore(
@@ -187,7 +197,7 @@ export const SubtitleTransformBoundary: React.FC<
     observer.observe(containerRef.current);
 
     return () => observer.disconnect();
-  }, [children]);
+  }, []); // Empty dependency array - ResizeObserver handles all size changes
 
   // Helper to enter edit mode
   const enterEditMode = useCallback(
@@ -274,7 +284,15 @@ export const SubtitleTransformBoundary: React.FC<
         setIsPendingDrag(false);
       }, 200);
     },
-    [isSelected, track.id, transform, onSelect, isEditing, startDraggingTransform, interactionMode],
+    [
+      isSelected,
+      track.id,
+      transform,
+      onSelect,
+      isEditing,
+      startDraggingTransform,
+      interactionMode,
+    ],
   );
 
   // Handle single click - enters edit mode when text edit mode is active
@@ -294,7 +312,14 @@ export const SubtitleTransformBoundary: React.FC<
       // Enter edit mode and select all text on single click in Text Tool mode
       enterEditMode(true);
     },
-    [isTextEditMode, isSelected, track.id, onSelect, enterEditMode, interactionMode],
+    [
+      isTextEditMode,
+      isSelected,
+      track.id,
+      onSelect,
+      enterEditMode,
+      interactionMode,
+    ],
   );
 
   // Handle double-click for inline editing (works in both Text Tool and Selection Tool modes)
@@ -577,44 +602,52 @@ export const SubtitleTransformBoundary: React.FC<
       }}
     >
       {/* Content clipping layer - clips subtitle content but not selection boundary */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          width: actualWidth,
-          height: actualHeight,
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-          overflow: 'hidden', // Clip content outside canvas
-          pointerEvents: 'none',
-        }}
-      >
-        {contentComponent}
-      </div>
+      {shouldRenderContent ? (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            width: actualWidth,
+            height: actualHeight,
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            overflow: 'hidden', // Clip content outside canvas
+            pointerEvents: 'none',
+          }}
+        >
+          {contentComponent}
+        </div>
+      ) : (
+        contentComponent
+      )}
 
       {/* Selection Boundary - Rendered separately like TextTransformBoundary */}
       {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
       {/* Hide boundary only when actively editing text, not when text edit mode is active */}
       {/* Only show transform boundary in select mode */}
-      {isSelected && !isEditing && interactionMode === 'select' && containerSize.width > 0 && (
-        <div
-          ref={boundaryRef}
-          className="absolute"
-          style={{
-            left: '50%',
-            top: '50%',
-            transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
-            transformOrigin: 'center center',
-            width: `${containerSize.width}px`,
-            height: `${containerSize.height}px`,
-            border: '2px solid #F45513',
-            zIndex: 10000, // Very high z-index to ensure boundary is always on top and interactive
-            pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
-            cursor: getCursor(), // Show appropriate cursor
-          }}
-          onMouseDown={handleMouseDown}
-        />
-      )}
+      {shouldRenderBoundary &&
+        isSelected &&
+        !isEditing &&
+        interactionMode === 'select' &&
+        containerSize.width > 0 && (
+          <div
+            ref={boundaryRef}
+            className="absolute"
+            style={{
+              left: '50%',
+              top: '50%',
+              transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
+              transformOrigin: 'center center',
+              width: `${containerSize.width}px`,
+              height: `${containerSize.height}px`,
+              border: '2px solid #F45513',
+              zIndex: 10000, // Very high z-index to ensure boundary is always on top and interactive
+              pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
+              cursor: getCursor(), // Show appropriate cursor
+            }}
+            onMouseDown={handleMouseDown}
+          />
+        )}
     </div>
   );
 };

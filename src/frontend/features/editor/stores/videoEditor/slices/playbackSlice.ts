@@ -133,12 +133,13 @@ export const createPlaybackSlice: StateCreator<
         playback: {
           ...state.playback,
           isDraggingTrack: false,
-          isPlaying: shouldResume, // Resume if was playing before
+          isPlaying: shouldResume,
           wasPlayingBeforeDrag: false,
           magneticSnapFrame: null, // Clear snap indicator
           dragStartFrame: null,
           boundaryCollisionCount: 0,
           lastAttemptedFrame: null,
+          dragGhost: null, // Also clear drag ghost
         },
       };
     }),

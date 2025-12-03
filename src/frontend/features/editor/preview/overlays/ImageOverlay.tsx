@@ -54,12 +54,12 @@ export const ImageOverlay: React.FC<ImageOverlayProps> = ({
   // Use the coordinate system's baseScale for consistent rendering
   const renderScale = coordinateSystem.baseScale;
 
-  // Sort images by their index in the tracks array to maintain layer order
-  // Lower index = rendered first = appears behind higher index tracks
+  // Sort images by trackRowIndex to maintain correct layer order
+  // Lower trackRowIndex = rendered first = appears behind higher trackRowIndex tracks
   const sortedImages = [...activeImages].sort((a, b) => {
-    const indexA = allTracks.findIndex((t) => t.id === a.id);
-    const indexB = allTracks.findIndex((t) => t.id === b.id);
-    return indexA - indexB;
+    const rowIndexA = a.trackRowIndex ?? 0;
+    const rowIndexB = b.trackRowIndex ?? 0;
+    return rowIndexA - rowIndexB; // Ascending order: lower row = behind
   });
 
   return (

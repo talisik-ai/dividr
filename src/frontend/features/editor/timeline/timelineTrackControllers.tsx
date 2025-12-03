@@ -24,8 +24,13 @@ import {
 import React, { useCallback, useMemo, useState } from 'react';
 import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
-import { AddTrackButton } from './addTrackButton';
-import { TRACK_ROWS, TrackRowDefinition } from './timelineTracks';
+import {
+  generateDynamicRows,
+  getRowDisplayIcon,
+  getTrackRowId,
+  migrateTracksWithRowIndex,
+  TrackRowDefinition,
+} from './utils/dynamicTrackRows';
 import {
   getRowHeight,
   getRowHeightClasses,
@@ -267,32 +272,39 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const canRemoveRow =
       rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
 
-    console.log(rowDef.id, hasLinkedAudioVideo);
+    // Parse row ID to get row index and type for label
+    const parsedRow = useMemo(() => {
+      const match = rowDef.id.match(
+        /^(video|audio|image|text|subtitle)-(\d+)$/,
+      );
+      if (!match) return { type: rowDef.id, rowIndex: 0 };
+      return {
+        type: match[1] as VideoTrack['type'],
+        rowIndex: parseInt(match[2], 10),
+      };
+    }, [rowDef.id]);
+
+    // Alternating row background (even/odd)
+    const isEvenRow = parsedRow.rowIndex % 2 === 0;
 
     return (
       <div
         className={cn(
-          'flex items-center justify-between px-2 border-b border-border/20',
+          'flex items-center justify-between px-2 gap-6 border-b border-border/20',
           getRowHeightClasses(rowDef.id),
+          isEvenRow ? 'bg-transparent' : 'bg-muted/20', // Alternating background
         )}
       >
-        {/* Track type info */}
-        {/* <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="text-xs" title={rowDef.name}>
-            {rowDef.icon}
-          </span>
-          <span className="text-xs font-medium text-muted-foreground truncate">
-            {rowDef.name}
-          </span>
-          {tracks.length > 0 && (
-            <span className="text-[10px] text-muted-foreground/60 bg-accent px-1 rounded">
-              {tracks.length}
-            </span>
+        {/* Track type info with row label */}
+        <div className="flex-1 min-w-0">
+          {getRowDisplayIcon(
+            parsedRow.type as VideoTrack['type'],
+            parsedRow.rowIndex,
           )}
-        </div> */}
+        </div>
 
         {/* Track controls */}
-        <div className="flex items-center justify-center gap-1">
+        <div className="flex items-center justify-center gap-2">
           {/* Show visibility toggle for video, image, and subtitle tracks only */}
           {(rowDef.trackTypes.includes('video') ||
             rowDef.trackTypes.includes('image') ||
@@ -431,137 +443,207 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         prevTrack.id === nextTrack.id &&
         prevTrack.visible === nextTrack.visible &&
         prevTrack.muted === nextTrack.muted &&
-        prevTrack.type === nextTrack.type
+        prevTrack.type === nextTrack.type &&
+        prevTrack.trackRowIndex === nextTrack.trackRowIndex // CRITICAL: Track row reordering
       );
     });
+  },
+);
+
+// Placeholder controller row - empty space with no controls
+const PlaceholderControllerRow: React.FC<{ id: string }> = React.memo(
+  ({ id }) => {
+    return (
+      <div
+        key={id}
+        className="flex items-center justify-between px-2 gap-6 border-b border-border/20 h-12 bg-transparent"
+      >
+        {/* Empty placeholder row - no controls */}
+      </div>
+    );
   },
 );
 
 interface TimelineTrackControllersProps {
   tracks: VideoTrack[];
   className?: string;
+  scrollbarHeight: number;
 }
+
+// Default rows when timeline is empty
+function getDefaultRows(): TrackRowDefinition[] {
+  return [
+    {
+      id: 'video-0',
+      name: 'Video',
+      trackTypes: ['video'],
+      color: '#3b82f6',
+      icon: 'video',
+    },
+    {
+      id: 'audio-0',
+      name: 'Audio',
+      trackTypes: ['audio'],
+      color: '#22c55e',
+      icon: 'audio',
+    },
+  ];
+}
+
+// Placeholder row height
+const PLACEHOLDER_ROW_HEIGHT = 48;
 
 export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
   React.memo(
-    ({ tracks, className }) => {
+    ({ tracks, className, scrollbarHeight }) => {
       // Subscribe to visible track rows from timeline state with fallback
       const visibleTrackRows = useVideoEditorStore(
         (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
       );
 
-      // Group tracks by their designated rows
+      const isEmptyTimeline = tracks.length === 0;
+
+      // Migrate tracks to ensure they have trackRowIndex
+      const migratedTracks = useMemo(
+        () => migrateTracksWithRowIndex(tracks),
+        [tracks],
+      );
+
+      // Generate dynamic rows based on existing tracks
+      const dynamicRows = useMemo(() => {
+        if (isEmptyTimeline) {
+          return getDefaultRows();
+        }
+        return generateDynamicRows(migratedTracks);
+      }, [migratedTracks, isEmptyTimeline]);
+
+      // Calculate placeholder rows needed - MUST MATCH timelineTracks.tsx
+      const MAX_PLACEHOLDER_ROWS = 3;
+
+      const { placeholderRowsAbove, placeholderRowsBelow, totalHeight } =
+        useMemo(() => {
+          // Calculate total height of dynamic rows
+          const dynamicRowsHeight = dynamicRows.reduce((sum, row) => {
+            const mediaType = row.trackTypes[0];
+            return sum + getRowHeight(mediaType);
+          }, 0);
+
+          // Calculate how many extra rows we have beyond base (video-0, audio-0)
+          const baseRowCount = 2;
+          const extraRowsCount = Math.max(0, dynamicRows.length - baseRowCount);
+          const remainingPlaceholders = Math.max(
+            0,
+            MAX_PLACEHOLDER_ROWS - extraRowsCount,
+          );
+
+          // Distribute placeholders: 2 above, 1 below (or however many remain)
+          const above = Math.min(2, remainingPlaceholders);
+          const below = Math.max(0, remainingPlaceholders - 2);
+
+          const placeholderHeight = (above + below) * PLACEHOLDER_ROW_HEIGHT;
+
+          return {
+            placeholderRowsAbove: above,
+            placeholderRowsBelow: below,
+            totalHeight: dynamicRowsHeight + placeholderHeight,
+          };
+        }, [dynamicRows]);
+
+      // Group tracks by their designated rows (using dynamic rows)
       const tracksByRow = useMemo(() => {
         const grouped: Record<string, VideoTrack[]> = {};
 
-        TRACK_ROWS.forEach((row) => {
-          grouped[row.id] = tracks.filter((track) =>
-            row.trackTypes.includes(track.type),
-          );
+        // Initialize empty arrays for all dynamic rows
+        dynamicRows.forEach((row) => {
+          grouped[row.id] = [];
+        });
+
+        // Group migrated tracks by their row ID (type + row index)
+        migratedTracks.forEach((track) => {
+          const rowId = getTrackRowId(track);
+          if (!grouped[rowId]) {
+            grouped[rowId] = [];
+          }
+          grouped[rowId].push(track);
         });
 
         return grouped;
-      }, [tracks]);
+      }, [migratedTracks, dynamicRows]);
 
-      // Filter track rows to only show visible ones
-      const visibleRows = useMemo(
-        () => TRACK_ROWS.filter((row) => visibleTrackRows.includes(row.id)),
-        [visibleTrackRows],
-      );
-
-      // Calculate baseline height (5 tracks) and whether we should center - matches TimelineTracks
-      const { baselineHeight, shouldCenter } = useMemo(() => {
-        // Calculate height for each visible row
-        const visibleRowsInOrder = TRACK_ROWS.filter((row) =>
-          visibleTrackRows.includes(row.id),
-        );
-
-        // Baseline height = height of ALL 5 track rows (even if not visible)
-        // This ensures the grid always shows space for 5 tracks
-        const baseline = TRACK_ROWS.reduce((sum, row) => {
-          return sum + getRowHeight(row.id);
-        }, 0);
-
-        return {
-          baselineHeight: baseline,
-          shouldCenter: visibleRowsInOrder.length < TRACK_ROWS.length,
-        };
-      }, [visibleTrackRows]);
+      // Filter dynamic rows to only show visible ones
+      const visibleRows = useMemo(() => {
+        return dynamicRows.filter((row) => {
+          // Extract the media type from the row ID (e.g., "video-0" -> "video")
+          const mediaType = row.trackTypes[0];
+          return visibleTrackRows.includes(mediaType);
+        });
+      }, [dynamicRows, visibleTrackRows]);
 
       return (
         <div className={cn('', className)}>
-          {/* Header with Add Track button */}
+          {/* Header with Add Track button - STICKY */}
           <div
             className={cn(
-              'border-b border-border/20 flex items-center justify-center px-2',
+              'sticky top-0 z-20 dark:bg-zinc-900 bg-zinc-100 border-b border-border/20 flex items-center justify-center px-2',
               TIMELINE_HEADER_HEIGHT_CLASSES,
             )}
           >
-            <AddTrackButton />
+            {/* <AddTrackButton /> */}
           </div>
 
-          {/* Track controller rows wrapper - with centering when <5 tracks */}
+          {/* Track controller rows wrapper - with placeholders */}
           <div
-            className="relative"
+            className="relative flex flex-col justify-center"
             style={{
-              minHeight: shouldCenter ? `${baselineHeight}px` : 'auto',
-              height: shouldCenter ? `${baselineHeight}px` : 'auto',
+              minHeight: `${totalHeight}px`,
             }}
           >
-            {/* Placeholder borders for ALL 5 track rows when centering - positioned at absolute positions */}
-            {shouldCenter && (
-              <div
-                className="absolute pointer-events-none"
-                style={{
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: `${baselineHeight}px`,
-                }}
-              >
-                {TRACK_ROWS.map((rowDef) => {
-                  // Calculate this row's top position - sum of all previous row heights
-                  let top = 0;
-                  for (let i = 0; i < TRACK_ROWS.length; i++) {
-                    if (TRACK_ROWS[i].id === rowDef.id) break;
-                    top += getRowHeight(TRACK_ROWS[i].id);
-                  }
+            {/* Placeholder rows above */}
+            {Array.from({ length: placeholderRowsAbove }, (_, i) => (
+              <PlaceholderControllerRow
+                key={`placeholder-above-${i}`}
+                id={`placeholder-above-${i}`}
+              />
+            ))}
 
-                  const rowHeight = getRowHeight(rowDef.id);
+            {/* Actual track controller rows */}
+            {visibleRows.map((rowDef) => {
+              // Check if this is video-0
+              const isVideoZero = rowDef.id === 'video-0';
 
-                  return (
-                    <div
-                      key={`placeholder-${rowDef.id}`}
-                      className="absolute bg-transparent"
-                      style={{
-                        top: `${top}px`,
-                        left: 0,
-                        right: 0,
-                        height: `${rowHeight}px`,
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            )}
-
-            <div
-              className="flex flex-col items-center relative"
-              style={{
-                height: shouldCenter ? `${baselineHeight}px` : 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: shouldCenter ? 'center' : 'flex-start',
-              }}
-            >
-              {visibleRows.map((rowDef) => (
-                <TrackControllerRow
+              return (
+                <div
                   key={rowDef.id}
-                  rowDef={rowDef}
-                  tracks={tracksByRow[rowDef.id] || []}
-                />
-              ))}
-            </div>
+                  className={cn(isVideoZero && 'sticky bottom-0 z-30')}
+                  style={
+                    isVideoZero
+                      ? {
+                          boxShadow: `0 ${scrollbarHeight + 10}px 0 0 var(--timeline-sticky-bg)`,
+                        }
+                      : undefined
+                  }
+                >
+                  <div
+                    className={cn(
+                      isVideoZero && 'dark:bg-zinc-900 bg-zinc-100',
+                    )}
+                  >
+                    <TrackControllerRow
+                      rowDef={rowDef}
+                      tracks={tracksByRow[rowDef.id] || []}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Placeholder rows below */}
+            {Array.from({ length: placeholderRowsBelow }, (_, i) => (
+              <PlaceholderControllerRow
+                key={`placeholder-below-${i}`}
+                id={`placeholder-below-${i}`}
+              />
+            ))}
           </div>
         </div>
       );
@@ -578,7 +660,8 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
           prevTrack.id === nextTrack.id &&
           prevTrack.visible === nextTrack.visible &&
           prevTrack.muted === nextTrack.muted &&
-          prevTrack.type === nextTrack.type
+          prevTrack.type === nextTrack.type &&
+          prevTrack.trackRowIndex === nextTrack.trackRowIndex // CRITICAL: Track row reordering
         );
       });
     },

@@ -40,6 +40,7 @@
   --sidebar-accent-foreground: 0 0% 9%;
   --sidebar-border: 0 0% 89.8%;
   --sidebar-ring: 0 0% 3.9%;
+  --timeline-sticky-bg: theme('colors.zinc.100');
 }
 
 .dark {
@@ -75,6 +76,7 @@
   --sidebar-accent-foreground: 0 0% 98%;
   --sidebar-border: 0 0% 14.9%;
   --sidebar-ring: 0 0% 83.1%;
+  --timeline-sticky-bg: theme('colors.zinc.900');
 }
 
 @layer base {
