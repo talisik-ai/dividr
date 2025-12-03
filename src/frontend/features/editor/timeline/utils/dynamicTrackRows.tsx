@@ -149,7 +149,7 @@ export function generateDynamicRows(
     nonAudioRowMap.set('video-0', []);
   }
 
-  // Convert to array and sort by rowIndex (descending)
+  // Convert to array and sort by rowIndex (descending - higher rows first)
   const nonAudioRowEntries = Array.from(nonAudioRowMap.entries()).sort(
     (a, b) => {
       // Handle empty rows (base tracks) - use rowId to extract type and index
@@ -274,23 +274,80 @@ export function parseRowId(
 
 /**
  * Get the next available row index for a given type
- * This is used when auto-creating new rows
+ *
+ * FIXED: This function now correctly places new tracks at the TOP of their type group.
+ *
+ * For professional timeline behavior (like Premiere Pro, CapCut):
+ * - New tracks should appear at the TOP of their type group (highest visual position)
+ * - Since visual ordering is DESCENDING (higher index = higher visual position),
+ *   new tracks need to get the HIGHEST index in their type group
+ *
+ * LOGIC:
+ * - First track of a type: Gets index based on visual context of other types
+ *   - For video/audio: Always starts at 0 (base track)
+ *   - For overlay types (text, subtitle, image): Gets index above highest existing non-audio track
+ * - Subsequent tracks of same type: Gets max existing index + 1 (stacks on top)
  *
  * @param tracks - All tracks in the timeline
  * @param type - Media type to find next row for
- * @returns Next available row index
+ * @returns Next available row index (places new track at TOP of its type group)
  */
 export function getNextAvailableRowIndex(
   tracks: VideoTrack[],
   type: VideoTrack['type'],
 ): number {
-  const existingIndices = tracks
+  // Get all existing row indices for this specific track type
+  const sameTypeIndices = tracks
     .filter((t) => t.type === type)
     .map((t) => t.trackRowIndex ?? 0);
 
-  if (existingIndices.length === 0) return 0;
+  // CASE 1: Tracks of this type already exist
+  // Place new track at max + 1 (top of the type group visually)
+  if (sameTypeIndices.length > 0) {
+    return Math.max(...sameTypeIndices) + 1;
+  }
 
-  return Math.max(...existingIndices) + 1;
+  // CASE 2: No tracks of this type exist (fresh track of new type)
+  // Determine placement based on track type category
+
+  const isAudioType = AUDIO_GROUP_TYPES.includes(type);
+  const isBaseType = type === 'video' || type === 'audio';
+
+  // For base types (video, audio), always start at index 0
+  // This ensures video-0 and audio-0 are the foundation tracks
+  if (isBaseType) {
+    return 0;
+  }
+
+  // For audio tracks (non-base), find the highest existing audio index
+  if (isAudioType) {
+    const audioIndices = tracks
+      .filter((t) => AUDIO_GROUP_TYPES.includes(t.type))
+      .map((t) => t.trackRowIndex ?? 0);
+
+    if (audioIndices.length === 0) {
+      return 0; // First audio track
+    }
+    return Math.max(...audioIndices) + 1;
+  }
+
+  // For overlay types (text, subtitle, image):
+  // Place at the TOP of the visual stack by finding the highest index
+  // among ALL non-audio tracks and going above it
+  const nonAudioIndices = tracks
+    .filter((t) => !AUDIO_GROUP_TYPES.includes(t.type))
+    .map((t) => t.trackRowIndex ?? 0);
+
+  if (nonAudioIndices.length === 0) {
+    // No non-audio tracks exist, but we want overlay types to start above video-0
+    // Since video-0 is at index 0, overlay types should start at index 1
+    // This ensures they appear ABOVE the base video track visually
+    return 1;
+  }
+
+  // Place above the highest existing non-audio track
+  // This ensures fresh overlay tracks appear at the TOP of the timeline
+  return Math.max(...nonAudioIndices) + 1;
 }
 
 /**
