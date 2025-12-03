@@ -1,15 +1,3 @@
-/**
- * Dual-Buffer Video System - SEEK + AUDIO FIX VERSION
- *
- * FIXES:
- * 1. AUDIO: Only active slot has audio, preload is always muted
- * 2. SEEK: Video syncs to currentFrame when scrubbing/seeking (not just during playback)
- *
- * The key insight is that we need BIDIRECTIONAL sync:
- * - During PLAYBACK: Video drives timeline (onFrameUpdate callback)
- * - During SEEKING/SCRUBBING: Timeline drives video (effect watches currentFrame)
- */
-
 import {
   forwardRef,
   useCallback,

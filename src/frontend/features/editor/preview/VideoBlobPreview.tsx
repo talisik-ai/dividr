@@ -1,27 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/**
- * VideoBlobPreview - AUDIO FIX VERSION
- *
- * CRITICAL FIX: Double Audio Problem
- *
- * ROOT CAUSE:
- * Previously, both useVideoPlayback AND DualBufferVideo were controlling video audio.
- * This caused double audio when:
- * 1. useVideoPlayback set videoRef.volume/muted
- * 2. DualBufferVideo also set its video elements' volume/muted
- *
- * THE FIX:
- * 1. useVideoPlayback is NO LONGER USED for video playback control
- * 2. DualBufferVideo handles ALL video playback AND audio
- * 3. DualBufferVideo syncs currentFrame back via onFrameUpdate callback
- * 4. Audio routing: if independentAudioTrack exists, video is muted
- *
- * AUDIO ROUTING TABLE:
- * | Has Independent Audio Track | Video Audio | Audio Source |
- * |----------------------------|-------------|--------------|
- * | Yes                        | Muted       | AudioOverlay |
- * | No                         | Active      | DualBufferVideo |
- */
 
 import { cn } from '@/frontend/utils/utils';
 import { Type } from 'lucide-react';
@@ -38,7 +15,6 @@ import {
   useActiveMedia,
   useAlignmentGuides,
   useAudioPlayback,
-  // useVideoPlayback, // REMOVED - DualBufferVideo now handles playback
   useDragDrop,
   useZoomPan,
 } from './hooks';

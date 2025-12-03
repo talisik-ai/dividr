@@ -1,22 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/**
- * Unified Audio Controller
- *
- * CRITICAL FIX FOR DOUBLE AUDIO ISSUE
- *
- * The Problem:
- * - Multiple audio sources were playing simultaneously:
- *   1. DualBufferVideo has TWO video elements (A and B) - both could have audio
- *   2. useVideoPlayback hook controls a separate videoRef
- *   3. AudioOverlay has an <audio> element
- *   4. useAudioPlayback hook controls that audio element
- *
- * The Solution:
- * - This controller ensures EXACTLY ONE audio source plays at any time
- * - It tracks all registered audio/video elements
- * - When one element should play audio, all others are muted
- * - Provides a single source of truth for audio state
- */
 
 type AudioSourceType =
   | 'video-main'
