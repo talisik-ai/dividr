@@ -41,11 +41,6 @@ export const VideoPreviewWrapper: React.FC<VideoPreviewWrapperProps> = ({
     return null;
   }
 
-  console.log(
-    'using video blob preview',
-    shouldUseDirectPreview && !directError,
-  );
-
   if (shouldUseDirectPreview && !directError) {
     try {
       return (

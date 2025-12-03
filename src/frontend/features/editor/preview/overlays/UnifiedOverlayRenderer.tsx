@@ -134,6 +134,27 @@ const getVideoSource = (track: VideoTrack | undefined): string | undefined => {
   return undefined;
 };
 
+/**
+ * Helper to get stable key for video elements
+ * Uses source URL instead of track ID to prevent unnecessary remounts
+ */
+const getVideoElementKey = (track: VideoTrack): string => {
+  const sourceUrl = track.previewUrl || track.source || track.id;
+  // Hash or truncate the URL to make a reasonable key
+  return `video-source-${hashString(sourceUrl)}`;
+};
+
+// Simple string hash function for creating stable keys
+const hashString = (str: string): string => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+};
+
 export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   // Video props
   videoRef,
@@ -219,8 +240,22 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
       switch (track.type) {
         case 'video':
           // Only render video if this is the active video track
-          // (to match the behavior of the original VideoOverlay which only renders one video)
+          // AND the source URL matches (prevents flicker on segment changes)
           if (activeVideoTrack && track.id === activeVideoTrack.id) {
+            // Check if we should skip rendering due to source change in progress
+            const currentSource = track.previewUrl || track.source;
+            const activeSource =
+              activeVideoTrack.previewUrl || activeVideoTrack.source;
+
+            if (currentSource !== activeSource) {
+              // Source mismatch during transition - this is a race condition
+              // Return null to prevent flicker
+              console.log(
+                '[UnifiedOverlayRenderer] Source mismatch, skipping render',
+              );
+              return null;
+            }
+
             return renderVideoTrack(
               track,
               zIndex,
@@ -651,9 +686,16 @@ function renderVideoTrack(
     height: track.height || baseVideoHeight,
   };
 
+  const videoSource = getVideoSource(track);
+
+  // CRITICAL FIX: Use source-based key instead of track ID
+  // This prevents React from remounting the video element when
+  // crossing segment boundaries of the same source file
+  const stableKey = getVideoElementKey(track);
+
   return (
     <div
-      key={`video-${track.id}`}
+      key={stableKey} // Changed from `video-${track.id}`
       className="absolute inset-0 pointer-events-none"
       style={{
         width: actualWidth,
@@ -702,7 +744,7 @@ function renderVideoTrack(
             playsInline
             controls={false}
             preload="metadata"
-            src={getVideoSource(track)}
+            src={videoSource}
             onLoadedMetadata={onLoadedMetadata}
           />
         </div>
