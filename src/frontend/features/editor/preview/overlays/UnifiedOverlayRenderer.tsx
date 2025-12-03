@@ -27,16 +27,14 @@ import {
 import { DualBufferVideo, DualBufferVideoRef } from './DualBufferVideoOverlay';
 
 /**
- * Unified Overlay Renderer
+ * Unified Overlay Renderer - FIXED VERSION
  *
- * This component renders all visual tracks (video, image, text, subtitle) in a single
- * unified rendering pass, respecting the dynamic track row ordering from the timeline.
+ * KEY FIX: The DualBufferVideo component is now rendered as a SIBLING to the track
+ * rendering loop, not inside it. This prevents React from remounting the video
+ * elements every time the track list or frame changes.
  *
- * Key features:
- * - Renders tracks in exact z-order based on trackRowIndex
- * - Supports cross-type layering (e.g., text behind image, image above video)
- * - Updates immediately when tracks are reordered in the timeline
- * - Maintains proper z-index stacking for each individual track
+ * The video is rendered ONCE at a stable position in the component tree, and
+ * the VideoTransformBoundary just wraps a placeholder div for positioning.
  */
 
 export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
@@ -120,25 +118,9 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
 }
 
 /**
- * Helper to get stable key for video elements
- * Uses source URL instead of track ID to prevent unnecessary remounts
+ * Interaction mode type
  */
-const getVideoElementKey = (track: VideoTrack): string => {
-  const sourceUrl = track.previewUrl || track.source || track.id;
-  // Hash or truncate the URL to make a reasonable key
-  return `video-source-${hashString(sourceUrl)}`;
-};
-
-// Simple string hash function for creating stable keys
-const hashString = (str: string): string => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return Math.abs(hash).toString(36);
-};
+type InteractionMode = 'select' | 'pan' | 'text-edit';
 
 export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   // Video props
@@ -195,7 +177,9 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
 }) => {
   const renderScale = coordinateSystem.baseScale;
 
-  // Ref for DualBufferVideo component
+  // ============================================================================
+  // CRITICAL FIX: DualBufferVideo ref is stable and never changes
+  // ============================================================================
   const dualBufferVideoRef = useRef<DualBufferVideoRef>(null);
 
   // Sync DualBufferVideo's active video to videoRef for backward compatibility
@@ -203,7 +187,6 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     if (dualBufferVideoRef.current && videoRef) {
       const activeVideo = dualBufferVideoRef.current.getActiveVideo();
       if (activeVideo && videoRef.current !== activeVideo) {
-        // Update the ref to point to the active video
         (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current =
           activeVideo;
       }
@@ -226,6 +209,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   );
 
   // Get all active visual tracks sorted by z-index (back to front)
+  // OPTIMIZATION: Memoize more aggressively to prevent unnecessary re-renders
   const sortedVisualTracks = useMemo(
     () => getActiveVisualTracksAtFrame(allTracks, currentFrame),
     [allTracks, currentFrame],
@@ -238,63 +222,67 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     [sortedVisualTracks],
   );
 
-  // Render a single track based on its type
-  const renderTrack = useCallback(
+  // ============================================================================
+  // CRITICAL FIX: Calculate video dimensions ONCE, not in render loop
+  // ============================================================================
+  const videoRenderInfo = useMemo(() => {
+    if (!activeVideoTrack) return null;
+
+    const videoTransform = activeVideoTrack.textTransform || {
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      width: activeVideoTrack.width || baseVideoWidth,
+      height: activeVideoTrack.height || baseVideoHeight,
+    };
+
+    const videoWidth =
+      (videoTransform.width || activeVideoTrack.width || baseVideoWidth) *
+      renderScale;
+    const videoHeight =
+      (videoTransform.height || activeVideoTrack.height || baseVideoHeight) *
+      renderScale;
+
+    const zIndex = getTrackZIndex(activeVideoTrack, allTracks);
+    const isSelected = selectedTrackIds.includes(activeVideoTrack.id);
+    const isVisuallyHidden = !activeVideoTrack.visible;
+
+    return {
+      track: activeVideoTrack,
+      videoWidth,
+      videoHeight,
+      zIndex,
+      isSelected,
+      isVisuallyHidden,
+      videoTransform,
+    };
+  }, [
+    activeVideoTrack,
+    baseVideoWidth,
+    baseVideoHeight,
+    renderScale,
+    allTracks,
+    selectedTrackIds,
+  ]);
+
+  // Calculate subtitle z-index (max of all subtitle tracks)
+  const subtitleZIndex = useMemo(() => {
+    if (activeSubtitles.length === 0) return 0;
+    return Math.max(
+      ...activeSubtitles.map((t) => getTrackZIndex(t, allTracks)),
+    );
+  }, [activeSubtitles, allTracks]);
+
+  // ============================================================================
+  // RENDER NON-VIDEO TRACKS (images, text)
+  // ============================================================================
+  const renderNonVideoTrack = useCallback(
     (track: VideoTrack) => {
       const zIndex = getTrackZIndex(track, allTracks);
       const isSelected = selectedTrackIds.includes(track.id);
 
       switch (track.type) {
-        case 'video':
-          // Only render video if this is the active video track
-          // AND the source URL matches (prevents flicker on segment changes)
-          if (activeVideoTrack && track.id === activeVideoTrack.id) {
-            // Check if we should skip rendering due to source change in progress
-            const currentSource = track.previewUrl || track.source;
-            const activeSource =
-              activeVideoTrack.previewUrl || activeVideoTrack.source;
-
-            if (currentSource !== activeSource) {
-              // Source mismatch during transition - this is a race condition
-              // Return null to prevent flicker
-              console.log(
-                '[UnifiedOverlayRenderer] Source mismatch, skipping render',
-              );
-              return null;
-            }
-
-            return renderVideoTrack(
-              track,
-              zIndex,
-              isSelected,
-              dualBufferVideoRef,
-              renderScale,
-              baseVideoWidth,
-              baseVideoHeight,
-              actualWidth,
-              actualHeight,
-              panX,
-              panY,
-              coordinateSystem,
-              interactionMode,
-              onVideoTransformUpdate,
-              onVideoSelect,
-              onRotationStateChange,
-              onDragStateChange,
-              onVideoLoadedMetadata,
-              // DualBufferVideo props
-              activeVideoTrack,
-              allTracks,
-              currentFrame,
-              fps,
-              isPlaying,
-              isMuted,
-              volume,
-              playbackRate,
-            );
-          }
-          return null;
-
         case 'image':
           return renderImageTrack(
             track,
@@ -342,10 +330,6 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
             onEditStarted,
           );
 
-        case 'subtitle':
-          // Subtitles are handled separately due to global positioning
-          return null;
-
         default:
           return null;
       }
@@ -353,8 +337,6 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     [
       allTracks,
       selectedTrackIds,
-      activeVideoTrack,
-      videoRef,
       renderScale,
       previewScale,
       baseVideoWidth,
@@ -366,9 +348,6 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
       coordinateSystem,
       interactionMode,
       isTextEditMode,
-      onVideoTransformUpdate,
-      onVideoSelect,
-      onVideoLoadedMetadata,
       onImageTransformUpdate,
       onImageSelect,
       onTextTransformUpdate,
@@ -382,15 +361,9 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     ],
   );
 
-  // Calculate subtitle z-index (max of all subtitle tracks)
-  const subtitleZIndex = useMemo(() => {
-    if (activeSubtitles.length === 0) return 0;
-    return Math.max(
-      ...activeSubtitles.map((t) => getTrackZIndex(t, allTracks)),
-    );
-  }, [activeSubtitles, allTracks]);
-
-  // Render subtitles with global positioning
+  // ============================================================================
+  // RENDER SUBTITLES
+  // ============================================================================
   const renderSubtitles = useCallback(() => {
     if (activeSubtitles.length === 0) return null;
 
@@ -401,7 +374,6 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
       selectedTrackIds.includes(track.id),
     );
 
-    // Create a fake track for the transform boundary (uses global position)
     const globalTrack: VideoTrack = {
       ...activeSubtitles[0],
       id: 'global-subtitle-transform',
@@ -443,183 +415,16 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         onDragStateChange={onDragStateChange}
         onEditModeChange={handleEditModeChange}
       >
-        {activeSubtitles.map((track) => {
-          const appliedStyle = getTextStyleForSubtitle(
+        {activeSubtitles.map((track) =>
+          renderSubtitleContent(
+            track,
+            getTextStyleForSubtitle,
             activeStyle,
-            track.subtitleStyle,
-          );
-
-          const baseFontSize = parseFloat(appliedStyle.fontSize) || 40;
-          const responsiveFontSize = baseFontSize * renderScale;
-          const scaledPaddingVertical = SUBTITLE_PADDING_VERTICAL * renderScale;
-          const scaledPaddingHorizontal =
-            SUBTITLE_PADDING_HORIZONTAL * renderScale;
-          const scaledTextShadow = scaleTextShadow(
-            appliedStyle.textShadow,
             renderScale,
-          );
-          const hasBackground = hasActualBackground(
-            appliedStyle.backgroundColor,
-          );
-
-          const baseTextStyle: React.CSSProperties = {
-            fontSize: `${responsiveFontSize}px`,
-            fontFamily: appliedStyle.fontFamily,
-            fontWeight: appliedStyle.fontWeight,
-            fontStyle: appliedStyle.fontStyle,
-            textTransform: appliedStyle.textTransform as any,
-            textDecoration: appliedStyle.textDecoration,
-            textAlign: appliedStyle.textAlign as any,
-            lineHeight: appliedStyle.lineHeight,
-            letterSpacing: appliedStyle.letterSpacing
-              ? `${parseFloat(String(appliedStyle.letterSpacing)) * renderScale}px`
-              : appliedStyle.letterSpacing,
-            whiteSpace: 'pre-line',
-            wordBreak: 'keep-all',
-            overflowWrap: 'normal',
-            padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-            maxWidth: `${baseVideoWidth * renderScale * 0.9}px`,
-          };
-
-          // Multi-layer rendering for glow effect
-          if ((appliedStyle as any).hasGlow) {
-            const glowBlurAmount = GLOW_BLUR_MULTIPLIER * renderScale;
-            const glowSpread = GLOW_SPREAD_MULTIPLIER * renderScale;
-
-            if (hasBackground) {
-              return (
-                <div
-                  key={`subtitle-content-${track.id}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSubtitleSelect(track.id);
-                  }}
-                >
-                  <div
-                    style={{ position: 'relative', display: 'inline-block' }}
-                  >
-                    {/* Glow layer */}
-                    <div
-                      style={{
-                        ...baseTextStyle,
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        color: appliedStyle.color,
-                        backgroundColor: appliedStyle.backgroundColor,
-                        opacity: 0.75,
-                        filter: `blur(${glowBlurAmount}px)`,
-                        boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
-                        zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE,
-                      }}
-                      aria-hidden="true"
-                    >
-                      {track.subtitleText}
-                    </div>
-                    {/* Background layer */}
-                    <div
-                      style={{
-                        ...baseTextStyle,
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        color: 'transparent',
-                        backgroundColor: appliedStyle.backgroundColor,
-                        opacity: appliedStyle.opacity,
-                        zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 1,
-                      }}
-                      aria-hidden="true"
-                    >
-                      {track.subtitleText}
-                    </div>
-                    {/* Text layer */}
-                    <div
-                      style={{
-                        ...baseTextStyle,
-                        position: 'relative',
-                        color: appliedStyle.color,
-                        backgroundColor: 'transparent',
-                        opacity: appliedStyle.opacity,
-                        textShadow: scaledTextShadow,
-                        zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 2,
-                      }}
-                    >
-                      {track.subtitleText}
-                    </div>
-                  </div>
-                </div>
-              );
-            }
-
-            // Glow without background
-            return (
-              <div
-                key={`subtitle-content-${track.id}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSubtitleSelect(track.id);
-                }}
-              >
-                <div style={{ position: 'relative', display: 'inline-block' }}>
-                  <div
-                    style={{
-                      ...baseTextStyle,
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      color: appliedStyle.color,
-                      backgroundColor: 'transparent',
-                      opacity: 0.75,
-                      filter: `blur(${glowBlurAmount}px)`,
-                      textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
-                      WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
-                      zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE,
-                    }}
-                    aria-hidden="true"
-                  >
-                    {track.subtitleText}
-                  </div>
-                  <div
-                    style={{
-                      ...baseTextStyle,
-                      position: 'relative',
-                      color: appliedStyle.color,
-                      backgroundColor: 'transparent',
-                      opacity: appliedStyle.opacity,
-                      textShadow: scaledTextShadow,
-                      zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 1,
-                    }}
-                  >
-                    {track.subtitleText}
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          // No glow - simple rendering
-          return (
-            <div
-              key={`subtitle-content-${track.id}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSubtitleSelect(track.id);
-              }}
-            >
-              <div
-                style={{
-                  ...baseTextStyle,
-                  textShadow: scaledTextShadow,
-                  color: appliedStyle.color,
-                  backgroundColor: appliedStyle.backgroundColor,
-                  opacity: appliedStyle.opacity,
-                }}
-              >
-                {track.subtitleText}
-              </div>
-            </div>
-          );
-        })}
+            baseVideoWidth,
+            onSubtitleSelect,
+          ),
+        )}
       </SubtitleTransformBoundary>
     );
   }, [
@@ -646,13 +451,99 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     activeStyle,
   ]);
 
-  // Render all tracks in z-order
+  // ============================================================================
+  // MAIN RENDER
+  // ============================================================================
   return (
     <>
-      {/* Render non-subtitle tracks in z-order */}
+      {/* 
+        ============================================================================
+        CRITICAL FIX: Render DualBufferVideo as a STABLE SIBLING
+        ============================================================================
+        
+        The DualBufferVideo is rendered here, OUTSIDE of any loop or callback.
+        This ensures React never remounts it due to key changes or callback
+        recreation. The video elements stay mounted for the entire lifetime
+        of the overlay renderer.
+        
+        The VideoTransformBoundary below just handles positioning/transforms
+        and wraps the video visually without affecting the video element's
+        position in the React tree.
+      */}
+      {videoRenderInfo && (
+        <div
+          key="stable-video-container"
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            width: actualWidth,
+            height: actualHeight,
+            left: `calc(50% + ${panX}px)`,
+            top: `calc(50% + ${panY}px)`,
+            transform: 'translate(-50%, -50%)',
+            overflow: 'visible',
+            zIndex: videoRenderInfo.zIndex,
+          }}
+        >
+          <VideoTransformBoundary
+            track={videoRenderInfo.track}
+            isSelected={videoRenderInfo.isSelected}
+            previewScale={coordinateSystem.baseScale}
+            videoWidth={baseVideoWidth}
+            videoHeight={baseVideoHeight}
+            renderScale={renderScale}
+            interactionMode={interactionMode}
+            onTransformUpdate={onVideoTransformUpdate}
+            onSelect={onVideoSelect}
+            onRotationStateChange={onRotationStateChange}
+            onDragStateChange={onDragStateChange}
+            clipContent={true}
+            clipWidth={actualWidth}
+            clipHeight={actualHeight}
+          >
+            <div
+              className="relative"
+              style={{
+                width: `${videoRenderInfo.videoWidth}px`,
+                height: `${videoRenderInfo.videoHeight}px`,
+                visibility: videoRenderInfo.isVisuallyHidden
+                  ? 'hidden'
+                  : 'visible',
+                pointerEvents:
+                  videoRenderInfo.isVisuallyHidden ||
+                  interactionMode === 'pan' ||
+                  interactionMode === 'text-edit'
+                    ? 'none'
+                    : 'auto',
+              }}
+            >
+              {/* 
+                CRITICAL: DualBufferVideo has a STABLE key that never changes.
+                It's rendered directly here, not through a callback or map function.
+              */}
+              <DualBufferVideo
+                ref={dualBufferVideoRef}
+                activeTrack={activeVideoTrack}
+                allTracks={allTracks}
+                currentFrame={currentFrame}
+                fps={fps}
+                isPlaying={isPlaying}
+                isMuted={isMuted}
+                volume={volume}
+                playbackRate={playbackRate}
+                onLoadedMetadata={onVideoLoadedMetadata}
+                width={videoRenderInfo.videoWidth}
+                height={videoRenderInfo.videoHeight}
+                objectFit="contain"
+              />
+            </div>
+          </VideoTransformBoundary>
+        </div>
+      )}
+
+      {/* Render non-video tracks (images, text) in z-order */}
       {sortedVisualTracks
-        .filter((t) => t.type !== 'subtitle')
-        .map((track) => renderTrack(track))}
+        .filter((t) => t.type !== 'subtitle' && t.type !== 'video')
+        .map((track) => renderNonVideoTrack(track))}
 
       {/* Render subtitles with global positioning */}
       {renderSubtitles()}
@@ -661,128 +552,182 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
 };
 
 // ============================================================================
-// TRACK RENDER HELPERS
+// HELPER RENDER FUNCTIONS (unchanged from original)
 // ============================================================================
 
 /**
- * Interaction mode type
+ * Render subtitle content
  */
-type InteractionMode = 'select' | 'pan' | 'text-edit';
-
-/**
- * Render a video track using DualBufferVideo for seamless transitions
- */
-function renderVideoTrack(
+function renderSubtitleContent(
   track: VideoTrack,
-  zIndex: number,
-  isSelected: boolean,
-  dualBufferVideoRef: React.RefObject<DualBufferVideoRef>,
+  getTextStyleForSubtitle: (style: any, segmentStyle?: any) => any,
+  activeStyle: any,
   renderScale: number,
   baseVideoWidth: number,
-  baseVideoHeight: number,
-  actualWidth: number,
-  actualHeight: number,
-  panX: number,
-  panY: number,
-  coordinateSystem: any,
-  interactionMode: InteractionMode | undefined,
-  onTransformUpdate: (trackId: string, transform: any) => void,
-  onSelect: (trackId: string) => void,
-  onRotationStateChange: (isRotating: boolean) => void,
-  onDragStateChange: (isDragging: boolean, position?: any) => void,
-  onLoadedMetadata?: () => void,
-  // DualBufferVideo props
-  activeVideoTrack?: VideoTrack,
-  allTracks?: VideoTrack[],
-  currentFrame?: number,
-  fps?: number,
-  isPlaying?: boolean,
-  isMuted?: boolean,
-  volume?: number,
-  playbackRate?: number,
+  onSubtitleSelect: (trackId: string) => void,
 ) {
-  const isVisuallyHidden = !track.visible;
-  const videoTransform = track.textTransform || {
-    x: 0,
-    y: 0,
-    scale: 1,
-    rotation: 0,
-    width: track.width || baseVideoWidth,
-    height: track.height || baseVideoHeight,
+  const appliedStyle = getTextStyleForSubtitle(
+    activeStyle,
+    track.subtitleStyle,
+  );
+
+  const baseFontSize = parseFloat(appliedStyle.fontSize) || 40;
+  const responsiveFontSize = baseFontSize * renderScale;
+  const scaledPaddingVertical = SUBTITLE_PADDING_VERTICAL * renderScale;
+  const scaledPaddingHorizontal = SUBTITLE_PADDING_HORIZONTAL * renderScale;
+  const scaledTextShadow = scaleTextShadow(
+    appliedStyle.textShadow,
+    renderScale,
+  );
+  const hasBackground = hasActualBackground(appliedStyle.backgroundColor);
+
+  const baseTextStyle: React.CSSProperties = {
+    fontSize: `${responsiveFontSize}px`,
+    fontFamily: appliedStyle.fontFamily,
+    fontWeight: appliedStyle.fontWeight,
+    fontStyle: appliedStyle.fontStyle,
+    textTransform: appliedStyle.textTransform as any,
+    textDecoration: appliedStyle.textDecoration,
+    textAlign: appliedStyle.textAlign as any,
+    lineHeight: appliedStyle.lineHeight,
+    letterSpacing: appliedStyle.letterSpacing
+      ? `${parseFloat(String(appliedStyle.letterSpacing)) * renderScale}px`
+      : appliedStyle.letterSpacing,
+    whiteSpace: 'pre-line',
+    wordBreak: 'keep-all',
+    overflowWrap: 'normal',
+    padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
+    maxWidth: `${baseVideoWidth * renderScale * 0.9}px`,
   };
 
-  // CRITICAL FIX: Use source-based key instead of track ID
-  // This prevents React from remounting the video element when
-  // crossing segment boundaries of the same source file
-  const stableKey = getVideoElementKey(track);
+  if ((appliedStyle as any).hasGlow) {
+    const glowBlurAmount = GLOW_BLUR_MULTIPLIER * renderScale;
+    const glowSpread = GLOW_SPREAD_MULTIPLIER * renderScale;
 
-  // Calculate video dimensions for DualBufferVideo
-  const videoWidth =
-    (videoTransform.width || track.width || baseVideoWidth) * renderScale;
-  const videoHeight =
-    (videoTransform.height || track.height || baseVideoHeight) * renderScale;
+    if (hasBackground) {
+      return (
+        <div
+          key={`subtitle-content-${track.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSubtitleSelect(track.id);
+          }}
+        >
+          <div style={{ position: 'relative', display: 'inline-block' }}>
+            <div
+              style={{
+                ...baseTextStyle,
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                color: appliedStyle.color,
+                backgroundColor: appliedStyle.backgroundColor,
+                opacity: 0.75,
+                filter: `blur(${glowBlurAmount}px)`,
+                boxShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+                zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE,
+              }}
+              aria-hidden="true"
+            >
+              {track.subtitleText}
+            </div>
+            <div
+              style={{
+                ...baseTextStyle,
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                color: 'transparent',
+                backgroundColor: appliedStyle.backgroundColor,
+                opacity: appliedStyle.opacity,
+                zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 1,
+              }}
+              aria-hidden="true"
+            >
+              {track.subtitleText}
+            </div>
+            <div
+              style={{
+                ...baseTextStyle,
+                position: 'relative',
+                color: appliedStyle.color,
+                backgroundColor: 'transparent',
+                opacity: appliedStyle.opacity,
+                textShadow: scaledTextShadow,
+                zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 2,
+              }}
+            >
+              {track.subtitleText}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={`subtitle-content-${track.id}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSubtitleSelect(track.id);
+        }}
+      >
+        <div style={{ position: 'relative', display: 'inline-block' }}>
+          <div
+            style={{
+              ...baseTextStyle,
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              color: appliedStyle.color,
+              backgroundColor: 'transparent',
+              opacity: 0.75,
+              filter: `blur(${glowBlurAmount}px)`,
+              textShadow: `0 0 ${glowSpread}px ${appliedStyle.color}, 0 0 ${glowSpread * 1.5}px ${appliedStyle.color}`,
+              WebkitTextStroke: `${glowSpread * 0.75}px ${appliedStyle.color}`,
+              zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE,
+            }}
+            aria-hidden="true"
+          >
+            {track.subtitleText}
+          </div>
+          <div
+            style={{
+              ...baseTextStyle,
+              position: 'relative',
+              color: appliedStyle.color,
+              backgroundColor: 'transparent',
+              opacity: appliedStyle.opacity,
+              textShadow: scaledTextShadow,
+              zIndex: Z_INDEX_SUBTITLE_CONTENT_BASE + 1,
+            }}
+          >
+            {track.subtitleText}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
-      key={stableKey}
-      className="absolute inset-0 pointer-events-none"
-      style={{
-        width: actualWidth,
-        height: actualHeight,
-        left: `calc(50% + ${panX}px)`,
-        top: `calc(50% + ${panY}px)`,
-        transform: 'translate(-50%, -50%)',
-        overflow: 'visible',
-        zIndex,
+      key={`subtitle-content-${track.id}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSubtitleSelect(track.id);
       }}
     >
-      <VideoTransformBoundary
-        track={track}
-        isSelected={isSelected}
-        previewScale={coordinateSystem.baseScale}
-        videoWidth={baseVideoWidth}
-        videoHeight={baseVideoHeight}
-        renderScale={renderScale}
-        interactionMode={interactionMode}
-        onTransformUpdate={onTransformUpdate}
-        onSelect={onSelect}
-        onRotationStateChange={onRotationStateChange}
-        onDragStateChange={onDragStateChange}
-        clipContent={true}
-        clipWidth={actualWidth}
-        clipHeight={actualHeight}
+      <div
+        style={{
+          ...baseTextStyle,
+          textShadow: scaledTextShadow,
+          color: appliedStyle.color,
+          backgroundColor: appliedStyle.backgroundColor,
+          opacity: appliedStyle.opacity,
+        }}
       >
-        <div
-          className="relative"
-          style={{
-            width: `${videoWidth}px`,
-            height: `${videoHeight}px`,
-            visibility: isVisuallyHidden ? 'hidden' : 'visible',
-            pointerEvents:
-              isVisuallyHidden ||
-              interactionMode === 'pan' ||
-              interactionMode === 'text-edit'
-                ? 'none'
-                : 'auto',
-          }}
-        >
-          <DualBufferVideo
-            ref={dualBufferVideoRef}
-            activeTrack={activeVideoTrack}
-            allTracks={allTracks || []}
-            currentFrame={currentFrame || 0}
-            fps={fps || 30}
-            isPlaying={isPlaying || false}
-            isMuted={isMuted || false}
-            volume={volume || 1}
-            playbackRate={playbackRate || 1}
-            onLoadedMetadata={onLoadedMetadata}
-            width={videoWidth}
-            height={videoHeight}
-            objectFit="contain"
-          />
-        </div>
-      </VideoTransformBoundary>
+        {track.subtitleText}
+      </div>
     </div>
   );
 }
@@ -945,7 +890,6 @@ function renderTextTrack(
     opacity: appliedStyle.opacity,
   };
 
-  // Handle glow effect
   if (appliedStyle.hasGlow) {
     const glowBlurAmount = GLOW_BLUR_MULTIPLIER * effectiveScale;
     const glowSpread = GLOW_SPREAD_MULTIPLIER * effectiveScale;
@@ -990,7 +934,6 @@ function renderTextTrack(
           <div style={{ position: 'relative', display: 'inline-block' }}>
             {hasBackground ? (
               <>
-                {/* Glow layer */}
                 <div
                   style={{
                     ...baseTextStyle,
@@ -1008,7 +951,6 @@ function renderTextTrack(
                 >
                   {track.textContent}
                 </div>
-                {/* Background layer */}
                 <div
                   style={{
                     ...baseTextStyle,
@@ -1024,7 +966,6 @@ function renderTextTrack(
                 >
                   {track.textContent}
                 </div>
-                {/* Text layer */}
                 <div
                   style={{
                     ...baseTextStyle,
@@ -1041,7 +982,6 @@ function renderTextTrack(
               </>
             ) : (
               <>
-                {/* Glow layer (no background) */}
                 <div
                   style={{
                     ...baseTextStyle,
@@ -1060,7 +1000,6 @@ function renderTextTrack(
                 >
                   {track.textContent}
                 </div>
-                {/* Text layer */}
                 <div
                   style={{
                     ...baseTextStyle,
@@ -1082,7 +1021,6 @@ function renderTextTrack(
     );
   }
 
-  // No glow - simple rendering
   return (
     <div
       key={`text-${track.id}`}
