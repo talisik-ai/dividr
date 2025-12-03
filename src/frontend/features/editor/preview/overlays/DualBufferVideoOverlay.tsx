@@ -1,15 +1,15 @@
 /**
- * Dual-Buffer Video System for Seamless Cross-Clip Transitions - FIXED VERSION
+ * Dual-Buffer Video System - AUDIO FIX VERSION
  *
- * KEY FIXES:
- * 1. Video elements are rendered with STABLE keys that never change
- * 2. Source changes are handled via src attribute updates, NOT remounts
- * 3. Preload logic is more aggressive and handles edge cases
- * 4. Reduced console logging to prevent performance issues
+ * CRITICAL AUDIO FIXES:
+ * 1. Only the ACTIVE video slot (A or B) can have audio - the other is ALWAYS muted
+ * 2. Preload video is ALWAYS muted and paused
+ * 3. Audio state is enforced on EVERY render and effect
+ * 4. Added explicit audio control methods
+ * 5. Removed any code that could cause audio leakage
  *
- * This system maintains TWO video elements:
- * 1. Active video - currently playing/visible
- * 2. Preload video - loading the next clip in background
+ * AUDIO RULE: At any given moment, exactly ONE video element should have audio.
+ * The preload video NEVER has audio, even momentarily.
  */
 
 import {
@@ -34,16 +34,27 @@ export interface DualBufferVideoRef {
   preloadSource: (url: string, startTime?: number) => Promise<void>;
   isSourceReady: (url: string) => boolean;
   getBufferStatus: () => BufferStatus;
+  /** Force mute all video elements */
+  muteAll: () => void;
+  /** Get current audio state */
+  getAudioState: () => AudioState;
 }
 
 export interface BufferStatus {
+  activeSlot: 'A' | 'B';
   activeSource: string | null;
   activeReadyState: number;
-  activeCurrentTime: number;
   preloadSource: string | null;
   preloadReadyState: number;
-  preloadCurrentTime: number;
   isPreloadReady: boolean;
+}
+
+export interface AudioState {
+  activeSlot: 'A' | 'B';
+  videoAMuted: boolean;
+  videoAVolume: number;
+  videoBMuted: boolean;
+  videoBVolume: number;
 }
 
 export interface DualBufferVideoProps {
@@ -57,47 +68,43 @@ export interface DualBufferVideoProps {
   playbackRate: number;
   onLoadedMetadata?: () => void;
   onActiveVideoChange?: (video: HTMLVideoElement) => void;
+  /** Callback when frame updates during playback */
+  onFrameUpdate?: (frame: number) => void;
   width: number;
   height: number;
   className?: string;
   objectFit?: 'contain' | 'cover' | 'fill';
+  /**
+   * CRITICAL: Whether this component should control audio output.
+   * - true: Active video element will have audio (when not muted)
+   * - false: ALL video elements are muted (audio comes from elsewhere, e.g., AudioOverlay)
+   */
+  handleAudio?: boolean;
 }
 
-// Preload threshold in frames
-const PRELOAD_THRESHOLD_FRAMES = 45; // ~1.5 seconds at 30fps (increased for more buffer time)
+// Configuration
+const PRELOAD_THRESHOLD_FRAMES = 45;
+const MIN_READY_STATE = 3;
+const DEBUG_AUDIO = true;
 
-// Minimum ready state to consider video "ready"
-const MIN_READY_STATE = 3; // HAVE_FUTURE_DATA
-
-// Debug logging (set to false in production)
-const DEBUG_DUAL_BUFFER = false;
-
-function logDualBuffer(message: string, data?: any) {
-  if (DEBUG_DUAL_BUFFER) {
-    console.log(`[DualBuffer] ${message}`, data || '');
+function logAudio(message: string, data?: any) {
+  if (DEBUG_AUDIO) {
+    console.log(`[DualBuffer:Audio] ${message}`, data || '');
   }
 }
 
 // =============================================================================
-// HELPER FUNCTIONS
+// HELPERS
 // =============================================================================
 
 function getVideoSource(track: VideoTrack | undefined): string | undefined {
   if (!track) return undefined;
-
-  if (track.previewUrl && track.previewUrl.trim()) {
-    return track.previewUrl;
+  if (track.previewUrl?.trim()) return track.previewUrl;
+  if (track.source?.trim()) {
+    const src = track.source.trim();
+    if (src.startsWith('http://') || src.startsWith('https://')) return src;
+    return `http://localhost:3001/${encodeURIComponent(src)}`;
   }
-
-  if (track.source && track.source.trim()) {
-    const sourcePath = track.source.trim();
-    if (sourcePath.startsWith('http://') || sourcePath.startsWith('https://')) {
-      return sourcePath;
-    }
-    const encodedPath = encodeURIComponent(sourcePath);
-    return `http://localhost:3001/${encodedPath}`;
-  }
-
   return undefined;
 }
 
@@ -111,30 +118,17 @@ function findNextVideoTrack(
     .sort((a, b) => a.startFrame - b.startFrame);
 
   const currentTrack = videoTracks.find((t) => t.id === currentTrackId);
-
   if (!currentTrack) {
     return videoTracks.find((t) => t.endFrame > currentFrame);
   }
 
-  const nextTracks = videoTracks.filter(
+  return videoTracks.find(
     (t) => t.id !== currentTrackId && t.startFrame >= currentTrack.endFrame - 1,
   );
-
-  return nextTracks[0];
-}
-
-function calculateVideoStartTime(
-  track: VideoTrack,
-  frame: number,
-  fps: number,
-): number {
-  const relativeFrame = Math.max(0, frame - track.startFrame);
-  const trackTime = relativeFrame / fps;
-  return (track.sourceStartTime || 0) + trackTime;
 }
 
 // =============================================================================
-// DUAL BUFFER VIDEO COMPONENT
+// COMPONENT
 // =============================================================================
 
 export const DualBufferVideo = forwardRef<
@@ -153,179 +147,270 @@ export const DualBufferVideo = forwardRef<
       playbackRate,
       onLoadedMetadata,
       onActiveVideoChange,
+      onFrameUpdate,
       width,
       height,
       className,
       objectFit = 'contain',
+      handleAudio = true,
     },
     ref,
   ) => {
     // =========================================================================
-    // REFS - These are STABLE and never change
+    // STABLE REFS - Never change
     // =========================================================================
     const videoARef = useRef<HTMLVideoElement>(null);
     const videoBRef = useRef<HTMLVideoElement>(null);
 
-    // Track which video slot is active
-    const [activeVideoSlot, setActiveVideoSlot] = useState<'A' | 'B'>('A');
+    // Track which slot is active
+    const [activeSlot, setActiveSlot] = useState<'A' | 'B'>('A');
 
-    // Track sources - these change, but video elements don't remount
-    const videoASourceRef = useRef<string | null>(null);
-    const videoBSourceRef = useRef<string | null>(null);
+    // Source tracking
+    const sourceARef = useRef<string | null>(null);
+    const sourceBRef = useRef<string | null>(null);
 
-    // Track ready states
-    const [videoAReady, setVideoAReady] = useState(false);
-    const [videoBReady, setVideoBReady] = useState(false);
+    // Ready state tracking
+    const [readyA, setReadyA] = useState(false);
+    const [readyB, setReadyB] = useState(false);
 
-    // Prevent swap loops
-    const swapInProgressRef = useRef(false);
-    const lastPreloadedSourceRef = useRef<string | null>(null);
+    // Prevent duplicate operations
+    const swapLockRef = useRef(false);
+    const lastPreloadUrlRef = useRef<string | null>(null);
+    const prevSourceRef = useRef<string | undefined>(undefined);
 
-    // Track previous source to detect changes
-    const prevSourceUrlRef = useRef<string | undefined>(undefined);
-
-    // =========================================================================
-    // COMPUTED VALUES
-    // =========================================================================
+    // Current source URL
     const currentSourceUrl = useMemo(
       () => getVideoSource(activeTrack),
       [activeTrack?.previewUrl, activeTrack?.source],
     );
 
     // =========================================================================
-    // VIDEO ACCESS METHODS
+    // CRITICAL: Audio enforcement function
+    // This MUST be called whenever audio state could change
     // =========================================================================
-    const getActiveVideo = useCallback(() => {
-      return activeVideoSlot === 'A' ? videoARef.current : videoBRef.current;
-    }, [activeVideoSlot]);
+    const enforceAudioState = useCallback(() => {
+      const videoA = videoARef.current;
+      const videoB = videoBRef.current;
 
-    const getPreloadVideo = useCallback(() => {
-      return activeVideoSlot === 'A' ? videoBRef.current : videoARef.current;
-    }, [activeVideoSlot]);
+      // RULE: Preload video is ALWAYS muted, no exceptions
+      const preloadVideo = activeSlot === 'A' ? videoB : videoA;
+      const activeVideo = activeSlot === 'A' ? videoA : videoB;
 
-    const getActiveSource = useCallback(() => {
-      return activeVideoSlot === 'A'
-        ? videoASourceRef.current
-        : videoBSourceRef.current;
-    }, [activeVideoSlot]);
+      if (preloadVideo) {
+        preloadVideo.muted = true;
+        preloadVideo.volume = 0;
+      }
 
-    const getPreloadSource = useCallback(() => {
-      return activeVideoSlot === 'A'
-        ? videoBSourceRef.current
-        : videoASourceRef.current;
-    }, [activeVideoSlot]);
+      if (activeVideo) {
+        if (!handleAudio) {
+          // This component doesn't handle audio - mute everything
+          activeVideo.muted = true;
+          activeVideo.volume = 0;
+        } else {
+          // This component handles audio - apply global mute/volume to active only
+          activeVideo.muted = isMuted;
+          activeVideo.volume = isMuted ? 0 : Math.min(volume, 1);
+        }
+      }
 
-    const isActiveReady = useCallback(() => {
-      return activeVideoSlot === 'A' ? videoAReady : videoBReady;
-    }, [activeVideoSlot, videoAReady, videoBReady]);
+      logAudio('Audio state enforced', {
+        activeSlot,
+        handleAudio,
+        isMuted,
+        volume,
+        videoA: videoA ? { muted: videoA.muted, volume: videoA.volume } : null,
+        videoB: videoB ? { muted: videoB.muted, volume: videoB.volume } : null,
+      });
+    }, [activeSlot, handleAudio, isMuted, volume]);
 
-    const isPreloadReady = useCallback(() => {
-      return activeVideoSlot === 'A' ? videoBReady : videoAReady;
-    }, [activeVideoSlot, videoAReady, videoBReady]);
+    // =========================================================================
+    // ACCESSORS
+    // =========================================================================
+    const getActiveVideo = useCallback(
+      () => (activeSlot === 'A' ? videoARef.current : videoBRef.current),
+      [activeSlot],
+    );
+
+    const getPreloadVideo = useCallback(
+      () => (activeSlot === 'A' ? videoBRef.current : videoARef.current),
+      [activeSlot],
+    );
+
+    const getActiveSource = useCallback(
+      () => (activeSlot === 'A' ? sourceARef.current : sourceBRef.current),
+      [activeSlot],
+    );
+
+    const getPreloadSource = useCallback(
+      () => (activeSlot === 'A' ? sourceBRef.current : sourceARef.current),
+      [activeSlot],
+    );
+
+    const isPreloadReady = useCallback(
+      () => (activeSlot === 'A' ? readyB : readyA),
+      [activeSlot, readyA, readyB],
+    );
+
+    // =========================================================================
+    // MUTE ALL - Emergency stop
+    // =========================================================================
+    const muteAll = useCallback(() => {
+      logAudio('MUTE ALL called');
+      if (videoARef.current) {
+        videoARef.current.muted = true;
+        videoARef.current.volume = 0;
+      }
+      if (videoBRef.current) {
+        videoBRef.current.muted = true;
+        videoBRef.current.volume = 0;
+      }
+    }, []);
+
+    // =========================================================================
+    // GET AUDIO STATE
+    // =========================================================================
+    const getAudioState = useCallback((): AudioState => {
+      return {
+        activeSlot,
+        videoAMuted: videoARef.current?.muted ?? true,
+        videoAVolume: videoARef.current?.volume ?? 0,
+        videoBMuted: videoBRef.current?.muted ?? true,
+        videoBVolume: videoBRef.current?.volume ?? 0,
+      };
+    }, [activeSlot]);
 
     // =========================================================================
     // SWAP VIDEOS
     // =========================================================================
     const swapVideos = useCallback(() => {
-      if (swapInProgressRef.current) return;
-      swapInProgressRef.current = true;
+      if (swapLockRef.current) return;
+      swapLockRef.current = true;
 
-      logDualBuffer('Swapping videos', {
-        from: activeVideoSlot,
-        to: activeVideoSlot === 'A' ? 'B' : 'A',
-      });
+      logAudio('Swapping videos', { from: activeSlot });
 
-      setActiveVideoSlot((prev) => (prev === 'A' ? 'B' : 'A'));
+      const oldActive = getActiveVideo();
+      const newActive = getPreloadVideo();
 
+      // Step 1: Mute and pause old active FIRST
+      if (oldActive) {
+        oldActive.muted = true;
+        oldActive.volume = 0;
+        if (!oldActive.paused) {
+          oldActive.pause();
+        }
+      }
+
+      // Step 2: Swap the slot
+      const newSlot = activeSlot === 'A' ? 'B' : 'A';
+      setActiveSlot(newSlot);
+
+      // Step 3: Configure new active (audio will be set by enforceAudioState)
+      if (newActive && isPlaying && newActive.readyState >= MIN_READY_STATE) {
+        newActive.play().catch(() => {});
+      }
+
+      // Step 4: Notify parent
+      if (newActive && onActiveVideoChange) {
+        onActiveVideoChange(newActive);
+      }
+
+      // Step 5: Unlock after next frame
       requestAnimationFrame(() => {
-        swapInProgressRef.current = false;
+        swapLockRef.current = false;
+        // Enforce audio state after swap completes
+        enforceAudioState();
       });
-    }, [activeVideoSlot]);
+    }, [
+      activeSlot,
+      getActiveVideo,
+      getPreloadVideo,
+      isPlaying,
+      onActiveVideoChange,
+      enforceAudioState,
+    ]);
 
     // =========================================================================
     // PRELOAD SOURCE
     // =========================================================================
     const preloadSource = useCallback(
       async (url: string, startTime = 0): Promise<void> => {
+        if (lastPreloadUrlRef.current === url) return;
+
         const preloadVideo = getPreloadVideo();
         if (!preloadVideo) return;
 
-        // Don't re-preload the same source
-        if (lastPreloadedSourceRef.current === url) {
-          return;
-        }
+        logAudio('Preloading source', { url: url.substring(0, 50), startTime });
 
-        logDualBuffer('Preloading source', {
-          url: url.substring(0, 50),
-          startTime,
-        });
-
-        lastPreloadedSourceRef.current = url;
+        lastPreloadUrlRef.current = url;
 
         // Update source ref
-        if (activeVideoSlot === 'A') {
-          videoBSourceRef.current = url;
-          setVideoBReady(false);
+        if (activeSlot === 'A') {
+          sourceBRef.current = url;
+          setReadyB(false);
         } else {
-          videoASourceRef.current = url;
-          setVideoAReady(false);
+          sourceARef.current = url;
+          setReadyA(false);
         }
 
-        // Set source and preload
+        // CRITICAL: Preload video is ALWAYS muted
+        preloadVideo.muted = true;
+        preloadVideo.volume = 0;
         preloadVideo.src = url;
         preloadVideo.currentTime = startTime;
         preloadVideo.preload = 'auto';
         preloadVideo.load();
 
         return new Promise((resolve) => {
-          const checkReady = () => {
+          const check = () => {
             if (preloadVideo.readyState >= MIN_READY_STATE) {
-              logDualBuffer('Preload ready');
-              if (activeVideoSlot === 'A') {
-                setVideoBReady(true);
+              // Ensure still muted after loading
+              preloadVideo.muted = true;
+              preloadVideo.volume = 0;
+
+              if (activeSlot === 'A') {
+                setReadyB(true);
               } else {
-                setVideoAReady(true);
+                setReadyA(true);
               }
               resolve();
             } else {
-              requestAnimationFrame(checkReady);
+              requestAnimationFrame(check);
             }
           };
-          setTimeout(checkReady, 50);
+          setTimeout(check, 50);
         });
       },
-      [activeVideoSlot, getPreloadVideo],
+      [activeSlot, getPreloadVideo],
     );
 
     // =========================================================================
-    // CHECK IF SOURCE IS READY
+    // IS SOURCE READY
     // =========================================================================
     const isSourceReady = useCallback(
       (url: string): boolean => {
-        if (videoASourceRef.current === url && videoAReady) return true;
-        if (videoBSourceRef.current === url && videoBReady) return true;
+        if (sourceARef.current === url && readyA) return true;
+        if (sourceBRef.current === url && readyB) return true;
         return false;
       },
-      [videoAReady, videoBReady],
+      [readyA, readyB],
     );
 
     // =========================================================================
     // GET BUFFER STATUS
     // =========================================================================
     const getBufferStatus = useCallback((): BufferStatus => {
-      const activeVideo = getActiveVideo();
-      const preloadVideo = getPreloadVideo();
-
+      const active = getActiveVideo();
+      const preload = getPreloadVideo();
       return {
+        activeSlot,
         activeSource: getActiveSource(),
-        activeReadyState: activeVideo?.readyState || 0,
-        activeCurrentTime: activeVideo?.currentTime || 0,
+        activeReadyState: active?.readyState || 0,
         preloadSource: getPreloadSource(),
-        preloadReadyState: preloadVideo?.readyState || 0,
-        preloadCurrentTime: preloadVideo?.currentTime || 0,
+        preloadReadyState: preload?.readyState || 0,
         isPreloadReady: isPreloadReady(),
       };
     }, [
+      activeSlot,
       getActiveVideo,
       getPreloadVideo,
       getActiveSource,
@@ -334,7 +419,7 @@ export const DualBufferVideo = forwardRef<
     ]);
 
     // =========================================================================
-    // EXPOSE REF METHODS
+    // EXPOSE REF
     // =========================================================================
     useImperativeHandle(
       ref,
@@ -345,6 +430,8 @@ export const DualBufferVideo = forwardRef<
         preloadSource,
         isSourceReady,
         getBufferStatus,
+        muteAll,
+        getAudioState,
       }),
       [
         getActiveVideo,
@@ -353,64 +440,47 @@ export const DualBufferVideo = forwardRef<
         preloadSource,
         isSourceReady,
         getBufferStatus,
+        muteAll,
+        getAudioState,
       ],
     );
 
     // =========================================================================
-    // HANDLE SOURCE CHANGES
+    // EFFECT: Handle source changes
     // =========================================================================
     useEffect(() => {
       if (!currentSourceUrl) return;
 
       const activeSource = getActiveSource();
-      const preloadSourceUrl = getPreloadSource();
-      const activeVideo = getActiveVideo();
-      const preloadVideo = getPreloadVideo();
 
-      // If source hasn't changed, no action needed
+      // Same source - no action needed
       if (activeSource === currentSourceUrl) {
-        // Just ensure video is playing if it should be
-        if (
-          isPlaying &&
-          activeVideo?.paused &&
-          activeVideo.readyState >= MIN_READY_STATE
-        ) {
-          activeVideo.play().catch(() => {});
-        }
         return;
       }
 
-      // Check if this is a same-source segment transition (track ID changed but source is same)
-      const isSameSource = prevSourceUrlRef.current === currentSourceUrl;
-      prevSourceUrlRef.current = currentSourceUrl;
+      // Check if this is a same-source segment transition
+      const isRealSourceChange = prevSourceRef.current !== currentSourceUrl;
+      prevSourceRef.current = currentSourceUrl;
 
-      if (isSameSource) {
-        // Same source file, different segment - NO action needed
-        // The video is already playing the correct content
-        logDualBuffer('Same-source segment transition, no swap needed');
+      if (!isRealSourceChange) {
+        // Same source file, different segment - video continues
         return;
       }
 
-      // Different source file - check if we can swap to preload
-      if (preloadSourceUrl === currentSourceUrl && isPreloadReady()) {
-        logDualBuffer('Swapping to preloaded source');
+      // Check if preload has our source ready
+      if (getPreloadSource() === currentSourceUrl && isPreloadReady()) {
         swapVideos();
-
-        if (onActiveVideoChange && preloadVideo) {
-          onActiveVideoChange(preloadVideo);
-        }
         return;
       }
 
-      // Need to load directly into active video (may cause brief flash)
-      logDualBuffer('Loading source directly into active');
-
-      if (activeVideoSlot === 'A') {
-        videoASourceRef.current = currentSourceUrl;
-        setVideoAReady(false);
+      // Need to load directly into active
+      const activeVideo = getActiveVideo();
+      if (activeSlot === 'A') {
+        sourceARef.current = currentSourceUrl;
+        setReadyA(false);
       } else {
-        videoBSourceRef.current = currentSourceUrl;
-        setVideoBReady(false);
+        sourceBRef.current = currentSourceUrl;
+        setReadyB(false);
       }
 
       if (activeVideo) {
@@ -419,20 +489,16 @@ export const DualBufferVideo = forwardRef<
       }
     }, [
       currentSourceUrl,
-      activeVideoSlot,
+      activeSlot,
       getActiveSource,
       getPreloadSource,
       getActiveVideo,
-      getPreloadVideo,
-      isActiveReady,
       isPreloadReady,
       swapVideos,
-      onActiveVideoChange,
-      isPlaying,
     ]);
 
     // =========================================================================
-    // PRELOAD NEXT CLIP
+    // EFFECT: Preload next clip
     // =========================================================================
     useEffect(() => {
       if (!activeTrack || !isPlaying) return;
@@ -447,17 +513,10 @@ export const DualBufferVideo = forwardRef<
         );
 
         if (nextTrack) {
-          const nextSourceUrl = getVideoSource(nextTrack);
-          const currentPreloadSource = getPreloadSource();
-
-          // Only preload if different from current preload
-          if (nextSourceUrl && nextSourceUrl !== currentPreloadSource) {
-            const startTime = calculateVideoStartTime(
-              nextTrack,
-              nextTrack.startFrame,
-              fps,
-            );
-            preloadSource(nextSourceUrl, startTime);
+          const nextUrl = getVideoSource(nextTrack);
+          if (nextUrl && nextUrl !== getPreloadSource()) {
+            const startTime = nextTrack.sourceStartTime || 0;
+            preloadSource(nextUrl, startTime);
           }
         }
       }
@@ -465,20 +524,22 @@ export const DualBufferVideo = forwardRef<
       activeTrack,
       allTracks,
       currentFrame,
-      fps,
       isPlaying,
       getPreloadSource,
       preloadSource,
     ]);
 
     // =========================================================================
-    // SYNC PLAYBACK STATE
+    // EFFECT: Sync playback state - AUDIO CRITICAL
     // =========================================================================
     useEffect(() => {
       const activeVideo = getActiveVideo();
       const preloadVideo = getPreloadVideo();
 
-      // CRITICAL: Always mute and pause the PRELOAD video to prevent double audio
+      // CRITICAL: Always enforce audio state first
+      enforceAudioState();
+
+      // CRITICAL: Preload video must ALWAYS be muted and paused
       if (preloadVideo) {
         preloadVideo.muted = true;
         preloadVideo.volume = 0;
@@ -490,6 +551,7 @@ export const DualBufferVideo = forwardRef<
       if (!activeVideo) return;
 
       try {
+        // Control playback
         if (isPlaying) {
           if (activeVideo.paused && activeVideo.readyState >= MIN_READY_STATE) {
             activeVideo.play().catch(() => {});
@@ -500,9 +562,7 @@ export const DualBufferVideo = forwardRef<
           }
         }
 
-        // Only the ACTIVE video should have audio
-        activeVideo.muted = isMuted;
-        activeVideo.volume = isMuted ? 0 : Math.min(volume, 1);
+        // Playback rate
         activeVideo.playbackRate = Math.max(0.25, Math.min(playbackRate, 4));
       } catch (err) {
         console.warn('[DualBuffer] Playback sync error:', err);
@@ -512,41 +572,107 @@ export const DualBufferVideo = forwardRef<
       isMuted,
       volume,
       playbackRate,
+      handleAudio,
       getActiveVideo,
       getPreloadVideo,
-      activeVideoSlot,
+      activeSlot,
+      enforceAudioState,
     ]);
 
     // =========================================================================
-    // VIDEO EVENT HANDLERS
+    // EFFECT: Enforce audio state on mount and whenever audio props change
+    // =========================================================================
+    useEffect(() => {
+      enforceAudioState();
+    }, [enforceAudioState]);
+
+    // =========================================================================
+    // EFFECT: Timeline sync using requestVideoFrameCallback
+    // =========================================================================
+    useEffect(() => {
+      const video = getActiveVideo();
+      if (!video || !activeTrack || !isPlaying || !onFrameUpdate) return;
+
+      let handle: number;
+
+      const syncFrame = (
+        _now: DOMHighResTimeStamp,
+        metadata: VideoFrameCallbackMetadata,
+      ) => {
+        if (!video.paused && video.readyState >= 2) {
+          const sourceStartTime = activeTrack.sourceStartTime || 0;
+          const elapsedFrames =
+            (metadata.mediaTime - sourceStartTime) * fps +
+            activeTrack.startFrame;
+          const newFrame = Math.floor(elapsedFrames);
+          onFrameUpdate(newFrame);
+        }
+        handle = video.requestVideoFrameCallback(syncFrame);
+      };
+
+      handle = video.requestVideoFrameCallback(syncFrame);
+      return () => video.cancelVideoFrameCallback(handle);
+    }, [
+      activeTrack,
+      isPlaying,
+      fps,
+      onFrameUpdate,
+      getActiveVideo,
+      activeSlot,
+    ]);
+
+    // =========================================================================
+    // EVENT HANDLERS
     // =========================================================================
     const handleVideoAMetadata = useCallback(() => {
-      logDualBuffer('Video A metadata loaded');
-      if (activeVideoSlot === 'A' && onLoadedMetadata) {
+      setReadyA(true);
+      // Ensure audio state on metadata load
+      enforceAudioState();
+      if (activeSlot === 'A' && onLoadedMetadata) {
         onLoadedMetadata();
       }
-    }, [activeVideoSlot, onLoadedMetadata]);
+    }, [activeSlot, onLoadedMetadata, enforceAudioState]);
 
     const handleVideoBMetadata = useCallback(() => {
-      logDualBuffer('Video B metadata loaded');
-      if (activeVideoSlot === 'B' && onLoadedMetadata) {
+      setReadyB(true);
+      // Ensure audio state on metadata load
+      enforceAudioState();
+      if (activeSlot === 'B' && onLoadedMetadata) {
         onLoadedMetadata();
       }
-    }, [activeVideoSlot, onLoadedMetadata]);
+    }, [activeSlot, onLoadedMetadata, enforceAudioState]);
 
     const handleVideoACanPlay = useCallback(() => {
-      setVideoAReady(true);
-      if (activeVideoSlot === 'A' && onActiveVideoChange && videoARef.current) {
-        onActiveVideoChange(videoARef.current);
+      setReadyA(true);
+      // Ensure audio state
+      enforceAudioState();
+
+      if (activeSlot === 'A') {
+        const video = videoARef.current;
+        if (video && onActiveVideoChange) {
+          onActiveVideoChange(video);
+        }
+        if (video && isPlaying && video.paused) {
+          video.play().catch(() => {});
+        }
       }
-    }, [activeVideoSlot, onActiveVideoChange]);
+    }, [activeSlot, onActiveVideoChange, isPlaying, enforceAudioState]);
 
     const handleVideoBCanPlay = useCallback(() => {
-      setVideoBReady(true);
-      if (activeVideoSlot === 'B' && onActiveVideoChange && videoBRef.current) {
-        onActiveVideoChange(videoBRef.current);
+      setReadyB(true);
+      // Ensure audio state
+      enforceAudioState();
+
+      if (activeSlot === 'B') {
+        const video = videoBRef.current;
+        if (video && onActiveVideoChange) {
+          onActiveVideoChange(video);
+        }
+        if (video && isPlaying && video.paused) {
+          video.play().catch(() => {});
+        }
       }
-    }, [activeVideoSlot, onActiveVideoChange]);
+    }, [activeSlot, onActiveVideoChange, isPlaying, enforceAudioState]);
 
     // =========================================================================
     // RENDER
@@ -554,54 +680,50 @@ export const DualBufferVideo = forwardRef<
     return (
       <div
         className={className}
-        style={{
-          position: 'relative',
-          width,
-          height,
-          overflow: 'hidden',
-        }}
+        style={{ position: 'relative', width, height, overflow: 'hidden' }}
       >
         {/* 
-            CRITICAL: These video elements have STABLE keys that NEVER change.
-            React will never unmount/remount them. Only the src attribute changes.
-            
-            IMPORTANT: Preload video (inactive) is always muted to prevent double audio.
+            CRITICAL AUDIO RULES:
+            1. Only the ACTIVE slot has muted={false} (when handleAudio is true and not globally muted)
+            2. The INACTIVE slot is ALWAYS muted={true}
+            3. Audio state is enforced in effects, not just in JSX
           */}
         <video
-          key="dual-buffer-video-A"
+          key="dual-buffer-video-A-stable"
           ref={videoARef}
           className="absolute inset-0 w-full h-full"
           style={{
             objectFit,
-            opacity: activeVideoSlot === 'A' ? 1 : 0,
-            pointerEvents: activeVideoSlot === 'A' ? 'auto' : 'none',
-            zIndex: activeVideoSlot === 'A' ? 1 : 0,
-            // Use visibility hidden instead of display:none to keep video decoding
-            visibility: activeVideoSlot === 'A' ? 'visible' : 'hidden',
+            opacity: activeSlot === 'A' ? 1 : 0,
+            pointerEvents: activeSlot === 'A' ? 'auto' : 'none',
+            zIndex: activeSlot === 'A' ? 1 : 0,
+            visibility: activeSlot === 'A' ? 'visible' : 'hidden',
           }}
           playsInline
           controls={false}
           preload="auto"
-          muted={activeVideoSlot !== 'A' || isMuted} // Mute if not active or globally muted
+          // AUDIO: Muted unless this is active slot AND we handle audio AND not globally muted
+          muted={!(activeSlot === 'A' && handleAudio && !isMuted)}
           onLoadedMetadata={handleVideoAMetadata}
           onCanPlay={handleVideoACanPlay}
         />
 
         <video
-          key="dual-buffer-video-B"
+          key="dual-buffer-video-B-stable"
           ref={videoBRef}
           className="absolute inset-0 w-full h-full"
           style={{
             objectFit,
-            opacity: activeVideoSlot === 'B' ? 1 : 0,
-            pointerEvents: activeVideoSlot === 'B' ? 'auto' : 'none',
-            zIndex: activeVideoSlot === 'B' ? 1 : 0,
-            visibility: activeVideoSlot === 'B' ? 'visible' : 'hidden',
+            opacity: activeSlot === 'B' ? 1 : 0,
+            pointerEvents: activeSlot === 'B' ? 'auto' : 'none',
+            zIndex: activeSlot === 'B' ? 1 : 0,
+            visibility: activeSlot === 'B' ? 'visible' : 'hidden',
           }}
           playsInline
           controls={false}
           preload="auto"
-          muted={activeVideoSlot !== 'B' || isMuted} // Mute if not active or globally muted
+          // AUDIO: Muted unless this is active slot AND we handle audio AND not globally muted
+          muted={!(activeSlot === 'B' && handleAudio && !isMuted)}
           onLoadedMetadata={handleVideoBMetadata}
           onCanPlay={handleVideoBCanPlay}
         />
