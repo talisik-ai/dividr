@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../../stores/videoEditor';
 import { ImageTransformBoundary } from '../components/ImageTransformBoundary';
 import { SubtitleTransformBoundary } from '../components/SubtitleTransformBoundary';
@@ -24,6 +24,7 @@ import {
   getActiveVisualTracksAtFrame,
   getTrackZIndex,
 } from '../utils/trackUtils';
+import { DualBufferVideo, DualBufferVideoRef } from './DualBufferVideoOverlay';
 
 /**
  * Unified Overlay Renderer
@@ -43,6 +44,12 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   videoRef: React.RefObject<HTMLVideoElement>;
   activeVideoTrack?: VideoTrack;
   onVideoLoadedMetadata: () => void;
+  // DualBufferVideo props
+  isPlaying?: boolean;
+  isMuted?: boolean;
+  volume?: number;
+  playbackRate?: number;
+  fps?: number;
   onVideoTransformUpdate: (
     trackId: string,
     transform: {
@@ -113,28 +120,6 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
 }
 
 /**
- * Helper to get video source URL
- */
-const getVideoSource = (track: VideoTrack | undefined): string | undefined => {
-  if (!track) return undefined;
-
-  if (track.previewUrl && track.previewUrl.trim()) {
-    return track.previewUrl;
-  }
-
-  if (track.source && track.source.trim()) {
-    const sourcePath = track.source.trim();
-    if (sourcePath.startsWith('http://') || sourcePath.startsWith('https://')) {
-      return sourcePath;
-    }
-    const encodedPath = encodeURIComponent(sourcePath);
-    return `http://localhost:3001/${encodedPath}`;
-  }
-
-  return undefined;
-};
-
-/**
  * Helper to get stable key for video elements
  * Uses source URL instead of track ID to prevent unnecessary remounts
  */
@@ -162,6 +147,13 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   onVideoLoadedMetadata,
   onVideoTransformUpdate,
   onVideoSelect,
+
+  // DualBufferVideo props
+  isPlaying = false,
+  isMuted = false,
+  volume = 1,
+  playbackRate = 1,
+  fps = 30,
 
   // Common props
   allTracks,
@@ -202,6 +194,21 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   onDragStateChange,
 }) => {
   const renderScale = coordinateSystem.baseScale;
+
+  // Ref for DualBufferVideo component
+  const dualBufferVideoRef = useRef<DualBufferVideoRef>(null);
+
+  // Sync DualBufferVideo's active video to videoRef for backward compatibility
+  useEffect(() => {
+    if (dualBufferVideoRef.current && videoRef) {
+      const activeVideo = dualBufferVideoRef.current.getActiveVideo();
+      if (activeVideo && videoRef.current !== activeVideo) {
+        // Update the ref to point to the active video
+        (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current =
+          activeVideo;
+      }
+    }
+  }, [videoRef, activeVideoTrack, isPlaying, currentFrame]);
 
   // Get setPreviewInteractionMode from store
   const setPreviewInteractionMode = useVideoEditorStore(
@@ -260,7 +267,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
               track,
               zIndex,
               isSelected,
-              videoRef,
+              dualBufferVideoRef,
               renderScale,
               baseVideoWidth,
               baseVideoHeight,
@@ -275,6 +282,15 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
               onRotationStateChange,
               onDragStateChange,
               onVideoLoadedMetadata,
+              // DualBufferVideo props
+              activeVideoTrack,
+              allTracks,
+              currentFrame,
+              fps,
+              isPlaying,
+              isMuted,
+              volume,
+              playbackRate,
             );
           }
           return null;
@@ -654,13 +670,13 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
 type InteractionMode = 'select' | 'pan' | 'text-edit';
 
 /**
- * Render a video track
+ * Render a video track using DualBufferVideo for seamless transitions
  */
 function renderVideoTrack(
   track: VideoTrack,
   zIndex: number,
   isSelected: boolean,
-  videoRef: React.RefObject<HTMLVideoElement>,
+  dualBufferVideoRef: React.RefObject<DualBufferVideoRef>,
   renderScale: number,
   baseVideoWidth: number,
   baseVideoHeight: number,
@@ -675,6 +691,15 @@ function renderVideoTrack(
   onRotationStateChange: (isRotating: boolean) => void,
   onDragStateChange: (isDragging: boolean, position?: any) => void,
   onLoadedMetadata?: () => void,
+  // DualBufferVideo props
+  activeVideoTrack?: VideoTrack,
+  allTracks?: VideoTrack[],
+  currentFrame?: number,
+  fps?: number,
+  isPlaying?: boolean,
+  isMuted?: boolean,
+  volume?: number,
+  playbackRate?: number,
 ) {
   const isVisuallyHidden = !track.visible;
   const videoTransform = track.textTransform || {
@@ -686,16 +711,20 @@ function renderVideoTrack(
     height: track.height || baseVideoHeight,
   };
 
-  const videoSource = getVideoSource(track);
-
   // CRITICAL FIX: Use source-based key instead of track ID
   // This prevents React from remounting the video element when
   // crossing segment boundaries of the same source file
   const stableKey = getVideoElementKey(track);
 
+  // Calculate video dimensions for DualBufferVideo
+  const videoWidth =
+    (videoTransform.width || track.width || baseVideoWidth) * renderScale;
+  const videoHeight =
+    (videoTransform.height || track.height || baseVideoHeight) * renderScale;
+
   return (
     <div
-      key={stableKey} // Changed from `video-${track.id}`
+      key={stableKey}
       className="absolute inset-0 pointer-events-none"
       style={{
         width: actualWidth,
@@ -726,8 +755,8 @@ function renderVideoTrack(
         <div
           className="relative"
           style={{
-            width: `${(videoTransform.width || track.width || baseVideoWidth) * renderScale}px`,
-            height: `${(videoTransform.height || track.height || baseVideoHeight) * renderScale}px`,
+            width: `${videoWidth}px`,
+            height: `${videoHeight}px`,
             visibility: isVisuallyHidden ? 'hidden' : 'visible',
             pointerEvents:
               isVisuallyHidden ||
@@ -737,15 +766,20 @@ function renderVideoTrack(
                 : 'auto',
           }}
         >
-          <video
-            ref={videoRef}
-            className="w-full h-full"
-            style={{ objectFit: 'contain' }}
-            playsInline
-            controls={false}
-            preload="metadata"
-            src={videoSource}
+          <DualBufferVideo
+            ref={dualBufferVideoRef}
+            activeTrack={activeVideoTrack}
+            allTracks={allTracks || []}
+            currentFrame={currentFrame || 0}
+            fps={fps || 30}
+            isPlaying={isPlaying || false}
+            isMuted={isMuted || false}
+            volume={volume || 1}
+            playbackRate={playbackRate || 1}
             onLoadedMetadata={onLoadedMetadata}
+            width={videoWidth}
+            height={videoHeight}
+            objectFit="contain"
           />
         </div>
       </VideoTransformBoundary>

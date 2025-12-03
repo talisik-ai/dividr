@@ -4,6 +4,7 @@
 
 export * from './AudioOverlay';
 export * from './CanvasOverlay';
+export * from './DualBufferVideoOverlay';
 export * from './ImageOverlay';
 export * from './SubtitleOverlay';
 export * from './TextOverlay';

@@ -879,6 +879,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         onVideoLoadedMetadata={handleVideoLoadedMetadata}
         onVideoTransformUpdate={handleVideoTransformUpdate}
         onVideoSelect={handleVideoSelect}
+        // DualBufferVideo props
+        isPlaying={playback.isPlaying}
+        isMuted={playback.muted}
+        volume={playback.volume}
+        playbackRate={playback.playbackRate}
+        fps={displayFps}
         // Common props
         allTracks={tracks}
         selectedTrackIds={timeline.selectedTrackIds}

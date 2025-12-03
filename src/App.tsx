@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import StartupLoader from './frontend/components/custom/StartupLoader';
+import './frontend/features/editor/preview/utils/videoPlaybackAnalyticsGlobal';
 import { useShortcutRegistryInit } from './frontend/features/editor/stores/videoEditor';
 import { ThemeProvider } from './frontend/providers/ThemeProvider';
 import { WindowStateProvider } from './frontend/providers/WindowStateProvider';
