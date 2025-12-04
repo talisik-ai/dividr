@@ -1,10 +1,12 @@
 import { cn } from '@/frontend/utils/utils';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
-import { getRowHeight, getTrackItemHeightClasses } from './utils/timelineConstants';
-import { TRACK_ROW_ORDER } from './utils/trackRowPositions';
+import {
+  getTrackItemHeight,
+  getTrackItemHeightClasses,
+} from './utils/timelineConstants';
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 interface DragGhostProps {
@@ -69,6 +71,9 @@ export const DragGhost: React.FC<DragGhostProps> = React.memo(
       }
     };
 
+    // Get the correct height for this track type
+    const trackHeight = getTrackItemHeight(track.type);
+
     // Render appropriate content based on track type
     const renderContent = () => {
       if (track.type === 'video') {
@@ -77,7 +82,7 @@ export const DragGhost: React.FC<DragGhostProps> = React.memo(
             track={track}
             frameWidth={frameWidth}
             width={width}
-            height={44} // Use standard height for ghost
+            height={trackHeight} // Use track-specific height
             zoomLevel={zoomLevel}
           />
         );
@@ -92,7 +97,7 @@ export const DragGhost: React.FC<DragGhostProps> = React.memo(
               track={track}
               frameWidth={frameWidth}
               width={width}
-              height={44} // Use standard height for ghost
+              height={trackHeight} // Use track-specific height
               zoomLevel={zoomLevel}
             />
           </div>
@@ -105,15 +110,15 @@ export const DragGhost: React.FC<DragGhostProps> = React.memo(
             track={track}
             frameWidth={frameWidth}
             width={width}
-            height={44} // Use standard height for ghost
+            height={trackHeight} // Use track-specific height
             zoomLevel={zoomLevel}
           />
         );
       }
 
-      // Text content for other track types
+      // Text content for other track types (text, subtitle)
       return (
-        <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden px-2 py-1">
+        <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
             ? track.subtitleText
             : track.type === 'text' && track.textContent

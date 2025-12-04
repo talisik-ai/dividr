@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { RefreshCw } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useVideoEditorStore } from '../../stores/videoEditor/index';
-import { VideoTrack } from '../../stores/videoEditor/index';
+import {
+  useVideoEditorStore,
+  VideoTrack,
+} from '../../stores/videoEditor/index';
 
 interface ImageTransformBoundaryProps {
   track: VideoTrack;
@@ -11,6 +13,7 @@ interface ImageTransformBoundaryProps {
   videoWidth: number;
   videoHeight: number;
   renderScale?: number; // The actual render scale from coordinate system (baseScale)
+  interactionMode?: 'select' | 'pan' | 'text-edit'; // Current interaction mode
   onTransformUpdate: (
     trackId: string,
     transform: {
@@ -32,6 +35,9 @@ interface ImageTransformBoundaryProps {
   clipContent?: boolean; // Whether to clip content to canvas bounds
   clipWidth?: number; // Width of the clipping area
   clipHeight?: number; // Height of the clipping area
+  boundaryOnly?: boolean; // Whether to only render the boundary, not the content
+  contentOnly?: boolean; // Whether to only render the content, not the boundary
+  disableAutoSizeUpdates?: boolean; // Skip auto width/height sync when rendering boundaries only
 }
 
 type HandleType =
@@ -53,6 +59,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   videoWidth,
   videoHeight,
   renderScale,
+  interactionMode = 'select',
   onTransformUpdate,
   onSelect,
   onRotationStateChange,
@@ -61,6 +68,9 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   clipContent = false,
   clipWidth,
   clipHeight,
+  boundaryOnly = false,
+  contentOnly = false,
+  disableAutoSizeUpdates = false,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
   const effectiveRenderScale = renderScale ?? previewScale;
@@ -94,6 +104,9 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     width: number;
     height: number;
   }>({ width: 0, height: 0 });
+
+  const shouldRenderBoundary = isSelected && !contentOnly;
+  const shouldRenderContent = !boundaryOnly;
 
   // Fixed handle size in pixels (consistent across all zoom levels)
   const HANDLE_SIZE = 10;
@@ -222,6 +235,8 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   // Update dimensions in the store when content size changes
   // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
   useEffect(() => {
+    if (disableAutoSizeUpdates) return;
+
     // Detect if renderScale changed (e.g., entering/exiting fullscreen)
     const renderScaleChanged =
       prevRenderScaleRef.current !== effectiveRenderScale;
@@ -262,11 +277,18 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
     track.id,
     onTransformUpdate,
     effectiveRenderScale,
+    disableAutoSizeUpdates,
   ]);
 
   // Handle mouse down on the image element (start dragging)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // Only allow interaction in select mode
+      if (interactionMode !== 'select') {
+        e.stopPropagation();
+        return;
+      }
+
       e.stopPropagation();
       e.preventDefault();
 
@@ -291,13 +313,21 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
         startDraggingTransform();
       }
     },
-    [isSelected, track.id, transform, onSelect, startDraggingTransform],
+    [
+      isSelected,
+      track.id,
+      transform,
+      onSelect,
+      startDraggingTransform,
+      interactionMode,
+    ],
   );
 
   // Handle mouse down on scale handles
   const handleScaleMouseDown = useCallback(
     (e: React.MouseEvent, handle: HandleType) => {
-      if (!isSelected) return;
+      // Only allow interaction in select mode
+      if (interactionMode !== 'select' || !isSelected) return;
 
       e.stopPropagation();
       e.preventDefault();
@@ -312,13 +342,14 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
         startDraggingTransform();
       }
     },
-    [isSelected, transform, startDraggingTransform],
+    [isSelected, transform, startDraggingTransform, interactionMode],
   );
 
   // Handle mouse down on rotation handle
   const handleRotateMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (!isSelected) return;
+      // Only allow interaction in select mode
+      if (interactionMode !== 'select' || !isSelected) return;
 
       e.stopPropagation();
       e.preventDefault();
@@ -333,7 +364,13 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
         startDraggingTransform();
       }
     },
-    [isSelected, transform, onRotationStateChange, startDraggingTransform],
+    [
+      isSelected,
+      transform,
+      onRotationStateChange,
+      startDraggingTransform,
+      interactionMode,
+    ],
   );
 
   // Handle mouse move for all interactions
@@ -601,6 +638,13 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   // This keeps handles at reasonable size without over-scaling at normal zoom levels
   const handleScale = previewScale < 0.5 ? 0.5 : 1;
 
+  // Determine pointer events based on interaction mode
+  // Pan Tool: disable all interactions
+  // Text Tool: disable image interactions (allow text tool to create text on top)
+  // Select Tool: enable all interactions
+  const shouldDisablePointerEvents =
+    interactionMode === 'pan' || interactionMode === 'text-edit';
+
   // Content component - may be wrapped in clipping layer
   const contentComponent = (
     <div
@@ -612,7 +656,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
         transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`,
         transformOrigin: 'center center',
         cursor: getCursorStyle(),
-        pointerEvents: 'auto',
+        pointerEvents: shouldDisablePointerEvents ? 'none' : 'auto',
         zIndex: isSelected ? 1000 : 1,
         userSelect: 'none',
         WebkitUserSelect: 'none',
@@ -623,7 +667,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       <div
         ref={contentRef}
         className="relative"
-        style={{ pointerEvents: 'auto' }}
+        style={{ pointerEvents: shouldDisablePointerEvents ? 'none' : 'auto' }}
       >
         {children}
       </div>
@@ -633,7 +677,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
   return (
     <>
       {/* Image Content Container - with optional clipping wrapper */}
-      {clipContent && clipWidth && clipHeight ? (
+      {shouldRenderContent && clipContent && clipWidth && clipHeight ? (
         <div
           className="absolute pointer-events-none"
           style={{
@@ -654,115 +698,121 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
 
       {/* Selection Boundary - Rendered separately to avoid scale transform */}
       {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
-      {isSelected && containerSize.width > 0 && (
-        <div
-          ref={boundaryRef}
-          className="absolute"
-          style={{
-            left: '50%',
-            top: '50%',
-            transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
-            transformOrigin: 'center center',
-            // Boundary must match the actual rendered size (containerSize * scale)
-            // containerSize is the base size before scale transform is applied
-            width: `${containerSize.width * transform.scale}px`,
-            height: `${containerSize.height * transform.scale}px`,
-            border: `${2 * handleScale}px solid #F45513`,
-            borderRadius: `${4 * handleScale}px`,
-            zIndex: 10000, // Very high z-index to ensure handles are always on top and interactive
-            pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
-            cursor: getCursorStyle(), // Show appropriate cursor
-          }}
-          onMouseDown={handleMouseDown}
-        >
-          {/* Corner Handles */}
-          {['tl', 'tr', 'bl', 'br'].map((handle) => {
-            const getCursorForHandle = (h: string) => {
-              if (h === 'tl' || h === 'br') return 'nwse-resize';
-              if (h === 'tr' || h === 'bl') return 'nesw-resize';
-              return 'nwse-resize';
-            };
+      {/* Only show transform handles in select mode */}
+      {shouldRenderBoundary &&
+        isSelected &&
+        interactionMode === 'select' &&
+        containerSize.width > 0 && (
+          <div
+            ref={boundaryRef}
+            className="absolute"
+            style={{
+              left: '50%',
+              top: '50%',
+              transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
+              transformOrigin: 'center center',
+              // Boundary must match the actual rendered size (containerSize * scale)
+              // containerSize is the base size before scale transform is applied
+              width: `${containerSize.width * transform.scale}px`,
+              height: `${containerSize.height * transform.scale}px`,
+              border: `${2 * handleScale}px solid #F45513`,
+              borderRadius: `${4 * handleScale}px`,
+              zIndex: 10000, // Very high z-index to ensure handles are always on top and interactive
+              pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
+              cursor: getCursorStyle(), // Show appropriate cursor
+            }}
+            onMouseDown={handleMouseDown}
+          >
+            {/* Corner Handles */}
+            {['tl', 'tr', 'bl', 'br'].map((handle) => {
+              const getCursorForHandle = (h: string) => {
+                if (h === 'tl' || h === 'br') return 'nwse-resize';
+                if (h === 'tr' || h === 'bl') return 'nesw-resize';
+                return 'nwse-resize';
+              };
 
-            return (
+              return (
+                <div
+                  key={handle}
+                  className="transform-handle absolute rounded-full pointer-events-auto hover:scale-125 transition-transform bg-white dark:bg-primary"
+                  style={{
+                    width: `${HANDLE_SIZE * handleScale}px`,
+                    height: `${HANDLE_SIZE * handleScale}px`,
+                    cursor: getCursorForHandle(handle),
+                    ...(handle === 'tl' && {
+                      top: `-${HANDLE_OFFSET * handleScale}px`,
+                      left: `-${HANDLE_OFFSET * handleScale}px`,
+                    }),
+                    ...(handle === 'tr' && {
+                      top: `-${HANDLE_OFFSET * handleScale}px`,
+                      right: `-${HANDLE_OFFSET * handleScale}px`,
+                    }),
+                    ...(handle === 'bl' && {
+                      bottom: `-${HANDLE_OFFSET * handleScale}px`,
+                      left: `-${HANDLE_OFFSET * handleScale}px`,
+                    }),
+                    ...(handle === 'br' && {
+                      bottom: `-${HANDLE_OFFSET * handleScale}px`,
+                      right: `-${HANDLE_OFFSET * handleScale}px`,
+                    }),
+                  }}
+                  onMouseDown={(e) =>
+                    handleScaleMouseDown(e, handle as HandleType)
+                  }
+                />
+              );
+            })}
+
+            {/* Edge Handles - Left and Right only (as partial height lines) */}
+            {['r', 'l'].map((handle) => (
               <div
                 key={handle}
-                className="transform-handle absolute rounded-full pointer-events-auto hover:scale-125 transition-transform bg-white dark:bg-primary"
+                className="transform-handle absolute pointer-events-auto hover:opacity-80 transition-opacity"
                 style={{
-                  width: `${HANDLE_SIZE * handleScale}px`,
-                  height: `${HANDLE_SIZE * handleScale}px`,
-                  cursor: getCursorForHandle(handle),
-                  ...(handle === 'tl' && {
-                    top: `-${HANDLE_OFFSET * handleScale}px`,
-                    left: `-${HANDLE_OFFSET * handleScale}px`,
+                  width: `${5 * handleScale}px`,
+                  height: '40%',
+                  backgroundColor: 'white',
+                  borderRadius: `${999 * handleScale}px`,
+                  cursor: 'ew-resize',
+                  ...(handle === 'r' && {
+                    right: `-${3 * handleScale}px`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
                   }),
-                  ...(handle === 'tr' && {
-                    top: `-${HANDLE_OFFSET * handleScale}px`,
-                    right: `-${HANDLE_OFFSET * handleScale}px`,
-                  }),
-                  ...(handle === 'bl' && {
-                    bottom: `-${HANDLE_OFFSET * handleScale}px`,
-                    left: `-${HANDLE_OFFSET * handleScale}px`,
-                  }),
-                  ...(handle === 'br' && {
-                    bottom: `-${HANDLE_OFFSET * handleScale}px`,
-                    right: `-${HANDLE_OFFSET * handleScale}px`,
+                  ...(handle === 'l' && {
+                    left: `-${3 * handleScale}px`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
                   }),
                 }}
                 onMouseDown={(e) =>
                   handleScaleMouseDown(e, handle as HandleType)
                 }
               />
-            );
-          })}
+            ))}
 
-          {/* Edge Handles - Left and Right only (as partial height lines) */}
-          {['r', 'l'].map((handle) => (
+            {/* Rotation Handle - Bottom with RefreshCw icon */}
             <div
-              key={handle}
-              className="transform-handle absolute pointer-events-auto hover:opacity-80 transition-opacity"
+              className="transform-handle absolute pointer-events-auto cursor-grab hover:scale-110 transition-transform flex items-center justify-center"
               style={{
-                width: `${5 * handleScale}px`,
-                height: '40%',
-                backgroundColor: 'white',
-                borderRadius: `${999 * handleScale}px`,
-                cursor: 'ew-resize',
-                ...(handle === 'r' && {
-                  right: `-${3 * handleScale}px`,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                }),
-                ...(handle === 'l' && {
-                  left: `-${3 * handleScale}px`,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                }),
+                width: `${20 * handleScale}px`,
+                height: `${20 * handleScale}px`,
+                bottom: `-${ROTATION_HANDLE_DISTANCE * handleScale}px`,
+                left: '50%',
+                transform: `translateX(-50%)`,
+                backgroundColor: '#F45513',
+                borderRadius: '50%',
               }}
-              onMouseDown={(e) => handleScaleMouseDown(e, handle as HandleType)}
-            />
-          ))}
-
-          {/* Rotation Handle - Bottom with RefreshCw icon */}
-          <div
-            className="transform-handle absolute pointer-events-auto cursor-grab hover:scale-110 transition-transform flex items-center justify-center"
-            style={{
-              width: `${20 * handleScale}px`,
-              height: `${20 * handleScale}px`,
-              bottom: `-${ROTATION_HANDLE_DISTANCE * handleScale}px`,
-              left: '50%',
-              transform: `translateX(-50%)`,
-              backgroundColor: '#F45513',
-              borderRadius: '50%',
-            }}
-            onMouseDown={handleRotateMouseDown}
-          >
-            <RefreshCw
-              size={12 * handleScale}
-              color="white"
-              strokeWidth={2.5}
-            />
+              onMouseDown={handleRotateMouseDown}
+            >
+              <RefreshCw
+                size={12 * handleScale}
+                color="white"
+                strokeWidth={2.5}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </>
   );
 };

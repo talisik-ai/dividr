@@ -13,6 +13,18 @@ import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
 import {
+  checkSnapPosition,
+  findAllSnapPoints,
+} from './utils/collisionDetection';
+import {
+  BASE_ROW_DEFINITIONS,
+  generateDynamicRows,
+  getTrackRowId,
+  migrateTracksWithRowIndex,
+  parseRowId,
+  TrackRowDefinition,
+} from './utils/dynamicTrackRows';
+import {
   getRowHeight,
   getRowHeightClasses,
   getTrackItemHeight,
@@ -20,9 +32,6 @@ import {
 } from './utils/timelineConstants';
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
-// Define track row types - easy to extend in the future
-
-// Drag activation threshold in pixels - prevents accidental drags during clicks
 const DRAG_ACTIVATION_THRESHOLD = 5;
 
 interface TimelineTracksProps {
@@ -35,52 +44,6 @@ interface TimelineTracksProps {
   onTrackSelect: (trackIds: string[]) => void;
   isSplitModeActive: boolean;
 }
-
-export interface TrackRowDefinition {
-  id: string;
-  name: string;
-  trackTypes: VideoTrack['type'][];
-  color: string;
-  icon: string;
-}
-
-export const TRACK_ROWS: TrackRowDefinition[] = [
-  {
-    id: 'text',
-    name: 'Text',
-    trackTypes: ['text'],
-    color: '#3498db',
-    icon: '🔤',
-  },
-  {
-    id: 'subtitle',
-    name: 'Subtitles',
-    trackTypes: ['subtitle'],
-    color: '#9b59b6',
-    icon: '💬',
-  },
-  {
-    id: 'image',
-    name: 'Images/Overlays',
-    trackTypes: ['image'],
-    color: '#e67e22',
-    icon: '🖼️',
-  },
-  {
-    id: 'video',
-    name: 'Video',
-    trackTypes: ['video'],
-    color: '#8e44ad',
-    icon: '🎬',
-  },
-  {
-    id: 'audio',
-    name: 'Audio',
-    trackTypes: ['audio'],
-    color: '#27ae60',
-    icon: '🎵',
-  },
-];
 
 interface TrackItemProps {
   track: VideoTrack;
@@ -122,10 +85,8 @@ const TrackItemWrapper: React.FC<{
     const left = track.startFrame * frameWidth;
     const width = Math.max(1, (track.endFrame - track.startFrame) * frameWidth);
 
-    // Check if this track is being dragged (has active drag ghost)
     const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
 
-    // Check if this track is in the current drag selection
     const isBeingDragged =
       dragGhost?.isActive &&
       dragGhost.selectedTrackIds &&
@@ -148,7 +109,6 @@ const TrackItemWrapper: React.FC<{
       }
     };
 
-    // Determine cursor based on state priority
     const getCursorClass = () => {
       if (isResizing) return 'cursor-trim';
       if (isSplitModeActive) return 'cursor-split';
@@ -167,7 +127,6 @@ const TrackItemWrapper: React.FC<{
           getCursorClass(),
           track.visible ? 'opacity-100' : 'opacity-50',
           isDuplicationFeedback ? 'track-duplicate-feedback z-50' : 'z-10',
-          // Hide the original track completely when drag ghost is active
           isBeingDragged ? 'opacity-0' : '',
         )}
         style={{
@@ -209,15 +168,13 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     });
     const rafRef = useRef<number | null>(null);
     const hasAutoSelectedRef = useRef(false);
-    const dragThresholdMetRef = useRef(false); // Track if drag threshold has been exceeded
-    const dragOffsetRef = useRef({ offsetX: 0, offsetY: 0 }); // Store offset at mouseDown
+    const dragThresholdMetRef = useRef(false);
+    const dragOffsetRef = useRef({ offsetX: 0, offsetY: 0 });
 
-    // Subscribe to duplication feedback state
     const isDuplicationFeedback = useVideoEditorStore((state) =>
       state.duplicationFeedbackTrackIds.has(track.id),
     );
 
-    // Check if this track is in the current drag selection (for hiding resize handles)
     const dragGhostForHandles = useVideoEditorStore(
       (state) => state.playback.dragGhost,
     );
@@ -226,10 +183,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       dragGhostForHandles.selectedTrackIds &&
       dragGhostForHandles.selectedTrackIds.includes(track.id);
 
-    // Apply global cursor override during resize/drag to prevent flickering
     useEffect(() => {
       if (isResizing) {
-        // Apply the custom trim cursor using the same SVG from global.css
         const isDark = document.documentElement.classList.contains('dark');
         const svgColor = isDark ? '%23ffffff' : '%23000';
         const fillColor = isDark ? '%23000' : '%23ffffff';
@@ -256,7 +211,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       (e: React.MouseEvent) => {
         if (isSplitModeActive || e.button === 2) return;
         e.stopPropagation();
-        // Use Shift for multi-select (toggle), without modifier = replace selection
         onSelect(e.shiftKey);
       },
       [isSplitModeActive, onSelect],
@@ -267,13 +221,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         if (track.locked || isSplitModeActive || e.button === 2) return;
         e.stopPropagation();
 
-        // Don't call onSelect here - let handleClick handle selection
-        // We'll auto-select during actual drag movement if needed
-
         const { startDraggingTrack } = useVideoEditorStore.getState();
-        startDraggingTrack(track.startFrame); // Pass initial frame for force drag tracking
+        startDraggingTrack(track.startFrame);
 
-        // Calculate and store offset from track's left edge to cursor
         const trackElement = e.currentTarget as HTMLElement;
         const trackRect = trackElement.getBoundingClientRect();
         dragOffsetRef.current = {
@@ -281,8 +231,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           offsetY: e.clientY - trackRect.top,
         };
 
-        // Store initial drag state but DON'T activate drag ghost yet
-        // Wait for movement threshold to be exceeded
         setIsDragging(true);
         setDragStart({
           x: e.clientX,
@@ -291,7 +239,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           endFrame: track.endFrame,
         });
 
-        // Reset threshold tracking
         dragThresholdMetRef.current = false;
       },
       [
@@ -310,18 +257,12 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         e.stopPropagation();
         e.preventDefault();
 
-        // If the track is not selected, select it first before resizing
-        // Resizing doesn't conflict with click events, so it's safe to auto-select here
         if (!isSelected) {
-          // If Shift is held, add to selection; otherwise replace selection
           onSelect(e.shiftKey);
         }
 
         const { startDraggingTrack } = useVideoEditorStore.getState();
-        startDraggingTrack(track.startFrame); // Pass initial frame for tracking
-
-        // DON'T initialize drag ghost for resize operations
-        // Resizing should not show drop zones
+        startDraggingTrack(track.startFrame);
 
         setIsResizing(side);
         setDragStart({
@@ -340,158 +281,37 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       ],
     );
 
-    // Helper to find magnetic snap points when Shift is held
-    // Searches across ALL tracks for nearest edge and considers BOTH edges of moving clip
-    const findMagneticSnapPoint = useCallback(
-      (
-        newStartFrame: number,
-        newEndFrame: number,
-        currentSnapFrame: number | null,
-      ): { snapFrame: number; delta: number } | null => {
-        const { tracks: allTracks, timeline } = useVideoEditorStore.getState();
-        const SNAP_THRESHOLD = 8; // Tighter threshold for more precise snapping
-        const MIN_DISTANCE = 1; // Minimum distance to trigger snap (prevents false positives at 0)
-        const HYSTERESIS = 2; // Extra buffer to prevent flickering when already snapped
-
-        // Get all selected track IDs (to exclude from snap candidates)
-        const selectedTrackIds = timeline.selectedTrackIds;
-
-        // Collect all edges from ALL tracks (multi-track aware)
-        // Exclude: self, linked track, and any selected tracks (for multi-select)
-        const candidateEdges: Array<{
-          frame: number;
-          trackId: string;
-          isStart: boolean;
-        }> = [];
-
-        allTracks.forEach((t) => {
-          // Skip the current track being dragged
-          if (t.id === track.id) return;
-          // Skip linked track to current track
-          if (t.id === track.linkedTrackId) return;
-          // Skip any other selected tracks (for multi-select drag)
-          if (selectedTrackIds.includes(t.id)) return;
-
-          // Validate that this is a real track with valid frame range
-          if (
-            typeof t.startFrame !== 'number' ||
-            typeof t.endFrame !== 'number' ||
-            t.startFrame < 0 ||
-            t.endFrame <= t.startFrame
-          ) {
-            return; // Skip invalid tracks
-          }
-
-          // Add both start and end edges as snap candidates with metadata
-          candidateEdges.push(
-            { frame: t.startFrame, trackId: t.id, isStart: true },
-            { frame: t.endFrame, trackId: t.id, isStart: false },
-          );
-        });
-
-        // No candidates means no valid snap targets (empty timeline area)
-        if (candidateEdges.length === 0) {
-          return null;
-        }
-
-        // Apply hysteresis: if we're already snapped, give extra buffer before releasing
-        const effectiveThreshold =
-          currentSnapFrame !== null
-            ? SNAP_THRESHOLD + HYSTERESIS
-            : SNAP_THRESHOLD;
-
-        // Check both start and end edges of the moving clip
-        let bestSnap: {
-          snapFrame: number;
-          delta: number;
-          distance: number;
-        } | null = null;
-
-        // Check start edge of moving clip against all candidates
-        candidateEdges.forEach(({ frame }) => {
-          const distance = Math.abs(frame - newStartFrame);
-          // Only snap if within threshold AND not too close (prevents jitter)
-          if (distance >= MIN_DISTANCE && distance <= effectiveThreshold) {
-            const delta = frame - newStartFrame;
-            if (!bestSnap || distance < bestSnap.distance) {
-              bestSnap = { snapFrame: frame, delta, distance };
-            }
-          }
-        });
-
-        // Check end edge of moving clip against all candidates
-        candidateEdges.forEach(({ frame }) => {
-          const distance = Math.abs(frame - newEndFrame);
-          // Only snap if within threshold AND not too close (prevents jitter)
-          if (distance >= MIN_DISTANCE && distance <= effectiveThreshold) {
-            const delta = frame - newEndFrame;
-            if (!bestSnap || distance < bestSnap.distance) {
-              bestSnap = { snapFrame: frame, delta, distance };
-            }
-          }
-        });
-
-        // Additional validation: Ensure snap target is not at timeline boundaries
-        // unless we're actually near a real clip
-        if (bestSnap) {
-          const isSnapToZero = bestSnap.snapFrame === 0;
-          const hasClipAtZero = candidateEdges.some(
-            (edge) => edge.frame === 0 && edge.isStart,
-          );
-
-          // If snapping to 0, make sure there's actually a clip starting at 0
-          if (isSnapToZero && !hasClipAtZero) {
-            return null;
-          }
-
-          return { snapFrame: bestSnap.snapFrame, delta: bestSnap.delta };
-        }
-
-        return null;
-      },
-      [track.id, track.linkedTrackId],
-    );
-
-    // Throttled mouse move handler using RAF
     const handleMouseMove = useCallback(
       (e: MouseEvent) => {
         if (!isResizing && !isDragging) return;
 
-        // Check if drag threshold has been met (only for dragging, not resizing)
         if (isDragging && !dragThresholdMetRef.current) {
           const deltaX = Math.abs(e.clientX - dragStart.x);
           const deltaY = Math.abs(e.clientY - dragStart.y);
           const totalMovement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
           if (totalMovement >= DRAG_ACTIVATION_THRESHOLD) {
-            // Threshold exceeded - activate drag ghost now
             dragThresholdMetRef.current = true;
 
             const { setDragGhost, timeline } = useVideoEditorStore.getState();
 
-            // Check if this is a multi-selection drag
             const selectedTrackIds = timeline.selectedTrackIds;
             const isMultiSelectionDrag =
               selectedTrackIds.length > 1 &&
               selectedTrackIds.includes(track.id);
 
-            // Get all selected tracks (including linked tracks)
             const allSelectedTrackIds = isMultiSelectionDrag
               ? [...selectedTrackIds]
               : [track.id];
 
-            // Add linked track if not already in selection
             if (track.isLinked && track.linkedTrackId) {
               if (!allSelectedTrackIds.includes(track.linkedTrackId)) {
                 allSelectedTrackIds.push(track.linkedTrackId);
               }
             }
 
-            // Multi-selection detection (for UI/UX purposes)
             const isMultiSelection = allSelectedTrackIds.length > 1;
 
-            // Calculate target frame using live scroll position
-            // Find the scroll container (the tracks scrollable area)
             const scrollContainer = (e.target as HTMLElement).closest(
               '.overflow-auto',
             ) as HTMLElement | null;
@@ -502,7 +322,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               ? e.clientX - scrollContainerRect.left
               : e.clientX;
 
-            // Calculate target frame accounting for current scroll AND offset
             const targetFrame = Math.max(
               0,
               Math.floor(
@@ -513,7 +332,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               ),
             );
 
-            // Initialize drag ghost with stored offset from mouseDown
             setDragGhost({
               isActive: true,
               trackId: track.id,
@@ -523,16 +341,14 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               offsetX: dragOffsetRef.current.offsetX,
               offsetY: dragOffsetRef.current.offsetY,
               targetRow: track.type,
-              targetFrame, // Use calculated target frame with live scroll
+              targetFrame,
               isMultiSelection,
             });
           } else {
-            // Threshold not met yet - don't process drag movement
             return;
           }
         }
 
-        // Auto-select unselected track on first actual drag movement
         if (
           isDragging &&
           !isSelected &&
@@ -546,14 +362,12 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
         rafRef.current = requestAnimationFrame(() => {
-          // Find the scroll container for live scroll position
           const scrollContainer = (e.target as HTMLElement).closest(
             '.overflow-auto',
           ) as HTMLElement | null;
           const currentScrollX = scrollContainer?.scrollLeft || 0;
           const scrollContainerRect = scrollContainer?.getBoundingClientRect();
 
-          // For resize operations, use delta-based calculation (scroll doesn't affect resize)
           const deltaX = e.clientX - dragStart.x;
           const deltaFrames = Math.round(deltaX / frameWidth);
 
@@ -566,33 +380,35 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               ),
             );
 
-            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
-            const { timeline } = useVideoEditorStore.getState();
+            const { timeline, tracks: allTracks } =
+              useVideoEditorStore.getState();
             const shouldSnap = e.shiftKey || timeline.snapEnabled;
 
             if (shouldSnap) {
-              // Use unified magnetic snap logic
-              const currentSnap =
-                useVideoEditorStore.getState().playback.magneticSnapFrame;
-              const duration = dragStart.endFrame - dragStart.startFrame;
-              const newEndFrame = newStartFrame + duration;
-              const snapResult = findMagneticSnapPoint(
-                newStartFrame,
-                newEndFrame,
-                currentSnap,
+              const excludeIds = [track.id];
+              if (track.linkedTrackId) excludeIds.push(track.linkedTrackId);
+              timeline.selectedTrackIds.forEach((id: string) => {
+                if (!excludeIds.includes(id)) excludeIds.push(id);
+              });
+
+              const allSnapPoints = findAllSnapPoints(
+                allTracks,
+                excludeIds,
+                timeline.currentFrame,
               );
 
-              if (snapResult !== null) {
-                // Apply snap only if it keeps the clip valid
-                const snappedStart = newStartFrame + snapResult.delta;
-                if (snappedStart >= 0 && snappedStart < dragStart.endFrame) {
-                  newStartFrame = snappedStart;
-                  useVideoEditorStore
-                    .getState()
-                    .setMagneticSnapFrame(snapResult.snapFrame);
-                } else {
-                  useVideoEditorStore.getState().setMagneticSnapFrame(null);
-                }
+              const snapResult = checkSnapPosition(
+                newStartFrame,
+                allSnapPoints,
+                8,
+              );
+              if (
+                snapResult !== null &&
+                snapResult >= 0 &&
+                snapResult < dragStart.endFrame
+              ) {
+                newStartFrame = snapResult;
+                useVideoEditorStore.getState().setMagneticSnapFrame(snapResult);
               } else {
                 useVideoEditorStore.getState().setMagneticSnapFrame(null);
               }
@@ -607,33 +423,31 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               dragStart.endFrame + deltaFrames,
             );
 
-            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
-            const { timeline } = useVideoEditorStore.getState();
+            const { timeline, tracks: allTracks } =
+              useVideoEditorStore.getState();
             const shouldSnap = e.shiftKey || timeline.snapEnabled;
 
             if (shouldSnap) {
-              // Use unified magnetic snap logic
-              const currentSnap =
-                useVideoEditorStore.getState().playback.magneticSnapFrame;
-              const duration = dragStart.endFrame - dragStart.startFrame;
-              const newStartFrame = newEndFrame - duration;
-              const snapResult = findMagneticSnapPoint(
-                newStartFrame,
-                newEndFrame,
-                currentSnap,
+              const excludeIds = [track.id];
+              if (track.linkedTrackId) excludeIds.push(track.linkedTrackId);
+              timeline.selectedTrackIds.forEach((id: string) => {
+                if (!excludeIds.includes(id)) excludeIds.push(id);
+              });
+
+              const allSnapPoints = findAllSnapPoints(
+                allTracks,
+                excludeIds,
+                timeline.currentFrame,
               );
 
-              if (snapResult !== null) {
-                // Apply snap only if it keeps the clip valid
-                const snappedEnd = newEndFrame + snapResult.delta;
-                if (snappedEnd > dragStart.startFrame) {
-                  newEndFrame = snappedEnd;
-                  useVideoEditorStore
-                    .getState()
-                    .setMagneticSnapFrame(snapResult.snapFrame);
-                } else {
-                  useVideoEditorStore.getState().setMagneticSnapFrame(null);
-                }
+              const snapResult = checkSnapPosition(
+                newEndFrame,
+                allSnapPoints,
+                8,
+              );
+              if (snapResult !== null && snapResult > dragStart.startFrame) {
+                newEndFrame = snapResult;
+                useVideoEditorStore.getState().setMagneticSnapFrame(snapResult);
               } else {
                 useVideoEditorStore.getState().setMagneticSnapFrame(null);
               }
@@ -643,10 +457,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
             onResize(undefined, newEndFrame);
           } else if (isDragging && dragThresholdMetRef.current) {
-            // DRAG: Use absolute position calculation with live scroll
-            // This ensures drop location matches visual indicator during auto-scroll
             if (!scrollContainerRect) {
-              // Fallback to delta-based if we can't find scroll container
               const newStartFrame = Math.max(
                 0,
                 dragStart.startFrame + deltaFrames,
@@ -657,8 +468,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
             const mouseRelativeX = e.clientX - scrollContainerRect.left;
 
-            // Calculate target frame accounting for current scroll AND drag offset
-            // This matches the dropzone indicator calculation in timeline.tsx
             let newStartFrame = Math.max(
               0,
               Math.floor(
@@ -672,47 +481,66 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
             const duration = dragStart.endFrame - dragStart.startFrame;
             const newEndFrame = newStartFrame + duration;
 
-            // Check if snapping should be active (either Shift held OR snapEnabled toggle)
-            const { timeline, updateDragGhostPosition } =
-              useVideoEditorStore.getState();
+            const {
+              timeline,
+              tracks: allTracks,
+              updateDragGhostPosition,
+            } = useVideoEditorStore.getState();
             const shouldSnap = e.shiftKey || timeline.snapEnabled;
 
             if (shouldSnap) {
-              // Use unified magnetic snap logic for both modes
-              const currentSnap =
-                useVideoEditorStore.getState().playback.magneticSnapFrame;
-              const snapResult = findMagneticSnapPoint(
-                newStartFrame,
-                newEndFrame,
-                currentSnap,
+              const excludeIds = [track.id];
+              if (track.linkedTrackId) excludeIds.push(track.linkedTrackId);
+              timeline.selectedTrackIds.forEach((id: string) => {
+                if (!excludeIds.includes(id)) excludeIds.push(id);
+              });
+
+              const allSnapPoints = findAllSnapPoints(
+                allTracks,
+                excludeIds,
+                timeline.currentFrame,
               );
 
-              if (snapResult !== null) {
-                // Apply the delta to move the entire clip
-                newStartFrame = newStartFrame + snapResult.delta;
-                // Ensure we don't go below 0
-                if (newStartFrame >= 0) {
-                  useVideoEditorStore
-                    .getState()
-                    .setMagneticSnapFrame(snapResult.snapFrame);
+              const startSnap = checkSnapPosition(
+                newStartFrame,
+                allSnapPoints,
+                8,
+              );
+              if (startSnap !== null && startSnap >= 0) {
+                newStartFrame = startSnap;
+                useVideoEditorStore.getState().setMagneticSnapFrame(startSnap);
+              } else {
+                const endSnap = checkSnapPosition(
+                  newEndFrame,
+                  allSnapPoints,
+                  8,
+                );
+                if (endSnap !== null) {
+                  newStartFrame = endSnap - duration;
+                  if (newStartFrame >= 0) {
+                    useVideoEditorStore
+                      .getState()
+                      .setMagneticSnapFrame(endSnap);
+                  } else {
+                    newStartFrame = 0;
+                    useVideoEditorStore.getState().setMagneticSnapFrame(null);
+                  }
                 } else {
-                  newStartFrame = 0;
                   useVideoEditorStore.getState().setMagneticSnapFrame(null);
                 }
-              } else {
-                useVideoEditorStore.getState().setMagneticSnapFrame(null);
               }
             } else {
-              // Clear snap indicator when snapping is disabled
               useVideoEditorStore.getState().setMagneticSnapFrame(null);
             }
 
-            // Update drag ghost position with target row detection
-            // For now, keep it in the same row (cross-row will be added in Timeline component)
+            const currentTargetRow =
+              useVideoEditorStore.getState().playback.dragGhost?.targetRow ||
+              getTrackRowId(track);
+
             updateDragGhostPosition(
               e.clientX,
               e.clientY,
-              track.type,
+              currentTargetRow,
               newStartFrame,
             );
 
@@ -729,7 +557,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         onResize,
         onMove,
         onSelect,
-        findMagneticSnapPoint,
         track.id,
         track.type,
         track.linkedTrackId,
@@ -739,8 +566,57 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     );
 
     const handleMouseUp = useCallback(() => {
-      const { endDraggingTrack, clearDragGhost } =
-        useVideoEditorStore.getState();
+      const state = useVideoEditorStore.getState();
+      const { playback, endDraggingTrack, clearDragGhost, moveTrackToRow } =
+        state;
+
+      if (
+        isDragging &&
+        dragThresholdMetRef.current &&
+        playback.dragGhost?.isActive &&
+        playback.dragGhost.targetRow
+      ) {
+        const targetRowId = playback.dragGhost.targetRow;
+        const targetFrame = playback.dragGhost.targetFrame;
+        const parsedRow = parseRowId(targetRowId);
+
+        console.log(
+          `🎬 DROP: track=${track.type}, currentRow=${track.trackRowIndex ?? 0}, targetRow=${parsedRow ? parsedRow.rowIndex : 'null'}`,
+        );
+
+        if (parsedRow) {
+          const currentRowIndex = track.trackRowIndex ?? 0;
+
+          if (parsedRow.type !== track.type) {
+            console.log(
+              `   ❌ INVALID: Cannot drop ${track.type} on ${parsedRow.type} row`,
+            );
+            endDraggingTrack();
+            clearDragGhost();
+            setIsResizing(false);
+            setIsDragging(false);
+            hasAutoSelectedRef.current = false;
+            dragThresholdMetRef.current = false;
+            return;
+          }
+
+          const normalizedTargetIndex = Math.round(parsedRow.rowIndex);
+          if (normalizedTargetIndex !== currentRowIndex) {
+            moveTrackToRow(
+              track.id,
+              parsedRow.rowIndex,
+              targetFrame !== null && targetFrame !== undefined
+                ? targetFrame
+                : undefined,
+            );
+          } else {
+            console.log(
+              `   ⏸️ No row change (same row ${currentRowIndex}, target was ${parsedRow.rowIndex})`,
+            );
+          }
+        }
+      }
+
       endDraggingTrack();
       clearDragGhost();
 
@@ -753,13 +629,12 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-    }, []);
+    }, [isDragging, track.id, track.type, track.trackRowIndex]);
 
     useEffect(() => {
       if (isResizing || isDragging) {
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
-        // Also listen for mouseleave on window to handle edge cases
         window.addEventListener('blur', handleMouseUp);
         return () => {
           document.removeEventListener('mousemove', handleMouseMove);
@@ -769,10 +644,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       }
     }, [isResizing, isDragging, handleMouseMove, handleMouseUp]);
 
-    // Cleanup on unmount to ensure state is reset
     useEffect(() => {
       return () => {
-        // Always try to cleanup on unmount, check store state directly
         const { playback, endDraggingTrack } = useVideoEditorStore.getState();
         if (playback.isDraggingTrack) {
           endDraggingTrack();
@@ -780,9 +653,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       };
     }, []);
 
-    // Render appropriate content based on track type
     const trackContent = useMemo(() => {
-      // Get the dynamic content height based on track type
       const contentHeight = getTrackItemHeight(track.type);
 
       if (track.type === 'video') {
@@ -825,7 +696,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         );
       }
 
-      // Text content for other track types (text, subtitle)
       return (
         <div className="text-white text-[11px] h-fit whitespace-nowrap overflow-hidden text-ellipsis px-2 py-1">
           {track.type === 'subtitle' && track.subtitleText
@@ -852,7 +722,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         >
           {trackContent}
 
-          {/* Status indicators */}
           {track.type === 'audio' && track.volume !== undefined && (
             <div className="absolute right-1 top-1 text-[8px] text-foreground z-20">
               {Math.round(track.volume * 100)}%
@@ -875,7 +744,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           )}
         </TrackItemWrapper>
 
-        {/* Resize handles - smaller and dynamically sized based on track type */}
         {!track.locked &&
           isSelected &&
           !isSplitModeActive &&
@@ -885,7 +753,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               <div
                 className={cn(
                   'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-r flex items-center justify-center',
-                  // Smaller resize handles based on track type
                   track.type === 'text' || track.type === 'subtitle'
                     ? 'sm:h-3 md:h-4 lg:h-5'
                     : 'sm:h-3 md:h-7 lg:h-8',
@@ -900,7 +767,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
               <div
                 className={cn(
                   'absolute top-1/2 -translate-y-1/2 w-1.5 cursor-trim z-20 rounded-l flex items-center justify-center',
-                  // Smaller resize handles based on track type
                   track.type === 'text' || track.type === 'subtitle'
                     ? 'sm:h-3 md:h-4 lg:h-5'
                     : 'sm:h-3 md:h-6 lg:h-8',
@@ -917,7 +783,6 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     );
   },
   (prevProps, nextProps) => {
-    // Optimized comparison - only check what matters for visual changes
     return (
       prevProps.track.id === nextProps.track.id &&
       prevProps.track.startFrame === nextProps.track.startFrame &&
@@ -952,7 +817,8 @@ interface TrackRowProps {
   allTracksCount: number;
   onPlaceholderClick?: () => void;
   isSplitModeActive: boolean;
-  shouldCenter: boolean;
+  isEmptyTimeline: boolean;
+  isPlaceholder?: boolean;
 }
 
 const TrackRow: React.FC<TrackRowProps> = React.memo(
@@ -971,31 +837,37 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     allTracksCount,
     onPlaceholderClick,
     isSplitModeActive,
-    shouldCenter,
+    isEmptyTimeline,
+    isPlaceholder = false,
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
-    // Check if subtitle row is being transcribed
     const currentTranscribingTrackId = useVideoEditorStore(
       (state) => state.currentTranscribingTrackId,
     );
     const isSubtitleRowTranscribing =
-      rowDef.id === 'subtitle' && !!currentTranscribingTrackId;
+      rowDef.trackTypes.includes('subtitle') && !!currentTranscribingTrackId;
 
-    // Viewport culling for performance optimization
+    const parsedRow = useMemo(() => {
+      const parsed = parseRowId(rowDef.id);
+      if (!parsed) return { type: rowDef.trackTypes[0], rowIndex: 0 };
+      return parsed;
+    }, [rowDef.id, rowDef.trackTypes]);
+
+    const isEvenRow = parsedRow.rowIndex % 2 === 0;
+
     const visibleTracks = useMemo(() => {
       if (!window || tracks.length === 0) return tracks;
 
       const viewportWidth = window.innerWidth;
       const viewportStart = scrollX;
       const viewportEnd = scrollX + viewportWidth;
-      const bufferSize = viewportWidth * 0.5; // 50% buffer on each side
+      const bufferSize = viewportWidth * 0.5;
 
       return tracks.filter((track) => {
         const trackStart = track.startFrame * frameWidth;
         const trackEnd = track.endFrame * frameWidth;
 
-        // Include tracks that are visible or within buffer zone
         return (
           trackEnd >= viewportStart - bufferSize &&
           trackStart <= viewportEnd + bufferSize
@@ -1016,7 +888,6 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     const handleDrop = useCallback(
       (e: React.DragEvent) => {
         e.preventDefault();
-        // CRITICAL: Stop propagation to prevent duplicate imports from parent timeline handler
         e.stopPropagation();
         setIsDragOver(false);
         if (e.dataTransfer.files) {
@@ -1026,41 +897,45 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       [rowDef.id, onDrop],
     );
 
+    const isBaseVideoRow = rowDef.id === 'video-0';
+
+    // Placeholder rows have reduced opacity grid
+    const gridOpacity = isPlaceholder ? '0.03' : '0.05';
+
     return (
       <div
         className={cn(
           'relative border-l-[3px]',
-          getRowHeightClasses(rowDef.id),
+          isPlaceholder ? 'h-12' : getRowHeightClasses(rowDef.id),
           isDragOver
             ? 'bg-secondary/10 border-l-secondary'
-            : 'bg-transparent border-l-transparent',
+            : isEvenRow
+              ? 'bg-transparent'
+              : 'bg-muted/20',
+          isPlaceholder && 'border-l-transparent',
         )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Row background and grid - only show when NOT centering (placeholder grids handle it when centering) */}
-        {!shouldCenter && (
-          <div
-            className="absolute top-0 h-full pointer-events-none"
-            style={{
-              left: 0,
-              width: timelineWidth,
-              background: `repeating-linear-gradient(
-            90deg,
-            transparent,
-            transparent ${frameWidth * 30 - 1}px,
-            hsl(var(--foreground) / 0.05) ${frameWidth * 30 - 1}px,
-            hsl(var(--foreground) / 0.05) ${frameWidth * 30}px
-          )`,
-            }}
-          />
-        )}
+        {/* Grid lines - always rendered for all rows */}
+        <div
+          className="absolute top-0 h-full pointer-events-none"
+          style={{
+            left: 0,
+            width: timelineWidth,
+            background: `repeating-linear-gradient(
+              90deg,
+              transparent,
+              transparent ${frameWidth * 30 - 1}px,
+              hsl(var(--foreground) / ${gridOpacity}) ${frameWidth * 30 - 1}px,
+              hsl(var(--foreground) / ${gridOpacity}) ${frameWidth * 30}px
+            )`,
+          }}
+        />
 
-        {/* Tracks in this row - centered vertically */}
         <div className="h-full flex items-center">
           {isSubtitleRowTranscribing ? (
-            // Show skeleton loaders when transcribing - using subtitle track item height
             <div className="h-full w-full flex items-center gap-2 px-2">
               <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[120px] rounded" />
               <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[80px] rounded" />
@@ -1089,8 +964,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           )}
         </div>
 
-        {/* Drop hint */}
-        {allTracksCount === 0 && rowDef.id === 'video' && (
+        {isEmptyTimeline && isBaseVideoRow && (
           <div
             className={`absolute inset-0 flex items-center justify-center px-8 cursor-pointer transition-all duration-200 rounded-lg border-2 border-dashed
             ${
@@ -1110,7 +984,6 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     );
   },
   (prevProps, nextProps) => {
-    // Custom equality check for TrackRow
     return (
       prevProps.rowDef.id === nextProps.rowDef.id &&
       prevProps.tracks.length === nextProps.tracks.length &&
@@ -1129,7 +1002,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           track.muted === nextTrack.muted &&
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
-          track.previewUrl === nextTrack.previewUrl
+          track.previewUrl === nextTrack.previewUrl &&
+          track.trackRowIndex === nextTrack.trackRowIndex
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -1140,10 +1014,39 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         JSON.stringify(nextProps.selectedTrackIds) &&
       prevProps.allTracksCount === nextProps.allTracksCount &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive &&
-      prevProps.shouldCenter === nextProps.shouldCenter
+      prevProps.isEmptyTimeline === nextProps.isEmptyTimeline &&
+      prevProps.isPlaceholder === nextProps.isPlaceholder
     );
   },
 );
+
+function getDefaultRows(): TrackRowDefinition[] {
+  return [
+    {
+      id: 'video-0',
+      name: 'Video',
+      trackTypes: ['video'],
+      color: BASE_ROW_DEFINITIONS.video.color,
+      icon: BASE_ROW_DEFINITIONS.video.icon,
+    },
+    {
+      id: 'audio-0',
+      name: 'Audio',
+      trackTypes: ['audio'],
+      color: BASE_ROW_DEFINITIONS.audio.color,
+      icon: BASE_ROW_DEFINITIONS.audio.icon,
+    },
+  ];
+}
+
+// Placeholder row definition for empty space
+const PLACEHOLDER_ROW_HEIGHT = 48;
+
+interface PlaceholderRowDef {
+  id: string;
+  type: 'placeholder';
+  position: 'above' | 'below';
+}
 
 export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
   ({
@@ -1164,38 +1067,62 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       importMediaFromDialog,
     } = useVideoEditorStore();
 
-    // Subscribe to visible track rows from timeline state with fallback
     const visibleTrackRows = useVideoEditorStore(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
     );
 
-    // Calculate baseline height (5 tracks) and whether we should center
-    const { baselineHeight, shouldCenter } = useMemo(() => {
-      // Calculate height for each visible row
-      const visibleRowsInOrder = TRACK_ROWS.filter((row) =>
-        visibleTrackRows.includes(row.id),
-      );
+    const isEmptyTimeline = tracks.length === 0;
 
-      // Baseline height = height of ALL 5 track rows (even if not visible)
-      // This ensures the grid always shows space for 5 tracks
-      const baseline = TRACK_ROWS.reduce((sum, row) => {
-        return sum + getRowHeight(row.id);
-      }, 0);
+    const migratedTracks = useMemo(
+      () => migrateTracksWithRowIndex(tracks),
+      [tracks],
+    );
 
-      return {
-        baselineHeight: baseline,
-        shouldCenter: visibleRowsInOrder.length < TRACK_ROWS.length,
-      };
-    }, [visibleTrackRows]);
+    const dynamicRows = useMemo(() => {
+      if (isEmptyTimeline) {
+        return getDefaultRows();
+      }
+      return generateDynamicRows(migratedTracks);
+    }, [migratedTracks, isEmptyTimeline]);
+
+    // Calculate placeholder rows needed
+    const MAX_PLACEHOLDER_ROWS = 3;
+
+    const { placeholderRowsAbove, placeholderRowsBelow, totalHeight } =
+      useMemo(() => {
+        // Calculate total height of dynamic rows
+        const dynamicRowsHeight = dynamicRows.reduce((sum, row) => {
+          const mediaType = row.trackTypes[0];
+          return sum + getRowHeight(mediaType);
+        }, 0);
+
+        // Calculate how many extra rows we have beyond base (video-0, audio-0)
+        const baseRowCount = 2;
+        const extraRowsCount = Math.max(0, dynamicRows.length - baseRowCount);
+        const remainingPlaceholders = Math.max(
+          0,
+          MAX_PLACEHOLDER_ROWS - extraRowsCount,
+        );
+
+        // Distribute placeholders: 2 above, 1 below (or however many remain)
+        const above = Math.min(2, remainingPlaceholders);
+        const below = Math.max(0, remainingPlaceholders - 2);
+
+        const placeholderHeight = (above + below) * PLACEHOLDER_ROW_HEIGHT;
+
+        return {
+          placeholderRowsAbove: above,
+          placeholderRowsBelow: below,
+          totalHeight: dynamicRowsHeight + placeholderHeight,
+        };
+      }, [dynamicRows]);
 
     const handleTrackSelect = useCallback(
       (trackId: string, multiSelect = false) => {
-        // Always get current state fresh from the store to avoid stale closures
         const { tracks: allTracks, timeline } = useVideoEditorStore.getState();
         const currentSelectedTrackIds = timeline.selectedTrackIds;
         const selectedTrack = allTracks.find((t) => t.id === trackId);
 
-        // Get tracks to select (include linked track if applicable)
         const tracksToSelect = [trackId];
         if (selectedTrack?.isLinked && selectedTrack.linkedTrackId) {
           tracksToSelect.push(selectedTrack.linkedTrackId);
@@ -1205,19 +1132,16 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         }
 
         if (multiSelect) {
-          // Handle multi-select with linked tracks - use fresh state
           let newSelection = [...currentSelectedTrackIds];
 
           const isCurrentlySelected = tracksToSelect.some((id) =>
             currentSelectedTrackIds.includes(id),
           );
           if (isCurrentlySelected) {
-            // Remove both tracks from selection (toggle off)
             newSelection = newSelection.filter(
               (id) => !tracksToSelect.includes(id),
             );
           } else {
-            // Add both tracks to selection (toggle on)
             tracksToSelect.forEach((id) => {
               if (!newSelection.includes(id)) {
                 newSelection.push(id);
@@ -1226,7 +1150,6 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           }
           onTrackSelect(newSelection);
         } else {
-          // Single select - select only these tracks, deselect all others
           onTrackSelect(tracksToSelect);
         }
       },
@@ -1235,23 +1158,19 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handleTrackMove = useCallback(
       (trackId: string, newStartFrame: number) => {
-        // Check if multiple tracks are selected OR if we're dragging multiple tracks
         const { timeline, playback } = useVideoEditorStore.getState();
         const selectedTrackIds = timeline.selectedTrackIds;
         const dragGhost = playback.dragGhost;
 
-        // Use drag ghost's selectedTrackIds if available (includes linked tracks)
         const tracksBeingDragged =
           dragGhost?.selectedTrackIds || selectedTrackIds;
 
-        // If multiple tracks are being dragged, use multi-track move logic
         if (
           tracksBeingDragged.length > 1 &&
           tracksBeingDragged.includes(trackId)
         ) {
           moveSelectedTracks(trackId, newStartFrame);
         } else {
-          // Single track movement
           moveTrack(trackId, newStartFrame);
         }
       },
@@ -1267,13 +1186,11 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const handleRowDrop = useCallback(
       async (rowId: string, files: FileList) => {
-        // Filter files based on row type
         const fileArray = Array.from(files);
-        const rowDef = TRACK_ROWS.find((row) => row.id === rowId);
+        const rowDef = dynamicRows.find((row) => row.id === rowId);
 
         if (!rowDef) return;
 
-        // Filter files that match the row's accepted types
         const validFiles = fileArray.filter((file) => {
           if (rowDef.trackTypes.includes('video')) {
             return file.type.startsWith('video/');
@@ -1288,52 +1205,50 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         });
 
         if (validFiles.length > 0) {
-          // Import files using the proper import method that saves to disk and adds to library
           await importMediaToTimeline(validFiles);
-        } else {
-          console.warn(
-            `No valid ${rowDef.trackTypes.join('/')} files found for ${rowId} row`,
-          );
         }
       },
-      [importMediaToTimeline],
+      [importMediaToTimeline, dynamicRows],
     );
 
     const handlePlaceholderClick = useCallback(async () => {
       const result = await importMediaFromDialog();
       if (!result || (!result.success && !result.error)) return;
 
-      if (result.success && result.importedFiles.length > 0) {
-        console.log(
-          'Files imported successfully from timeline placeholder:',
-          result.importedFiles,
-        );
-      } else if (result.error) {
-        // Only show error if there's an actual error (not on cancel)
+      if (result.error) {
         toast.error(result.error);
       }
     }, [importMediaFromDialog]);
 
-    // Group tracks by their designated rows with subtitle optimization
+    // Group tracks by their designated rows
     const tracksByRow = useMemo(() => {
       const grouped: Record<string, VideoTrack[]> = {};
 
-      TRACK_ROWS.forEach((row) => {
-        grouped[row.id] = tracks.filter((track) =>
-          row.trackTypes.includes(track.type),
-        );
+      dynamicRows.forEach((row) => {
+        grouped[row.id] = [];
+      });
 
-        // Sort subtitle tracks by start time for better performance and visual organization
-        if (row.id === 'subtitle' && grouped[row.id].length > 0) {
+      migratedTracks.forEach((track) => {
+        const rowId = getTrackRowId(track);
+        if (!grouped[rowId]) {
+          grouped[rowId] = [];
+        }
+        grouped[rowId].push(track);
+      });
+
+      dynamicRows.forEach((row) => {
+        if (
+          row.trackTypes.includes('subtitle') &&
+          grouped[row.id] &&
+          grouped[row.id].length > 0
+        ) {
           grouped[row.id].sort((a, b) => a.startFrame - b.startFrame);
         }
       });
 
-      // Tracks organized by row type for rendering
       return grouped;
-    }, [tracks]);
+    }, [migratedTracks, dynamicRows]);
 
-    // Memoize individual callback handlers to prevent re-creation
     const memoizedHandlers = useMemo(
       () => ({
         onTrackSelect: (trackId: string, multiSelect?: boolean) =>
@@ -1352,10 +1267,28 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       ],
     );
 
-    // Filter track rows to only show visible ones
-    const visibleRows = TRACK_ROWS.filter((row) =>
-      visibleTrackRows.includes(row.id),
-    );
+    // Filter dynamic rows to only show visible ones
+    const visibleRows = dynamicRows.filter((row) => {
+      const mediaType = row.trackTypes[0];
+      return visibleTrackRows.includes(mediaType);
+    });
+
+    // Create placeholder row definitions
+    const placeholderRowDefsAbove: PlaceholderRowDef[] = useMemo(() => {
+      return Array.from({ length: placeholderRowsAbove }, (_, i) => ({
+        id: `placeholder-above-${i}`,
+        type: 'placeholder' as const,
+        position: 'above' as const,
+      }));
+    }, [placeholderRowsAbove]);
+
+    const placeholderRowDefsBelow: PlaceholderRowDef[] = useMemo(() => {
+      return Array.from({ length: placeholderRowsBelow }, (_, i) => ({
+        id: `placeholder-below-${i}`,
+        type: 'placeholder' as const,
+        position: 'below' as const,
+      }));
+    }, [placeholderRowsBelow]);
 
     return (
       <div
@@ -1363,93 +1296,101 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         style={{
           width: timelineWidth,
           minWidth: timelineWidth,
-          minHeight: shouldCenter ? `${baselineHeight}px` : 'auto',
-          height: shouldCenter ? `${baselineHeight}px` : 'auto',
+          minHeight: `${totalHeight}px`,
         }}
       >
-        {/* Grid background for ALL 5 track rows when centering - positioned at absolute positions */}
-        {shouldCenter && (
-          <div
-            className="absolute pointer-events-none"
-            style={{
-              top: 0,
-              left: 0,
-              width: timelineWidth,
-              height: `${baselineHeight}px`,
-            }}
-          >
-            {TRACK_ROWS.map((rowDef) => {
-              // Calculate this row's top position - sum of all previous row heights
-              let top = 0;
-              for (let i = 0; i < TRACK_ROWS.length; i++) {
-                if (TRACK_ROWS[i].id === rowDef.id) break;
-                top += getRowHeight(TRACK_ROWS[i].id);
-              }
-
-              const rowHeight = getRowHeight(rowDef.id);
-              const isVisible = visibleTrackRows.includes(rowDef.id);
-
-              return (
-                <div
-                  key={`grid-${rowDef.id}`}
-                  className="absolute"
-                  style={{
-                    top: `${top}px`,
-                    left: 0,
-                    width: timelineWidth,
-                    height: `${rowHeight}px`,
-                    background: `repeating-linear-gradient(
-                      90deg,
-                      transparent,
-                      transparent ${frameWidth * 30 - 1}px,
-                      hsl(var(--foreground) / ${isVisible ? '0.05' : '0.03'}) ${frameWidth * 30 - 1}px,
-                      hsl(var(--foreground) / ${isVisible ? '0.05' : '0.03'}) ${frameWidth * 30}px
-                    )`,
-                  }}
-                />
-              );
-            })}
-          </div>
-        )}
-
-        {/* Centering wrapper - only active when <5 tracks */}
         <div
-          className="relative"
+          className="relative flex flex-col justify-center"
           style={{
             width: '100%',
-            height: shouldCenter ? `${baselineHeight}px` : 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: shouldCenter ? 'center' : 'flex-start',
+            minHeight: `${totalHeight}px`,
           }}
         >
-          {/* Render only visible track rows */}
-          {visibleRows.map((rowDef) => (
-            <TrackRow
-              key={rowDef.id}
-              rowDef={rowDef}
-              tracks={tracksByRow[rowDef.id] || []}
-              frameWidth={frameWidth}
-              timelineWidth={timelineWidth}
-              scrollX={scrollX}
-              zoomLevel={zoomLevel}
-              selectedTrackIds={selectedTrackIds}
-              onTrackSelect={memoizedHandlers.onTrackSelect}
-              onTrackMove={memoizedHandlers.onTrackMove}
-              onTrackResize={memoizedHandlers.onTrackResize}
-              onDrop={memoizedHandlers.onDrop}
-              allTracksCount={tracks.length}
-              onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
-              isSplitModeActive={isSplitModeActive}
-              shouldCenter={shouldCenter}
-            />
+          {/* Placeholder rows above */}
+          {placeholderRowDefsAbove.map((placeholder) => (
+            <div
+              key={placeholder.id}
+              className="relative h-12 border-l-[3px] border-l-transparent"
+            >
+              {/* Grid lines for placeholder */}
+              <div
+                className="absolute top-0 h-full pointer-events-none"
+                style={{
+                  left: 0,
+                  width: timelineWidth,
+                  background: `repeating-linear-gradient(
+                    90deg,
+                    transparent,
+                    transparent ${frameWidth * 30 - 1}px,
+                    hsl(var(--foreground) / 0.03) ${frameWidth * 30 - 1}px,
+                    hsl(var(--foreground) / 0.03) ${frameWidth * 30}px
+                  )`,
+                }}
+              />
+            </div>
+          ))}
+
+          {/* Actual track rows */}
+          {visibleRows.map((rowDef) => {
+            const isVideoZero = rowDef.id === 'video-0';
+
+            return (
+              <div
+                key={rowDef.id}
+                className={cn(
+                  isVideoZero &&
+                    'sticky bottom-0 z-30 dark:bg-zinc-900 bg-zinc-100',
+                )}
+              >
+                <TrackRow
+                  rowDef={rowDef}
+                  tracks={tracksByRow[rowDef.id] || []}
+                  frameWidth={frameWidth}
+                  timelineWidth={timelineWidth}
+                  scrollX={scrollX}
+                  zoomLevel={zoomLevel}
+                  selectedTrackIds={selectedTrackIds}
+                  onTrackSelect={memoizedHandlers.onTrackSelect}
+                  onTrackMove={memoizedHandlers.onTrackMove}
+                  onTrackResize={memoizedHandlers.onTrackResize}
+                  onDrop={memoizedHandlers.onDrop}
+                  allTracksCount={tracks.length}
+                  onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
+                  isSplitModeActive={isSplitModeActive}
+                  isEmptyTimeline={isEmptyTimeline}
+                />
+              </div>
+            );
+          })}
+
+          {/* Placeholder rows below */}
+          {placeholderRowDefsBelow.map((placeholder) => (
+            <div
+              key={placeholder.id}
+              className="relative h-12 border-l-[3px] border-l-transparent"
+            >
+              {/* Grid lines for placeholder */}
+              <div
+                className="absolute top-0 h-full pointer-events-none"
+                style={{
+                  left: 0,
+                  width: timelineWidth,
+                  background: `repeating-linear-gradient(
+                    90deg,
+                    transparent,
+                    transparent ${frameWidth * 30 - 1}px,
+                    hsl(var(--foreground) / 0.03) ${frameWidth * 30 - 1}px,
+                    hsl(var(--foreground) / 0.03) ${frameWidth * 30}px
+                  )`,
+                }}
+              />
+            </div>
           ))}
         </div>
       </div>
     );
   },
   (prevProps, nextProps) => {
-    // Custom equality check for TimelineTracks
     return (
       prevProps.tracks.length === nextProps.tracks.length &&
       prevProps.tracks.every((track, index) => {
@@ -1467,7 +1408,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           track.muted === nextTrack.muted &&
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
-          track.previewUrl === nextTrack.previewUrl
+          track.previewUrl === nextTrack.previewUrl &&
+          track.trackRowIndex === nextTrack.trackRowIndex
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { cn } from '@/frontend/utils/utils';
 import { Type } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,22 +16,18 @@ import {
   useAlignmentGuides,
   useAudioPlayback,
   useDragDrop,
-  useVideoPlayback,
   useZoomPan,
 } from './hooks';
 import {
   AudioOverlay,
   CanvasOverlay,
-  ImageOverlay,
-  SubtitleOverlay,
-  TextOverlay,
-  VideoOverlay,
+  UnifiedOverlayRenderer,
 } from './overlays';
+import { TransformBoundaryLayer } from './overlays/TransformBoundaryLayer';
 import {
   calculateContentScale,
   calculateFitDimensions,
 } from './utils/scalingUtils';
-import { getActiveTracksAtFrame } from './utils/trackUtils';
 
 interface VideoBlobPreviewProps {
   className?: string;
@@ -49,6 +46,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   const [isPreviewFocused, setIsPreviewFocused] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const [pendingEditTextId, setPendingEditTextId] = useState<string | null>(
+    null,
+  );
+  const [pendingEmptyTextId, setPendingEmptyTextId] = useState<string | null>(
     null,
   );
 
@@ -75,6 +75,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     currentTranscribingTrackId,
     transcriptionProgress,
     addTextClip,
+    removeTrack,
   } = useVideoEditorStore();
 
   // Active media determination
@@ -111,30 +112,32 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     importMediaToTimeline,
   });
 
-  // Get display FPS from source video tracks (dynamic but static once determined)
+  // Get display FPS from source video tracks
   const displayFps = getDisplayFps(tracks);
 
-  // Video playback synchronization
-  const { handleLoadedMetadata: handleVideoLoadedMetadata } = useVideoPlayback({
-    videoRef,
-    activeVideoTrack,
-    independentAudioTrack,
-    currentFrame: timeline.currentFrame,
-    fps: displayFps, // Use display FPS from source video, not export FPS
-    isPlaying: playback.isPlaying,
-    isMuted: playback.muted,
-    volume: playback.volume,
-    playbackRate: playback.playbackRate,
-    setCurrentFrame,
-    allTracks: tracks,
-  });
+  /**
+   * AUDIO FIX: We NO LONGER use useVideoPlayback for video control.
+   * DualBufferVideo now handles:
+   * - Video playback (play/pause)
+   * - Audio control (mute/volume)
+   * - Timeline sync (onFrameUpdate callback)
+   *
+   * useVideoPlayback was causing double audio because it was also
+   * controlling videoRef's volume/muted state.
+   */
 
-  // Audio playback synchronization
+  // Simple metadata handler - no playback control needed
+  const handleVideoLoadedMetadata = useCallback(() => {
+    console.log('[VideoBlobPreview] Video metadata loaded');
+    // Metadata is now handled by DualBufferVideo
+  }, []);
+
+  // Audio playback synchronization (for independent audio tracks only)
   const { handleAudioLoadedMetadata } = useAudioPlayback({
     audioRef,
     independentAudioTrack,
     currentFrame: timeline.currentFrame,
-    fps: displayFps, // Use display FPS from source video, not export FPS
+    fps: displayFps,
     isPlaying: playback.isPlaying,
     isMuted: playback.muted,
     volume: playback.volume,
@@ -142,8 +145,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   });
 
   // Calculate base video dimensions
-  // Always use canvas dimensions as the base - this allows aspect ratio changes to affect the preview
-  // The video will be cropped/fitted to match the canvas aspect ratio
   const baseVideoWidth = preview.canvasWidth;
   const baseVideoHeight = preview.canvasHeight;
 
@@ -154,8 +155,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       baseVideoHeight,
     });
 
-  // Reset pan when video track changes or when there's no video
-  // Use ref to prevent unnecessary pan resets during non-video track updates
+  // Reset pan when video track changes
   const prevVideoTrackIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (prevVideoTrackIdRef.current !== activeVideoTrack?.id) {
@@ -166,7 +166,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
   }, [activeVideoTrack?.id, preview.panX, preview.panY, setPreviewPan]);
 
-  // Add effect to pause playback at the end of ALL tracks
+  // Pause playback at end of all tracks
   useEffect(() => {
     if (!playback.isPlaying) return;
 
@@ -186,7 +186,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
   }, [timeline.currentFrame, tracks, playback, videoRef, audioRef]);
 
-  // Resize observer with debouncing to prevent excessive re-renders
+  // Resize observer
   useEffect(() => {
     let resizeTimeout: NodeJS.Timeout | null = null;
 
@@ -198,26 +198,22 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     };
 
     const debouncedUpdateSize = () => {
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-      }
-      resizeTimeout = setTimeout(updateSize, 100); // Debounce resize events
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(updateSize, 100);
     };
 
-    updateSize(); // Initial size
+    updateSize();
 
     const ro = new ResizeObserver(debouncedUpdateSize);
     if (containerRef.current) ro.observe(containerRef.current);
 
     return () => {
       ro.disconnect();
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-      }
+      if (resizeTimeout) clearTimeout(resizeTimeout);
     };
   }, []);
 
-  // Content scale calculation with fixed coordinate system
+  // Content scale calculation
   const { actualWidth, actualHeight, coordinateSystem } = calculateContentScale(
     {
       containerWidth: containerSize.width,
@@ -228,44 +224,68 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     },
   );
 
-  // Get active tracks - memoize to prevent unnecessary re-renders
-  const activeSubtitles = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'subtitle').filter(
-        (track) => track.subtitleText,
-      ),
-    [tracks, timeline.currentFrame],
-  );
+  // Clear non-text selections when switching to Text Tool
+  useEffect(() => {
+    if (preview.interactionMode === 'text-edit') {
+      const nonTextSelectedTracks = timeline.selectedTrackIds.filter((id) => {
+        const track = tracks.find((t) => t.id === id);
+        return track && track.type !== 'text';
+      });
 
-  const activeTexts = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'text').filter(
-        (track) => track.textContent,
-      ),
-    [tracks, timeline.currentFrame],
-  );
+      if (nonTextSelectedTracks.length > 0) {
+        const textSelectedTracks = timeline.selectedTrackIds.filter((id) => {
+          const track = tracks.find((t) => t.id === id);
+          return track && track.type === 'text';
+        });
+        setSelectedTracks(textSelectedTracks);
+      }
+    }
+  }, [
+    preview.interactionMode,
+    timeline.selectedTrackIds,
+    tracks,
+    setSelectedTracks,
+  ]);
 
-  const activeImages = React.useMemo(
-    () =>
-      getActiveTracksAtFrame(tracks, timeline.currentFrame, 'image').filter(
-        (track) => track.previewUrl || track.source,
-      ),
-    [tracks, timeline.currentFrame],
-  );
+  // Auto-discard empty text tracks
+  useEffect(() => {
+    if (preview.interactionMode !== 'text-edit' && pendingEmptyTextId) {
+      const track = tracks.find((t) => t.id === pendingEmptyTextId);
+      if (track && (!track.textContent || track.textContent === 'New Text')) {
+        removeTrack(pendingEmptyTextId);
+      }
+      setPendingEmptyTextId(null);
+    }
+  }, [preview.interactionMode, pendingEmptyTextId, tracks, removeTrack]);
 
-  // Handle text transform updates
+  // Handle Escape key
+  useEffect(() => {
+    if (!isPreviewFocused || !pendingEmptyTextId) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && preview.interactionMode === 'text-edit') {
+        const track = tracks.find((t) => t.id === pendingEmptyTextId);
+        if (track && (!track.textContent || track.textContent === 'New Text')) {
+          removeTrack(pendingEmptyTextId);
+          setPendingEmptyTextId(null);
+          setPendingEditTextId(null);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [
+    isPreviewFocused,
+    pendingEmptyTextId,
+    preview.interactionMode,
+    tracks,
+    removeTrack,
+  ]);
+
+  // Transform update handlers
   const handleTextTransformUpdate = useCallback(
-    (
-      trackId: string,
-      transform: {
-        x?: number;
-        y?: number;
-        scale?: number;
-        rotation?: number;
-        width?: number;
-        height?: number;
-      },
-    ) => {
+    (trackId: string, transform: any) => {
       const track = tracks.find((t) => t.id === trackId);
       if (!track || track.type !== 'text') return;
 
@@ -279,28 +299,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       };
 
       updateTrack(trackId, {
-        textTransform: {
-          ...currentTransform,
-          ...transform,
-        },
+        textTransform: { ...currentTransform, ...transform },
       });
     },
     [tracks, updateTrack],
   );
 
-  // Handle image transform updates
   const handleImageTransformUpdate = useCallback(
-    (
-      trackId: string,
-      transform: {
-        x?: number;
-        y?: number;
-        scale?: number;
-        rotation?: number;
-        width?: number;
-        height?: number;
-      },
-    ) => {
+    (trackId: string, transform: any) => {
       const track = tracks.find((t) => t.id === trackId);
       if (!track || track.type !== 'image') return;
 
@@ -314,44 +320,30 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       };
 
       updateTrack(trackId, {
-        textTransform: {
-          ...currentTransform,
-          ...transform,
-        },
+        textTransform: { ...currentTransform, ...transform },
       });
     },
     [tracks, updateTrack],
   );
 
-  // Handle text selection
   const handleTextSelect = useCallback(
     (trackId: string) => {
+      if (preview.interactionMode === 'pan') return;
       setSelectedTracks([trackId]);
     },
-    [setSelectedTracks],
+    [setSelectedTracks, preview.interactionMode],
   );
 
-  // Handle image selection
   const handleImageSelect = useCallback(
     (trackId: string) => {
+      if (preview.interactionMode !== 'select') return;
       setSelectedTracks([trackId]);
     },
-    [setSelectedTracks],
+    [setSelectedTracks, preview.interactionMode],
   );
 
-  // Handle video transform updates
   const handleVideoTransformUpdate = useCallback(
-    (
-      trackId: string,
-      transform: {
-        x?: number;
-        y?: number;
-        scale?: number;
-        rotation?: number;
-        width?: number;
-        height?: number;
-      },
-    ) => {
+    (trackId: string, transform: any) => {
       const track = tracks.find((t) => t.id === trackId);
       if (!track || track.type !== 'video') return;
 
@@ -365,26 +357,21 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       };
 
       updateTrack(trackId, {
-        textTransform: {
-          ...currentTransform,
-          ...transform,
-        },
+        textTransform: { ...currentTransform, ...transform },
       });
     },
     [tracks, updateTrack, baseVideoWidth, baseVideoHeight],
   );
 
-  // Handle video selection
   const handleVideoSelect = useCallback(
     (trackId: string) => {
+      if (preview.interactionMode !== 'select') return;
       setSelectedTracks([trackId]);
     },
-    [setSelectedTracks],
+    [setSelectedTracks, preview.interactionMode],
   );
 
   // Auto-fit video tracks when canvas aspect ratio changes
-  // This ensures video content automatically adapts to new canvas dimensions
-  // Works in both directions: landscape ↔ portrait, and any aspect ratio change
   const prevCanvasDimensionsRef = useRef<{
     width: number;
     height: number;
@@ -392,7 +379,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   } | null>(null);
 
   useEffect(() => {
-    // Skip if canvas dimensions are invalid or not initialized
     if (
       !preview.canvasWidth ||
       !preview.canvasHeight ||
@@ -403,9 +389,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
 
     const currentAspectRatio = preview.canvasWidth / preview.canvasHeight;
-
-    // Check if canvas dimensions or aspect ratio actually changed
     const prevDimensions = prevCanvasDimensionsRef.current;
+
     const hasDimensionChange =
       !prevDimensions ||
       prevDimensions.width !== preview.canvasWidth ||
@@ -415,56 +400,35 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       !prevDimensions ||
       Math.abs(prevDimensions.aspectRatio - currentAspectRatio) > 0.001;
 
-    // If neither dimensions nor aspect ratio changed, skip auto-fit
-    if (!hasDimensionChange && !hasAspectRatioChange) {
-      return;
-    }
+    if (!hasDimensionChange && !hasAspectRatioChange) return;
 
-    // Store current dimensions and aspect ratio for next comparison
     prevCanvasDimensionsRef.current = {
       width: preview.canvasWidth,
       height: preview.canvasHeight,
       aspectRatio: currentAspectRatio,
     };
 
-    // Skip auto-fit on initial mount (when prevDimensions is null)
-    // This prevents auto-fitting when component first loads
-    if (!prevDimensions) {
-      return;
-    }
+    if (!prevDimensions) return;
 
-    // Find all video tracks that need auto-fitting
     const videoTracks = tracks.filter(
       (track) => track.type === 'video' && track.visible,
     );
+    if (videoTracks.length === 0) return;
 
-    if (videoTracks.length === 0) {
-      return; // No video tracks to fit
-    }
-
-    // Auto-fit each video track
     videoTracks.forEach((track) => {
-      // Get original video dimensions (always use source video dimensions, not current transform)
-      // Priority: track.width/height > video element dimensions
       let originalWidth: number;
       let originalHeight: number;
 
       if (track.width && track.height) {
-        // Use stored track dimensions (most reliable - these are the original video dimensions)
         originalWidth = track.width;
         originalHeight = track.height;
       } else if (videoRef.current && videoRef.current.videoWidth > 0) {
-        // Fallback to video element dimensions (only for active video track)
-        // Note: This only works for the currently active video track
         originalWidth = videoRef.current.videoWidth;
         originalHeight = videoRef.current.videoHeight;
       } else {
-        // Skip if we can't determine original dimensions
         return;
       }
 
-      // Calculate new dimensions that fit within canvas while preserving aspect ratio
-      // This works for both landscape->portrait and portrait->landscape transitions
       const fittedDimensions = calculateFitDimensions(
         originalWidth,
         originalHeight,
@@ -472,7 +436,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         preview.canvasHeight,
       );
 
-      // Get current transform (preserve position, scale, rotation)
       const currentTransform = track.textTransform || {
         x: 0,
         y: 0,
@@ -482,19 +445,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         height: originalHeight,
       };
 
-      // Always update when canvas changes to ensure video fits correctly
-      // This handles both dimension changes and aspect ratio changes
-      // The comparison ensures we don't update unnecessarily if dimensions are already correct
       const needsUpdate =
         Math.abs(currentTransform.width - fittedDimensions.width) > 0.5 ||
         Math.abs(currentTransform.height - fittedDimensions.height) > 0.5;
 
       if (needsUpdate) {
-        // Update transform with new dimensions, preserving other properties
         handleVideoTransformUpdate(track.id, {
           width: fittedDimensions.width,
           height: fittedDimensions.height,
-          // Preserve position, scale, and rotation
           x: currentTransform.x,
           y: currentTransform.y,
           scale: currentTransform.scale,
@@ -510,7 +468,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     handleVideoTransformUpdate,
   ]);
 
-  // Handle text content updates
   const handleTextUpdate = useCallback(
     (trackId: string, newText: string) => {
       updateTrack(trackId, { textContent: newText });
@@ -518,16 +475,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [updateTrack],
   );
 
-  // Handle subtitle transform updates (global - affects all subtitles)
   const handleSubtitleTransformUpdate = useCallback(
-    (
-      trackId: string,
-      transform: {
-        x?: number;
-        y?: number;
-      },
-    ) => {
-      // Update global subtitle position (affects ALL subtitles)
+    (trackId: string, transform: { x?: number; y?: number }) => {
       const currentPosition = textStyle.globalSubtitlePosition;
       setGlobalSubtitlePosition({
         x: transform.x ?? currentPosition.x,
@@ -537,15 +486,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [textStyle.globalSubtitlePosition, setGlobalSubtitlePosition],
   );
 
-  // Handle subtitle selection
   const handleSubtitleSelect = useCallback(
     (trackId: string) => {
+      if (preview.interactionMode === 'pan') return;
       setSelectedTracks([trackId]);
     },
-    [setSelectedTracks],
+    [setSelectedTracks, preview.interactionMode],
   );
 
-  // Handle subtitle text updates
   const handleSubtitleTextUpdate = useCallback(
     (trackId: string, newText: string) => {
       updateTrack(trackId, { subtitleText: newText });
@@ -553,64 +501,58 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [updateTrack],
   );
 
-  // Handle click outside to deselect or add text
+  const handleEditModeChange = useCallback(
+    (isEditing: boolean) => {
+      if (isEditing) {
+        setPreviewInteractionMode('text-edit');
+      }
+    },
+    [setPreviewInteractionMode],
+  );
+
   const handlePreviewClick = useCallback(
     async (e: React.MouseEvent) => {
       const target = e.target as HTMLElement;
 
-      // Check if clicking on empty canvas space
-      if (
-        target === containerRef.current ||
-        target.classList.contains('preview-background') ||
-        target.tagName === 'VIDEO'
-      ) {
-        const hasInteractiveLayerSelected = timeline.selectedTrackIds.some(
-          (id) => {
-            const track = tracks.find((t) => t.id === id);
-            return (
-              track?.type === 'text' ||
-              track?.type === 'image' ||
-              track?.type === 'subtitle'
-            );
-          },
-        );
+      if (preview.interactionMode === 'pan') return;
 
-        // If something is selected, deselect it
-        if (hasInteractiveLayerSelected) {
-          setSelectedTracks([]);
-          return;
-        }
+      if (preview.interactionMode === 'text-edit') {
+        const isTextElement =
+          target.closest('[data-text-element]') !== null ||
+          target.closest('[contenteditable="true"]') !== null ||
+          target.classList.contains('text-content') ||
+          (target.tagName === 'DIV' && target.contentEditable === 'true');
 
-        // Only create new text if in text-edit mode AND we have video content
-        if (
-          (activeVideoTrack || activeAudioTrack) &&
-          preview.interactionMode === 'text-edit'
-        ) {
-          // Get click position relative to container
+        if (isTextElement) return;
+
+        const isUIControl =
+          target.classList.contains('transform-handle') ||
+          target.closest('.transform-handle') !== null ||
+          target.classList.contains('selection-boundary') ||
+          target.closest('.selection-boundary') !== null;
+
+        if (isUIControl) return;
+
+        if (activeVideoTrack || activeAudioTrack) {
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect) return;
 
           const clickX = e.clientX - rect.left;
           const clickY = e.clientY - rect.top;
 
-          // Convert screen coordinates to normalized video coordinates
-          // First, account for the pan offset
           const clickXRelativeToContent =
             clickX - rect.width / 2 - preview.panX;
           const clickYRelativeToContent =
             clickY - rect.height / 2 - preview.panY;
 
-          // Then convert from screen space to video space using the coordinate system
           const normalizedX =
             clickXRelativeToContent / (actualWidth / 2) / preview.previewScale;
           const normalizedY =
             clickYRelativeToContent / (actualHeight / 2) / preview.previewScale;
 
-          // Create new text track at clicked position
           const trackId = await addTextClip('body', timeline.currentFrame);
 
           if (trackId) {
-            // Update the position to clicked location
             updateTrack(trackId, {
               textTransform: {
                 x: normalizedX,
@@ -620,17 +562,37 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
                 width: 800,
                 height: 100,
               },
-              textContent: 'New Text', // Default placeholder text that will be selected
+              textContent: 'New Text',
             });
 
-            // Select the new text track
             setSelectedTracks([trackId]);
-
-            // Switch to text-edit mode to enable immediate editing
             setPreviewInteractionMode('text-edit');
-
-            // Mark this text as pending edit (will trigger auto-edit after render)
             setPendingEditTextId(trackId);
+            setPendingEmptyTextId(trackId);
+          }
+        }
+        return;
+      }
+
+      if (preview.interactionMode === 'select') {
+        if (
+          target === containerRef.current ||
+          target.classList.contains('preview-background') ||
+          target.tagName === 'VIDEO'
+        ) {
+          const hasInteractiveLayerSelected = timeline.selectedTrackIds.some(
+            (id) => {
+              const track = tracks.find((t) => t.id === id);
+              return (
+                track?.type === 'text' ||
+                track?.type === 'image' ||
+                track?.type === 'subtitle'
+              );
+            },
+          );
+
+          if (hasInteractiveLayerSelected) {
+            setSelectedTracks([]);
           }
         }
       }
@@ -645,6 +607,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       preview.panX,
       preview.panY,
       preview.previewScale,
+      preview.interactionMode,
       actualWidth,
       actualHeight,
       addTextClip,
@@ -653,7 +616,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     ],
   );
 
-  // Handle import from placeholder
   const handleImportFromPlaceholder = useCallback(async () => {
     const result = await importMediaFromDialog();
     if (!result || (!result.success && !result.error)) return;
@@ -670,7 +632,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     }
   }, [importMediaFromDialog]);
 
-  // Overlay render props with fixed coordinate system
+  // Overlay render props
   const overlayProps = {
     previewScale: preview.previewScale,
     panX: preview.panX,
@@ -679,10 +641,11 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     actualHeight,
     baseVideoWidth,
     baseVideoHeight,
-    coordinateSystem, // Pass the fixed coordinate system to all overlays
+    coordinateSystem,
+    interactionMode: preview.interactionMode,
   };
 
-  // Get rotation for rotation badge (works for text, image, and video)
+  // Get rotation for rotation badge
   const selectedTextTrack = tracks.find(
     (t) =>
       (t.type === 'text' || t.type === 'image' || t.type === 'video') &&
@@ -698,15 +661,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         'bg-zinc-100 dark:bg-zinc-900',
         (() => {
           if (!activeVideoTrack && !activeAudioTrack) return 'cursor-default';
-
           if (preview.interactionMode === 'pan' && preview.previewScale > 1) {
             return isPanning ? 'cursor-grabbing' : 'cursor-grab';
           }
-
-          if (preview.interactionMode === 'text-edit') {
-            return 'cursor-text';
-          }
-
+          if (preview.interactionMode === 'text-edit') return 'cursor-text';
           return 'cursor-default';
         })(),
       )}
@@ -727,9 +685,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onMouseDown={(e) => {
         if (preview.interactionMode === 'pan' && preview.previewScale > 1) {
           handlePanStart(e);
-        } else {
-          handlePreviewClick(e);
+          return;
         }
+        handlePreviewClick(e);
       }}
       onMouseMove={handlePanMove}
       onMouseUp={handlePanEnd}
@@ -747,9 +705,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onMouseEnter={() => setIsPreviewFocused(true)}
       tabIndex={0}
     >
-      {/* Black Canvas Overlay */}
-      {/* Show canvas when any track exists, regardless of type */}
-      {/* Canvas dimensions come from preview.canvasWidth/Height (defaults to 800x540 for non-video tracks) */}
+      {/* Canvas Overlay */}
       {tracks.length > 0 &&
         preview.canvasWidth > 0 &&
         preview.canvasHeight > 0 && (
@@ -761,69 +717,94 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           />
         )}
 
-      {/* Video Overlay */}
-      <VideoOverlay
-        {...overlayProps}
-        videoRef={videoRef}
-        activeVideoTrack={activeVideoTrack}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        onLoadedMetadata={handleVideoLoadedMetadata}
-        onTransformUpdate={handleVideoTransformUpdate}
-        onSelect={handleVideoSelect}
-        onRotationStateChange={setIsRotating}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Audio Overlay */}
+      {/* Audio Overlay (for independent audio tracks) */}
       <AudioOverlay
         audioRef={audioRef}
         independentAudioTrack={independentAudioTrack}
         onLoadedMetadata={handleAudioLoadedMetadata}
       />
 
-      {/* Subtitle Overlay */}
-      <SubtitleOverlay
+      {/* 
+        UNIFIED OVERLAY RENDERER - AUDIO FIX
+        
+        Key changes:
+        1. Pass setCurrentFrame - DualBufferVideo will update timeline
+        2. Pass independentAudioTrack - determines audio routing
+        3. DualBufferVideo now handles ALL playback including audio
+      */}
+      <UnifiedOverlayRenderer
         {...overlayProps}
-        activeSubtitles={activeSubtitles}
+        videoRef={videoRef}
+        activeVideoTrack={activeVideoTrack}
+        onVideoLoadedMetadata={handleVideoLoadedMetadata}
+        onVideoTransformUpdate={handleVideoTransformUpdate}
+        onVideoSelect={handleVideoSelect}
+        // DualBufferVideo playback props
+        isPlaying={playback.isPlaying}
+        isMuted={playback.muted}
+        volume={playback.volume}
+        playbackRate={playback.playbackRate}
+        fps={displayFps}
+        // AUDIO FIX: Pass these for proper audio routing
+        setCurrentFrame={setCurrentFrame}
+        independentAudioTrack={independentAudioTrack}
+        // Rest of props
         allTracks={tracks}
         selectedTrackIds={timeline.selectedTrackIds}
+        currentFrame={timeline.currentFrame}
         isTextEditMode={preview.interactionMode === 'text-edit'}
         getTextStyleForSubtitle={getTextStyleForSubtitle}
         activeStyle={textStyle.activeStyle}
         globalSubtitlePosition={textStyle.globalSubtitlePosition}
-        onTransformUpdate={handleSubtitleTransformUpdate}
-        onSelect={handleSubtitleSelect}
-        onTextUpdate={handleSubtitleTextUpdate}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Image Overlay */}
-      <ImageOverlay
-        {...overlayProps}
-        activeImages={activeImages}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        onTransformUpdate={handleImageTransformUpdate}
-        onSelect={handleImageSelect}
-        onRotationStateChange={setIsRotating}
-        onDragStateChange={handleDragStateChange}
-      />
-
-      {/* Text Overlay */}
-      <TextOverlay
-        {...overlayProps}
-        activeTexts={activeTexts}
-        allTracks={tracks}
-        selectedTrackIds={timeline.selectedTrackIds}
-        isTextEditMode={preview.interactionMode === 'text-edit'}
-        onTransformUpdate={handleTextTransformUpdate}
-        onSelect={handleTextSelect}
+        onSubtitleTransformUpdate={handleSubtitleTransformUpdate}
+        onSubtitleSelect={handleSubtitleSelect}
+        onSubtitleTextUpdate={handleSubtitleTextUpdate}
+        onImageTransformUpdate={handleImageTransformUpdate}
+        onImageSelect={handleImageSelect}
+        onTextTransformUpdate={handleTextTransformUpdate}
+        onTextSelect={handleTextSelect}
         onTextUpdate={handleTextUpdate}
+        pendingEditTextId={pendingEditTextId}
+        onEditStarted={() => {
+          setPendingEditTextId(null);
+          if (pendingEmptyTextId) {
+            setPendingEmptyTextId(null);
+          }
+        }}
         onRotationStateChange={setIsRotating}
         onDragStateChange={handleDragStateChange}
+      />
+
+      {/* Transform Boundary Layer */}
+      <TransformBoundaryLayer
+        {...overlayProps}
+        allTracks={tracks}
+        selectedTrackIds={timeline.selectedTrackIds}
+        currentFrame={timeline.currentFrame}
+        isTextEditMode={preview.interactionMode === 'text-edit'}
+        onVideoTransformUpdate={handleVideoTransformUpdate}
+        onVideoSelect={handleVideoSelect}
+        getTextStyleForSubtitle={getTextStyleForSubtitle}
+        activeStyle={textStyle.activeStyle}
+        globalSubtitlePosition={textStyle.globalSubtitlePosition}
+        onSubtitleTransformUpdate={handleSubtitleTransformUpdate}
+        onSubtitleSelect={handleSubtitleSelect}
+        onSubtitleTextUpdate={handleSubtitleTextUpdate}
+        onImageTransformUpdate={handleImageTransformUpdate}
+        onImageSelect={handleImageSelect}
+        onTextTransformUpdate={handleTextTransformUpdate}
+        onTextSelect={handleTextSelect}
+        onTextUpdate={handleTextUpdate}
         pendingEditTextId={pendingEditTextId}
-        onEditStarted={() => setPendingEditTextId(null)}
+        onEditStarted={() => {
+          setPendingEditTextId(null);
+          if (pendingEmptyTextId) {
+            setPendingEmptyTextId(null);
+          }
+        }}
+        onRotationStateChange={setIsRotating}
+        onDragStateChange={handleDragStateChange}
+        onEditModeChange={handleEditModeChange}
       />
 
       {/* Alignment Guides */}
@@ -852,14 +833,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         </div>
       )}
 
-      {/* Transcription Progress Overlay */}
+      {/* Transcription Progress */}
       {currentTranscribingTrackId && transcriptionProgress && (
         <TranscriptionProgressOverlay
           progress={transcriptionProgress.progress}
         />
       )}
 
-      {/* Rotation Info Badge */}
+      {/* Rotation Badge */}
       {isRotating && selectedTextTrack && (
         <RotationInfoBadge
           rotation={selectedTextTrack.textTransform?.rotation || 0}
@@ -870,9 +851,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       {preview.interactionMode === 'text-edit' && (
         <div
           className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg shadow-lg pointer-events-none z-[2000] flex items-center gap-2 text-xs"
-          style={{
-            fontWeight: 500,
-          }}
+          style={{ fontWeight: 500 }}
         >
           <Type className="size-3" />
           Text Tool — Click to edit or add new text

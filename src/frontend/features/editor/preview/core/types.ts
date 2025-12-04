@@ -83,4 +83,5 @@ export interface OverlayRenderProps {
   baseVideoWidth: number;
   baseVideoHeight: number;
   coordinateSystem: FixedCoordinateSystem; // Fixed coordinate system for consistent positioning
+  interactionMode?: 'select' | 'pan' | 'text-edit'; // Current interaction mode
 }

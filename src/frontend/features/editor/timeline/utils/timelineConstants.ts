@@ -65,14 +65,21 @@ export const getCurrentTrackRowHeight = (): number => {
 
 /**
  * Get the height for a specific row type based on current viewport
+ *
+ * @param rowTypeOrId - Either a track type (e.g., "text") or a row ID (e.g., "text-0")
  */
-export const getRowHeight = (rowType: string): number => {
+export const getRowHeight = (rowTypeOrId: string): number => {
+  // Extract track type from row ID if needed (e.g., "text-0" -> "text")
+  const trackType = rowTypeOrId.includes('-')
+    ? rowTypeOrId.split('-')[0]
+    : rowTypeOrId;
+
   if (typeof window === 'undefined') {
-    return INDIVIDUAL_ROW_HEIGHTS[rowType]?.lg || TRACK_ROW_HEIGHTS.lg;
+    return INDIVIDUAL_ROW_HEIGHTS[trackType]?.lg || TRACK_ROW_HEIGHTS.lg;
   }
 
   const width = window.innerWidth;
-  const rowConfig = INDIVIDUAL_ROW_HEIGHTS[rowType];
+  const rowConfig = INDIVIDUAL_ROW_HEIGHTS[trackType];
 
   if (!rowConfig) {
     // Fallback to default heights if row type not configured
@@ -87,9 +94,16 @@ export const getRowHeight = (rowType: string): number => {
 /**
  * Get Tailwind classes for a specific row type
  * Using standard Tailwind height classes for better compatibility
+ *
+ * @param rowTypeOrId - Either a track type (e.g., "text") or a row ID (e.g., "text-0")
  */
-export const getRowHeightClasses = (rowType: string): string => {
-  const config = INDIVIDUAL_ROW_HEIGHTS[rowType];
+export const getRowHeightClasses = (rowTypeOrId: string): string => {
+  // Extract track type from row ID if needed (e.g., "text-0" -> "text")
+  const trackType = rowTypeOrId.includes('-')
+    ? rowTypeOrId.split('-')[0]
+    : rowTypeOrId;
+
+  const config = INDIVIDUAL_ROW_HEIGHTS[trackType];
   if (!config) return TRACK_ROW_HEIGHT_CLASSES;
 
   // Map pixel values to standard Tailwind height classes
@@ -115,8 +129,15 @@ export const getRowHeightClasses = (rowType: string): string => {
 
 /**
  * Get the track item height for a specific track type based on current viewport
+ *
+ * @param trackTypeOrId - Either a track type (e.g., "text") or a row ID (e.g., "text-0")
  */
-export const getTrackItemHeight = (trackType: string): number => {
+export const getTrackItemHeight = (trackTypeOrId: string): number => {
+  // Extract track type from row ID if needed (e.g., "text-0" -> "text")
+  const trackType = trackTypeOrId.includes('-')
+    ? trackTypeOrId.split('-')[0]
+    : trackTypeOrId;
+
   if (typeof window === 'undefined') {
     return TRACK_ITEM_HEIGHTS[trackType]?.lg || 44;
   }
@@ -139,8 +160,15 @@ export const getTrackItemHeight = (trackType: string): number => {
 /**
  * Get Tailwind classes for track item height based on track type
  * Using standard Tailwind height classes for better compatibility
+ *
+ * @param trackTypeOrId - Either a track type (e.g., "text") or a row ID (e.g., "text-0")
  */
-export const getTrackItemHeightClasses = (trackType: string): string => {
+export const getTrackItemHeightClasses = (trackTypeOrId: string): string => {
+  // Extract track type from row ID if needed (e.g., "text-0" -> "text")
+  const trackType = trackTypeOrId.includes('-')
+    ? trackTypeOrId.split('-')[0]
+    : trackTypeOrId;
+
   const config = TRACK_ITEM_HEIGHTS[trackType];
   if (!config) {
     // Default track item heights
