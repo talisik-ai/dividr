@@ -108,6 +108,7 @@ export function generateTextLayerSegments(
             endTime,
             text: cleanText,
             index: index + 1,
+            layer: track.layer ?? 0, // Layer index for proper overlay ordering
             style,
             position,
           };

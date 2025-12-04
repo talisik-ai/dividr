@@ -21,6 +21,7 @@ export interface TextSegment {
   endTime: number; // in seconds
   text: string;
   index: number;
+  layer?: number; // Layer index for proper overlay ordering (0 = base, higher = overlay priority)
   style?: TextStyleOptions; // Per-segment styling
   position?: {
     x?: number; // X coordinate (0-1 normalized, or pixel value if > 1)

@@ -9,7 +9,7 @@ import {
   AudioTrimResult,
 } from '../schema/ffmpegConfig';
 import { getFontDirectoriesForFamilies } from '../subtitles/fontMapper';
-import { generateTextLayerFilters } from '../subtitles/textLayers';
+import { generateDrawtextFilter } from '../subtitles/textLayers';
 import type { HardwareAcceleration } from './hardwareAccelerationDetector';
 import {
   buildScaleFilter,
@@ -992,97 +992,389 @@ export function buildSeparateTimelineFilterComplex(
   const hwStatus = getHardwareAccelerationStatus(hwAccel);
   console.log(`🎮 Hardware Acceleration: ${hwStatus}`);
   
-  console.log('🎬 Building filter complex with multi-layer support:');
-    console.log(
-    `📊 Video layers: ${videoLayers.size}, Image layers: ${imageLayers.size}`,
-    );
-
-  // Collect all image segments for overlay processing (images are NOT concatenated like video)
-  const allImageSegments: ProcessedTimelineSegment[] = [];
-  for (const [layerNum, timeline] of imageLayers.entries()) {
-    console.log(
-      `🖼️ Collecting ${timeline.segments.length} image segments from layer ${layerNum}`,
-    );
-    allImageSegments.push(...timeline.segments);
+  console.log('\n🎬 ========================================');
+  console.log('🎬 BUILDING FILTER COMPLEX - TRACK SUMMARY');
+  console.log('🎬 ========================================\n');
+  
+  // Collect all tracks from job.inputs in frontend order with layer information
+  interface TrackLogEntry {
+    layer: number;
+    type: 'video' | 'image' | 'text' | 'audio';
+    name: string;
+    startTime?: number;
+    endTime?: number;
+    duration?: number;
+    path?: string;
+    text?: string;
+    trackInfo: TrackInfo;
+    originalIndex: number;
   }
+  
+  const allTracks: TrackLogEntry[] = [];
+  const fpsForLogging = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
+  
+  // Process job.inputs in order to preserve frontend layer order
+  job.inputs.forEach((input, originalIndex) => {
+    const trackInfo = getTrackInfo(input);
+    const path = getInputPath(input);
+    
+    // Skip gaps
+    if (isGapInput(path)) {
+      return;
+    }
+    
+    const layer = trackInfo.layer ?? 0;
+    const name = path.substring(path.lastIndexOf('/') + 1);
+    
+    // Calculate timeline times from frames if available
+    let startTime: number | undefined;
+    let endTime: number | undefined;
+    let duration: number | undefined;
+    
+    if (trackInfo.timelineStartFrame !== undefined && trackInfo.timelineEndFrame !== undefined) {
+      startTime = trackInfo.timelineStartFrame / fpsForLogging;
+      endTime = trackInfo.timelineEndFrame / fpsForLogging;
+      duration = endTime - startTime;
+    } else if (trackInfo.duration) {
+      duration = trackInfo.duration;
+    }
+    
+    // Determine track type
+    let type: 'video' | 'image' | 'text' | 'audio' = 'audio';
+    if (FILE_EXTENSIONS.VIDEO.test(path)) {
+      type = 'video';
+    } else if (FILE_EXTENSIONS.IMAGE.test(path)) {
+      type = 'image';
+    } else if (trackInfo.trackType === 'text') {
+      type = 'text';
+    }
+    
+    allTracks.push({
+      layer,
+      type,
+      name,
+      startTime,
+      endTime,
+      duration,
+      path,
+      trackInfo,
+      originalIndex,
+    });
+  });
+  
+  // Add text tracks from job.textClips (they're not in job.inputs)
+  const textSegmentsForLogging = job.textClips ? job.textClips.filter((clip: any) => 
+    clip.startTime !== undefined && clip.endTime !== undefined
+  ) as any[] : [];
+  
+  textSegmentsForLogging.forEach((segment: any) => {
+    const textPreview = segment.text.length > 50 ? segment.text.substring(0, 50) + '...' : segment.text;
+    allTracks.push({
+      layer: segment.layer ?? 0,
+      type: 'text',
+      name: `Text: "${textPreview}"`,
+      startTime: segment.startTime,
+      endTime: segment.endTime,
+      duration: segment.endTime - segment.startTime,
+      text: segment.text,
+      trackInfo: {} as TrackInfo,
+      originalIndex: -1, // Text tracks don't have original index
+    });
+  });
+  
+  // Sort by layer (preserving frontend order within same layer)
+  allTracks.sort((a, b) => {
+    if (a.layer !== b.layer) {
+      return a.layer - b.layer;
+    }
+    // Within same layer, maintain original order (by originalIndex)
+    if (a.originalIndex !== -1 && b.originalIndex !== -1) {
+      return a.originalIndex - b.originalIndex;
+    }
+    // If startTime is available, use it as secondary sort
+    if (a.startTime !== undefined && b.startTime !== undefined) {
+      return a.startTime - b.startTime;
+    }
+    return 0;
+  });
+  
+  // Log summary
+  const tracksByType = {
+    video: allTracks.filter(t => t.type === 'video').length,
+    image: allTracks.filter(t => t.type === 'image').length,
+    text: allTracks.filter(t => t.type === 'text').length,
+    audio: allTracks.filter(t => t.type === 'audio').length,
+  };
+  
+  console.log(`📊 Total Tracks: ${allTracks.length} (${tracksByType.video} video, ${tracksByType.image} image, ${tracksByType.text} text, ${tracksByType.audio} audio)`);
+  console.log(`📊 Layers: ${new Set(allTracks.map(t => t.layer)).size} layer(s)\n`);
+  
+  // Log each track individually in layer order (no categorization by type)
+  let currentLayer = -999;
+  allTracks.forEach((track, idx) => {
+    // Print layer header when layer changes
+    if (track.layer !== currentLayer) {
+      if (currentLayer !== -999) {
+        console.log(''); // Blank line between layers
+      }
+      const layerTracks = allTracks.filter(t => t.layer === track.layer);
+      console.log(`🎬 Layer ${track.layer} (${layerTracks.length} track(s))`);
+      currentLayer = track.layer;
+    }
+    
+    // Log individual track
+    const typeIcon = {
+      video: '📹',
+      image: '🖼️',
+      text: '📝',
+      audio: '🎵',
+    }[track.type];
+    
+    const trackNum = idx + 1;
+    
+    console.log(`   ${typeIcon} [${trackNum}] ${track.name}`);
+    console.log(`      Type: ${track.type.toUpperCase()} | Layer: ${track.layer}`);
+    
+    if (track.duration !== undefined) {
+      console.log(`      Duration: ${track.duration.toFixed(2)}s`);
+    }
+    if (track.startTime !== undefined && track.endTime !== undefined) {
+      console.log(`      Timeline: ${track.startTime.toFixed(2)}s - ${track.endTime.toFixed(2)}s`);
+    }
+    
+    // Add additional info based on type
+    if (track.trackInfo) {
+      if (track.trackInfo.width && track.trackInfo.height) {
+        console.log(`      Dimensions: ${track.trackInfo.width}x${track.trackInfo.height}`);
+      }
+      if (track.trackInfo.detectedAspectRatioLabel) {
+        console.log(`      Aspect Ratio: ${track.trackInfo.detectedAspectRatioLabel}`);
+      }
+      if (track.trackInfo.sourceFps) {
+        console.log(`      Source FPS: ${track.trackInfo.sourceFps}`);
+      }
+    }
+    if (track.text) {
+      const fullText = track.text.length > 60 ? track.text.substring(0, 60) + '...' : track.text;
+      console.log(`      Text: "${fullText}"`);
+    }
+  });
+  
+  console.log('\n🎬 ========================================\n');
 
-  // Process video layers only (images will be overlaid later)
-  const layerConcatOutputs = new Map<number, string>();
-
+  // Collect all tracks by layer (video, image, text) for independent layer-by-layer processing
+  // This ensures tracks are processed in layer order regardless of type
+  interface LayerTrack {
+    type: 'video' | 'image' | 'text';
+    layer: number;
+    videoTimeline?: ProcessedTimeline;
+    imageSegments?: ProcessedTimelineSegment[];
+    textSegments?: any[];
+  }
+  
+  const allLayers = new Map<number, LayerTrack>();
+  
+  // Add video layers
   for (const [layerNum, timeline] of videoLayers.entries()) {
-    console.log(
-      `🎬 Processing video layer ${layerNum} with ${timeline.segments.length} segments`,
-    );
-
-    const concatInputs = processLayerSegments(
-      timeline,
-      layerNum,
-      'video',
-      categorizedInputs,
-      job,
-      targetDimensions,
-      targetFps,
-      videoFilters,
-      hwAccel,
-      createGapVideoFilters,
-      createVideoTrimFilters,
-      createFpsNormalizationFilters,
-      createSarNormalizationFilters,
-    );
-
-    // Build concatenation filter for this layer
-    if (concatInputs.length > 0) {
-      let layerLabel = `layer_${layerNum}`;
-      let layerLabelBeforePostProcessing = `layer_${layerNum}_raw`;
-      
-      if (concatInputs.length === 1) {
-        // ✅ OPTIMIZATION: Skip concat for single input (no-op)
-        // Just use the input directly as the layer label
-        const inputRef = concatInputs[0].replace('[', '').replace(']', '');
-        // Rename to layerLabelBeforePostProcessing for consistency
-        layerLabelBeforePostProcessing = inputRef;
-      } else {
-        videoFilters.push(
-          `${concatInputs.join('')}concat=n=${concatInputs.length}:v=1:a=0[${layerLabelBeforePostProcessing}]`,
-        );
+    allLayers.set(layerNum, {
+      type: 'video',
+      layer: layerNum,
+      videoTimeline: timeline,
+    });
+  }
+  
+  // Add image layers (may overlap with video layers)
+  for (const [layerNum, timeline] of imageLayers.entries()) {
+    if (allLayers.has(layerNum)) {
+      // Layer already exists (has video) - add images to it
+      const existing = allLayers.get(layerNum)!;
+      existing.imageSegments = timeline.segments;
+      // Update type to indicate mixed content
+      if (existing.type === 'video') {
+        // Keep as video, but note it has images
       }
-      
-      // ✅ OPTIMIZATION: Apply FPS AFTER concat (once per layer, not per segment)
-      // Note: setsar is applied BEFORE concat (required for concat compatibility)
-      let postProcessedLabel = layerLabelBeforePostProcessing;
-      
-      // Apply FPS normalization if needed
-      if (job.operations.normalizeFrameRate) {
-        const fpsLabel = `layer_${layerNum}_fps`;
-        videoFilters.push(`[${postProcessedLabel}]fps=${targetFps}:start_time=0[${fpsLabel}]`);
-        postProcessedLabel = fpsLabel;
-        console.log(`✅ Layer ${layerNum}: Applied FPS normalization AFTER concat`);
-      }
-      
-      // Rename to final layer label if needed
-      if (postProcessedLabel !== layerLabel) {
-        videoFilters.push(`[${postProcessedLabel}]copy[${layerLabel}]`);
-      } else {
-        // If no post-processing was done, use postProcessedLabel as the final label
-        layerLabel = postProcessedLabel;
-      }
-      
-      layerConcatOutputs.set(layerNum, layerLabel);
-      console.log(`✅ Layer ${layerNum} concatenated and post-processed to [${layerLabel}]`);
+    } else {
+      allLayers.set(layerNum, {
+        type: 'image',
+        layer: layerNum,
+        imageSegments: timeline.segments,
+      });
     }
   }
+  
+  // Add text layers (may overlap with video/image layers)
+  const textSegmentsForProcessing = job.textClips ? job.textClips.filter((clip: any) => 
+    clip.startTime !== undefined && clip.endTime !== undefined
+  ) as any[] : [];
+  
+  // Group text segments by layer
+  const textByLayer = new Map<number, any[]>();
+  textSegmentsForProcessing.forEach((segment: any) => {
+    const layer = segment.layer ?? 0;
+    if (!textByLayer.has(layer)) {
+      textByLayer.set(layer, []);
+    }
+    textByLayer.get(layer)!.push(segment);
+  });
+  
+  // Add text to layers
+  for (const [layerNum, segments] of textByLayer.entries()) {
+    if (allLayers.has(layerNum)) {
+      // Layer already exists - add text to it
+      const existing = allLayers.get(layerNum)!;
+      existing.textSegments = segments;
+    } else {
+      allLayers.set(layerNum, {
+        type: 'text',
+        layer: layerNum,
+        textSegments: segments,
+      });
+    }
+  }
+  
+  // Sort layers by layer number
+  const sortedLayers = Array.from(allLayers.entries()).sort((a, b) => a[0] - b[0]);
+  
+  console.log(`\n🎬 Processing ${sortedLayers.length} independent layers in order:\n`);
+  sortedLayers.forEach(([layerNum, track]) => {
+    const types: string[] = [];
+    if (track.videoTimeline) types.push(`video(${track.videoTimeline.segments.length})`);
+    if (track.imageSegments) types.push(`image(${track.imageSegments.length})`);
+    if (track.textSegments) types.push(`text(${track.textSegments.length})`);
+    console.log(`   Layer ${layerNum}: ${types.join(', ')}`);
+  });
+  console.log('');
 
+  // Process each layer independently in order
+  const layerOutputs = new Map<number, string>();
+  let baseVideoLabel = '';
+
+  for (const [layerNum, track] of sortedLayers) {
+    console.log(`\n🎬 Processing Layer ${layerNum} (${track.type}${track.videoTimeline ? ' + video' : ''}${track.imageSegments ? ' + images' : ''}${track.textSegments ? ' + text' : ''})`);
+    
+    let layerInputLabel = baseVideoLabel || 'video_base';
+    
+    // Step 1: Process video tracks in this layer (if any)
+    if (track.videoTimeline) {
+      console.log(`   📹 Processing ${track.videoTimeline.segments.length} video segment(s) in layer ${layerNum}`);
+      
+      const concatInputs = processLayerSegments(
+        track.videoTimeline,
+        layerNum,
+        'video',
+        categorizedInputs,
+        job,
+        targetDimensions,
+        targetFps,
+        videoFilters,
+        hwAccel,
+        createGapVideoFilters,
+        createVideoTrimFilters,
+        createFpsNormalizationFilters,
+        createSarNormalizationFilters,
+      );
+
+      // Build concatenation filter for this layer
+      if (concatInputs.length > 0) {
+        let layerLabel = `layer_${layerNum}`;
+        let layerLabelBeforePostProcessing = `layer_${layerNum}_raw`;
+        
+        if (concatInputs.length === 1) {
+          const inputRef = concatInputs[0].replace('[', '').replace(']', '');
+          layerLabelBeforePostProcessing = inputRef;
+        } else {
+          videoFilters.push(
+            `${concatInputs.join('')}concat=n=${concatInputs.length}:v=1:a=0[${layerLabelBeforePostProcessing}]`,
+          );
+        }
+        
+        let postProcessedLabel = layerLabelBeforePostProcessing;
+        
+        // Apply FPS normalization if needed
+        if (job.operations.normalizeFrameRate) {
+          const fpsLabel = `layer_${layerNum}_fps`;
+          videoFilters.push(`[${postProcessedLabel}]fps=${targetFps}:start_time=0[${fpsLabel}]`);
+          postProcessedLabel = fpsLabel;
+        }
+        
+        if (postProcessedLabel !== layerLabel) {
+          videoFilters.push(`[${postProcessedLabel}]copy[${layerLabel}]`);
+        } else {
+          layerLabel = postProcessedLabel;
+        }
+        
+        // If this is the first layer with video, it becomes the base
+        if (!baseVideoLabel) {
+          baseVideoLabel = layerLabel;
+          layerInputLabel = baseVideoLabel;
+        } else {
+          // Overlay this video layer on top of previous layers
+          const overlayLabel = `composite_${layerNum}`;
+          videoFilters.push(`[${layerInputLabel}][${layerLabel}]overlay=(W-w)/2:(H-h)/2[${overlayLabel}]`);
+          layerInputLabel = overlayLabel;
+          console.log(`   ✅ Overlaid video layer ${layerNum} on previous layers`);
+        }
+        
+        layerOutputs.set(layerNum, layerLabel);
+      }
+    }
+    
+    // Step 2: Process image overlays in this layer (if any)
+    if (track.imageSegments && track.imageSegments.length > 0) {
+      console.log(`   🖼️ Processing ${track.imageSegments.length} image overlay(s) in layer ${layerNum}`);
+      
+      // Calculate total duration (will be calculated later, use a placeholder for now)
+      // Note: totalVideoDuration will be calculated after all layers are processed
+      const imageOverlayResult = buildImageOverlayFilters(
+        track.imageSegments,
+        categorizedInputs,
+        targetDimensions, // Use targetDimensions instead of desiredOutputDimensions
+        targetFps,
+        0, // Duration will be calculated later, placeholder for now
+        layerInputLabel,
+        hwAccel,
+      );
+      
+      if (imageOverlayResult.filters.length > 0) {
+        videoFilters.push(...imageOverlayResult.filters);
+        layerInputLabel = imageOverlayResult.outputLabel;
+        console.log(`   ✅ Applied ${imageOverlayResult.filters.length} image overlay filter(s) at layer ${layerNum}`);
+      }
+    }
+    
+    // Step 3: Process text overlays in this layer (if any) - will be handled after subtitles
+    // Store text segments for later processing after subtitles
+    if (track.textSegments && track.textSegments.length > 0) {
+      console.log(`   📝 Found ${track.textSegments.length} text segment(s) in layer ${layerNum} (will process after subtitles)`);
+    }
+    
+    // Update base label for next layer
+    baseVideoLabel = layerInputLabel;
+  }
+  
   // Process audio timeline segments with support for overlapping
   // Skip audio processing if there are only image inputs (no video inputs)
   const hasVideoInputs = videoLayers.size > 0;
   
   // Calculate total duration from all layers for audio base
-  let totalDuration = audioTimeline.totalDuration;
+  let totalVideoDuration = audioTimeline.totalDuration;
   for (const timeline of videoLayers.values()) {
-    totalDuration = Math.max(totalDuration, timeline.totalDuration);
+    totalVideoDuration = Math.max(totalVideoDuration, timeline.totalDuration);
   }
   for (const timeline of imageLayers.values()) {
-    totalDuration = Math.max(totalDuration, timeline.totalDuration);
+    totalVideoDuration = Math.max(totalVideoDuration, timeline.totalDuration);
+  }
+  
+  // Store the final base video label after all layers are composited
+  const finalBaseLabel = baseVideoLabel || 'video_base';
+  const hasVideoContentForBase = sortedLayers.length > 0 || videoLayers.size > 0;
+  
+  // If no video layers, create a black base
+  if (!baseVideoLabel && hasVideoContentForBase) {
+    videoFilters.push(
+      `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${totalVideoDuration}:rate=${targetFps},setsar=1[video_base]`,
+    );
+    baseVideoLabel = 'video_base';
   }
   
   if (hasVideoInputs) {
@@ -1180,56 +1472,11 @@ export function buildSeparateTimelineFilterComplex(
     console.log('ℹ️ Skipping audio processing - only image inputs detected (no video inputs)');
   }
 
-  // Composite layers from bottom to top
-  let currentVideoLabel = '';
-  let hasVideoContent = false;
-
-  if (layerConcatOutputs.size > 0) {
-    const sortedLayerOutputs = Array.from(layerConcatOutputs.entries()).sort(
-      (a, b) => a[0] - b[0],
-    );
-
-    if (sortedLayerOutputs.length === 1) {
-      // Single layer - no overlay needed
-      currentVideoLabel = sortedLayerOutputs[0][1];
-      console.log(
-        `🎬 Single layer detected: using [${currentVideoLabel}] as base`,
-      );
-    } else {
-      // Multiple layers - overlay from bottom to top
-      console.log(`🎬 Compositing ${sortedLayerOutputs.length} layers`);
-
-      // Start with the base layer (layer 0 or lowest layer)
-      currentVideoLabel = sortedLayerOutputs[0][1];
-
-      // Overlay each subsequent layer on top
-      for (let i = 1; i < sortedLayerOutputs.length; i++) {
-        const [layerNum, layerLabel] = sortedLayerOutputs[i];
-        const overlayOutputLabel =
-          i === sortedLayerOutputs.length - 1 ? 'video_base' : `composite_${i}`;
-
-        // Overlay this layer on top of the current composite
-        // Use (W-w)/2:(H-h)/2 to center the overlay if it's smaller than the base
-        videoFilters.push(
-          `[${currentVideoLabel}][${layerLabel}]overlay=(W-w)/2:(H-h)/2[${overlayOutputLabel}]`,
-        );
-
-        currentVideoLabel = overlayOutputLabel;
-        console.log(
-          `🎬 Overlaid layer ${layerNum} (centered) onto composite -> [${overlayOutputLabel}]`,
-        );
-      }
-    }
-
-    // ✅ OPTIMIZATION: If we didn't end with 'video_base', just use current label
-    // Skip null filter (no-op)
-    if (currentVideoLabel !== 'video_base') {
-      videoFilters.push(`[${currentVideoLabel}]copy[video_base]`);
-      currentVideoLabel = 'video_base';
-    }
-
-    hasVideoContent = true;
-  } else {
+  // Set the base video label for further processing
+  let currentVideoLabel = finalBaseLabel;
+  const hasVideoContent = sortedLayers.length > 0 || videoLayers.size > 0;
+  
+  if (!currentVideoLabel || currentVideoLabel === '') {
     // No video layers - create a black base if needed
     console.log('⚠️ No video layers found, creating black base');
     const totalDuration = audioTimeline.totalDuration || 1;
@@ -1237,7 +1484,6 @@ export function buildSeparateTimelineFilterComplex(
       `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${totalDuration}:rate=${targetFps},setsar=1[video_base]`,
     );
     currentVideoLabel = 'video_base';
-    hasVideoContent = true;
   }
 
   // Build final audio filter (already mixed if multiple streams)
@@ -1461,57 +1707,10 @@ export function buildSeparateTimelineFilterComplex(
     }
   }
 
-  // Determine the dimensions to use for image overlays
-  // Images are applied BEFORE the final downscale, so they need to be positioned at the intermediate resolution
-  let imagePositioningDimensions = aspectRatioCroppedDimensions;
-  
-  console.log(`📐 Dimensions for image positioning (before final downscale): ${imagePositioningDimensions.width}x${imagePositioningDimensions.height}`);
-
-  // Apply image overlays AFTER aspect ratio crop (if any)
-  // This ensures images are positioned relative to the cropped video dimensions
-  let imageOverlayFilters: string[] = [];
-  let videoLabelAfterImages = croppedVideoLabel;
-  
-  if (allImageSegments.length > 0 && hasVideoContent) {
-    // Calculate total duration from all layers
-    let totalDuration = audioTimeline.totalDuration;
-    for (const timeline of videoLayers.values()) {
-      totalDuration = Math.max(totalDuration, timeline.totalDuration);
-    }
-    for (const timeline of imageLayers.values()) {
-      totalDuration = Math.max(totalDuration, timeline.totalDuration);
-    }
-
-    console.log(
-      `🖼️ Applying ${allImageSegments.length} image overlays AFTER aspect ratio crop`,
-    );
-    console.log(
-      `🖼️ Image positions will be relative to ${imagePositioningDimensions.width}x${imagePositioningDimensions.height}`,
-    );
-    
-    const imageOverlayResult = buildImageOverlayFilters(
-      allImageSegments,
-      categorizedInputs,
-      imagePositioningDimensions, // Use intermediate dimensions (before final downscale)
-      targetFps,
-      totalDuration,
-      croppedVideoLabel, // Apply to cropped video
-      hwAccel,
-    );
-
-    if (imageOverlayResult.filters.length > 0) {
-      imageOverlayFilters = imageOverlayResult.filters;
-      videoLabelAfterImages = imageOverlayResult.outputLabel;
-      console.log(
-        `✅ Image overlays will be applied after crop, output label: [${videoLabelAfterImages}]`,
-      );
-    }
-  }
-
   // Apply final downscaling if desired output dimensions differ from aspect ratio cropped dimensions
-  // This happens BEFORE subtitles so subtitles are applied at the final output resolution
+  // This happens BEFORE subtitles and overlays so they are applied at the final output resolution
   let finalDownscaleFilter = '';
-  let videoLabelAfterDownscale = videoLabelAfterImages;
+  let videoLabelAfterDownscale = croppedVideoLabel;
   
   console.log('📐 Checking final downscale conditions:');
   console.log('   - Desired output dimensions:', desiredOutputDimensions);
@@ -1543,7 +1742,7 @@ export function buildSeparateTimelineFilterComplex(
     
     // Use hardware-accelerated scaling with padding
     finalDownscaleFilter = buildAspectRatioScaleFilter(
-      `[${videoLabelAfterImages}]`,
+      `[${croppedVideoLabel}]`,
       '[video_downscaled]',
       desiredOutputDimensions.width,
       desiredOutputDimensions.height,
@@ -1554,7 +1753,7 @@ export function buildSeparateTimelineFilterComplex(
     videoLabelAfterDownscale = 'video_downscaled';
   } else {
     console.log('📐 No final downscale needed, dimensions match');
-    videoLabelAfterDownscale = videoLabelAfterImages;
+    videoLabelAfterDownscale = croppedVideoLabel;
   }
   
   // Apply subtitles and text layers to video stream (must be in filter_complex)
@@ -1600,51 +1799,76 @@ export function buildSeparateTimelineFilterComplex(
     currentVideoLabelForText = 'with_sar';
     }
 
-  // Step 2: Apply text layers as drawtext filters on top of subtitles (if present)
-  // Text segments are passed in job.textClips and converted to drawtext filters
-  if (job.textClips && job.textClips.length > 0 && hasVideoContent) {
-    // Type guard: ensure we have TextSegment[] (not TextClipData[])
-    // TextSegment has startTime/endTime in seconds, while TextClipData has startFrame/endFrame
-    const textSegments = job.textClips.filter((clip: any) => 
-      clip.startTime !== undefined && clip.endTime !== undefined
-    ) as any[];
-    
-    if (textSegments.length > 0) {
-      // Generate drawtext filters for each text segment
-      const drawtextFilters = generateTextLayerFilters(
-        textSegments,
-        job.operations.textStyle,
-        job.videoDimensions,
-      );
+  // Step 2: Process text and image overlays in layer order (after subtitles)
+  // Collect all text segments from all layers (already collected above in sortedLayers)
+  // Process them layer by layer, interleaving with images if needed
+  
+  let currentOverlayLabel = currentVideoLabelForText;
+  let overlayIndex = 0;
+  const totalDuration = totalVideoDuration;
+  
+  // Process each layer's text and image overlays in order
+  for (const [layerNum, track] of sortedLayers) {
+    // Process text segments in this layer
+    if (track.textSegments && track.textSegments.length > 0) {
+      console.log(`🎬 Processing ${track.textSegments.length} text segment(s) at layer ${layerNum}`);
       
-      if (drawtextFilters.length > 0) {
-        console.log(`📝 [TextLayers] Generating ${drawtextFilters.length} drawtext filters for text segments`);
+      // Sort text segments by start time within layer
+      const sortedTextSegments = [...track.textSegments].sort((a, b) => a.startTime - b.startTime);
+      
+      for (const textSegment of sortedTextSegments) {
+        const drawtextFilter = generateDrawtextFilter(
+          textSegment,
+          job.operations.textStyle,
+          job.videoDimensions,
+        );
         
-        // Apply each drawtext filter sequentially
-        drawtextFilters.forEach((filter: string, index: number) => {
-          const inputLabel = index === 0 ? currentVideoLabelForText : `text_${index - 1}`;
-          const outputLabel = index === drawtextFilters.length - 1 ? 'video' : `text_${index}`;
-          
-          textLayerFilters.push(`[${inputLabel}]${filter}[${outputLabel}]`);
-        });
+        const isLastLayer = layerNum === sortedLayers[sortedLayers.length - 1][0];
+        const isLastText = textSegment === sortedTextSegments[sortedTextSegments.length - 1];
+        const hasMoreOverlays = !isLastLayer || (track.imageSegments && track.imageSegments.length > 0);
         
-        console.log(`✅ [TextLayers] Added ${drawtextFilters.length} drawtext filters to filter complex`);
+        const outputLabel = (isLastLayer && isLastText && !hasMoreOverlays) ? 'video' : `overlay_${overlayIndex}`;
+        textLayerFilters.push(`[${currentOverlayLabel}]${drawtextFilter}[${outputLabel}]`);
+        currentOverlayLabel = outputLabel;
+        overlayIndex++;
+        console.log(`  📝 Applied text overlay at layer ${layerNum} -> [${outputLabel}]`);
       }
     }
-  } else if (hasVideoContent && currentVideoLabelForText !== 'video') {
-    // No text layers - just rename the label if needed
-    textLayerFilters.push(`[${currentVideoLabelForText}]copy[video]`);
-    console.log('📝 [TextLayers] No text layers, using copy passthrough');
+    
+    // Process image segments in this layer (if any)
+    if (track.imageSegments && track.imageSegments.length > 0) {
+      console.log(`🎬 Processing ${track.imageSegments.length} image overlay(s) at layer ${layerNum}`);
+      
+      const imageOverlayResult = buildImageOverlayFilters(
+        track.imageSegments,
+        categorizedInputs,
+        job.videoDimensions || desiredOutputDimensions,
+        targetFps,
+        totalDuration,
+        currentOverlayLabel,
+        hwAccel,
+      );
+      
+      if (imageOverlayResult.filters.length > 0) {
+        textLayerFilters.push(...imageOverlayResult.filters);
+        currentOverlayLabel = imageOverlayResult.outputLabel;
+        console.log(`  🖼️ Applied ${imageOverlayResult.filters.length} image overlay filter(s) at layer ${layerNum} -> [${currentOverlayLabel}]`);
+      }
+    }
+  }
+  
+  // Final output label
+  if (currentOverlayLabel !== 'video') {
+    textLayerFilters.push(`[${currentOverlayLabel}]copy[video]`);
   }
 
   // Combine all filters in the correct order:
   // 1. Video processing (concat, etc.)
   // 2. Audio processing
   // 3. Aspect ratio crop (if needed) - scales and crops to correct aspect ratio at source resolution
-  // 4. Image overlays (applied to cropped video at intermediate resolution)
-  // 5. Final downscale (if needed) - downscales to custom dimensions
-  // 6. Subtitles (applied AFTER downscale at final output dimensions)
-  // 7. Text layers (applied AFTER subtitles for proper layering)
+  // 4. Final downscale (if needed) - downscales to custom dimensions
+  // 5. Subtitles (applied AFTER downscale at final output dimensions)
+  // 6. Overlays (text + images) applied in layer order AFTER subtitles
   const allFilters = [...videoFilters, ...audioFilters];
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
   if (aspectRatioCropFilter) {
@@ -1652,10 +1876,6 @@ export function buildSeparateTimelineFilterComplex(
     allFilters.push(aspectRatioCropFilter);
   } else {
     console.log('📐 ❌ NO ASPECT RATIO CROP FILTER TO ADD');
-  }
-  if (imageOverlayFilters.length > 0) {
-    console.log(`🖼️ ✅ ADDING ${imageOverlayFilters.length} IMAGE OVERLAY FILTERS TO CHAIN (AFTER CROP, BEFORE DOWNSCALE)`);
-    allFilters.push(...imageOverlayFilters);
   }
   if (finalDownscaleFilter) {
     console.log('📐 ✅ ADDING FINAL DOWNSCALE FILTER TO CHAIN:', finalDownscaleFilter);
@@ -1665,8 +1885,9 @@ export function buildSeparateTimelineFilterComplex(
     console.log('📝 ✅ ADDING SUBTITLE FILTER TO CHAIN (AFTER DOWNSCALE)');
     allFilters.push(subtitleFilter);
   }
+  // Text and image overlays are interleaved by layer in textLayerFilters
   if (textLayerFilters.length > 0) {
-    console.log(`📝 ✅ ADDING ${textLayerFilters.length} TEXT LAYER DRAWTEXT FILTERS TO CHAIN (AFTER SUBTITLES, LAST STEP)`);
+    console.log(`📝 ✅ ADDING ${textLayerFilters.length} OVERLAY FILTERS (TEXT + IMAGES) TO CHAIN IN LAYER ORDER`);
     allFilters.push(...textLayerFilters);
   }
   const filterComplex = allFilters.join(';');

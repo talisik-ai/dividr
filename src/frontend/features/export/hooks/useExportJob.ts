@@ -432,11 +432,6 @@ function processLinkedTracks(
     }
   }
 
-  // Add all unprocessed audio tracks (process independently from video)
-  console.log(`🔍 Adding unprocessed audio tracks...`);
-  console.log(`   Total audio tracks: ${audioTracks.length}`);
-  console.log(`   Processed track IDs:`, Array.from(processedTrackIds));
-
   for (const audioTrack of audioTracks) {
     if (!processedTrackIds.has(audioTrack.id)) {
       console.log(
