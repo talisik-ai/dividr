@@ -103,12 +103,17 @@ export function generateTextLayerSegments(
             .replace(/\n\s*$/, '')
             .trim();
 
+          // Use trackRowIndex to determine layer (higher row index = higher layer)
+          // Fallback to layerIndex or old layer field for backward compatibility
+          // This matches how video/image tracks determine their layer
+          const layer = track.trackRowIndex ?? 0;
+          
           return {
             startTime,
             endTime,
             text: cleanText,
             index: index + 1,
-            layer: track.layer ?? 0, // Layer index for proper overlay ordering
+            layer, // Layer index for proper overlay ordering
             style,
             position,
           };

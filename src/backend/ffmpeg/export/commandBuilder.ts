@@ -813,6 +813,7 @@ function buildAudioTimeline(
 /**
  * Adds file inputs to the command
  * For video tracks with separate audio files, adds both the video and audio as inputs
+ * Text tracks are excluded as they don't have file paths and are rendered via drawtext filters
  */
 function handleFileInputs(job: VideoEditJob, cmd: CommandParts): void {
   const addedFiles = new Set<string>();
@@ -821,19 +822,28 @@ function handleFileInputs(job: VideoEditJob, cmd: CommandParts): void {
     const path = getInputPath(input);
     const trackInfo = getTrackInfo(input);
 
-    if (!isGapInput(path)) {
-      // Add the main file (video or audio)
-      if (!addedFiles.has(path)) {
-        cmd.args.push('-i', escapePath(path));
-        addedFiles.add(path);
-      }
+    // Skip gaps, text tracks (they have no file path), and empty paths
+    if (
+      isGapInput(path) ||
+      trackInfo.trackType === 'text' ||
+      !path ||
+      path.trim() === ''
+    ) {
+      return;
+    }
 
-      // If this is a video track with a separate audio file, add the audio file too
-      if (trackInfo.audioPath && !addedFiles.has(trackInfo.audioPath)) {
-        cmd.args.push('-i', escapePath(trackInfo.audioPath));
-        addedFiles.add(trackInfo.audioPath);
-        console.log(`🎵 Added separate audio input: ${trackInfo.audioPath}`);
-      }
+    // Add the main file (video or audio)
+    if (!addedFiles.has(path)) {
+      cmd.args.push('-i', escapePath(path));
+      addedFiles.add(path);
+      console.log(`📁 Added input file: ${path}`);
+    }
+
+    // If this is a video track with a separate audio file, add the audio file too
+    if (trackInfo.audioPath && !addedFiles.has(trackInfo.audioPath)) {
+      cmd.args.push('-i', escapePath(trackInfo.audioPath));
+      addedFiles.add(trackInfo.audioPath);
+      console.log(`🎵 Added separate audio input: ${trackInfo.audioPath}`);
     }
   });
 }
