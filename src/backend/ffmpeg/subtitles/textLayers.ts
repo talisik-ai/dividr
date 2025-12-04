@@ -2,6 +2,7 @@ import {
   TimelineState,
   VideoTrack,
 } from '@/frontend/features/editor/stores/videoEditor/index';
+import { getFontPath } from './fontMapper';
 
 /**
  * Text Layer Processing Module
@@ -190,6 +191,31 @@ function escapeTextForDrawtext(text: string): string {
 }
 
 /**
+ * Escapes file path for FFmpeg filter syntax
+ */
+function escapePathForFilter(filePath: string): string {
+  let escapedPath = filePath;
+
+  // Convert Windows backslashes to forward slashes first
+  if (process.platform === 'win32') {
+    escapedPath = escapedPath.replace(/\\/g, '/');
+  }
+
+  // For filter syntax, we need to escape these characters in order:
+  // 1. Backslashes first (escape to \\)
+  escapedPath = escapedPath.replace(/\\/g, '\\\\');
+
+  // 2. Colons (including drive letters) - escape to \:
+  // In filter context, colons separate parameters, so they must be escaped
+  escapedPath = escapedPath.replace(/:/g, '\\:');
+
+  // 3. Single quotes - escape to \'
+  escapedPath = escapedPath.replace(/'/g, "\\'");
+
+  return escapedPath;
+}
+
+/**
  * Applies text transformations
  */
 function applyTextTransform(text: string, transform?: string): string {
@@ -249,9 +275,26 @@ export function generateDrawtextFilter(
   // Text content
   params.push(`text='${text}'`);
   
-  // Font family
-  const fontFamily = mergedStyle.fontFamily?.split(',')[0].replace(/['"]/g, '').trim() || 'Arial';
-  params.push(`fontfile=/path/to/fonts/${fontFamily}.ttf`); // This will need to be resolved
+  // Font family - resolve actual font path
+  const fontFamily = mergedStyle.fontFamily?.split(',')[0].replace(/['"]/g, '').trim() || 'Inter';
+  const fontWeight = mergedStyle.fontWeight 
+    ? (typeof mergedStyle.fontWeight === 'string' ? mergedStyle.fontWeight : String(mergedStyle.fontWeight))
+    : '400';
+  const isItalic = mergedStyle.fontStyle === 'italic';
+  
+  // Get the actual font file path or font name
+  const fontPath = getFontPath(fontFamily, fontWeight, isItalic);
+  
+  // Check if it's a system font (no .ttf extension) or a file path
+  if (fontPath.includes('.ttf')) {
+    // TTF file path - use fontfile parameter
+    const escapedFontPath = escapePathForFilter(fontPath);
+    params.push(`fontfile=${escapedFontPath}`);
+  } else {
+    // System font name - use font parameter
+    params.push(`font=${fontPath}`);
+  }
+  
   params.push(`fontsize=${mergedStyle.fontSize ? parseInt(mergedStyle.fontSize) : 40}`);
   
   // Font color
