@@ -4,6 +4,5 @@
 
 export * from './useActiveMedia';
 export * from './useAlignmentGuides';
-export * from './useAudioPlayback';
 export * from './useDragDrop';
 export * from './useZoomPan';

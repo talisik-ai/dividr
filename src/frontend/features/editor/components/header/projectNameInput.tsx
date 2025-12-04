@@ -10,6 +10,7 @@ import { cn } from '@/frontend/utils/utils';
 import { ChevronDown } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { useVideoEditorStore } from '../../stores/videoEditor';
 
 interface ProjectNameInputProps {
   className?: string;
@@ -26,6 +27,7 @@ const ProjectNameInput: React.FC<ProjectNameInputProps> = ({
     saveCurrentProject,
     isLoading,
   } = useProjectStore();
+  const { isSaving: isVideoEditorSaving } = useVideoEditorStore();
 
   const [localTitle, setLocalTitle] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -113,7 +115,10 @@ const ProjectNameInput: React.FC<ProjectNameInputProps> = ({
         />
       </div>
 
-      {isSaving && <div className="text-xs text-secondary px-2">Saving...</div>}
+      {isSaving ||
+        (isVideoEditorSaving && (
+          <div className="text-xs text-secondary px-2">Saving...</div>
+        ))}
     </div>
   );
 };

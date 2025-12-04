@@ -258,39 +258,62 @@ const processImportedFile = async (
       actualDurationSeconds = fileInfo.type === 'audio' ? 30 : 30;
     }
   }
-  // Get video dimensions
-  let videoDimensions: { width: number; height: number };
-  try {
-    videoDimensions = await window.electronAPI.getVideoDimensions(
-      fileInfo.path,
+  // Get video dimensions (only for video and image files)
+  let videoDimensions: { width: number; height: number } = {
+    width: 0,
+    height: 0,
+  };
+  let aspectRatioData: ReturnType<typeof detectAspectRatio> | undefined;
+
+  if (fileInfo.type === 'video' || fileInfo.type === 'image') {
+    try {
+      videoDimensions = await window.electronAPI.getVideoDimensions(
+        fileInfo.path,
+      );
+
+      // Detect aspect ratio from dimensions
+      aspectRatioData = detectAspectRatio(
+        videoDimensions.width,
+        videoDimensions.height,
+      );
+
+      console.log(
+        `📐 Detected aspect ratio for ${fileInfo.name}: ${aspectRatioData?.label || 'custom'} (${aspectRatioData?.ratio?.toFixed(2)})`,
+      );
+    } catch (error) {
+      console.warn(
+        `⚠️ Failed to get dimensions for ${fileInfo.name}, using fallback:`,
+        error,
+      );
+      videoDimensions = { width: 1920, height: 1080 }; // sensible default
+      aspectRatioData = detectAspectRatio(
+        videoDimensions.width,
+        videoDimensions.height,
+      );
+    }
+  } else if (fileInfo.type === 'audio') {
+    // Audio files don't have dimensions - set to zero
+    console.log(
+      `🎵 Audio file detected: ${fileInfo.name} (no dimensions needed)`,
     );
-  } catch (error) {
-    console.warn(
-      `⚠️ Failed to get dimensions for ${fileInfo.name}, using fallback:`,
-      error,
-    );
-    videoDimensions = { width: 1920, height: 1080 }; // sensible default
   }
 
-  // Detect aspect ratio from dimensions (for video and image files)
-  const aspectRatioData = detectAspectRatio(
-    videoDimensions.width,
-    videoDimensions.height,
-  );
-
-  console.log(
-    `📐 Detected aspect ratio for ${fileInfo.name}: ${aspectRatioData?.label || 'custom'} (${aspectRatioData?.ratio?.toFixed(2)})`,
-  );
-
-  // Create preview URL for video and image files
+  // Create preview URL for video, image, AND audio files
   let previewUrl: string | undefined;
-  if (fileInfo.type === 'video' || fileInfo.type === 'image') {
+  if (
+    fileInfo.type === 'video' ||
+    fileInfo.type === 'image' ||
+    fileInfo.type === 'audio'
+  ) {
     try {
       const previewResult = await window.electronAPI.createPreviewUrl(
         fileInfo.path,
       );
       if (previewResult.success) {
         previewUrl = previewResult.url;
+        console.log(
+          `🔗 Created preview URL for ${fileInfo.type}: ${fileInfo.name}`,
+        );
       }
     } catch (error) {
       console.warn(
@@ -316,7 +339,7 @@ const processImportedFile = async (
     mimeType = `image/${fileInfo.extension}`;
   }
 
-  // Add to media library with aspect ratio information
+  // Add to media library with appropriate metadata
   const mediaLibraryItem: Omit<MediaLibraryItem, 'id'> = {
     name: fileInfo.name,
     type: trackType,
@@ -325,12 +348,22 @@ const processImportedFile = async (
     duration: actualDurationSeconds,
     size: fileInfo.size,
     mimeType,
-    metadata: {
-      width: videoDimensions.width,
-      height: videoDimensions.height,
-      aspectRatio: aspectRatioData?.ratio,
-      aspectRatioLabel: aspectRatioData?.label || null,
-    },
+    metadata:
+      trackType === 'audio'
+        ? {
+            // Audio-specific metadata (no dimensions)
+            width: 0,
+            height: 0,
+            aspectRatio: undefined,
+            aspectRatioLabel: null,
+          }
+        : {
+            // Video/Image metadata with dimensions
+            width: videoDimensions.width,
+            height: videoDimensions.height,
+            aspectRatio: aspectRatioData?.ratio,
+            aspectRatioLabel: aspectRatioData?.label || null,
+          },
   };
 
   const mediaId = addToLibraryFn(mediaLibraryItem);

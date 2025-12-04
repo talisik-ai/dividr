@@ -17,6 +17,7 @@ import { Copy, Minus, Plus, Square, Upload, X } from 'lucide-react';
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { AutosaveIndicator } from '../features/editor/components/autoSaveIndicator';
 
 interface TitleBarProps {
   className?: string;
@@ -98,7 +99,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
       <div className={cn('', className)}>
         <div className="relative flex items-center h-8 drag-area">
           {/* Logo */}
-          <div className="flex items-center no-drag">
+          <div className="flex gap-2 items-center no-drag">
             <Link to="/" className="cursor-pointer">
               <img
                 src={theme === 'dark' ? LogoDark : LogoLight}
@@ -106,6 +107,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
                 alt="Dividr Logo"
               />
             </Link>
+            {isInVideoEditor && <AutosaveIndicator />}
           </div>
 
           {/* Right Side Controls */}

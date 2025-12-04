@@ -456,9 +456,9 @@ const PlaceholderControllerRow: React.FC<{ id: string }> = React.memo(
     return (
       <div
         key={id}
-        className="flex items-center justify-between px-2 gap-6 border-b border-border/20 h-12 bg-transparent"
+        className="flex items-center justify-between px-2 gap-6 border-b border-border/20 h-12 bg-transparent pointer-events-none"
       >
-        {/* Empty placeholder row - no controls */}
+        {/* Empty placeholder row - no controls, no interaction */}
       </div>
     );
   },
