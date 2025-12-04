@@ -1023,7 +1023,9 @@ export function buildSeparateTimelineFilterComplex(
       return;
     }
     
-    const layer = trackInfo.layer ?? 0;
+    // Use trackRowIndex to determine layer (higher row index = higher layer)
+    // Fallback to layerIndex or old layer field for backward compatibility
+    const layer = trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
     const name = path.substring(path.lastIndexOf('/') + 1);
     
     // Calculate timeline times from frames if available
@@ -1309,10 +1311,35 @@ export function buildSeparateTimelineFilterComplex(
           layerInputLabel = baseVideoLabel;
         } else {
           // Overlay this video layer on top of previous layers
+          // Use enable expression to only show overlay during its active time range
+          // This allows the base layer to continue playing after overlay layer ends
+          const overlayStartTime = track.videoTimeline.segments.length > 0
+            ? Math.min(...track.videoTimeline.segments.map(s => s.startTime))
+            : 0;
+          const overlayEndTime = track.videoTimeline.totalDuration;
+          
+          // Round timing values to 3 decimals to avoid FFmpeg truncation inconsistencies
+          const startTime = Math.round(overlayStartTime * 1000) / 1000;
+          const endTime = Math.round(overlayEndTime * 1000) / 1000;
+          
           const overlayLabel = `composite_${layerNum}`;
-          videoFilters.push(`[${layerInputLabel}][${layerLabel}]overlay=(W-w)/2:(H-h)/2[${overlayLabel}]`);
+          const enableExpression = `between(t,${startTime},${endTime})`;
+          
+          const overlayFilter = buildOverlayFilter(
+            `[${layerInputLabel}]`,
+            `[${layerLabel}]`,
+            `[${overlayLabel}]`,
+            '(W-w)/2',
+            '(H-h)/2',
+            hwAccel,
+            { 
+              shortest: 0, // Continue for longest input duration
+              enable: enableExpression, // Only show overlay during its active time range
+            },
+          );
+          videoFilters.push(overlayFilter);
           layerInputLabel = overlayLabel;
-          console.log(`   ✅ Overlaid video layer ${layerNum} on previous layers`);
+          console.log(`   ✅ Overlaid video layer ${layerNum} on previous layers (enabled from ${startTime.toFixed(2)}s to ${endTime.toFixed(2)}s)`);
         }
         
         layerOutputs.set(layerNum, layerLabel);

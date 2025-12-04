@@ -509,11 +509,13 @@ function buildSeparateTimelines(
       return;
     }
 
-    const layer = trackInfo.layer ?? 0; // Default to layer 0
+    // Use trackRowIndex to determine layer (higher row index = higher layer)
+    // Fallback to layerIndex or old layer field for backward compatibility
+    const layer = trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
 
     if (FILE_EXTENSIONS.VIDEO.test(path)) {
       console.log(
-        `📹 Adding video input ${originalIndex} to layer ${layer}: ${path}`,
+        `📹 Adding video input ${originalIndex} to layer ${layer} (trackRowIndex: ${trackInfo.trackRowIndex ?? 'N/A'}): ${path}`,
       );
       if (!videoInputsByLayer.has(layer)) {
         videoInputsByLayer.set(layer, []);
@@ -521,7 +523,7 @@ function buildSeparateTimelines(
       videoInputsByLayer.get(layer)!.push({ trackInfo, originalIndex });
     } else if (FILE_EXTENSIONS.IMAGE.test(path)) {
       console.log(
-        `🖼️ Adding image input ${originalIndex} to layer ${layer}: ${path} (timeline: ${trackInfo.timelineStartFrame}-${trackInfo.timelineEndFrame})`,
+        `🖼️ Adding image input ${originalIndex} to layer ${layer} (trackRowIndex: ${trackInfo.trackRowIndex ?? 'N/A'}): ${path} (timeline: ${trackInfo.timelineStartFrame}-${trackInfo.timelineEndFrame})`,
       );
       if (!imageInputsByLayer.has(layer)) {
         imageInputsByLayer.set(layer, []);
@@ -692,7 +694,11 @@ function buildVideoTimeline(
     const startTime = startFrame / targetFrameRate;
     const endTime = endFrame / targetFrameRate;
     const duration = endTime - startTime;
-    const layer = trackInfo.layer ?? 0; // Default to layer 0 if not specified
+    // Use trackRowIndex to determine layer (higher row index = higher layer)
+    // Fallback to layerIndex or old layer field for backward compatibility
+    const layer = trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
+    const trackRowIndex = trackInfo.trackRowIndex ?? 0;
+    const layerIndex = trackInfo.layerIndex ?? trackInfo.trackRowIndex ?? 0;
 
     segments.push({
       input: trackInfo,
@@ -702,10 +708,12 @@ function buildVideoTimeline(
       endTime,
       timelineType: 'video',
       layer,
+      trackRowIndex,
+      layerIndex,
     });
 
     console.log(
-      `🎥 Video segment ${originalIndex} (layer ${layer}): ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+      `🎥 Video segment ${originalIndex} (layer ${layer}, trackRowIndex: ${trackRowIndex}): ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
     );
   });
 
@@ -727,7 +735,11 @@ function buildImageTimeline(
     const startTime = startFrame / targetFrameRate;
     const endTime = endFrame / targetFrameRate;
     const duration = endTime - startTime;
-    const layer = trackInfo.layer ?? 0; // Default to layer 0 if not specified
+    // Use trackRowIndex to determine layer (higher row index = higher layer)
+    // Fallback to layerIndex or old layer field for backward compatibility
+    const layer = trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
+    const trackRowIndex = trackInfo.trackRowIndex ?? 0;
+    const layerIndex = trackInfo.layerIndex ?? trackInfo.trackRowIndex ?? 0;
 
     // Skip images with zero or negative duration
     if (duration <= 0) {
@@ -748,10 +760,12 @@ function buildImageTimeline(
       endTime,
       timelineType: 'video',
       layer,
+      trackRowIndex,
+      layerIndex,
     });
 
     console.log(
-      `🖼️ Image segment ${originalIndex} (layer ${layer}): ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
+      `🖼️ Image segment ${originalIndex} (layer ${layer}, trackRowIndex: ${trackRowIndex}): ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`,
     );
   });
 
