@@ -100,8 +100,9 @@ export const useExportJob = () => {
         videoTracks,
         audioTracks,
         imageTracks,
+        textTracks,
         mediaLibrary,
-        customDimensions, // Pass custom dimensions to use instead of track dimensions
+        customDimensions,
       );
 
       // Sort by timeline position
@@ -169,13 +170,13 @@ export const useExportJob = () => {
       // Subtitles and images are positioned at the aspect-ratio-cropped resolution (before final downscale)
       // We need to find the actual source video dimensions to calculate the intermediate dimensions
       const sourceVideoDimensions = getSourceVideoDimensions(videoTracks);
-      
+
       // Calculate the intermediate dimensions after aspect ratio crop (at source resolution)
       const intermediateVideoDimensions = calculateIntermediateDimensions(
         sourceVideoDimensions,
         targetAspectRatio,
       );
-      
+
       // The final output dimensions are the custom dimensions from the canvas
       const finalOutputDimensions = videoDimensions;
 
@@ -202,15 +203,16 @@ export const useExportJob = () => {
 
       // Generate text layer segments separately (for multi-track rendering)
       // Text layers will be converted to drawtext filters in the FFmpeg filter complex
-      const textLayerResult = textTracks.length > 0 
-        ? generateTextLayerSegments(
-            textTracks,
-            textStyle,
-            getTextStyleForSubtitle,
-            finalOutputDimensions,
-            timelineStartFrame,
-          )
-        : { textSegments: [], currentTextStyle: undefined };
+      const textLayerResult =
+        textTracks.length > 0
+          ? generateTextLayerSegments(
+              textTracks,
+              textStyle,
+              getTextStyleForSubtitle,
+              finalOutputDimensions,
+              timelineStartFrame,
+            )
+          : { textSegments: [], currentTextStyle: undefined };
 
       return {
         inputs: trackInfos,
@@ -297,9 +299,10 @@ function getCustomDimensions(
 /**
  * Get source video dimensions from the first video track
  */
-function getSourceVideoDimensions(
-  videoTracks: VideoTrack[],
-): { width: number; height: number } {
+function getSourceVideoDimensions(videoTracks: VideoTrack[]): {
+  width: number;
+  height: number;
+} {
   // Find first visible video track with valid dimensions
   for (const track of videoTracks) {
     if (track.visible && track.width && track.height) {
@@ -311,7 +314,9 @@ function getSourceVideoDimensions(
   }
 
   // Fallback to default dimensions
-  console.warn(`⚠️ No valid video track dimensions found, using default: 1920x1080`);
+  console.warn(
+    `⚠️ No valid video track dimensions found, using default: 1920x1080`,
+  );
   return { width: 1920, height: 1080 };
 }
 
@@ -377,6 +382,7 @@ function processLinkedTracks(
   videoTracks: VideoTrack[],
   audioTracks: VideoTrack[],
   imageTracks: VideoTrack[],
+  textTracks: VideoTrack[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   mediaLibrary: {
     id: string;
@@ -448,6 +454,9 @@ function processLinkedTracks(
   // Add image tracks
   processedTracks.push(...imageTracks);
 
+  // Add text tracks
+  processedTracks.push(...textTracks);
+
   return {
     processedTracks,
     videoDimensions: { width: videoWidth, height: videoHeight },
@@ -481,7 +490,7 @@ function convertTracksToFFmpegInputs(
     // DON'T attach audio to video tracks - process them independently
     // Video tracks will be video-only, audio tracks will be audio-only
     const trackInfo: TrackInfo = {
-      path: track.source,
+      path: track.type === 'text' ? '' : track.source, // Text tracks don't have a file path
       audioPath: undefined, // Always undefined - no audio attached to video
       startTime: sourceStartTime, // Where to start reading from source file
       duration: Math.max(0.033, trackDurationSeconds), // How long to read from source
@@ -530,6 +539,21 @@ function convertTracksToFFmpegInputs(
       };
       console.log(
         `🎥 Video transform for "${track.name}": pos=(${track.textTransform.x.toFixed(2)}, ${track.textTransform.y.toFixed(2)}), scale=${track.textTransform.scale.toFixed(2)}, rotation=${track.textTransform.rotation.toFixed(1)}°, size=${track.textTransform.width}x${track.textTransform.height}`,
+      );
+    }
+
+    // Add text transform for text tracks
+    if (track.type === 'text' && track.textTransform) {
+      trackInfo.videoTransform = {
+        x: track.textTransform.x,
+        y: track.textTransform.y,
+        scale: track.textTransform.scale,
+        rotation: track.textTransform.rotation,
+        width: track.textTransform.width,
+        height: track.textTransform.height,
+      };
+      console.log(
+        `🔤 Text transform for "${track.name}": pos=(${track.textTransform.x.toFixed(2)}, ${track.textTransform.y.toFixed(2)}), scale=${track.textTransform.scale.toFixed(2)}, rotation=${track.textTransform.rotation.toFixed(1)}°, size=${track.textTransform.width}x${track.textTransform.height}`,
       );
     }
 
