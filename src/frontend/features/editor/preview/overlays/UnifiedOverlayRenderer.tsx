@@ -20,22 +20,23 @@ import {
   getTrackZIndex,
 } from '../utils/trackUtils';
 import { DualBufferVideo, DualBufferVideoRef } from './DualBufferVideoOverlay';
+import { MultiAudioPlayer } from './MultiAudioOverlay';
 
 export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   videoRef: React.RefObject<HTMLVideoElement>;
   activeVideoTrack?: VideoTrack;
+  independentAudioTrack?: VideoTrack;
+  /** ALL active video tracks for multi-layer compositing */
+  activeVideoTracks?: VideoTrack[];
+  /** ALL active independent audio tracks for multi-audio mixing */
+  activeIndependentAudioTracks?: VideoTrack[];
   onVideoLoadedMetadata: () => void;
   isPlaying?: boolean;
   isMuted?: boolean;
   volume?: number;
   playbackRate?: number;
   fps?: number;
-  /**
-   * CRITICAL: Pass this to determine audio routing.
-   * If set, audio comes from AudioOverlay, and video is muted.
-   */
-  independentAudioTrack?: VideoTrack;
-  /** Callback to update currentFrame during playback */
+
   setCurrentFrame?: (frame: number) => void;
   onVideoTransformUpdate: (trackId: string, transform: any) => void;
   onVideoSelect: (trackId: string) => void;
@@ -65,6 +66,9 @@ type InteractionMode = 'select' | 'pan' | 'text-edit';
 export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   videoRef,
   activeVideoTrack,
+  independentAudioTrack,
+  activeVideoTracks,
+  activeIndependentAudioTracks,
   onVideoLoadedMetadata,
   onVideoTransformUpdate,
   onVideoSelect,
@@ -73,7 +77,6 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   volume = 1,
   playbackRate = 1,
   fps = 30,
-  independentAudioTrack,
   setCurrentFrame,
   allTracks,
   selectedTrackIds,
@@ -151,38 +154,48 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     [sortedVisualTracks],
   );
 
-  // Video render info
-  const videoRenderInfo = useMemo(() => {
-    if (!activeVideoTrack) return null;
+  // Get all video tracks to render (multi-layer support)
+  const videoRenderInfos = useMemo(() => {
+    // Use activeVideoTracks if provided, otherwise fall back to single activeVideoTrack
+    const videoTracksToRender = activeVideoTracks?.length
+      ? activeVideoTracks
+      : activeVideoTrack
+        ? [activeVideoTrack]
+        : [];
 
-    const transform = activeVideoTrack.textTransform || {
-      x: 0,
-      y: 0,
-      scale: 1,
-      rotation: 0,
-      width: activeVideoTrack.width || baseVideoWidth,
-      height: activeVideoTrack.height || baseVideoHeight,
-    };
+    return videoTracksToRender.map((track) => {
+      const transform = track.textTransform || {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+        width: track.width || baseVideoWidth,
+        height: track.height || baseVideoHeight,
+      };
 
-    return {
-      track: activeVideoTrack,
-      videoWidth:
-        (transform.width || activeVideoTrack.width || baseVideoWidth) *
-        renderScale,
-      videoHeight:
-        (transform.height || activeVideoTrack.height || baseVideoHeight) *
-        renderScale,
-      zIndex: getTrackZIndex(activeVideoTrack, allTracks),
-      isSelected: selectedTrackIds.includes(activeVideoTrack.id),
-      isHidden: !activeVideoTrack.visible,
-    };
+      return {
+        track,
+        videoWidth:
+          (transform.width || track.width || baseVideoWidth) * renderScale,
+        videoHeight:
+          (transform.height || track.height || baseVideoHeight) * renderScale,
+        zIndex: getTrackZIndex(track, allTracks),
+        isSelected: selectedTrackIds.includes(track.id),
+        isHidden: !track.visible,
+        // First video track handles audio if no independent audio tracks
+        handlesAudio:
+          track === videoTracksToRender[0] && !independentAudioTrack,
+      };
+    });
   }, [
+    activeVideoTracks,
     activeVideoTrack,
     baseVideoWidth,
     baseVideoHeight,
     renderScale,
     allTracks,
     selectedTrackIds,
+    independentAudioTrack,
   ]);
 
   const subtitleZIndex = useMemo(() => {
@@ -192,39 +205,46 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     );
   }, [activeSubtitles, allTracks]);
 
-  /**
-   * CRITICAL AUDIO ROUTING DECISION:
-   *
-   * If there's an independent audio track (extracted audio, separate audio file),
-   * the video should be MUTED because audio comes from the <audio> element in AudioOverlay.
-   *
-   * If there's NO independent audio track, video should have audio.
-   * But we also need to check if the video track has a linked audio track that's muted.
-   */
-  const shouldVideoHandleAudio = useMemo(() => {
-    // If there's an independent audio track, video is muted
-    if (independentAudioTrack) {
-      console.log(
-        '[UnifiedOverlay] Audio comes from independent audio track, muting video',
-      );
-      return false;
+  // Determine which video track (if any) should handle embedded audio
+  const videoIndexWithAudio = useMemo(() => {
+    // If there are ANY independent audio tracks, NO video handles audio
+    if (activeIndependentAudioTracks?.length || independentAudioTrack) {
+      return -1; // No video handles audio
     }
 
-    // Check if video track has linked audio that's muted
-    if (activeVideoTrack?.isLinked && activeVideoTrack.linkedTrackId) {
-      const linkedAudio = allTracks.find(
-        (t) => t.id === activeVideoTrack.linkedTrackId,
-      );
-      if (linkedAudio?.muted) {
-        console.log('[UnifiedOverlay] Linked audio is muted, muting video');
-        return false;
+    // Find the first (lowest z-index) video track that has linked audio
+    // and whose linked audio is not muted
+    const videoTracksToCheck =
+      activeVideoTracks || (activeVideoTrack ? [activeVideoTrack] : []);
+
+    for (let i = 0; i < videoTracksToCheck.length; i++) {
+      const track = videoTracksToCheck[i];
+
+      if (track.isLinked && track.linkedTrackId) {
+        // Check if linked audio track is muted
+        const linkedAudio = allTracks.find((t) => t.id === track.linkedTrackId);
+        if (linkedAudio && !linkedAudio.muted) {
+          return i; // This video handles audio
+        }
       }
     }
 
-    // Video handles its own audio
-    console.log('[UnifiedOverlay] Video handles its own audio');
-    return true;
-  }, [independentAudioTrack, activeVideoTrack, allTracks]);
+    return -1; // No video handles audio
+  }, [
+    activeVideoTracks,
+    activeVideoTrack,
+    activeIndependentAudioTracks,
+    independentAudioTrack,
+    allTracks,
+  ]);
+
+  // Helper function for render
+  const shouldVideoHandleAudio = useCallback(
+    (trackIndex: number): boolean => {
+      return trackIndex === videoIndexWithAudio;
+    },
+    [videoIndexWithAudio],
+  );
 
   // Render non-video tracks
   const renderNonVideoTrack = useCallback(
@@ -397,10 +417,10 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
 
   return (
     <>
-      {/* VIDEO - DualBufferVideo handles everything including audio routing */}
-      {videoRenderInfo && (
+      {/* VIDEO LAYERS - Render ALL active video tracks */}
+      {videoRenderInfos.map((info, index) => (
         <div
-          key="stable-video-container"
+          key={`video-container-${info.track.id}`}
           className="absolute inset-0 pointer-events-none"
           style={{
             width: actualWidth,
@@ -409,12 +429,12 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
             top: `calc(50% + ${panY}px)`,
             transform: 'translate(-50%, -50%)',
             overflow: 'visible',
-            zIndex: videoRenderInfo.zIndex,
+            zIndex: info.zIndex,
           }}
         >
           <VideoTransformBoundary
-            track={videoRenderInfo.track}
-            isSelected={videoRenderInfo.isSelected}
+            track={info.track}
+            isSelected={info.isSelected}
             previewScale={coordinateSystem.baseScale}
             videoWidth={baseVideoWidth}
             videoHeight={baseVideoHeight}
@@ -431,26 +451,20 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
             <div
               className="relative"
               style={{
-                width: `${videoRenderInfo.videoWidth}px`,
-                height: `${videoRenderInfo.videoHeight}px`,
-                visibility: videoRenderInfo.isHidden ? 'hidden' : 'visible',
+                width: `${info.videoWidth}px`,
+                height: `${info.videoHeight}px`,
+                visibility: info.isHidden ? 'hidden' : 'visible',
                 pointerEvents:
-                  videoRenderInfo.isHidden ||
+                  info.isHidden ||
                   interactionMode === 'pan' ||
                   interactionMode === 'text-edit'
                     ? 'none'
                     : 'auto',
               }}
             >
-              {/* 
-                CRITICAL AUDIO FIX:
-                handleAudio={shouldVideoHandleAudio} determines if video has audio.
-                If false, ALL video elements in DualBufferVideo are muted.
-                Audio comes from AudioOverlay instead.
-              */}
               <DualBufferVideo
-                ref={dualBufferRef}
-                activeTrack={activeVideoTrack}
+                ref={index === 0 ? dualBufferRef : undefined}
+                activeTrack={info.track}
                 allTracks={allTracks}
                 currentFrame={currentFrame}
                 fps={fps}
@@ -458,17 +472,36 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
                 isMuted={isMuted}
                 volume={volume}
                 playbackRate={playbackRate}
-                onLoadedMetadata={onVideoLoadedMetadata}
-                onActiveVideoChange={handleActiveVideoChange}
-                onFrameUpdate={handleFrameUpdate}
-                width={videoRenderInfo.videoWidth}
-                height={videoRenderInfo.videoHeight}
+                onLoadedMetadata={
+                  index === 0 ? onVideoLoadedMetadata : undefined
+                }
+                onActiveVideoChange={
+                  index === 0 ? handleActiveVideoChange : undefined
+                }
+                onFrameUpdate={index === 0 ? handleFrameUpdate : undefined}
+                width={info.videoWidth}
+                height={info.videoHeight}
                 objectFit="contain"
-                handleAudio={shouldVideoHandleAudio}
+                handleAudio={shouldVideoHandleAudio(index)}
               />
             </div>
           </VideoTransformBoundary>
         </div>
+      ))}
+
+      {(activeIndependentAudioTracks?.length || independentAudioTrack) && (
+        <MultiAudioPlayer
+          audioTracks={
+            activeIndependentAudioTracks ||
+            (independentAudioTrack ? [independentAudioTrack] : [])
+          }
+          currentFrame={currentFrame}
+          fps={fps}
+          isPlaying={isPlaying}
+          isMuted={isMuted}
+          volume={volume}
+          playbackRate={playbackRate}
+        />
       )}
 
       {/* Non-video tracks */}

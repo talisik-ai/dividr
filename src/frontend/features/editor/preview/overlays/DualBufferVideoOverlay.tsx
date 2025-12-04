@@ -197,23 +197,33 @@ export const DualBufferVideo = forwardRef<
       const videoA = videoARef.current;
       const videoB = videoBRef.current;
 
+      // CRITICAL: If handleAudio is false, BOTH videos must be muted
+      if (!handleAudio) {
+        if (videoA) {
+          videoA.muted = true;
+          videoA.volume = 0;
+        }
+        if (videoB) {
+          videoB.muted = true;
+          videoB.volume = 0;
+        }
+        return;
+      }
+
+      // Only active slot gets audio
       const preloadVideo = activeSlot === 'A' ? videoB : videoA;
       const activeVideo = activeSlot === 'A' ? videoA : videoB;
 
-      // Preload is ALWAYS muted
+      // Preload is ALWAYS muted (regardless of handleAudio)
       if (preloadVideo) {
         preloadVideo.muted = true;
         preloadVideo.volume = 0;
       }
 
+      // Active video gets audio only if handleAudio is true
       if (activeVideo) {
-        if (!handleAudio) {
-          activeVideo.muted = true;
-          activeVideo.volume = 0;
-        } else {
-          activeVideo.muted = isMuted;
-          activeVideo.volume = isMuted ? 0 : Math.min(volume, 1);
-        }
+        activeVideo.muted = isMuted;
+        activeVideo.volume = isMuted ? 0 : Math.min(volume, 1);
       }
     }, [activeSlot, handleAudio, isMuted, volume]);
 
@@ -582,6 +592,25 @@ export const DualBufferVideo = forwardRef<
       activeSlot,
       enforceAudioState,
     ]);
+
+    // =========================================================================
+    // EFFECT: Mute both videos if handleAudio is false
+    // =========================================================================
+    useEffect(() => {
+      if (!handleAudio) {
+        const videoA = videoARef.current;
+        const videoB = videoBRef.current;
+
+        if (videoA) {
+          videoA.muted = true;
+          videoA.volume = 0;
+        }
+        if (videoB) {
+          videoB.muted = true;
+          videoB.volume = 0;
+        }
+      }
+    }, [handleAudio]);
 
     // =========================================================================
     // EFFECT: Enforce audio on mount and prop changes

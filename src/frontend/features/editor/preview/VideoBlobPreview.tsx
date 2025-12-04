@@ -14,15 +14,10 @@ import { TranscriptionProgressOverlay } from './components/TranscriptionProgress
 import {
   useActiveMedia,
   useAlignmentGuides,
-  useAudioPlayback,
   useDragDrop,
   useZoomPan,
 } from './hooks';
-import {
-  AudioOverlay,
-  CanvasOverlay,
-  UnifiedOverlayRenderer,
-} from './overlays';
+import { CanvasOverlay, UnifiedOverlayRenderer } from './overlays';
 import { TransformBoundaryLayer } from './overlays/TransformBoundaryLayer';
 import {
   calculateContentScale,
@@ -38,7 +33,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 }) => {
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Container state
@@ -79,11 +73,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   } = useVideoEditorStore();
 
   // Active media determination
-  const { activeVideoTrack, independentAudioTrack, activeAudioTrack } =
-    useActiveMedia({
-      tracks,
-      currentFrame: timeline.currentFrame,
-    });
+  const {
+    activeVideoTrack,
+    activeVideoTracks,
+    independentAudioTrack,
+    activeIndependentAudioTracks,
+    activeAudioTrack,
+  } = useActiveMedia({
+    tracks,
+    currentFrame: timeline.currentFrame,
+  });
 
   // Zoom and pan functionality
   const {
@@ -132,18 +131,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     // Metadata is now handled by DualBufferVideo
   }, []);
 
-  // Audio playback synchronization (for independent audio tracks only)
-  const { handleAudioLoadedMetadata } = useAudioPlayback({
-    audioRef,
-    independentAudioTrack,
-    currentFrame: timeline.currentFrame,
-    fps: displayFps,
-    isPlaying: playback.isPlaying,
-    isMuted: playback.muted,
-    volume: playback.volume,
-    playbackRate: playback.playbackRate,
-  });
-
   // Calculate base video dimensions
   const baseVideoWidth = preview.canvasWidth;
   const baseVideoHeight = preview.canvasHeight;
@@ -180,11 +167,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       if (videoRef.current && !videoRef.current.paused) {
         videoRef.current.pause();
       }
-      if (audioRef.current && !audioRef.current.paused) {
-        audioRef.current.pause();
-      }
     }
-  }, [timeline.currentFrame, tracks, playback, videoRef, audioRef]);
+  }, [timeline.currentFrame, tracks, playback, videoRef]);
 
   // Resize observer
   useEffect(() => {
@@ -717,13 +701,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           />
         )}
 
-      {/* Audio Overlay (for independent audio tracks) */}
-      <AudioOverlay
-        audioRef={audioRef}
-        independentAudioTrack={independentAudioTrack}
-        onLoadedMetadata={handleAudioLoadedMetadata}
-      />
-
       {/* 
         UNIFIED OVERLAY RENDERER - AUDIO FIX
         
@@ -736,6 +713,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         {...overlayProps}
         videoRef={videoRef}
         activeVideoTrack={activeVideoTrack}
+        activeVideoTracks={activeVideoTracks}
+        activeIndependentAudioTracks={activeIndependentAudioTracks}
         onVideoLoadedMetadata={handleVideoLoadedMetadata}
         onVideoTransformUpdate={handleVideoTransformUpdate}
         onVideoSelect={handleVideoSelect}
