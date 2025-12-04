@@ -1,27 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/**
- * UnifiedOverlayRenderer - AUDIO FIX VERSION
- *
- * CRITICAL AUDIO FIX:
- * The problem was that BOTH:
- * 1. useVideoPlayback hook was controlling video.volume/muted
- * 2. DualBufferVideo was also controlling its own audio
- *
- * This created double audio when:
- * - useVideoPlayback sets videoRef to play with audio
- * - DualBufferVideo's active video also plays with audio
- * - Both point to different elements OR same element gets double-configured
- *
- * THE FIX:
- * - DualBufferVideo is the ONLY controller of video audio
- * - useVideoPlayback should NOT control video audio anymore (or be disabled)
- * - Pass `handleAudio` prop to DualBufferVideo to tell it who controls audio
- * - If there's an independent audio track, video audio is muted (handleAudio=false)
- *
- * AUDIO ROUTING:
- * - If independentAudioTrack exists: Audio comes from <audio> element, video is muted
- * - If no independentAudioTrack: Audio comes from DualBufferVideo's active slot
- */
 
 import React, { useCallback, useMemo, useRef } from 'react';
 import { useVideoEditorStore, VideoTrack } from '../../stores/videoEditor';

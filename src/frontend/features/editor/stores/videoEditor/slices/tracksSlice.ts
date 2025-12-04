@@ -19,6 +19,7 @@ import { detectAspectRatio } from '../utils/aspectRatioHelpers';
 import { SUBTITLE_EXTENSIONS } from '../utils/constants';
 import { processSubtitleFile } from '../utils/subtitleParser';
 import {
+  findLastEndFrameForType,
   findNearestAvailablePosition,
   getTrackColor,
 } from '../utils/trackHelpers';
@@ -303,8 +304,15 @@ export const createTracksSlice: StateCreator<
         trackData.trackRowIndex ??
         getNextAvailableRowIndex(state.tracks, 'video');
 
+      // For consecutive clip placement, find where the last video clip ends
+      // If startFrame is 0 (default), place after the last clip of this type
+      const consecutiveVideoStart =
+        trackData.startFrame === 0
+          ? findLastEndFrameForType(state.tracks, 'video')
+          : trackData.startFrame;
+
       const videoStartFrame = findNearestAvailablePositionInRow(
-        trackData.startFrame,
+        consecutiveVideoStart,
         duration,
         'video',
         videoRowIndex,
@@ -315,8 +323,14 @@ export const createTracksSlice: StateCreator<
         trackData.trackRowIndex ??
         getNextAvailableRowIndex(state.tracks, 'audio');
 
+      // For consecutive clip placement, find where the last audio clip ends
+      const consecutiveAudioStart =
+        trackData.startFrame === 0
+          ? findLastEndFrameForType(state.tracks, 'audio')
+          : trackData.startFrame;
+
       const audioStartFrame = findNearestAvailablePositionInRow(
-        trackData.startFrame,
+        consecutiveAudioStart,
         duration,
         'audio',
         audioRowIndex,
@@ -398,8 +412,15 @@ export const createTracksSlice: StateCreator<
       );
       const duration = trackData.endFrame - trackData.startFrame;
 
+      // For consecutive clip placement, find where the last clip of this type ends
+      // If startFrame is 0 (default), place after the last clip of this type
+      const consecutiveStart =
+        trackData.startFrame === 0
+          ? findLastEndFrameForType(state.tracks, trackData.type)
+          : trackData.startFrame;
+
       const startFrame = findNearestAvailablePosition(
-        trackData.startFrame,
+        consecutiveStart,
         duration,
         existingTracks,
       );
@@ -513,15 +534,40 @@ export const createTracksSlice: StateCreator<
             (t: VideoTrack) => t.type === 'audio',
           );
 
+          // For consecutive clip placement in batch operations
+          // Consider both existing tracks AND tracks already added in this batch
+          const allVideoTracks = [
+            ...existingVideoTracks,
+            ...newTracks.filter((t) => t.type === 'video'),
+          ];
+          const allAudioTracks = [
+            ...existingAudioTracks,
+            ...newTracks.filter((t) => t.type === 'audio'),
+          ];
+
+          const consecutiveVideoStart =
+            trackData.startFrame === 0
+              ? allVideoTracks.length > 0
+                ? Math.max(...allVideoTracks.map((t) => t.endFrame))
+                : 0
+              : trackData.startFrame;
+
+          const consecutiveAudioStart =
+            trackData.startFrame === 0
+              ? allAudioTracks.length > 0
+                ? Math.max(...allAudioTracks.map((t) => t.endFrame))
+                : 0
+              : trackData.startFrame;
+
           const videoStartFrame = findNearestAvailablePosition(
-            trackData.startFrame,
+            consecutiveVideoStart,
             duration,
-            existingVideoTracks,
+            allVideoTracks,
           );
           const audioStartFrame = findNearestAvailablePosition(
-            trackData.startFrame,
+            consecutiveAudioStart,
             duration,
-            existingAudioTracks,
+            allAudioTracks,
           );
 
           const mediaItem = state.mediaLibrary?.find(

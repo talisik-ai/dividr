@@ -30,6 +30,49 @@ export interface TrackInfo {
   layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)
   imageTransform?: ImageTransform; // Transform data for image overlays (position, rotation, scale)
   videoTransform?: ImageTransform; // Transform data for video clips (position, rotation, scale)
+
+  /**
+   * Track row index - which lane this clip occupies within its type
+   * Clips of the same type with different trackRowIndex are on separate lanes
+   * Higher values = visually higher in the timeline UI
+   */
+  trackRowIndex?: number;
+
+  /**
+   * Layer index for compositing order within the same track type
+   * 0 = base/bottom layer, higher values render on top
+   * Used during FFmpeg overlay filter chain construction
+   */
+  layerIndex?: number;
+
+  /**
+   * Compositing group - clips with same groupId are processed together
+   * Useful for linked video/audio pairs or grouped overlays
+   */
+  compositingGroup?: string;
+}
+
+/**
+ * Represents a single layer of clips for a specific track type
+ * Used to organize clips before building FFmpeg overlay filter chains
+ */
+export interface LayerGroup {
+  trackType: 'video' | 'audio' | 'image' | 'text' | 'subtitle';
+  trackRowIndex: number;
+  layerIndex: number;
+  segments: ProcessedTimelineSegment[];
+}
+
+/**
+ * Organized layers ready for FFmpeg filter chain construction
+ * Sorted by layerIndex (0 = bottom, ascending = overlay order)
+ */
+export interface LayeredTimeline {
+  videoLayers: LayerGroup[]; // Video layers - base layer first, overlays in order
+  imageLayers: LayerGroup[]; // Image overlay layers - rendered on top of video
+  audioLayers: LayerGroup[]; // Audio layers - mixed together (no visual stacking)
+  textLayers: LayerGroup[]; // Text layers - rendered as ASS subtitles with z-order
+  subtitleLayers: LayerGroup[]; // Subtitle layers - rendered as ASS with z-order
 }
 
 export interface TextStyleConfig {
@@ -184,6 +227,19 @@ export interface ProcessedTimelineSegment {
   endTime: number;
   timelineType: 'video' | 'audio';
   layer?: number; // Layer index for video/image segments (0 = base, higher = overlay priority)
+
+  /**
+   * Track row this segment belongs to (matches frontend trackRowIndex)
+   */
+  trackRowIndex?: number;
+
+  /**
+   * Layer index for overlay stacking order
+   * When building FFmpeg filter chains:
+   * - Layer 0 segments form the base
+   * - Higher layers overlay on top using overlay filter
+   */
+  layerIndex?: number;
 }
 
 export interface ProcessedTimeline {

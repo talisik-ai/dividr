@@ -501,7 +501,12 @@ function convertTracksToFFmpegInputs(
       detectedAspectRatioLabel: track.detectedAspectRatioLabel,
       sourceFps: track.sourceFps, // Original FPS from source media
       effectiveFps: track.effectiveFps, // User-set FPS for this track
+      trackRowIndex: track.trackRowIndex ?? 0,
+      layerIndex: track.layer ?? track.trackRowIndex ?? 0,
+      compositingGroup: track.isLinked ? track.linkedTrackId : undefined,
     };
+
+    console.log('Track Info: ', trackInfo);
 
     // Add image transform for image tracks
     if (track.type === 'image' && track.textTransform) {
