@@ -95,3 +95,25 @@ export function findNearestAvailablePosition(
 
   return nearestPosition;
 }
+
+/**
+ * Find the end frame of the last clip of a given type across all rows
+ * This enables consecutive clip placement like professional editors (Premiere Pro, CapCut)
+ *
+ * @param tracks - All tracks in the timeline
+ * @param type - The track type to search for ('video', 'audio', etc.)
+ * @returns The end frame of the last clip, or 0 if no clips of this type exist
+ */
+export function findLastEndFrameForType(
+  tracks: VideoTrack[],
+  type: VideoTrack['type'],
+): number {
+  const tracksOfType = tracks.filter((t) => t.type === type);
+
+  if (tracksOfType.length === 0) {
+    return 0;
+  }
+
+  // Find the maximum end frame across ALL clips of this type
+  return Math.max(...tracksOfType.map((t) => t.endFrame));
+}
