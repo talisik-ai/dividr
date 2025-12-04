@@ -834,7 +834,6 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     onTrackMove,
     onTrackResize,
     onDrop,
-    allTracksCount,
     onPlaceholderClick,
     isSplitModeActive,
     isEmptyTimeline,
@@ -1273,15 +1272,6 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       return visibleTrackRows.includes(mediaType);
     });
 
-    // Create placeholder row definitions
-    const placeholderRowDefsAbove: PlaceholderRowDef[] = useMemo(() => {
-      return Array.from({ length: placeholderRowsAbove }, (_, i) => ({
-        id: `placeholder-above-${i}`,
-        type: 'placeholder' as const,
-        position: 'above' as const,
-      }));
-    }, [placeholderRowsAbove]);
-
     const placeholderRowDefsBelow: PlaceholderRowDef[] = useMemo(() => {
       return Array.from({ length: placeholderRowsBelow }, (_, i) => ({
         id: `placeholder-below-${i}`,
@@ -1307,12 +1297,12 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           }}
         >
           {/* Placeholder rows above */}
-          {placeholderRowDefsAbove.map((placeholder) => (
+          {Array.from({ length: placeholderRowsAbove }, (_, i) => (
             <div
-              key={placeholder.id}
+              key={`placeholder-above-${i}`} // Distinct key prevents confusion
               className="relative h-12 border-l-[3px] border-l-transparent"
             >
-              {/* Grid lines for placeholder */}
+              {/* Grid lines - visual only, no interaction handlers */}
               <div
                 className="absolute top-0 h-full pointer-events-none"
                 style={{
