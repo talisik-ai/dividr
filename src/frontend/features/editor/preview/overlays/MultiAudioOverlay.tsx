@@ -18,12 +18,6 @@ interface AudioElementState {
   isPlaying: boolean;
 }
 
-/**
- * MultiAudioPlayer - Manages playback of multiple audio tracks simultaneously
- *
- * CRITICAL: This is the ONLY audio playback system for independent audio tracks.
- * AudioOverlay and useAudioPlayback should NOT be used when this component is active.
- */
 export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
   audioTracks,
   currentFrame,
@@ -66,20 +60,6 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
       audio.preload = 'auto';
       audio.src = previewUrl;
 
-      // Add event listeners for debugging
-      audio.addEventListener('play', () => {
-        console.log(
-          `[MultiAudioPlayer] Audio started: ${previewUrl.substring(0, 50)}`,
-        );
-      });
-
-      audio.addEventListener('error', (e) => {
-        console.error(
-          `[MultiAudioPlayer] Audio error for ${previewUrl.substring(0, 50)}:`,
-          e,
-        );
-      });
-
       audioElementsRef.current.set(previewUrl, {
         element: audio,
         trackId,
@@ -88,10 +68,6 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
       });
 
       trackToUrlRef.current.set(trackId, previewUrl);
-
-      console.log(
-        `[MultiAudioPlayer] Created audio element for: ${previewUrl.substring(0, 50)}`,
-      );
 
       return audio;
     },
@@ -119,9 +95,6 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     // Clean up elements for URLs no longer in use
     audioElementsRef.current.forEach((state, url) => {
       if (!activeUrls.has(url)) {
-        console.log(
-          `[MultiAudioPlayer] Cleaning up unused audio: ${url.substring(0, 50)}`,
-        );
         state.element.pause();
         state.element.src = '';
         state.element.load();
@@ -231,9 +204,6 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      console.log(
-        '[MultiAudioPlayer] Unmounting, cleaning up all audio elements',
-      );
       audioElementsRef.current.forEach((state) => {
         state.element.pause();
         state.element.src = '';

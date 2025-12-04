@@ -613,13 +613,6 @@ export const DualBufferVideo = forwardRef<
     }, [handleAudio]);
 
     // =========================================================================
-    // EFFECT: Enforce audio on mount and prop changes
-    // =========================================================================
-    useEffect(() => {
-      enforceAudioState();
-    }, [enforceAudioState]);
-
-    // =========================================================================
     // EFFECT: BIDIRECTIONAL SYNC - Video ↔ Timeline
     //
     // This is the CRITICAL effect for seek synchronization.
