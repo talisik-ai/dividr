@@ -58,23 +58,37 @@ export function useAudioPlayback({
       const targetTime =
         (independentAudioTrack.sourceStartTime || 0) + trackTime;
 
-      // Direct time assignment, no clamping during metadata load
       audio.currentTime = targetTime;
     }
 
     // Auto play if timeline is playing
     if (isPlaying && audio.paused) {
       audio.muted = isMuted || independentAudioTrack.muted;
-      audio.play().catch(() => {
-        /* ignore */
+      audio.volume =
+        isMuted || independentAudioTrack.muted ? 0 : Math.min(volume, 1);
+      audio.play().catch((err) => {
+        console.warn('[useAudioPlayback] Auto-play failed:', err);
       });
     }
-  }, [independentAudioTrack, currentFrame, displayFps, isPlaying, isMuted]);
+  }, [
+    independentAudioTrack,
+    currentFrame,
+    displayFps,
+    isPlaying,
+    isMuted,
+    volume,
+  ]);
 
   // Sync play/pause & volume for independent audio element
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !independentAudioTrack) return;
+
+    // Ensure audio has a valid source
+    if (!audio.src || audio.src === '') {
+      console.warn('[useAudioPlayback] Audio element has no source');
+      return;
+    }
 
     // Check if timeline position is within the audio track's range
     const isWithinAudioRange =
@@ -84,7 +98,9 @@ export function useAudioPlayback({
     try {
       if (isPlaying) {
         if (isWithinAudioRange && audio.paused && audio.readyState >= 3) {
-          audio.play().catch(console.warn);
+          audio.play().catch((err) => {
+            console.warn('[useAudioPlayback] Play failed:', err);
+          });
         } else if (!isWithinAudioRange && !audio.paused) {
           audio.pause();
         }
@@ -108,6 +124,8 @@ export function useAudioPlayback({
     playbackRate,
     independentAudioTrack?.id,
     independentAudioTrack?.muted,
+    independentAudioTrack?.startFrame,
+    independentAudioTrack?.endFrame,
     currentFrame,
   ]);
 

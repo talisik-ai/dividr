@@ -14,6 +14,7 @@ export interface UseActiveMediaProps {
 export interface ActiveMedia {
   activeVideoTrack?: VideoTrack;
   independentAudioTrack?: VideoTrack;
+  allIndependentAudioTracks?: VideoTrack[];
   videoTrackWithAudio?: VideoTrack;
   activeAudioTrack?: VideoTrack;
 }
@@ -41,41 +42,110 @@ export function useActiveMedia({
   // Independent audio track for audio-only playback (separate from video)
   const independentAudioTrack = useMemo(() => {
     try {
-      const audioTrack = tracks.find(
-        (track) =>
-          track.type === 'audio' &&
-          (!track.isLinked ||
-            track.previewUrl ||
-            hasAudioPositionGap(track, tracks)) &&
-          !track.muted &&
-          currentFrame >= track.startFrame &&
-          currentFrame < track.endFrame,
-      );
+      const audioTrack = tracks.find((track) => {
+        // Must be an audio track
+        if (track.type !== 'audio') return false;
 
-      if (audioTrack) {
-        // If audio track has its own previewUrl (extracted audio), use it directly
-        if (audioTrack.previewUrl) {
-          return audioTrack;
+        // Must be visible
+        if (!track.visible) return false;
+
+        // Must be in current frame range
+        if (currentFrame < track.startFrame || currentFrame >= track.endFrame) {
+          return false;
         }
 
-        // Fallback: Find a video track with the same source to get the previewUrl
-        const matchingVideoTrack = tracks.find(
-          (track) =>
-            track.type === 'video' &&
-            track.source === audioTrack.source &&
-            track.previewUrl,
-        );
+        // Must not be muted
+        if (track.muted) {
+          return false;
+        }
 
-        // Return audio track with borrowed previewUrl if available
-        return {
-          ...audioTrack,
-          previewUrl: matchingVideoTrack?.previewUrl || audioTrack.previewUrl,
-        };
+        // Check if it qualifies as independent
+        const hasUrl = !!track.previewUrl;
+        const isUnlinked = !track.isLinked;
+        const hasGap = hasAudioPositionGap(track, tracks);
+
+        // Standalone audio file (has its own previewUrl) - THIS IS THE KEY FOR MP3/WAV
+        if (hasUrl) return true;
+
+        // Unlinked from video
+        if (isUnlinked) return true;
+
+        // Has position gap
+        if (hasGap) return true;
+
+        return false;
+      });
+
+      if (!audioTrack) return undefined;
+
+      // If audio track has its own previewUrl, use it directly
+      if (audioTrack.previewUrl) {
+        return audioTrack;
       }
 
+      // Fallback: Find a video track with the same source to get the previewUrl
+      const matchingVideoTrack = tracks.find(
+        (track) =>
+          track.type === 'video' &&
+          track.source === audioTrack.source &&
+          track.previewUrl,
+      );
+
+      // Return audio track with borrowed previewUrl if available
+      return {
+        ...audioTrack,
+        previewUrl: matchingVideoTrack?.previewUrl || audioTrack.previewUrl,
+      };
+    } catch (err) {
+      console.error('[useActiveMedia] Error:', err);
       return undefined;
+    }
+  }, [tracks, currentFrame]);
+
+  // All independent audio tracks for multi-track mixing
+  const allIndependentAudioTracks = useMemo(() => {
+    try {
+      return tracks
+        .filter((track) => {
+          if (track.type !== 'audio') return false;
+          if (currentFrame < track.startFrame || currentFrame >= track.endFrame)
+            return false;
+          if (track.muted) return false;
+
+          // Standalone audio with previewUrl
+          if (track.previewUrl) return true;
+
+          // Unlinked audio
+          if (!track.isLinked) {
+            // Try to find a matching video to borrow previewUrl
+            const matchingVideo = tracks.find(
+              (t) =>
+                t.type === 'video' && t.source === track.source && t.previewUrl,
+            );
+            return !!matchingVideo?.previewUrl;
+          }
+
+          // Linked audio with position gap
+          if (hasAudioPositionGap(track, tracks)) return true;
+
+          return false;
+        })
+        .map((track) => {
+          // Ensure each track has a previewUrl
+          if (track.previewUrl) return track;
+
+          const matchingVideo = tracks.find(
+            (t) =>
+              t.type === 'video' && t.source === track.source && t.previewUrl,
+          );
+          return {
+            ...track,
+            previewUrl: matchingVideo?.previewUrl,
+          };
+        })
+        .filter((track) => track.previewUrl); // Only return tracks with valid URLs
     } catch {
-      return undefined;
+      return [];
     }
   }, [tracks, currentFrame]);
 
@@ -114,6 +184,7 @@ export function useActiveMedia({
   return {
     activeVideoTrack,
     independentAudioTrack,
+    allIndependentAudioTracks,
     videoTrackWithAudio,
     activeAudioTrack,
   };

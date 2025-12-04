@@ -298,15 +298,22 @@ const processImportedFile = async (
     );
   }
 
-  // Create preview URL for video and image files
+  // Create preview URL for video, image, AND audio files
   let previewUrl: string | undefined;
-  if (fileInfo.type === 'video' || fileInfo.type === 'image') {
+  if (
+    fileInfo.type === 'video' ||
+    fileInfo.type === 'image' ||
+    fileInfo.type === 'audio'
+  ) {
     try {
       const previewResult = await window.electronAPI.createPreviewUrl(
         fileInfo.path,
       );
       if (previewResult.success) {
         previewUrl = previewResult.url;
+        console.log(
+          `🔗 Created preview URL for ${fileInfo.type}: ${fileInfo.name}`,
+        );
       }
     } catch (error) {
       console.warn(
