@@ -144,18 +144,26 @@ class AudioWaveformGenerator {
     startTime = 0,
     endTime = duration,
   ): Promise<number[]> {
-    // Check if we're dealing with a URL (preview URL) or file path
-    const audioUrl = audioPath.startsWith('http')
-      ? audioPath
-      : `file://${audioPath}`;
+    let arrayBuffer: ArrayBuffer;
 
-    // Fetch the audio file
-    const response = await fetch(audioUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch audio file: ${response.statusText}`);
+    // Handle different path types
+    if (audioPath.startsWith('http') || audioPath.startsWith('blob:')) {
+      // Network URL or blob URL - use fetch
+      const response = await fetch(audioPath);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio file: ${response.statusText}`);
+      }
+      arrayBuffer = await response.arrayBuffer();
+    } else if (audioPath.startsWith('file://')) {
+      // Convert file:// URL to path and read via electron
+      const filePath = audioPath.replace('file://', '');
+      const buffer = await window.electronAPI.readFileAsBuffer(filePath);
+      arrayBuffer = buffer;
+    } else {
+      // Assume it's a local file path - read via electron
+      const buffer = await window.electronAPI.readFileAsBuffer(audioPath);
+      arrayBuffer = buffer;
     }
-
-    const arrayBuffer = await response.arrayBuffer();
 
     // Create audio context
     const audioContext = new (window.AudioContext ||
