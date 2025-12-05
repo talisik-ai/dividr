@@ -33,6 +33,8 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
 
   // Track which track IDs are using which previewUrls
   const trackToUrlRef = useRef<Map<string, string>>(new Map());
+  // Track which primary track is currently controlling a given previewUrl
+  const activeUrlTrackRef = useRef<Map<string, string>>(new Map());
 
   // Track previous frame for detecting seeks vs continuous playback
   const prevFrameRef = useRef<number>(currentFrame);
@@ -73,6 +75,15 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     },
     [],
   );
+
+  const stopAllAudio = useCallback(() => {
+    audioElementsRef.current.forEach((state) => {
+      if (!state.element.paused) {
+        state.element.pause();
+      }
+      state.isPlaying = false;
+    });
+  }, []);
 
   // Clean up audio elements that are no longer needed
   useEffect(() => {
@@ -120,11 +131,45 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     prevIsPlayingRef.current = isPlaying;
 
     // Determine if this is a seek (large frame jump or paused scrubbing)
-    const isSeek = frameDelta > 2 || !isPlaying;
+    const seekFrameThreshold = Math.max(5, Math.floor(fps * 0.5));
+    const isSeekJump = frameDelta > seekFrameThreshold;
+    const isPausedScrub = !isPlaying;
+    const isSeek = isSeekJump || isPausedScrub;
 
-    // Process each track
+    if (isSeek && (isPausedScrub || frameDelta > seekFrameThreshold * 2)) {
+      stopAllAudio();
+    }
+
+    // Deduplicate by previewUrl so a single element controls each source.
+    // If multiple tracks use the same preview, prefer the one on the highest row,
+    // and if rows match, the one that starts later (assumes it's "on top").
+    const primaryTracksByUrl = new Map<string, VideoTrack>();
     audioTracks.forEach((track) => {
       if (!track.previewUrl) return;
+      const existing = primaryTracksByUrl.get(track.previewUrl);
+      if (!existing) {
+        primaryTracksByUrl.set(track.previewUrl, track);
+        return;
+      }
+
+      const existingRow = existing.trackRowIndex ?? 0;
+      const trackRow = track.trackRowIndex ?? 0;
+      const existingStartsLater = existing.startFrame >= track.startFrame;
+
+      const shouldReplace =
+        trackRow > existingRow ||
+        (trackRow === existingRow && !existingStartsLater);
+
+      if (shouldReplace) {
+        primaryTracksByUrl.set(track.previewUrl, track);
+      }
+    });
+
+    const activeUrls = new Set<string>();
+
+    primaryTracksByUrl.forEach((track) => {
+      if (!track.previewUrl) return;
+      activeUrls.add(track.previewUrl);
 
       const audio = getOrCreateAudioElement(track.previewUrl, track.id);
       if (!audio) return;
@@ -137,6 +182,21 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
       const relativeFrame = Math.max(0, currentFrame - track.startFrame);
       const trackTime = relativeFrame / fps;
       const targetTime = (track.sourceStartTime || 0) + trackTime;
+
+      // If the controlling track for this URL changed, force a retime and pause
+      const previousController = activeUrlTrackRef.current.get(
+        track.previewUrl,
+      );
+      const controllerChanged = previousController !== track.id;
+      if (controllerChanged) {
+        activeUrlTrackRef.current.set(track.previewUrl, track.id);
+        audio.pause();
+        const state = audioElementsRef.current.get(track.previewUrl);
+        if (state) state.isPlaying = false;
+        if (audio.readyState >= 1) {
+          audio.currentTime = targetTime;
+        }
+      }
 
       // Set volume and playback rate
       const shouldMute = isMuted || track.muted;
@@ -154,13 +214,23 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
         return;
       }
 
-      // Handle seeking (only when needed)
-      if ((isSeek || playStateChanged) && audio.readyState >= 2) {
-        const tolerance = 0.1; // 100ms tolerance
+      // Handle seeking / retime
+      const needsRetime =
+        isSeek || playStateChanged || controllerChanged || !isWithinRange;
+      if (needsRetime) {
+        const tolerance = 0.12; // relaxed tolerance to avoid thrash
         const diff = Math.abs(audio.currentTime - targetTime);
 
-        if (diff > tolerance) {
-          audio.currentTime = targetTime;
+        if (diff > tolerance || controllerChanged) {
+          // For small retimes, avoid pausing to reduce audible glitches
+          if (diff > tolerance * 2 || controllerChanged) {
+            audio.pause();
+            const state = audioElementsRef.current.get(track.previewUrl);
+            if (state) state.isPlaying = false;
+          }
+          if (audio.readyState >= 1) {
+            audio.currentTime = targetTime;
+          }
         }
       }
 
@@ -190,6 +260,16 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
         }
       }
     });
+
+    // Pause any audio elements whose URLs are no longer primary for this frame
+    audioElementsRef.current.forEach((state, url) => {
+      if (activeUrls.has(url)) return;
+      if (!state.element.paused) {
+        state.element.pause();
+      }
+      state.isPlaying = false;
+      activeUrlTrackRef.current.delete(url);
+    });
   }, [
     audioTracks,
     currentFrame,
@@ -199,6 +279,7 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     volume,
     playbackRate,
     getOrCreateAudioElement,
+    stopAllAudio,
   ]);
 
   // Cleanup on unmount

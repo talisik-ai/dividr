@@ -40,6 +40,10 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { BasePanel } from '../../../components/panels/basePanel';
 import { CustomPanelProps } from '../../../components/panels/panelRegistry';
+import {
+  importMediaFromDialogUnified,
+  importMediaUnified,
+} from '../../../services/mediaImportService';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
 interface MediaItem {
@@ -82,6 +86,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   );
   const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
   const tracks = useVideoEditorStore((state) => state.tracks);
+  const importMediaToTimeline = useVideoEditorStore(
+    (state) => state.importMediaToTimeline,
+  );
   const addTrackFromMediaLibrary = useVideoEditorStore(
     (state) => state.addTrackFromMediaLibrary,
   );
@@ -149,38 +156,18 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
-      try {
-        const loadingToast = toast.loading(
-          `Validating and importing ${files.length} ${files.length === 1 ? 'file' : 'files'}...`,
-        );
-        const result = await importMediaFromDrop(files);
-        if (!result || (!result.success && !result.error)) return;
-        toast.dismiss(loadingToast);
-        const importedCount = result.importedFiles.length;
-        const rejectedCount = result.rejectedFiles?.length || 0;
-        if (importedCount > 0) {
-          toast.success(
-            `Successfully imported ${importedCount} ${importedCount === 1 ? 'file' : 'files'}` +
-              (rejectedCount > 0 ? ` (${rejectedCount} rejected)` : ''),
-          );
-        } else if (rejectedCount > 0) {
-          const errorMessage =
-            result.error ||
-            'All files were rejected due to corruption or invalid format';
-          toast.error(errorMessage);
-        } else {
-          toast.error('No files to import');
-        }
-      } catch (error: unknown) {
-        console.error('Error handling files:', error);
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : 'Failed to import files. Please try again.',
-        );
-      }
+      await importMediaUnified(
+        files,
+        'library-drop',
+        {
+          importMediaFromDrop,
+          importMediaToTimeline,
+          addTrackFromMediaLibrary,
+        },
+        { addToTimeline: false, showToasts: true },
+      );
     },
-    [importMediaFromDrop],
+    [importMediaFromDrop, importMediaToTimeline, addTrackFromMediaLibrary],
   );
 
   const handleDragOut = useCallback((e: React.DragEvent) => {
@@ -518,18 +505,15 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         onDragOver={handleDrag}
         onDrop={handleDrop}
         onClick={async () => {
-          const result = await importMediaFromDialog();
-          if (!result || (!result.success && !result.error)) return;
-          if (result.success && result.importedFiles.length > 0) {
-            console.log(
-              `✅ Successfully imported ${result.importedFiles.length} files via dialog`,
-            );
-          } else {
-            const errorMessage =
-              result.error ||
-              'All files were rejected due to corruption or invalid format';
-            toast.error(errorMessage);
-          }
+          await importMediaFromDialogUnified(
+            importMediaFromDialog,
+            {
+              importMediaFromDrop,
+              importMediaToTimeline,
+              addTrackFromMediaLibrary,
+            },
+            { addToTimeline: false, showToasts: true },
+          );
         }}
       >
         <div className="hidden lg:block text-xs text-muted-foreground space-y-2">
@@ -985,18 +969,15 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         <div className="flex flex-col flex-1 min-h-0 gap-4">
           <Button
             onClick={async () => {
-              const result = await importMediaFromDialog();
-              if (!result || (!result.success && !result.error)) return;
-              if (result.success && result.importedFiles.length > 0) {
-                console.log(
-                  `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
-                );
-              } else {
-                const errorMessage =
-                  result.error ||
-                  'All files were rejected due to corruption or invalid format';
-                toast.error(errorMessage);
-              }
+              await importMediaFromDialogUnified(
+                importMediaFromDialog,
+                {
+                  importMediaFromDrop,
+                  importMediaToTimeline,
+                  addTrackFromMediaLibrary,
+                },
+                { addToTimeline: false, showToasts: true },
+              );
             }}
             className="w-full bg-accent text-accent-foreground hover:bg-accent/80 font-normal text-sm rounded-sm"
             variant="ghost"

@@ -8,7 +8,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { toast } from 'sonner';
+import {
+  importMediaFromDialogUnified,
+  importMediaUnified,
+} from '../services/mediaImportService';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
@@ -1063,6 +1066,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       moveSelectedTracks,
       resizeTrack,
       importMediaToTimeline,
+      importMediaFromDrop,
+      addTrackFromMediaLibrary,
       importMediaFromDialog,
     } = useVideoEditorStore();
 
@@ -1204,20 +1209,42 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         });
 
         if (validFiles.length > 0) {
-          await importMediaToTimeline(validFiles);
+          await importMediaUnified(
+            validFiles,
+            'timeline-drop',
+            {
+              importMediaFromDrop,
+              importMediaToTimeline,
+              addTrackFromMediaLibrary,
+            },
+            { addToTimeline: true, showToasts: true },
+          );
         }
       },
-      [importMediaToTimeline, dynamicRows],
+      [
+        importMediaFromDrop,
+        importMediaToTimeline,
+        addTrackFromMediaLibrary,
+        dynamicRows,
+      ],
     );
 
     const handlePlaceholderClick = useCallback(async () => {
-      const result = await importMediaFromDialog();
-      if (!result || (!result.success && !result.error)) return;
-
-      if (result.error) {
-        toast.error(result.error);
-      }
-    }, [importMediaFromDialog]);
+      await importMediaFromDialogUnified(
+        importMediaFromDialog,
+        {
+          importMediaFromDrop,
+          importMediaToTimeline,
+          addTrackFromMediaLibrary,
+        },
+        { addToTimeline: true, showToasts: true },
+      );
+    }, [
+      importMediaFromDialog,
+      importMediaFromDrop,
+      importMediaToTimeline,
+      addTrackFromMediaLibrary,
+    ]);
 
     // Group tracks by their designated rows
     const tracksByRow = useMemo(() => {

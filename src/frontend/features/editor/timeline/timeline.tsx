@@ -7,7 +7,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { toast } from 'sonner';
 import { useTrackDragRecording } from '../stores/videoEditor/hooks/useTrackDragRecording';
 import { useUndoRedoShortcuts } from '../stores/videoEditor/hooks/useUndoRedoShortcuts';
 import {
@@ -153,9 +152,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const addTrackFromMediaLibrary = useVideoEditorStore(
       (state) => state.addTrackFromMediaLibrary,
     );
-    const importMediaToTimeline = useVideoEditorStore(
-      (state) => state.importMediaToTimeline,
-    );
     const startDraggingPlayhead = useVideoEditorStore(
       (state) => state.startDraggingPlayhead,
     );
@@ -197,62 +193,17 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const handleDrop = useCallback(
       async (e: React.DragEvent) => {
         e.preventDefault();
-        // CRITICAL: Stop propagation to prevent duplicate imports from video preview drop handler
         e.stopPropagation();
         setDropActive(false);
 
-        // Check if this is a media library item (internal drag)
+        // Only handle media library drags here
+        // File drops are handled by TimelineTracks
         const mediaId = e.dataTransfer.getData('text/plain');
         if (mediaId) {
-          // Always start at frame 0 when dragging from MediaImportPanel
-          const dropFrame = 0;
-
-          addTrackFromMediaLibrary(mediaId, dropFrame).catch(console.error);
-          return;
-        }
-
-        // Check if this is a file drop (external)
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-          const files = Array.from(e.dataTransfer.files);
-
-          // Show immediate loading toast with promise
-          const importPromise = importMediaToTimeline(files);
-
-          toast.promise(importPromise, {
-            loading: `Adding ${files.length} ${files.length === 1 ? 'file' : 'files'} to timeline...`,
-            success: (result) => {
-              const importedCount = result.importedFiles.length;
-              const rejectedCount = result.rejectedFiles?.length || 0;
-
-              // Return success message
-              if (importedCount > 0) {
-                return (
-                  `Added ${importedCount} ${importedCount === 1 ? 'file' : 'files'} to timeline` +
-                  (rejectedCount > 0 ? ` (${rejectedCount} rejected)` : '')
-                );
-              } else {
-                throw new Error(
-                  'All files were rejected due to corruption or invalid format',
-                );
-              }
-            },
-            error: (error) => {
-              // Use the actual error message from validation results
-              const errorMessage =
-                error?.error ||
-                'All files were rejected due to corruption or invalid format';
-              return errorMessage;
-            },
-          });
-
-          try {
-            await importPromise;
-          } catch (error) {
-            // Error is already handled by toast in importMediaToTimeline
-          }
+          addTrackFromMediaLibrary(mediaId, 0).catch(console.error);
         }
       },
-      [addTrackFromMediaLibrary, importMediaToTimeline],
+      [addTrackFromMediaLibrary],
     );
 
     const dynamicRowsWithPlaceholders = useMemo(() => {

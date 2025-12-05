@@ -672,6 +672,31 @@ export const DualBufferVideo = forwardRef<
     }, [currentFrame, fps, activeTrack, isPlaying, getActiveVideo, activeSlot]);
 
     // =========================================================================
+    // EFFECT: Stop audio when jumping outside the active track range
+    // =========================================================================
+    useEffect(() => {
+      const activeVideo = getActiveVideo();
+      const preloadVideo = getPreloadVideo();
+
+      if (!activeTrack) {
+        if (activeVideo && !activeVideo.paused) activeVideo.pause();
+        if (preloadVideo && !preloadVideo.paused) preloadVideo.pause();
+        muteAll();
+        return;
+      }
+
+      const isWithinActiveRange =
+        currentFrame >= activeTrack.startFrame &&
+        currentFrame < activeTrack.endFrame;
+
+      if (!isWithinActiveRange) {
+        if (activeVideo && !activeVideo.paused) activeVideo.pause();
+        if (preloadVideo && !preloadVideo.paused) preloadVideo.pause();
+        muteAll();
+      }
+    }, [activeTrack, currentFrame, getActiveVideo, getPreloadVideo, muteAll]);
+
+    // =========================================================================
     // EFFECT: Timeline sync during playback (video → timeline)
     // Uses requestVideoFrameCallback for frame-accurate sync
     // =========================================================================
