@@ -540,13 +540,36 @@ function buildSeparateTimelines(
   );
 
   // Build video timelines for each layer
+  // Only fill gaps for the bottom-most video/image layer (lowest layer number) - this serves as the background
+  // Upper layers should not have gaps filled - they'll be transparent where there's no content
+  // Note: Audio layers are not considered when determining the bottom-most layer
   const videoLayers = new Map<number, ProcessedTimeline>();
+  const sortedVideoLayers = Array.from(videoInputsByLayer.entries()).sort((a, b) => a[0] - b[0]);
+  const sortedImageLayers = Array.from(imageInputsByLayer.entries()).sort((a, b) => a[0] - b[0]);
+  
+  // Find the bottom-most video/image layer (lowest layer number across both video and image layers)
+  // Audio layers are excluded from this determination
+  const allVideoImageLayers = [
+    ...sortedVideoLayers.map(([layer]) => layer),
+    ...sortedImageLayers.map(([layer]) => layer),
+  ].sort((a, b) => a - b);
+  const bottomMostVideoImageLayer = allVideoImageLayers.length > 0 ? allVideoImageLayers[0] : null;
+  
   for (const [layer, layerInputs] of videoInputsByLayer.entries()) {
     console.log(
       `🎥 Building video layer ${layer} with ${layerInputs.length} inputs`,
     );
     let videoSegments = buildVideoTimeline(layerInputs, targetFrameRate);
-    videoSegments = fillTimelineGaps(videoSegments, targetFrameRate, 'video');
+    
+    // Only fill gaps for the bottom-most video/image layer - this creates the black background for all layers above
+    // Audio layers are not considered when determining bottom-most layer
+    if (layer === bottomMostVideoImageLayer) {
+      console.log(`   🎬 Layer ${layer} is bottom-most video/image layer - filling gaps with black video clips`);
+      videoSegments = fillTimelineGaps(videoSegments, targetFrameRate, 'video');
+    } else {
+      console.log(`   🎬 Layer ${layer} is upper layer - skipping gap filling (will be transparent)`);
+      // Don't fill gaps for upper layers - they'll be transparent where there's no content
+    }
 
     const totalDuration =
       videoSegments.length > 0

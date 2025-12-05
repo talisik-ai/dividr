@@ -699,6 +699,7 @@ export function processLayerSegments(
     originalIndex: number,
     inputRef: string,
   ) => AudioTrimResult,
+  isBottomLayer: boolean = false, // Whether this is the bottom-most layer
 ): string[] {
   const concatInputs: string[] = [];
 
@@ -707,18 +708,27 @@ export function processLayerSegments(
     const uniqueIndex = `${layerType}_L${layerIndex}_${segmentIndex}`;
 
     if (isGapInput(trackInfo.path)) {
-      // Gap - create black/transparent video
-      const gapResult = createGapVideoFilters(
-        9000 + layerIndex * 1000 + segmentIndex,
-        trackInfo.duration || 1,
-        targetFps,
-        targetDimensions,
-      );
-      videoFilters.push(...gapResult.filters);
-      concatInputs.push(gapResult.filterRef);
-      console.log(
-        `🎬 Layer ${layerIndex} (${layerType}): Added gap ${gapResult.filterRef}`,
-      );
+      // Gap handling: Only create black video clips for bottom-most layer
+      // Upper layers should skip gaps (they'll be transparent where there's no content)
+      if (isBottomLayer) {
+        // Bottom layer - create black video for gaps (serves as background)
+        const gapResult = createGapVideoFilters(
+          9000 + layerIndex * 1000 + segmentIndex,
+          trackInfo.duration || 1,
+          targetFps,
+          targetDimensions,
+        );
+        videoFilters.push(...gapResult.filters);
+        concatInputs.push(gapResult.filterRef);
+        console.log(
+          `🎬 Layer ${layerIndex} (${layerType}): Added black gap ${gapResult.filterRef} (bottom layer)`,
+        );
+      } else {
+        // Upper layer - skip gaps (will be transparent)
+        console.log(
+          `🎬 Layer ${layerIndex} (${layerType}): Skipping gap (upper layer - will be transparent)`,
+        );
+      }
     } else {
       // Regular video/image file
       const fileIndex = findFileIndexForSegment(
@@ -758,20 +768,50 @@ export function processLayerSegments(
         const hasTransform = isVideoFile && hasNonZeroTransform(trackInfo);
 
         if (hasTransform) {
-          // Video has non-zero transform - create background and overlay
-          // targetDimensions is already set to export dimensions if specified
-          const duration = trackInfo.duration || segment.duration || 1;
-          videoStreamRef = createBlackBackgroundWithOverlay(
-            videoStreamRef,
-            trackInfo,
-            targetDimensions,
-            uniqueIndex,
-            videoFilters,
-            duration,
-            targetFps,
-            hwAccel,
-            createGapVideoFilters,
-          );
+          // Video has non-zero transform
+          if (isBottomLayer) {
+            // Bottom layer - create black background and overlay video on it
+            // This ensures the video is positioned correctly on a black background
+            const duration = trackInfo.duration || segment.duration || 1;
+            videoStreamRef = createBlackBackgroundWithOverlay(
+              videoStreamRef,
+              trackInfo,
+              targetDimensions,
+              uniqueIndex,
+              videoFilters,
+              duration,
+              targetFps,
+              hwAccel,
+              createGapVideoFilters,
+            );
+            console.log(
+              `📐 Layer ${layerIndex}: Created black background for video with transform (bottom layer)`,
+            );
+          } else {
+            // Upper layer - don't create black background, just scale/position the video
+            // The video will be transparent where there's no content, overlaying on the bottom layer
+            // Scale video to target dimensions if needed (without padding)
+            const needsScaling = trackInfo.width && trackInfo.height &&
+              (trackInfo.width !== targetDimensions.width || trackInfo.height !== targetDimensions.height);
+            
+            if (needsScaling) {
+              const scaleRef = `[${uniqueIndex}_scaled]`;
+              const scaleFilter = buildScaleFilter(
+                videoStreamRef,
+                scaleRef,
+                targetDimensions.width,
+                targetDimensions.height,
+                hwAccel,
+                { forceOriginalAspectRatio: 'decrease', pad: false }, // No padding for upper layers
+              );
+              videoFilters.push(scaleFilter);
+              videoStreamRef = scaleRef;
+              console.log(
+                `📐 Layer ${layerIndex}: Scaled video with transform (no padding - upper layer) from ${trackInfo.width}x${trackInfo.height} to fit ${targetDimensions.width}x${targetDimensions.height}`,
+              );
+            }
+            // Transform positioning will be applied when overlaying this layer on the base layer
+          }
         } else {
           // No transform - use standard scaling logic
           // This scales video segments to match target dimensions (e.g., 608x1080 → 1080x1920)
@@ -801,17 +841,26 @@ export function processLayerSegments(
               `📐 Layer ${layerIndex}: Scaled image from ${trackInfo.width}x${trackInfo.height} to fit ${targetDimensions.width}x${targetDimensions.height} (preserving transparency)`,
             );
             } else {
+              // For videos: bottom layer gets black padding, upper layers get no padding (transparent)
+              const padOption: {
+                forceOriginalAspectRatio: 'decrease' | 'increase';
+                pad: boolean;
+                padColor?: string;
+              } = isBottomLayer 
+                ? { forceOriginalAspectRatio: 'decrease' as const, pad: true, padColor: 'black' }
+                : { forceOriginalAspectRatio: 'decrease' as const, pad: false };
+              
               const scaleFilter = buildScaleFilter(
                 videoStreamRef,
                 scaleRef,
                 targetDimensions.width,
                 targetDimensions.height,
                 hwAccel,
-                { forceOriginalAspectRatio: 'decrease', pad: true, padColor: 'black' },
+                padOption,
               );
               videoFilters.push(scaleFilter);
               console.log(
-                `📐 Layer ${layerIndex}: Scaled video segment from ${trackInfo.width}x${trackInfo.height} to ${targetDimensions.width}x${targetDimensions.height} with black padding`,
+                `📐 Layer ${layerIndex}: Scaled video segment from ${trackInfo.width}x${trackInfo.height} to ${targetDimensions.width}x${targetDimensions.height} ${isBottomLayer ? 'with black padding' : 'without padding (upper layer)'}`,
               );
             }
           videoStreamRef = scaleRef;
@@ -1269,6 +1318,19 @@ export function buildSeparateTimelineFilterComplex(
     if (track.videoTimeline) {
       console.log(`   📹 Processing ${track.videoTimeline.segments.length} video segment(s) in layer ${layerNum}`);
       
+      // Find the bottom-most video/image layer (lowest layer number with video or image)
+      // Only consider video/image layers, not audio layers
+      const bottomMostVideoImageLayer = sortedLayers.find(
+        ([num, t]) => t.videoTimeline || t.imageSegments
+      )?.[0] ?? null;
+      const isBottomLayer = layerNum === bottomMostVideoImageLayer;
+      
+      if (isBottomLayer) {
+        console.log(`   🎬 Layer ${layerNum} is bottom-most video/image layer - gaps will be filled with black video clips`);
+      } else {
+        console.log(`   🎬 Layer ${layerNum} is upper layer - no gap filling, videos will be transparent where there's no content`);
+      }
+      
       const concatInputs = processLayerSegments(
         track.videoTimeline,
         layerNum,
@@ -1283,6 +1345,7 @@ export function buildSeparateTimelineFilterComplex(
         createVideoTrimFilters,
         createFpsNormalizationFilters,
         createSarNormalizationFilters,
+        isBottomLayer,
       );
 
       // Build concatenation filter for this layer
@@ -1331,6 +1394,36 @@ export function buildSeparateTimelineFilterComplex(
           const startTime = Math.round(overlayStartTime * 1000) / 1000;
           const endTime = Math.round(overlayEndTime * 1000) / 1000;
           
+          // Videos can overlay on top of other videos based on layer order
+          // All video layers are composited in order, with higher layer numbers overlaying on top of lower ones
+          // Use transform x/y coordinates for positioning when overlaying video layers
+          let overlayX = '(W-w)/2'; // Default: centered
+          let overlayY = '(H-h)/2'; // Default: centered
+          
+          // Check if any segment in this layer has video transform coordinates for positioning
+          const firstSegment = track.videoTimeline.segments[0];
+          if (firstSegment && firstSegment.input.videoTransform) {
+            const transform = firstSegment.input.videoTransform;
+            const transformX = transform.x ?? 0;
+            const transformY = transform.y ?? 0;
+            
+            // Use transform coordinates for overlay positioning
+            // Note: If video was processed with createBlackBackgroundWithOverlay, it has a full-size background
+            // with the video positioned on it. When overlaying that, we still use the transform coordinates
+            // to position the entire result (background + video) on the base layer.
+            if (transformX !== 0 || transformY !== 0) {
+              // Convert normalized position (-1 to 1) to FFmpeg overlay expression
+              overlayX = transformX >= 0
+                ? `(W-w)/2+${transformX}*W/2`
+                : `(W-w)/2${transformX}*W/2`; // Negative sign already in value
+              overlayY = transformY >= 0
+                ? `(H-h)/2+${transformY}*H/2` // Add because positive y moves down (matches preview)
+                : `(H-h)/2${transformY}*H/2`; // Negative sign already in value
+              
+              console.log(`   📍 Using transform positioning for layer ${layerNum}: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}`);
+            }
+          }
+          
           const overlayLabel = `composite_${layerNum}`;
           const enableExpression = `between(t,${startTime},${endTime})`;
           
@@ -1338,8 +1431,8 @@ export function buildSeparateTimelineFilterComplex(
             `[${layerInputLabel}]`,
             `[${layerLabel}]`,
             `[${overlayLabel}]`,
-            '(W-w)/2',
-            '(H-h)/2',
+            overlayX,
+            overlayY,
             hwAccel,
             { 
               shortest: 0, // Continue for longest input duration
@@ -1348,7 +1441,7 @@ export function buildSeparateTimelineFilterComplex(
           );
           videoFilters.push(overlayFilter);
           layerInputLabel = overlayLabel;
-          console.log(`   ✅ Overlaid video layer ${layerNum} on previous layers (enabled from ${startTime.toFixed(2)}s to ${endTime.toFixed(2)}s)`);
+          console.log(`   ✅ Overlaid video layer ${layerNum} on previous layers (enabled from ${startTime.toFixed(2)}s to ${endTime.toFixed(2)}s, position: ${overlayX}, ${overlayY})`);
         }
         
         layerOutputs.set(layerNum, layerLabel);
