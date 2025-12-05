@@ -14,11 +14,12 @@
  * - Split mode click: Split track at position
  */
 
-import { getTrackRowId, parseRowId } from './dynamicTrackRows';
 import { calculateCenteringOffset, getRowHeight } from './timelineConstants';
 import { getVisibleRowsInOrder } from './trackRowPositions';
 
 import { VideoTrack } from '../../stores/videoEditor/types';
+import { TrackRowDefinition } from './dynamicTrackRows';
+import { buildInteractionRowBounds } from './rowFiltering';
 
 export type ClickTarget =
   | 'empty-space'
@@ -205,7 +206,7 @@ export const handleTimelineDoubleClick = (
 
 /**
  * Helper to find which track is at a given position
- * MIGRATED: Now uses dynamic row system with scroll offset
+ * Uses unified row filtering to exclude placeholders from hit-testing
  * Accounts for vertical scroll, dynamic rows, and centering offset
  */
 export const findTrackAtPosition = (
@@ -220,84 +221,50 @@ export const findTrackAtPosition = (
   if (!tracksElement) return null;
 
   const rect = tracksElement.getBoundingClientRect();
-  const x = clientX - rect.left + tracksElement.scrollLeft;
-  // CRITICAL: Include vertical scroll offset for accurate positioning
-  const y = clientY - rect.top + tracksElement.scrollTop;
-  const frame = Math.floor(x / frameWidth);
+  const scrollLeft = tracksElement.scrollLeft;
+  const scrollTop = tracksElement.scrollTop;
+
+  // Convert client coordinates to content coordinates
+  const contentX = clientX - rect.left + scrollLeft;
+  const contentY = clientY - rect.top + scrollTop;
+
+  // Calculate target frame (used by both paths)
+  const targetFrame = Math.floor(contentX / frameWidth);
 
   const visibleRows = visibleTrackRows || ['video', 'audio'];
 
-  // If dynamic rows are provided, use the new system
+  // If dynamic rows are provided, use the new unified filtering system
   if (dynamicRows && dynamicRows.length > 0) {
-    // Filter visible dynamic rows
-    const visibleDynamicRows = dynamicRows.filter((row) => {
-      const rowMediaType = row.trackTypes[0];
-      return visibleTrackRows?.includes(rowMediaType);
-    });
+    // BUILD INTERACTION ROW BOUNDS (real tracks only, placeholders excluded)
+    const rowBounds = buildInteractionRowBounds(
+      dynamicRows as TrackRowDefinition[],
+      visibleRows,
+      48, // PLACEHOLDER_ROW_HEIGHT
+    );
 
-    // Calculate baseline height (all dynamic rows)
-    const baselineHeight = dynamicRows.reduce((sum, row) => {
-      const rowMediaType = row.trackTypes[0];
-      return sum + getRowHeight(rowMediaType);
-    }, 0);
+    // Find which row the cursor is in
+    const targetRow = rowBounds.find(
+      (row) => contentY >= row.top && contentY < row.bottom,
+    );
 
-    // Calculate total height of visible rows
-    const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
-      const rowMediaType = row.trackTypes[0];
-      return sum + getRowHeight(rowMediaType);
-    }, 0);
+    if (!targetRow) return null;
 
-    // Calculate centering offset
-    const centeringOffset =
-      visibleDynamicRows.length < dynamicRows.length
-        ? (baselineHeight - totalVisibleHeight) / 2
-        : 0;
+    // Find track in this row at cursor X position
+    const matchingTrack = tracks.find(
+      (track) =>
+        track.type === targetRow.type &&
+        (track.trackRowIndex ?? 0) === targetRow.rowIndex &&
+        targetFrame >= track.startFrame &&
+        targetFrame < track.endFrame,
+    );
 
-    // Build row bounds in content coordinates (accounting for scroll)
-    let cumulativeTop = 0;
-    let targetRowId: string | null = null;
-
-    for (const row of dynamicRows) {
-      const mediaType = row.trackTypes[0];
-      const parsed = parseRowId(row.id);
-
-      if (visibleRows.includes(mediaType) && parsed) {
-        const rowHeight = getRowHeight(mediaType);
-        const rowTop = cumulativeTop + centeringOffset;
-        const rowBottom = rowTop + rowHeight;
-
-        // Check if Y position falls within this row (in content coordinates)
-        if (y >= rowTop && y < rowBottom) {
-          targetRowId = row.id;
-          break;
-        }
-
-        cumulativeTop += rowHeight;
-      }
-    }
-
-    if (!targetRowId) return null;
-
-    // Find tracks in the target row that intersect with the frame
-    const parsed = parseRowId(targetRowId);
-    if (!parsed) return null;
-
-    const intersectingTracks = tracks.filter((track) => {
-      const trackRowId = getTrackRowId(track);
-      return (
-        trackRowId === targetRowId &&
-        frame >= track.startFrame &&
-        frame <= track.endFrame
-      );
-    });
-
-    return intersectingTracks.length > 0 ? intersectingTracks[0] : null;
+    return matchingTrack || null;
   }
 
-  // Fallback to old system for backward compatibility
+  // Fallback to old system for backward compatibility (no dynamic rows)
   const visibleRowsInOrder = getVisibleRowsInOrder(visibleRows);
   const centeringOffset = calculateCenteringOffset(visibleRows);
-  const adjustedY = y - centeringOffset;
+  const adjustedY = contentY - centeringOffset;
 
   let cumulativeHeight = 0;
   let trackType: VideoTrack['type'] | null = null;
@@ -319,8 +286,8 @@ export const findTrackAtPosition = (
   const intersectingTracks = tracks.filter(
     (track) =>
       track.type === trackType &&
-      frame >= track.startFrame &&
-      frame <= track.endFrame,
+      targetFrame >= track.startFrame &&
+      targetFrame < track.endFrame,
   );
 
   return intersectingTracks.length > 0 ? intersectingTracks[0] : null;

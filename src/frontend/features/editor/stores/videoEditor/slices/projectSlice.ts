@@ -6,6 +6,7 @@ import { StateCreator } from 'zustand';
 export interface ProjectSlice {
   currentProjectId: string | null;
   isAutoSaveEnabled: boolean;
+  isSaving: boolean;
   lastSavedAt: string | null;
   hasUnsavedChanges: boolean;
   setCurrentProjectId: (projectId: string | null) => void;
@@ -18,6 +19,7 @@ export interface ProjectSlice {
   exportProject: () => string;
   importProject: (data: string) => void;
   setProjectThumbnail: (thumbnailData: string) => Promise<void>;
+  setIsSaving: (isSaving: boolean) => void;
 
   // Cross-slice helpers accessed by other slices
   updateProjectThumbnailFromTimeline?: () => Promise<void>;
@@ -31,8 +33,13 @@ export const createProjectSlice: StateCreator<
 > = (set, get) => ({
   currentProjectId: null,
   isAutoSaveEnabled: true,
+  isSaving: false,
   lastSavedAt: null,
   hasUnsavedChanges: false,
+
+  setIsSaving: (isSaving) => {
+    set({ isSaving });
+  },
 
   setCurrentProjectId: (projectId) => {
     // If setting to null (exiting editor), clear all drag states
@@ -63,7 +70,7 @@ export const createProjectSlice: StateCreator<
       }
 
       const { videoEditor } = project;
-      
+
       // Regenerate previewUrl for video/image tracks that are missing it
       // This ensures videos display correctly after project reload
       const tracksWithPreviewUrls = await Promise.all(
@@ -147,6 +154,8 @@ export const createProjectSlice: StateCreator<
       return;
     }
 
+    set({ isSaving: true });
+
     try {
       // Get current project from ProjectService
       const currentProject = await projectService.getProject(
@@ -186,6 +195,7 @@ export const createProjectSlice: StateCreator<
       set({
         hasUnsavedChanges: false,
         lastSavedAt: new Date().toISOString(),
+        isSaving: false,
       });
 
       // Sync with ProjectStore to update the project list
@@ -196,6 +206,7 @@ export const createProjectSlice: StateCreator<
       );
     } catch (error) {
       console.error('Failed to save project data:', error);
+      set({ isSaving: false });
       throw error;
     }
   },

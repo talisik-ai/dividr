@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { projectService } from '@/backend/services/projectService';
+import { sanitizeFilename } from '@/frontend/utils/filenameSanitizer';
 import {
   createDefaultProject,
   ProjectData,
   ProjectSummary,
 } from '@/shared/types/project.types';
-import { sanitizeFilename } from '@/frontend/utils/filenameSanitizer';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { useVideoEditorStore } from '../../editor/stores/videoEditor/index';
@@ -326,7 +326,10 @@ export const useProjectStore = create<ProjectStore>()(
       });
 
       // Use comprehensive filename sanitization
-      const sanitizedFilename = sanitizeFilename(exportData.metadata.title, 'Untitled_Project');
+      const sanitizedFilename = sanitizeFilename(
+        exportData.metadata.title,
+        'Untitled_Project',
+      );
 
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');

@@ -39,8 +39,9 @@ import {
   getTrackRowId,
   migrateTracksWithRowIndex,
   parseRowId,
+  TrackRowDefinition,
 } from './utils/dynamicTrackRows';
-import { getRowHeight } from './utils/timelineConstants';
+import { buildInteractionRowBounds } from './utils/rowFiltering';
 import {
   calculateFrameFromPosition,
   handleTimelineMouseDown as centralizedHandleMouseDown,
@@ -253,6 +254,50 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       },
       [addTrackFromMediaLibrary, importMediaToTimeline],
     );
+
+    const dynamicRowsWithPlaceholders = useMemo(() => {
+      const MAX_PLACEHOLDER_ROWS = 3;
+
+      // Calculate placeholder counts (same logic as timelineTracks.tsx)
+      const baseRowCount = 2;
+      const extraRowsCount = Math.max(0, dynamicRows.length - baseRowCount);
+      const remainingPlaceholders = Math.max(
+        0,
+        MAX_PLACEHOLDER_ROWS - extraRowsCount,
+      );
+
+      const placeholderRowsAbove = Math.min(2, remainingPlaceholders);
+      const placeholderRowsBelow = Math.max(0, remainingPlaceholders - 2);
+
+      const completeRows: TrackRowDefinition[] = [];
+
+      // Add placeholder rows above
+      for (let i = 0; i < placeholderRowsAbove; i++) {
+        completeRows.push({
+          id: `placeholder-above-${i}`,
+          name: '',
+          trackTypes: [],
+          color: '',
+          icon: '',
+        });
+      }
+
+      // Add real dynamic rows
+      completeRows.push(...dynamicRows);
+
+      // Add placeholder rows below
+      for (let i = 0; i < placeholderRowsBelow; i++) {
+        completeRows.push({
+          id: `placeholder-below-${i}`,
+          name: '',
+          trackTypes: [],
+          color: '',
+          icon: '',
+        });
+      }
+
+      return completeRows;
+    }, [dynamicRows]);
 
     // Animation loop for playback
     useEffect(() => {
@@ -633,55 +678,26 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         const draggedTrack = tracks.find((t) => t.id === dragGhost.trackId);
         if (!draggedTrack) return;
 
-        // ========================================
         // BUILD ROW BOUNDS WITH PLACEHOLDER SPACING
-        // Account for vertical scroll offset and placeholder rows
         // ========================================
 
-        // Calculate placeholder rows (matches timelineTracks.tsx logic)
-        const { placeholderRowsAbove, placeholderRowsBelow } =
-          calculatePlaceholderRows(dynamicRows);
-        const PLACEHOLDER_ROW_HEIGHT = 48;
+        // REPLACE this entire section with:
 
-        // Build row bounds with placeholder spacing
-        // This ensures visual Y positions match rendered layout including placeholders
-        const rowBounds = calculateRowBoundsWithPlaceholders(
-          dynamicRows,
+        // BUILD INTERACTION ROW BOUNDS (real tracks only, placeholders excluded)
+        const rowBounds = buildInteractionRowBounds(
+          dynamicRowsWithPlaceholders,
           visibleTrackRows,
-          placeholderRowsAbove,
-          placeholderRowsBelow,
-          PLACEHOLDER_ROW_HEIGHT,
+          48, // PLACEHOLDER_ROW_HEIGHT
         );
 
-        // ========================================
         // DETECT INSERTION POINT
-        // mouseRelativeY now includes scroll offset, matching content coordinates
-        // ========================================
-
+        // mouseRelativeY includes scroll offset, matching content coordinates
         const insertion = detectInsertionPoint(
-          mouseRelativeY, // Includes vertical scroll offset
-          rowBounds, // Bounds in content coordinates
+          mouseRelativeY,
+          rowBounds,
           draggedTrack.type,
           tracks,
         );
-
-        // DEBUG logging
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`🎯 DRAG:`, {
-            mouseY: mouseRelativeY.toFixed(0),
-            scrollY: currentScrollY.toFixed(0),
-            placeholderRowsAbove,
-            placeholderRowsBelow,
-            firstRowTop: rowBounds[0]?.top.toFixed(0),
-            insertion: insertion
-              ? {
-                  type: insertion.type,
-                  y: insertion.yPosition.toFixed(0),
-                  rowIdx: insertion.targetRowIndex,
-                }
-              : null,
-          });
-        }
 
         // ========================================
         // UPDATE STATE
@@ -769,7 +785,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       dragGhost?.trackId,
       frameWidth,
       visibleTrackRows,
-      dynamicRows,
+      dynamicRowsWithPlaceholders,
       tracks,
       updateDragGhostPosition,
       autoScrollMousePos,
@@ -977,67 +993,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       }
     }, [playback.isPlaying]);
 
-    // Helper function to find tracks within marquee selection
-    // MIGRATED: Now uses dynamic row system with scroll offset
     const findTracksInMarquee = useCallback(
       (rect: { left: number; top: number; right: number; bottom: number }) => {
         if (!tracksRef.current) return [];
 
         const selectedIds: string[] = [];
 
-        // Filter visible dynamic rows
-        const visibleDynamicRows = dynamicRows.filter((row) => {
-          const rowMediaType = row.trackTypes[0];
-          return visibleTrackRows.includes(rowMediaType);
-        });
-
-        // Calculate baseline height (all dynamic rows)
-        const baselineHeight = dynamicRows.reduce((sum, row) => {
-          const rowMediaType = row.trackTypes[0];
-          return sum + getRowHeight(rowMediaType);
-        }, 0);
-
-        // Calculate total height of visible rows
-        const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
-          const rowMediaType = row.trackTypes[0];
-          return sum + getRowHeight(rowMediaType);
-        }, 0);
-
-        // Calculate centering offset (MATCHES DropZoneIndicator)
-        const centeringOffset =
-          visibleDynamicRows.length < dynamicRows.length
-            ? (baselineHeight - totalVisibleHeight) / 2
-            : 0;
-
-        // Build row bounds in content coordinates (accounting for scroll)
-        const rowBounds: Array<{
-          rowId: string;
-          top: number;
-          bottom: number;
-          type: VideoTrack['type'];
-          rowIndex: number;
-        }> = [];
-
-        let cumulativeTop = 0;
-        for (const row of dynamicRows) {
-          const mediaType = row.trackTypes[0];
-          const parsed = parseRowId(row.id);
-
-          if (visibleTrackRows.includes(mediaType) && parsed) {
-            const rowHeight = getRowHeight(mediaType);
-            const rowTop = cumulativeTop + centeringOffset;
-
-            rowBounds.push({
-              rowId: row.id,
-              top: rowTop,
-              bottom: rowTop + rowHeight,
-              type: parsed.type,
-              rowIndex: parsed.rowIndex,
-            });
-
-            cumulativeTop += rowHeight;
-          }
-        }
+        // BUILD INTERACTION ROW BOUNDS (real tracks only, placeholders excluded)
+        const rowBounds = buildInteractionRowBounds(
+          dynamicRowsWithPlaceholders,
+          visibleTrackRows,
+          48, // PLACEHOLDER_ROW_HEIGHT
+        );
 
         // Check each track against marquee bounds
         tracks.forEach((track) => {
@@ -1056,7 +1023,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           const trackTop = trackRowBounds.top;
           const trackBottom = trackRowBounds.bottom;
 
-          // Marquee rect is in content coordinates (already includes scroll offset)
           // Check if track intersects with marquee
           const intersects =
             trackLeft < rect.right &&
@@ -1066,16 +1032,15 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
           if (intersects) {
             selectedIds.push(track.id);
-            // If track is linked, also select its partner
             if (track.isLinked && track.linkedTrackId) {
               selectedIds.push(track.linkedTrackId);
             }
           }
         });
 
-        return [...new Set(selectedIds)]; // Remove duplicates
+        return [...new Set(selectedIds)];
       },
-      [tracks, frameWidth, visibleTrackRows, dynamicRows],
+      [tracks, frameWidth, visibleTrackRows, dynamicRowsWithPlaceholders],
     );
 
     // Split mode handlers
@@ -1521,8 +1486,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           frameWidth,
           tracks,
           visibleTrackRows,
-          dynamicRows,
+          dynamicRowsWithPlaceholders,
         );
+
         const frame = calculateFrameFromPosition(
           e.clientX,
           tracksRef.current,
@@ -1575,6 +1541,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         isSplitModeActive,
         interactionHandlers,
         visibleTrackRows,
+        dynamicRowsWithPlaceholders,
       ],
     );
 

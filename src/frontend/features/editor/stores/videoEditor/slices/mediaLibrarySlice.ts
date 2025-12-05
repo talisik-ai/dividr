@@ -315,6 +315,8 @@ export const createMediaLibrarySlice: StateCreator<
     console.log(
       `🎵 Generating waveform for media library item: ${mediaItem.name}`,
     );
+    console.log(`📊 Audio source: ${audioPath}`);
+    console.log(`⏱️ Duration: ${mediaItem.duration}s`);
 
     try {
       // Mark as generating
@@ -515,7 +517,7 @@ export const createMediaLibrarySlice: StateCreator<
 
       // Calculate thumbnail dimensions based on video aspect ratio
       // Target width is 320px, height is calculated to preserve aspect ratio
-      let thumbnailWidth = 320;
+      const thumbnailWidth = 320;
       let thumbnailHeight = 180; // Default 16:9
 
       if (mediaItem.metadata?.width && mediaItem.metadata?.height) {

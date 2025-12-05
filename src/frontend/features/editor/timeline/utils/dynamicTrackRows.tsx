@@ -1,6 +1,7 @@
 import { ClosedCaption, Image, Music, Type, Video } from 'lucide-react';
 import React from 'react';
 import { VideoTrack } from '../../stores/videoEditor/types';
+import { buildInteractionRowBounds } from './rowFiltering';
 import { getRowHeight } from './timelineConstants';
 
 export interface TrackRowDefinition {
@@ -1336,62 +1337,41 @@ export function calculateRowBoundsWithPlaceholders(
   type: VideoTrack['type'];
   rowIndex: number;
 }> {
-  const rowBounds: Array<{
-    rowId: string;
-    top: number;
-    bottom: number;
-    type: VideoTrack['type'];
-    rowIndex: number;
-  }> = [];
+  // CRITICAL: Delegate to unified interaction bounds builder
+  // This ensures all coordinate calculations use the same logic
 
-  // Filter visible dynamic rows
-  const visibleDynamicRows = dynamicRows.filter((row) => {
-    const rowMediaType = row.trackTypes[0];
-    return visibleTrackRows.includes(rowMediaType);
-  });
+  // Build full rows array including placeholder definitions
+  const fullRows: TrackRowDefinition[] = [];
 
-  // Calculate baseline height (all dynamic rows)
-  const baselineHeight = dynamicRows.reduce((sum, row) => {
-    const rowMediaType = row.trackTypes[0];
-    return sum + getRowHeight(rowMediaType);
-  }, 0);
-
-  // Calculate total height of visible rows
-  const totalVisibleHeight = visibleDynamicRows.reduce((sum, row) => {
-    const rowMediaType = row.trackTypes[0];
-    return sum + getRowHeight(rowMediaType);
-  }, 0);
-
-  // Calculate centering offset (MATCHES DropZoneIndicator and timelineTracks.tsx)
-  const centeringOffset =
-    visibleDynamicRows.length < dynamicRows.length
-      ? (baselineHeight - totalVisibleHeight) / 2
-      : 0;
-
-  // Start cumulative top with placeholder rows above
-  let cumulativeTop = placeholderRowsAbove * placeholderRowHeight;
-
-  // Build bounds for REAL rows only (excluding placeholders)
-  // Placeholder spacing is accounted for in cumulativeTop
-  for (const row of dynamicRows) {
-    const mediaType = row.trackTypes[0];
-    const parsed = parseRowId(row.id);
-
-    if (visibleTrackRows.includes(mediaType) && parsed) {
-      const rowHeight = getRowHeight(mediaType);
-      const rowTop = cumulativeTop + centeringOffset;
-
-      rowBounds.push({
-        rowId: row.id,
-        top: rowTop,
-        bottom: rowTop + rowHeight,
-        type: parsed.type,
-        rowIndex: parsed.rowIndex,
-      });
-
-      cumulativeTop += rowHeight;
-    }
+  // Add placeholder rows above
+  for (let i = 0; i < placeholderRowsAbove; i++) {
+    fullRows.push({
+      id: `placeholder-above-${i}`,
+      name: '',
+      trackTypes: [],
+      color: '',
+      icon: '',
+    });
   }
 
-  return rowBounds;
+  // Add real dynamic rows
+  fullRows.push(...dynamicRows);
+
+  // Add placeholder rows below
+  for (let i = 0; i < placeholderRowsBelow; i++) {
+    fullRows.push({
+      id: `placeholder-below-${i}`,
+      name: '',
+      trackTypes: [],
+      color: '',
+      icon: '',
+    });
+  }
+
+  // Use unified bounds builder (excludes placeholders from bounds array)
+  return buildInteractionRowBounds(
+    fullRows,
+    visibleTrackRows,
+    placeholderRowHeight,
+  );
 }
