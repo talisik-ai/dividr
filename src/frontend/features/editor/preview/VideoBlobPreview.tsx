@@ -655,9 +655,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       style={
         !tracks.length
           ? {
-              height: '374px',
-              maxWidth: '66.67%',
-              aspectRatio: '16 / 9',
+              height: '90%',
+              maxWidth: '80%',
               margin: '0 auto',
             }
           : undefined
@@ -701,14 +700,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           />
         )}
 
-      {/* 
-        UNIFIED OVERLAY RENDERER - AUDIO FIX
-        
-        Key changes:
-        1. Pass setCurrentFrame - DualBufferVideo will update timeline
-        2. Pass independentAudioTrack - determines audio routing
-        3. DualBufferVideo now handles ALL playback including audio
-      */}
       <UnifiedOverlayRenderer
         {...overlayProps}
         videoRef={videoRef}
