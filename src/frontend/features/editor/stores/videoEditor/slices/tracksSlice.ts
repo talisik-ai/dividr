@@ -323,14 +323,11 @@ export const createTracksSlice: StateCreator<
         trackData.trackRowIndex ??
         getNextAvailableRowIndex(state.tracks, 'audio');
 
-      // For consecutive clip placement, find where the last audio clip ends
-      const consecutiveAudioStart =
-        trackData.startFrame === 0
-          ? findLastEndFrameForType(state.tracks, 'audio')
-          : trackData.startFrame;
-
-      const audioStartFrame = findNearestAvailablePositionInRow(
-        consecutiveAudioStart,
+      // Linked audio should START AT THE SAME POSITION as its video
+      // NOT after existing independent audio tracks (CapCut behavior)
+      // The linked audio follows the video's timeline position, not the audio track's consecutive placement
+      const linkedAudioStartFrame = findNearestAvailablePositionInRow(
+        videoStartFrame, // <-- Use video's start frame, not consecutive audio end
         duration,
         'audio',
         audioRowIndex,
@@ -369,8 +366,8 @@ export const createTracksSlice: StateCreator<
         name: extractedAudio
           ? `${trackData.name.replace(/\.[^/.]+$/, '')} (Extracted Audio)`
           : `${trackData.name} (Audio)`,
-        startFrame: audioStartFrame,
-        endFrame: audioStartFrame + duration,
+        startFrame: linkedAudioStartFrame,
+        endFrame: linkedAudioStartFrame + duration,
         sourceStartTime: trackData.sourceStartTime || 0,
         sourceDuration: duration, // Store original duration for trimming boundaries
         color: getTrackColor(state.tracks.length + 1),
@@ -552,20 +549,16 @@ export const createTracksSlice: StateCreator<
                 : 0
               : trackData.startFrame;
 
-          const consecutiveAudioStart =
-            trackData.startFrame === 0
-              ? allAudioTracks.length > 0
-                ? Math.max(...allAudioTracks.map((t) => t.endFrame))
-                : 0
-              : trackData.startFrame;
-
           const videoStartFrame = findNearestAvailablePosition(
             consecutiveVideoStart,
             duration,
             allVideoTracks,
           );
+
+          const linkedAudioStart = videoStartFrame;
+
           const audioStartFrame = findNearestAvailablePosition(
-            consecutiveAudioStart,
+            linkedAudioStart,
             duration,
             allAudioTracks,
           );
