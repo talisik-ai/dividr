@@ -74,6 +74,15 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     [],
   );
 
+  const stopAllAudio = useCallback(() => {
+    audioElementsRef.current.forEach((state) => {
+      if (!state.element.paused) {
+        state.element.pause();
+      }
+      state.isPlaying = false;
+    });
+  }, []);
+
   // Clean up audio elements that are no longer needed
   useEffect(() => {
     const now = Date.now();
@@ -121,6 +130,10 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
 
     // Determine if this is a seek (large frame jump or paused scrubbing)
     const isSeek = frameDelta > 2 || !isPlaying;
+
+    if (isSeek) {
+      stopAllAudio();
+    }
 
     // Process each track
     audioTracks.forEach((track) => {
@@ -199,6 +212,7 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     volume,
     playbackRate,
     getOrCreateAudioElement,
+    stopAllAudio,
   ]);
 
   // Cleanup on unmount
