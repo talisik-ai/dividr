@@ -132,13 +132,6 @@ function isGapInput(path: string): boolean {
 }
 
 /**
- * Converts frame position to time position
- */
-function framesToTime(frames: number, frameRate: number): number {
-  return frames / frameRate;
-}
-
-/**
  * Categorizes inputs into video and audio arrays with proper indexing
  * @param inputs - Array of video edit job inputs
  * @returns Categorized inputs with proper file indexing

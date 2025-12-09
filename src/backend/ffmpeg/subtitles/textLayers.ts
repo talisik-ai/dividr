@@ -112,17 +112,18 @@ export function extractTextSegments(
     // Extract per-track styling if available
     const segmentStyle = convertTrackStyleToTextStyle(track.textStyle);
 
-    // Extract transform/position data
+    // Extract transform/position data - use coordinates directly from frontend
+    // Frontend coordinates are in [-1, 1] range where 0 = center
     const position = track.textTransform ? {
-      x: (track.textTransform.x + 1) / 2, // Convert from [-1,1] to [0,1]
-      y: (track.textTransform.y + 1) / 2, // Convert from [-1,1] to [0,1]
+      x: track.textTransform.x, // Direct from frontend: -1 = left, 0 = center, 1 = right
+      y: track.textTransform.y, // Direct from frontend: -1 = top, 0 = center, 1 = bottom
       scale: track.textTransform.scale || 1,
       rotation: track.textTransform.rotation || 0,
     } : undefined;
 
     if (position) {
       console.log(
-        `[TextLayers] Position: x=${position.x.toFixed(3)}, y=${position.y.toFixed(3)}, scale=${position.scale}, rotation=${position.rotation}°`,
+        `[TextLayers] Position (from frontend): x=${position.x.toFixed(3)}, y=${position.y.toFixed(3)}, scale=${position.scale}, rotation=${position.rotation}°`,
       );
     }
 
@@ -304,46 +305,36 @@ export function generateDrawtextFilter(
   // Position
   // FFmpeg drawtext x/y coordinates:
   // - x: left edge of text by default
-  // - For proper centering, we need to use expressions that account for text width/height
+  // - Frontend coordinates are percentages (0-1 range) representing position as percentage of resolution
   if (segment.position) {
-    const normalizedX = segment.position.x; // 0-1, where 0.5 is center
-    const normalizedY = segment.position.y; // 0-1, where 0.5 is center
+    const coordX = segment.position.x; // Percentage from frontend: 0 = left, 1 = right
+    const coordY = segment.position.y; // Percentage from frontend: 0 = top, 1 = bottom
     const textAlign = mergedStyle.textAlign || 'center';
     
-    // Calculate X position based on alignment
-    // The normalized coordinate system uses 0.5 as center, so we need to account for text width
+    // Calculate pixel positions by multiplying percentages with resolution
+    const pixelX = coordX * playResX;
+    const pixelY = coordY * playResY;
+    
+    console.log(
+      `[TextLayers] Position (from frontend): x=${coordX.toFixed(3)} (${Math.round(pixelX)}px), y=${coordY.toFixed(3)} (${Math.round(pixelY)}px), scale=${segment.position.scale}, rotation=${segment.position.rotation}°, align=${textAlign}`,
+    );
+    
+    // Calculate X position based on text alignment
+    // The coordinate represents the anchor point (left/center/right) of the text
     if (textAlign === 'center') {
-      // Center alignment: use expression that centers text, then offset by normalized position
-      // normalizedX: 0 = left, 0.5 = center, 1 = right
-      // Convert to offset from center: (normalizedX - 0.5) * playResX
-      const offsetFromCenter = (normalizedX - 0.5) * playResX;
-      if (Math.abs(offsetFromCenter) < 1) {
-        // Effectively centered
-        params.push(`x=(w-text_w)/2`);
-      } else {
-        // Offset from center
-        params.push(`x=(w-text_w)/2+${Math.round(offsetFromCenter)}`);
-      }
+      // Center alignment: coordinate is center of text, so subtract half text width
+      params.push(`x=${Math.round(pixelX)}-text_w/2`);
     } else if (textAlign === 'right') {
-      // Right align: position from right edge
-      const xOffset = Math.round((1 - normalizedX) * playResX);
-      params.push(`x=w-text_w-${xOffset}`);
+      // Right alignment: coordinate is right edge of text
+      params.push(`x=${Math.round(pixelX)}-text_w`);
     } else {
-      // Left align: position from left edge
-      const x = Math.round(normalizedX * playResX);
-      params.push(`x=${x}`);
+      // Left alignment: coordinate is left edge of text
+      params.push(`x=${Math.round(pixelX)}`);
     }
     
     // Calculate Y position
-    // normalizedY: 0 = top, 0.5 = center, 1 = bottom
-    if (textAlign === 'center' || Math.abs(normalizedY - 0.5) < 0.01) {
-      // Center vertically: use expression that accounts for text height
-      params.push(`y=(h-text_h)/2`);
-    } else {
-      // Offset from center vertically
-      const offsetFromCenter = (normalizedY - 0.5) * playResY;
-      params.push(`y=(h-text_h)/2+${Math.round(offsetFromCenter)}`);
-    }
+    // For Y, we typically center vertically, so subtract half text height
+    params.push(`y=${Math.round(pixelY)}-text_h/2`);
   } else {
     // Default center position
     params.push(`x=(w-text_w)/2`);
