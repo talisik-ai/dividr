@@ -288,196 +288,6 @@ function findFileIndexForSegment(
 }
 
 /**
- * Builds image overlay filters with time-based enable/disable
- * Images are only rendered during their timeline presence, not rendered at all outside
- * Supports transform settings: position (x, y), scale, and rotation
- */
-function buildImageOverlayFilters(
-  imageSegments: ProcessedTimelineSegment[],
-  categorizedInputs: CategorizedInputs,
-  targetDimensions: { width: number; height: number },
-  targetFps: number,
-  totalDuration: number,
-  baseVideoLabel: string,
-  hwAccel: HardwareAcceleration | null,
-): { filters: string[]; outputLabel: string } {
-  const filters: string[] = [];
-  let currentLabel = baseVideoLabel;
-
-  // Process each image segment
-  imageSegments.forEach((segment, index) => {
-    const { input: trackInfo, originalIndex, duration } = segment;
-    // Round timing values to 3 decimals to avoid FFmpeg truncation inconsistencies
-    const startTime = Math.round(segment.startTime * 1000) / 1000;
-    const endTime = Math.round(segment.endTime * 1000) / 1000;
-
-    // Find the file index for this image
-    const fileIndex = findFileIndexForSegment(
-      segment,
-      categorizedInputs,
-      'video',
-    );
-
-    if (fileIndex === undefined) {
-      console.warn(
-        `❌ Could not find file index for image segment ${originalIndex}`,
-      );
-      return;
-    }
-
-    console.log(
-      `🖼️ Processing image overlay ${index}: ${trackInfo.path} [${startTime.toFixed(2)}s-${endTime.toFixed(2)}s]`,
-    );
-
-    // Get transform settings (default to centered, no rotation, 100% scale)
-    const transform = trackInfo.imageTransform || {
-      x: 0,
-      y: 0,
-      scale: 1,
-      rotation: 0,
-      width: trackInfo.width || targetDimensions.width,
-      height: trackInfo.height || targetDimensions.height,
-    };
-
-    // Log transform settings
-    if (trackInfo.imageTransform) {
-      console.log(
-        `🎨 Image transform: pos=(${transform.x.toFixed(2)}, ${transform.y.toFixed(2)}), ` +
-          `scale=${transform.scale.toFixed(2)}, rotation=${transform.rotation.toFixed(1)}°, ` +
-          `size=${transform.width}x${transform.height}`,
-      );
-    }
-
-    const imageInputRef = `[${fileIndex}:v]`;
-    const imagePreparedRef = `[img${index}_prepared]`;
-    const imageScaledRef = `[img${index}_scaled]`;
-    const imageRotatedRef = `[img${index}_rotated]`;
-    const overlayOutputRef =
-      index === imageSegments.length - 1
-        ? `[video_with_images]`
-        : `[overlay${index}]`;
-
-    // Step 1: Prepare image - trim to duration
-    // ✅ OPTIMIZATION: Don't apply timestamp filters on images (images don't carry PTS)
-    // Static images don't need loop filter - trim alone will hold the frame for the duration
-    // Add transparent padding at the start to align with timeline position
-    // Also normalize SAR to 1:1 for consistency
-    const tpadFilter = startTime > 0 
-      ? `,tpad=start_duration=${startTime}:start_mode=add:color=black@0.0`
-      : '';
-    filters.push(
-      `${imageInputRef}trim=duration=${duration},setsar=1${tpadFilter}${imagePreparedRef}`,
-    );
-
-    // Step 2: Apply scaling if needed
-    // Calculate scaled dimensions based on transform.scale
-    const scaledWidth = Math.round(transform.width * transform.scale);
-    const scaledHeight = Math.round(transform.height * transform.scale);
-
-    let currentImageRef = imagePreparedRef;
-    let currentWidth = transform.width;
-    let currentHeight = transform.height;
-
-    if (transform.scale !== 1.0) {
-      // Use scale with force_original_aspect_ratio to preserve aspect ratio
-      // This ensures the image fits within the target dimensions without distortion
-      const scaleFilter = buildScaleFilter(
-        imagePreparedRef,
-        imageScaledRef,
-        scaledWidth,
-        scaledHeight,
-        hwAccel,
-        { forceOriginalAspectRatio: 'decrease', pad: false },
-      );
-      filters.push(scaleFilter);
-      currentImageRef = imageScaledRef;
-      currentWidth = scaledWidth;
-      currentHeight = scaledHeight;
-      console.log(
-        `📐 Scaled image to fit ${scaledWidth}x${scaledHeight} (scale factor: ${transform.scale.toFixed(2)}, preserving aspect ratio)`,
-      );
-    }
-
-    // Step 3: Apply rotation if needed
-    if (transform.rotation !== 0) {
-      const rotationRadians = (transform.rotation * Math.PI) / 180;
-
-      const absRotation = Math.abs((transform.rotation * Math.PI) / 180);
-      const cosTheta = Math.abs(Math.cos(absRotation));
-      const sinTheta = Math.abs(Math.sin(absRotation));
-      const rotatedWidth = Math.ceil(
-        currentWidth * cosTheta + currentHeight * sinTheta,
-      );
-      const rotatedHeight = Math.ceil(
-        currentWidth * sinTheta + currentHeight * cosTheta,
-      );
-
-      filters.push(
-        `${currentImageRef}rotate=${rotationRadians}:out_w=${rotatedWidth}:out_h=${rotatedHeight}:fillcolor=none${imageRotatedRef}`,
-      );
-      currentImageRef = imageRotatedRef;
-      currentWidth = rotatedWidth;
-      currentHeight = rotatedHeight;
-      console.log(
-        `🔄 Rotated image by ${transform.rotation.toFixed(1)}° (clockwise) → ${rotationRadians.toFixed(3)} rad\n` +
-          `   Expanded canvas from ${scaledWidth}x${scaledHeight} to ${rotatedWidth}x${rotatedHeight} to prevent cropping`,
-      );
-    }
-
-    // Step 4: Calculate overlay position
-    // Transform coordinates are normalized (-1 to 1, where 0 is center)
-    // FFmpeg overlay uses pixel coordinates relative to video dimensions
-
-    const overlayX =
-      transform.x >= 0
-        ? `(W-w)/2+${transform.x}*W/2`
-        : `(W-w)/2${transform.x}*W/2`; // Negative sign already in value
-    const overlayY =
-      transform.y >= 0
-        ? `(H-h)/2+${transform.y}*H/2` // Add because positive y moves down (matches preview)
-        : `(H-h)/2${transform.y}*H/2`; // Negative sign already in value
-
-    // Calculate actual pixel coordinates for logging
-    // W = targetDimensions.width, H = targetDimensions.height, w = currentWidth, h = currentHeight
-    const centerX = (targetDimensions.width - currentWidth) / 2;
-    const centerY = (targetDimensions.height - currentHeight) / 2;
-    const pixelX = Math.round(centerX + (transform.x * targetDimensions.width) / 2);
-    const pixelY = Math.round(centerY + (transform.y * targetDimensions.height) / 2);
-
-    console.log(`📍 Image overlay ${index} position coordinates:`);
-    console.log(`   - Normalized: x=${transform.x.toFixed(3)}, y=${transform.y.toFixed(3)} (-1 to 1 range, 0=center)`);
-    console.log(`   - Pixel coords: x=${pixelX}px, y=${pixelY}px`);
-    console.log(`   - Video dimensions: ${targetDimensions.width}x${targetDimensions.height}`);
-    console.log(`   - Image dimensions (after scale/rotate): ${currentWidth}x${currentHeight}`);
-    console.log(`   - FFmpeg expression: overlay=${overlayX}:${overlayY}`);
-
-    // Step 5: Overlay the image onto the current video with time-based enable
-    // The overlay is only active between startTime and endTime
-    const overlayFilter = buildOverlayFilter(
-      `[${currentLabel}]`,
-      currentImageRef,
-      overlayOutputRef,
-      overlayX,
-      overlayY,
-      hwAccel,
-      { enable: `between(t,${startTime},${endTime})` },
-    );
-    filters.push(overlayFilter);
-
-    currentLabel = overlayOutputRef.replace('[', '').replace(']', '');
-
-    console.log(
-      `✅ Image overlay ${index} enabled between ${startTime.toFixed(2)}s-${endTime.toFixed(2)}s`,
-    );
-  });
-
-  return {
-    filters,
-    outputLabel: currentLabel,
-  };
-}
-
-/**
  * Builds the font directories parameter for FFmpeg subtitle filter
  * Collects all unique font directories used by the subtitle font families
  * and formats them for FFmpeg's fontsdir parameter
@@ -519,138 +329,8 @@ function buildFontDirectoriesParameter(fontFamilies: string[]): string {
 }
 
 /**
- * Creates a base layer video with padding instead of overlay
- * Used for base layer videos with transforms - adds black padding to maintain aspect ratio
- * 
- * Process:
- * 1. Normalize video to target dimensions first (if different)
- * 2. Apply transform scale
- * 3. Calculate padding needed based on transform position
- * 4. Add black padding to ensure video fits within target dimensions
- */
-function createBaseLayerWithPadding(
-  videoStreamRef: string,
-  trackInfo: TrackInfo,
-  targetDimensions: { width: number; height: number },
-  uniqueIndex: string,
-  videoFilters: string[],
-  hwAccel: HardwareAcceleration | null,
-): string {
-  const transformScale = trackInfo.videoTransform?.scale ?? 1.0;
-  const transformX = trackInfo.videoTransform?.x ?? 0;
-  const transformY = trackInfo.videoTransform?.y ?? 0;
-  
-  console.log(
-    `🎬 Creating base layer with padding for video transform (x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}, scale=${transformScale.toFixed(2)})`,
-  );
-
-  // Step 1: Normalize video to target dimensions if source dimensions differ
-  // Don't add padding here - we'll add it later after applying transform scale
-  const sourceWidth = trackInfo.width || targetDimensions.width;
-  const sourceHeight = trackInfo.height || targetDimensions.height;
-  
-  let normalizedVideoRef = videoStreamRef;
-  const needsNormalization = 
-    sourceWidth !== targetDimensions.width || 
-    sourceHeight !== targetDimensions.height;
-  
-  if (needsNormalization) {
-    normalizedVideoRef = `[${uniqueIndex}_normalized]`;
-    // Scale without padding - we'll add padding later after transform scale
-    const scaleFilter = buildScaleFilter(
-      videoStreamRef,
-      normalizedVideoRef,
-      targetDimensions.width,
-      targetDimensions.height,
-      hwAccel,
-      { forceOriginalAspectRatio: 'decrease', pad: false },
-    );
-    videoFilters.push(scaleFilter);
-    console.log(
-      `📐 Step 1: Normalized video from ${sourceWidth}x${sourceHeight} to fit ${targetDimensions.width}x${targetDimensions.height} (no padding yet)`,
-    );
-  } else {
-    console.log(
-      `📐 Step 1: No normalization needed - video already at target dimensions (${sourceWidth}x${sourceHeight})`,
-    );
-  }
-
-  // Step 2: Apply transform scale
-  const scaledWidth = Math.round(targetDimensions.width * transformScale);
-  const scaledHeight = Math.round(targetDimensions.height * transformScale);
-  
-  console.log(
-    `📐 Step 2: Transform scale: ${transformScale.toFixed(2)} (${targetDimensions.width}x${targetDimensions.height} → ${scaledWidth}x${scaledHeight})`,
-  );
-
-  let scaledVideoRef: string;
-  const needsScaling = transformScale !== 1.0;
-  
-  if (needsScaling) {
-    scaledVideoRef = `[${uniqueIndex}_video_scaled]`;
-    // Scale with aspect ratio preservation (no padding yet)
-    const scaleFilter = buildScaleFilter(
-      normalizedVideoRef,
-      scaledVideoRef,
-      scaledWidth,
-      scaledHeight,
-      hwAccel,
-      { forceOriginalAspectRatio: 'decrease', pad: false },
-    );
-    videoFilters.push(scaleFilter);
-    console.log(
-      `📐 Step 3: Scaled video to ${scaledWidth}x${scaledHeight} (scale factor: ${transformScale.toFixed(2)}, preserving aspect ratio)`,
-    );
-  } else {
-    scaledVideoRef = normalizedVideoRef;
-    console.log(
-      `📐 Step 3: No scaling needed (scale = 1.0)`,
-    );
-  }
-
-  // Step 3: Add padding filter with transform positioning
-  // Use FFmpeg expressions to dynamically position the video based on transform
-  // pad=width:height:x:y:color
-  // x and y expressions position the video within the padded output
-  // (W-w)/2 centers the video, transformX*W/2 shifts it based on transform
-  const paddedRef = `[${uniqueIndex}_padded]`;
-  
-  // Calculate x and y position expressions
-  // Center position: (W-w)/2 (where W=targetWidth, w=scaled video width)
-  // With transform: (W-w)/2 + transformX*W/2
-  // This positions the video according to the transform while padding to target dimensions
-  const padX = transformX >= 0
-    ? `(W-w)/2+${transformX}*W/2`
-    : `(W-w)/2${transformX}*W/2`; // Negative sign already in value
-  const padY = transformY >= 0
-    ? `(H-h)/2+${transformY}*H/2`
-    : `(H-h)/2${transformY}*H/2`; // Negative sign already in value
-  
-  console.log(
-    `📐 Step 4: Padding to ${targetDimensions.width}x${targetDimensions.height} with transform positioning:`,
-  );
-  console.log(
-    `   - Transform: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}, scale=${transformScale.toFixed(2)}`,
-  );
-  console.log(
-    `   - Pad expressions: x=${padX}, y=${padY}`,
-  );
-  
-  // Build pad filter with expressions
-  // The pad filter will automatically add black padding to reach target dimensions
-  const padColor = supportsCUDAFilters(hwAccel) ? 'color=black' : 'black';
-  const padFilter = `${scaledVideoRef}pad=${targetDimensions.width}:${targetDimensions.height}:${padX}:${padY}:${padColor}${paddedRef}`;
-  
-  videoFilters.push(padFilter);
-  
-  console.log(`✅ Base layer video padded to ${targetDimensions.width}x${targetDimensions.height} with transform positioning`);
-  
-  return paddedRef;
-}
-
-/**
  * Creates a background clip and overlays the video on top
- * Used for videos with non-zero transform positions (for upper layers)
+ * Used for videos with non-zero transform positions
  * 
  * Process:
  * 1. Create background at target dimensions
@@ -775,12 +455,13 @@ function createBlackBackgroundWithOverlay(
   const estimatedPixelY = Math.round(centerY + pixelOffsetY);
   
   // Apply transform positioning (using original coordinates, video already scaled)
+  // Use proper addition/subtraction to ensure FFmpeg can parse the expression correctly
   const overlayX = transformX >= 0
     ? `(W-w)/2+${transformX}*W/2`
-    : `(W-w)/2${transformX}*W/2`;
+    : `(W-w)/2-${Math.abs(transformX)}*W/2`; // Use Math.abs to ensure proper subtraction
   const overlayY = transformY >= 0
     ? `(H-h)/2+${transformY}*H/2`
-    : `(H-h)/2${transformY}*H/2`;
+    : `(H-h)/2-${Math.abs(transformY)}*H/2`; // Use Math.abs to ensure proper subtraction
 
   console.log(`📍 Video overlay position (with transform):`);
   console.log(`   - Normalized: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}`);
@@ -937,18 +618,21 @@ export function processLayerSegments(
         if (hasTransform) {
           // Video has non-zero transform
           if (isBottomLayer) {
-            // Bottom layer - add padding instead of overlay
-            // This ensures the video fits within target dimensions with proper aspect ratio
-            videoStreamRef = createBaseLayerWithPadding(
+            // Bottom layer - always use overlay on black background
+            const duration = trackInfo.duration || segment.duration || 1;
+            videoStreamRef = createBlackBackgroundWithOverlay(
               videoStreamRef,
               trackInfo,
               targetDimensions,
               uniqueIndex,
               videoFilters,
+              duration,
+              targetFps,
               hwAccel,
+              createGapVideoFilters,
             );
             console.log(
-              `📐 Layer ${layerIndex}: Added padding for video with transform (base layer)`,
+              `📐 Layer ${layerIndex}: Created black background overlay for video with transform (base layer)`,
             );
           } else {
             // Upper layer - don't create black background, just scale/position the video
@@ -1656,13 +1340,14 @@ export function buildSeparateTimelineFilterComplex(
           
           // Use original transform coordinates (not scaled)
           // The video scaling is already applied, so position should be relative to original coordinate system
+          // Use proper addition/subtraction to ensure FFmpeg can parse the expression correctly
           if (transformX !== 0 || transformY !== 0 || transformScale !== 1.0) {
             overlayX = transformX >= 0
               ? `(W-w)/2+${transformX}*W/2`
-              : `(W-w)/2${transformX}*W/2`;
+              : `(W-w)/2-${Math.abs(transformX)}*W/2`; // Use Math.abs to ensure proper subtraction
             overlayY = transformY >= 0
               ? `(H-h)/2+${transformY}*H/2`
-              : `(H-h)/2${transformY}*H/2`;
+              : `(H-h)/2-${Math.abs(transformY)}*H/2`; // Use Math.abs to ensure proper subtraction
             
             console.log(`   📍 Using transform positioning: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}, scale=${transformScale.toFixed(2)} (video already scaled)`);
           }
