@@ -13,6 +13,15 @@ import { getFontDirectoriesForFamilies } from '../subtitles/fontMapper';
 import { generateDrawtextFilter } from '../subtitles/textLayers';
 import type { HardwareAcceleration } from './hardwareAccelerationDetector';
 import {
+  collectAllLayers,
+  sortLayersByNumber,
+  calculateTotalVideoDuration,
+  findBottomMostVideoImageLayer,
+  buildOverlayOrder,
+  type LayerTrack,
+  type OverlayItem,
+} from './layerHandling';
+import {
   buildScaleFilter,
   buildOverlayFilter,
   buildCropFilter,
@@ -742,8 +751,34 @@ export function processLayerSegments(
           `🎬 Layer ${layerIndex} (${layerType}): Processing segment ${segmentIndex} with fileIndex ${fileIndex}`,
         );
 
+        // Create a modified trackInfo with the correct startTime and duration for trimming
+        // trackInfo.startTime is the source video position (where to start reading from source file)
+        // segment.startTime is the timeline position (when the segment appears in output video)
+        // If trackInfo.startTime is undefined, default to 0 (start of source video)
+        const trimStartTime = trackInfo.startTime !== undefined 
+          ? trackInfo.startTime 
+          : 0; // Default to start of source video if not specified
+        const trimDuration = trackInfo.duration !== undefined 
+          ? trackInfo.duration 
+          : segment.duration; // Use segment duration for trimming
+        
+        const modifiedTrackInfo: TrackInfo = {
+          ...trackInfo,
+          startTime: trimStartTime,
+          duration: trimDuration,
+        };
+
+        console.log(
+          `   🔪 Trim from source video: start=${trimStartTime.toFixed(3)}s, duration=${trimDuration.toFixed(3)}s (timeline: ${segment.startTime.toFixed(3)}s-${segment.endTime.toFixed(3)}s)`,
+        );
+        if (trackInfo.startTime === undefined) {
+          console.log(
+            `   ⚠️ trackInfo.startTime is undefined - defaulting to 0 (start of source video). If segments should show different parts, ensure trackInfo.startTime is set correctly.`,
+          );
+        }
+
         const context: VideoProcessingContext = {
-          trackInfo,
+          trackInfo: modifiedTrackInfo,
           originalIndex: 9000 + layerIndex * 1000 + segmentIndex,
           fileIndex,
           inputStreamRef: `[${fileIndex}:v]`,
@@ -1214,86 +1249,14 @@ export function buildSeparateTimelineFilterComplex(
   
   console.log('\n🎬 ========================================\n');
 
-  // Collect all tracks by layer (video, image, text) for independent layer-by-layer processing
-  // This ensures tracks are processed in layer order regardless of type
-  interface LayerTrack {
-    type: 'video' | 'image' | 'text';
-    layer: number;
-    videoTimeline?: ProcessedTimeline;
-    imageSegments?: ProcessedTimelineSegment[];
-    textSegments?: any[];
-  }
-  
-  const allLayers = new Map<number, LayerTrack>();
-  
-  // Add video layers
-  for (const [layerNum, timeline] of videoLayers.entries()) {
-    allLayers.set(layerNum, {
-      type: 'video',
-      layer: layerNum,
-      videoTimeline: timeline,
-    });
-  }
-  
-  // Add image layers (may overlap with video layers)
-  for (const [layerNum, timeline] of imageLayers.entries()) {
-    if (allLayers.has(layerNum)) {
-      // Layer already exists (has video) - add images to it
-      const existing = allLayers.get(layerNum)!;
-      existing.imageSegments = timeline.segments;
-      // Update type to indicate mixed content
-      if (existing.type === 'video') {
-        // Keep as video, but note it has images
-      }
-    } else {
-      allLayers.set(layerNum, {
-        type: 'image',
-        layer: layerNum,
-        imageSegments: timeline.segments,
-      });
-    }
-  }
-  
-  // Add text layers (may overlap with video/image layers)
-  // Include ALL text segments, even empty ones, as they still occupy layer positions
-  const textSegmentsForProcessing = job.textClips ? job.textClips.filter((clip: any) => 
-    clip.startTime !== undefined && clip.endTime !== undefined
-  ) as any[] : [];
-  
-  console.log(`📝 Found ${textSegmentsForProcessing.length} text segment(s) for processing`);
-  textSegmentsForProcessing.forEach((seg, idx) => {
-    console.log(`   Text segment ${idx + 1}: layer=${seg.layer ?? 0}, text="${seg.text || '(empty)'}", time=[${seg.startTime?.toFixed(2)}s-${seg.endTime?.toFixed(2)}s]`);
-  });
-  
-  // Group text segments by layer
-  const textByLayer = new Map<number, any[]>();
-  textSegmentsForProcessing.forEach((segment: any) => {
-    const layer = segment.layer ?? 0;
-    if (!textByLayer.has(layer)) {
-      textByLayer.set(layer, []);
-    }
-    textByLayer.get(layer)!.push(segment);
-  });
-  
-  console.log(`📝 Text segments grouped by layer:`, Array.from(textByLayer.entries()).map(([layer, segs]) => `Layer ${layer}: ${segs.length} segment(s)`).join(', '));
-  
-  // Add text to layers
-  for (const [layerNum, segments] of textByLayer.entries()) {
-    if (allLayers.has(layerNum)) {
-      // Layer already exists - add text to it
-      const existing = allLayers.get(layerNum)!;
-      existing.textSegments = segments;
-    } else {
-      allLayers.set(layerNum, {
-        type: 'text',
-        layer: layerNum,
-        textSegments: segments,
-      });
-    }
-  }
-  
-  // Sort layers by layer number
-  const sortedLayers = Array.from(allLayers.entries()).sort((a, b) => a[0] - b[0]);
+  // Collect all layers using layer handling functions
+  const allLayers = collectAllLayers(videoLayers, imageLayers, job);
+  const sortedLayers = sortLayersByNumber(allLayers);
+  const totalVideoDuration = calculateTotalVideoDuration(
+    videoLayers,
+    imageLayers,
+    audioTimeline,
+  );
   
   console.log(`\n🎬 Processing ${sortedLayers.length} independent layers in order:\n`);
   sortedLayers.forEach(([layerNum, track]) => {
@@ -1305,31 +1268,19 @@ export function buildSeparateTimelineFilterComplex(
   });
   console.log('');
 
-  // Process each layer independently in order
-  const layerOutputs = new Map<number, string>();
-  let baseVideoLabel = '';
+  const bottomMostVideoImageLayer = findBottomMostVideoImageLayer(sortedLayers);
 
+  // ============================================
+  // PHASE 1: Prepare all video layers first
+  // ============================================
+  console.log('\n📋 PHASE 1: Preparing all video layers...\n');
+  const layerLabels = new Map<number, string>(); // Maps layer number to prepared layer label
+  
   for (const [layerNum, track] of sortedLayers) {
-    console.log(`\n🎬 Processing Layer ${layerNum} (${track.type}${track.videoTimeline ? ' + video' : ''}${track.imageSegments ? ' + images' : ''}${track.textSegments ? ' + text' : ''})`);
-    
-    let layerInputLabel = baseVideoLabel || 'video_base';
-    
-    // Step 1: Process video tracks in this layer (if any)
     if (track.videoTimeline) {
-      console.log(`   📹 Processing ${track.videoTimeline.segments.length} video segment(s) in layer ${layerNum}`);
+      console.log(`   📹 Preparing video layer ${layerNum}`);
       
-      // Find the bottom-most video/image layer (lowest layer number with video or image)
-      // Only consider video/image layers, not audio layers
-      const bottomMostVideoImageLayer = sortedLayers.find(
-        ([num, t]) => t.videoTimeline || t.imageSegments
-      )?.[0] ?? null;
       const isBottomLayer = layerNum === bottomMostVideoImageLayer;
-      
-      if (isBottomLayer) {
-        console.log(`   🎬 Layer ${layerNum} is bottom-most video/image layer - gaps will be filled with black video clips`);
-      } else {
-        console.log(`   🎬 Layer ${layerNum} is upper layer - no gap filling, videos will be transparent where there's no content`);
-      }
       
       const concatInputs = processLayerSegments(
         track.videoTimeline,
@@ -1377,90 +1328,311 @@ export function buildSeparateTimelineFilterComplex(
           layerLabel = postProcessedLabel;
         }
         
-        // If this is the first layer with video, it becomes the base
-        if (!baseVideoLabel) {
-          baseVideoLabel = layerLabel;
-          layerInputLabel = baseVideoLabel;
-        } else {
-          // Overlay this video layer on top of previous layers
-          // Use enable expression to only show overlay during its active time range
-          // This allows the base layer to continue playing after overlay layer ends
-          const overlayStartTime = track.videoTimeline.segments.length > 0
-            ? Math.min(...track.videoTimeline.segments.map(s => s.startTime))
-            : 0;
-          const overlayEndTime = track.videoTimeline.totalDuration;
-          
-          // Round timing values to 3 decimals to avoid FFmpeg truncation inconsistencies
-          const startTime = Math.round(overlayStartTime * 1000) / 1000;
-          const endTime = Math.round(overlayEndTime * 1000) / 1000;
-          
-          // Videos can overlay on top of other videos based on layer order
-          // All video layers are composited in order, with higher layer numbers overlaying on top of lower ones
-          // Use transform x/y coordinates for positioning when overlaying video layers
-          let overlayX = '(W-w)/2'; // Default: centered
-          let overlayY = '(H-h)/2'; // Default: centered
-          
-          // Check if any segment in this layer has video transform coordinates for positioning
-          const firstSegment = track.videoTimeline.segments[0];
-          if (firstSegment && firstSegment.input.videoTransform) {
-            const transform = firstSegment.input.videoTransform;
-            const transformX = transform.x ?? 0;
-            const transformY = transform.y ?? 0;
-            
-            // Use transform coordinates for overlay positioning
-            // Note: If video was processed with createBlackBackgroundWithOverlay, it has a full-size background
-            // with the video positioned on it. When overlaying that, we still use the transform coordinates
-            // to position the entire result (background + video) on the base layer.
-            if (transformX !== 0 || transformY !== 0) {
-              // Convert normalized position (-1 to 1) to FFmpeg overlay expression
-              overlayX = transformX >= 0
-                ? `(W-w)/2+${transformX}*W/2`
-                : `(W-w)/2${transformX}*W/2`; // Negative sign already in value
-              overlayY = transformY >= 0
-                ? `(H-h)/2+${transformY}*H/2` // Add because positive y moves down (matches preview)
-                : `(H-h)/2${transformY}*H/2`; // Negative sign already in value
-              
-              console.log(`   📍 Using transform positioning for layer ${layerNum}: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}`);
-            }
-          }
-          
-          const overlayLabel = `composite_${layerNum}`;
-          const enableExpression = `between(t,${startTime},${endTime})`;
-          
-          const overlayFilter = buildOverlayFilter(
-            `[${layerInputLabel}]`,
-            `[${layerLabel}]`,
-            `[${overlayLabel}]`,
-            overlayX,
-            overlayY,
-            hwAccel,
-            { 
-              shortest: 0, // Continue for longest input duration
-              enable: enableExpression, // Only show overlay during its active time range
-            },
-          );
-          videoFilters.push(overlayFilter);
-          layerInputLabel = overlayLabel;
-          console.log(`   ✅ Overlaid video layer ${layerNum} on previous layers (enabled from ${startTime.toFixed(2)}s to ${endTime.toFixed(2)}s, position: ${overlayX}, ${overlayY})`);
-        }
-        
-        layerOutputs.set(layerNum, layerLabel);
+        layerLabels.set(layerNum, layerLabel);
+        console.log(`   ✅ Prepared video layer ${layerNum} -> [${layerLabel}]`);
       }
     }
-    
-    // Step 2: Skip image and text overlays here - they will be processed after subtitles
-    // Images and text overlays are processed together in layer order after subtitles
-    // to ensure proper layer compositing (higher layers on top of lower layers)
-    if (track.imageSegments && track.imageSegments.length > 0) {
-      console.log(`   🖼️ Found ${track.imageSegments.length} image overlay(s) in layer ${layerNum} (will process after subtitles)`);
+  }
+
+  // Pad overlay video layers with black frames ONLY at the start (not at the end)
+  // This ensures videos don't start playing before their overlay is activated
+  // The overlay enable expression will handle stopping the overlay when it should end
+  for (const [layerNum, track] of sortedLayers) {
+    if (track.videoTimeline && layerNum !== bottomMostVideoImageLayer) {
+      // This is an overlay layer (not the base layer)
+      const overlayStartTime = track.videoTimeline.segments.length > 0
+        ? Math.min(...track.videoTimeline.segments.map(s => s.startTime))
+        : 0;
+      
+      if (overlayStartTime > 0 && layerLabels.has(layerNum)) {
+        const currentLabel = layerLabels.get(layerNum)!;
+        const paddedLabel = `layer_${layerNum}_padded_start`;
+        
+        console.log(`   ⏱️ Padding overlay layer ${layerNum} with ${overlayStartTime.toFixed(3)}s black frames at start ONLY (no end padding)`);
+        
+        // Use tpad to add black frames ONLY at the start (no end_duration parameter = no end padding)
+        videoFilters.push(
+          `[${currentLabel}]tpad=start_duration=${overlayStartTime}:start_mode=add:color=black@0.0[${paddedLabel}]`,
+        );
+        
+        // Update the layer label to use the padded version
+        layerLabels.set(layerNum, paddedLabel);
+        console.log(`   ✅ Padded overlay layer ${layerNum} -> [${paddedLabel}] (video content starts at ${overlayStartTime.toFixed(3)}s, no end padding)`);
+      }
     }
-    if (track.textSegments && track.textSegments.length > 0) {
-      console.log(`   📝 Found ${track.textSegments.length} text segment(s) in layer ${layerNum} (will process after subtitles)`);
-    }
+  }
+
+  // Ensure Layer 0 (base layer) extends to total video duration by padding with black clips
+  // This ensures the base layer continues showing after overlays end
+  if (bottomMostVideoImageLayer !== null && layerLabels.has(bottomMostVideoImageLayer)) {
+    const baseLayerLabel = layerLabels.get(bottomMostVideoImageLayer)!;
+    const baseLayerEntry = sortedLayers.find(([num]) => num === bottomMostVideoImageLayer);
+    const baseLayerTimeline = baseLayerEntry?.[1]?.videoTimeline;
     
-    // Update base label for next layer (only video layers affect this)
-    if (track.videoTimeline) {
-      baseVideoLabel = layerInputLabel;
+    if (baseLayerTimeline) {
+      const baseLayerDuration = baseLayerTimeline.segments.length > 0
+        ? Math.max(...baseLayerTimeline.segments.map((s: ProcessedTimelineSegment) => s.endTime))
+        : 0;
+      
+      if (baseLayerDuration < totalVideoDuration) {
+        const gapDuration = totalVideoDuration - baseLayerDuration;
+        console.log(`\n   🕳️ Padding Layer ${bottomMostVideoImageLayer} (base layer) with black clip: ${baseLayerDuration.toFixed(3)}s -> ${totalVideoDuration.toFixed(3)}s (gap: ${gapDuration.toFixed(3)}s)`);
+        
+        // Create a black gap clip to extend the base layer
+        const gapResult = createGapVideoFilters(
+          99999, // High index to avoid conflicts
+          gapDuration,
+          targetFps,
+          targetDimensions,
+        );
+        videoFilters.push(...gapResult.filters);
+        
+        // Concatenate the existing base layer with the gap clip
+        const paddedBaseLabel = `layer_${bottomMostVideoImageLayer}_padded`;
+        videoFilters.push(
+          `[${baseLayerLabel}][${gapResult.filterRef.replace('[', '').replace(']', '')}]concat=n=2:v=1:a=0[${paddedBaseLabel}]`,
+        );
+        
+        // Update the layer label to use the padded version
+        layerLabels.set(bottomMostVideoImageLayer, paddedBaseLabel);
+        console.log(`   ✅ Padded base layer ${bottomMostVideoImageLayer} -> [${paddedBaseLabel}] (extends to ${totalVideoDuration.toFixed(3)}s)`);
+      }
+    }
+  }
+
+  // ============================================
+  // PHASE 2: Build complete overlay order
+  // ============================================
+  console.log('\n📋 PHASE 2: Building overlay order...\n');
+  const overlayOrder = buildOverlayOrder(sortedLayers);
+  
+  // Update overlay items with prepared layer labels
+  overlayOrder.forEach((overlay) => {
+    if (overlay.type === 'video' && overlay.videoTimeline) {
+      overlay.layerLabel = layerLabels.get(overlay.layer);
+    }
+  });
+  
+  console.log(`🎬 Overlay order (${overlayOrder.length} items):`);
+  overlayOrder.forEach((overlay, idx) => {
+    const info = overlay.type === 'video' 
+      ? `video layer [${overlay.layerLabel}]`
+      : overlay.type === 'image'
+      ? `image segment`
+      : `text segment`;
+    console.log(`   ${idx + 1}. Layer ${overlay.layer} (${overlay.type}): ${info}`);
+  });
+
+  // ============================================
+  // PHASE 3: Process overlays in layer order
+  // ============================================
+  console.log('\n📋 PHASE 3: Processing overlays in layer order...\n');
+  let currentCompositeLabel = '';
+  
+  // Check if we need a base layer (black background) before processing overlays
+  // This is needed if the first overlay is not a video layer
+  const firstOverlay = overlayOrder[0];
+  if (firstOverlay && firstOverlay.type !== 'video') {
+    // Create a black base layer first
+    videoFilters.push(
+      `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${totalVideoDuration}:rate=${targetFps},setsar=1[video_base]`,
+    );
+    currentCompositeLabel = 'video_base';
+    console.log(`   ✅ Created black base layer [${currentCompositeLabel}] for non-video overlays`);
+  }
+  
+  for (let i = 0; i < overlayOrder.length; i++) {
+    const overlay = overlayOrder[i];
+    const isLast = i === overlayOrder.length - 1;
+    
+    console.log(`\n🎬 Processing overlay ${i + 1}/${overlayOrder.length}: Layer ${overlay.layer} (${overlay.type})`);
+    
+    if (overlay.type === 'video') {
+      // Video overlay
+      if (!overlay.layerLabel) {
+        console.warn(`⚠️ No layer label for video layer ${overlay.layer}, skipping`);
+        continue;
+      }
+      
+      const videoTimeline = overlay.videoTimeline!;
+      const layerLabel = overlay.layerLabel;
+      
+      // Determine if this is the base layer (first video layer)
+      if (!currentCompositeLabel) {
+        // This is the first video layer - it becomes the base
+        currentCompositeLabel = layerLabel;
+        console.log(`   ✅ Layer ${overlay.layer} is base layer -> [${currentCompositeLabel}]`);
+      } else {
+        // Overlay this video layer on top of current composite
+        const overlayStartTime = videoTimeline.segments.length > 0
+          ? Math.min(...videoTimeline.segments.map(s => s.startTime))
+          : 0;
+        // Use the timeline's end time (when the video actually ends) instead of totalVideoDuration
+        // This ensures the overlay enable expression matches the actual video content duration
+        const overlayEndTime = videoTimeline.segments.length > 0
+          ? Math.max(...videoTimeline.segments.map(s => s.endTime))
+          : totalVideoDuration;
+        
+        const startTime = Math.round(overlayStartTime * 1000) / 1000;
+        const endTime = Math.round(overlayEndTime * 1000) / 1000;
+        
+        // Debug logging to verify overlay timing
+        console.log(`   ⏱️ Layer ${overlay.layer} overlay timing:`);
+        console.log(`      - Timeline start: ${overlayStartTime.toFixed(3)}s`);
+        console.log(`      - Timeline end: ${overlayEndTime.toFixed(3)}s`);
+        console.log(`      - Total video duration: ${totalVideoDuration.toFixed(3)}s`);
+        console.log(`      - Enable expression: between(t,${startTime.toFixed(3)},${endTime.toFixed(3)})`);
+        
+        // Get transform positioning
+        let overlayX = '(W-w)/2';
+        let overlayY = '(H-h)/2';
+        
+        const firstSegment = videoTimeline.segments[0];
+        if (firstSegment && firstSegment.input.videoTransform) {
+          const transform = firstSegment.input.videoTransform;
+          const transformX = transform.x ?? 0;
+          const transformY = transform.y ?? 0;
+          
+          if (transformX !== 0 || transformY !== 0) {
+            overlayX = transformX >= 0
+              ? `(W-w)/2+${transformX}*W/2`
+              : `(W-w)/2${transformX}*W/2`;
+            overlayY = transformY >= 0
+              ? `(H-h)/2+${transformY}*H/2`
+              : `(H-h)/2${transformY}*H/2`;
+            
+            console.log(`   📍 Using transform positioning: x=${transformX.toFixed(3)}, y=${transformY.toFixed(3)}`);
+          }
+        }
+        
+        const compositeLabel = isLast && overlayOrder.length === i + 1 && overlayOrder.slice(i + 1).every(o => o.type !== 'video' && o.type !== 'image')
+          ? 'video_composite'
+          : `composite_${overlay.layer}`;
+        
+        const enableExpression = `between(t,${startTime},${endTime})`;
+        const overlayFilter = buildOverlayFilter(
+          `[${currentCompositeLabel}]`,
+          `[${layerLabel}]`,
+          `[${compositeLabel}]`,
+          overlayX,
+          overlayY,
+          hwAccel,
+          { 
+            shortest: 0,
+            enable: enableExpression,
+          },
+        );
+        videoFilters.push(overlayFilter);
+        currentCompositeLabel = compositeLabel;
+        console.log(`   ✅ Overlaid video layer ${overlay.layer} on [${currentCompositeLabel}] (enabled from ${startTime.toFixed(2)}s to ${endTime.toFixed(2)}s)`);
+      }
+    } else if (overlay.type === 'image') {
+      // Image overlay
+      const imageSegment = overlay.segment as ProcessedTimelineSegment;
+      const { input: trackInfo, originalIndex, duration } = imageSegment;
+      const startTime = Math.round(imageSegment.startTime * 1000) / 1000;
+      const endTime = Math.round(imageSegment.endTime * 1000) / 1000;
+      
+      const fileIndex = findFileIndexForSegment(
+        imageSegment,
+        categorizedInputs,
+        'video',
+      );
+      
+      if (fileIndex === undefined) {
+        console.warn(`❌ Could not find file index for image segment ${originalIndex}`);
+        continue;
+      }
+      
+      const transform = trackInfo.imageTransform || {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+        width: trackInfo.width || targetDimensions.width,
+        height: trackInfo.height || targetDimensions.height,
+      };
+      
+      const imageInputRef = `[${fileIndex}:v]`;
+      const imagePreparedRef = `[img_${overlay.layer}_${originalIndex}_prepared]`;
+      const imageScaledRef = `[img_${overlay.layer}_${originalIndex}_scaled]`;
+      const imageRotatedRef = `[img_${overlay.layer}_${originalIndex}_rotated]`;
+      const compositeLabel = isLast ? 'video_composite' : `composite_${overlay.layer}_img_${originalIndex}`;
+      
+      // Prepare image
+      const tpadFilter = startTime > 0 
+        ? `,tpad=start_duration=${startTime}:start_mode=add:color=black@0.0`
+        : '';
+      videoFilters.push(
+        `${imageInputRef}trim=duration=${duration},setsar=1${tpadFilter}${imagePreparedRef}`,
+      );
+      
+      // Apply scaling if needed
+      let currentImageRef = imagePreparedRef;
+      if (transform.scale !== 1.0) {
+        const scaledWidth = Math.round(transform.width * transform.scale);
+        const scaledHeight = Math.round(transform.height * transform.scale);
+        const scaleFilter = buildScaleFilter(
+          imagePreparedRef,
+          imageScaledRef,
+          scaledWidth,
+          scaledHeight,
+          hwAccel,
+          { forceOriginalAspectRatio: 'decrease', pad: false },
+        );
+        videoFilters.push(scaleFilter);
+        currentImageRef = imageScaledRef;
+      }
+      
+      // Apply rotation if needed
+      if (transform.rotation !== 0) {
+        const rotationRadians = (transform.rotation * Math.PI) / 180;
+        const absRotation = Math.abs(rotationRadians);
+        const cosTheta = Math.abs(Math.cos(absRotation));
+        const sinTheta = Math.abs(Math.sin(absRotation));
+        const rotatedWidth = Math.ceil(transform.width * cosTheta + transform.height * sinTheta);
+        const rotatedHeight = Math.ceil(transform.width * sinTheta + transform.height * cosTheta);
+        
+        videoFilters.push(
+          `${currentImageRef}rotate=${rotationRadians}:out_w=${rotatedWidth}:out_h=${rotatedHeight}:fillcolor=none${imageRotatedRef}`,
+        );
+        currentImageRef = imageRotatedRef;
+      }
+      
+      // Calculate overlay position
+      const overlayX = transform.x >= 0
+        ? `(W-w)/2+${transform.x}*W/2`
+        : `(W-w)/2${transform.x}*W/2`;
+      const overlayY = transform.y >= 0
+        ? `(H-h)/2+${transform.y}*H/2`
+        : `(H-h)/2${transform.y}*H/2`;
+      
+      // Overlay the image
+      const overlayFilter = buildOverlayFilter(
+        `[${currentCompositeLabel}]`,
+        currentImageRef,
+        `[${compositeLabel}]`,
+        overlayX,
+        overlayY,
+        hwAccel,
+        { enable: `between(t,${startTime},${endTime})` },
+      );
+      videoFilters.push(overlayFilter);
+      currentCompositeLabel = compositeLabel;
+      console.log(`   ✅ Overlaid image at layer ${overlay.layer} -> [${compositeLabel}]`);
+    } else if (overlay.type === 'text') {
+      // Text overlay
+      const textSegment = overlay.segment;
+      const drawtextFilter = generateDrawtextFilter(
+        textSegment,
+        job.operations.textStyle,
+        job.videoDimensions,
+      );
+      
+      const compositeLabel = isLast ? 'video_composite' : `composite_${overlay.layer}_text`;
+      videoFilters.push(`[${currentCompositeLabel}]${drawtextFilter}[${compositeLabel}]`);
+      currentCompositeLabel = compositeLabel;
+      console.log(`   ✅ Applied text overlay at layer ${overlay.layer} -> [${compositeLabel}]`);
     }
   }
   
@@ -1468,26 +1640,18 @@ export function buildSeparateTimelineFilterComplex(
   // Skip audio processing if there are only image inputs (no video inputs)
   const hasVideoInputs = videoLayers.size > 0;
   
-  // Calculate total duration from all layers for audio base
-  let totalVideoDuration = audioTimeline.totalDuration;
-  for (const timeline of videoLayers.values()) {
-    totalVideoDuration = Math.max(totalVideoDuration, timeline.totalDuration);
-  }
-  for (const timeline of imageLayers.values()) {
-    totalVideoDuration = Math.max(totalVideoDuration, timeline.totalDuration);
-  }
-  
-  // Store the final base video label after all layers are composited
-  const finalBaseLabel = baseVideoLabel || 'video_base';
   const hasVideoContentForBase = sortedLayers.length > 0 || videoLayers.size > 0;
   
   // If no video layers, create a black base
-  if (!baseVideoLabel && hasVideoContentForBase) {
+  if (!currentCompositeLabel && hasVideoContentForBase) {
     videoFilters.push(
       `color=black:size=${targetDimensions.width}x${targetDimensions.height}:duration=${totalVideoDuration}:rate=${targetFps},setsar=1[video_base]`,
     );
-    baseVideoLabel = 'video_base';
+    currentCompositeLabel = 'video_base';
   }
+  
+  // Set final base label for further processing (aspect ratio crop, downscale, etc.)
+  const finalBaseLabel = currentCompositeLabel || 'video_base';
   
   if (hasVideoInputs) {
     // Group audio segments by time to detect overlaps
@@ -1585,7 +1749,7 @@ export function buildSeparateTimelineFilterComplex(
   }
 
   // Set the base video label for further processing
-  let currentVideoLabel = finalBaseLabel;
+  let currentVideoLabel = finalBaseLabel || currentCompositeLabel;
   const hasVideoContent = sortedLayers.length > 0 || videoLayers.size > 0;
   
   if (!currentVideoLabel || currentVideoLabel === '') {
@@ -1615,7 +1779,6 @@ export function buildSeparateTimelineFilterComplex(
 
   // Apply aspect ratio conversion (scale + crop) BEFORE subtitles and images
   // This ensures subtitles and images are positioned correctly relative to the final video dimensions
-  // targetAspectRatio is already set from job.operations.aspect (or trackInfo as fallback)
   const finalAspectRatio = targetAspectRatio;
   
   // Get the desired final output dimensions from the job
@@ -1868,11 +2031,10 @@ export function buildSeparateTimelineFilterComplex(
     videoLabelAfterDownscale = croppedVideoLabel;
   }
   
-  // Apply subtitles and text layers to video stream (must be in filter_complex)
-  // NOTE: Subtitles and text layers are now processed separately for proper multi-track rendering
-  // Subtitles are applied AFTER the final downscale, then text layers as drawtext filters
+  // Apply subtitles to video stream (must be in filter_complex)
+  // NOTE: Text and image overlays are now processed during main compositing loop in layer order
+  // Subtitles are applied AFTER the final downscale
   let subtitleFilter = '';
-  const textLayerFilters: string[] = [];
   let currentVideoLabelForText = videoLabelAfterDownscale;
 
   // Get font directories for the fonts used in subtitles
@@ -1924,217 +2086,21 @@ export function buildSeparateTimelineFilterComplex(
   }
 
   // Step 1.5: Force SAR=1 after subtitles to avoid aspect ratio propagation from ASS renderer
-  // This ensures clean aspect ratio before applying drawtext filters
+  // This ensures clean aspect ratio before final output
   if (currentVideoLabelForText === 'video_with_subtitles' && hasVideoContent) {
     // Add setsar=1 filter after subtitles
-    textLayerFilters.push(`[${currentVideoLabelForText}]setsar=1[with_sar]`);
-    currentVideoLabelForText = 'with_sar';
-    }
-
-  // Step 2: Process text and image overlays in proper layer order (after subtitles)
-  // Strategy: Collect ALL overlays (both text drawtext and image overlays) from ALL layers,
-  // sort by layer number, then process them in layer order as a unified overlay chain.
-  // Each overlay has enable expressions to control when it's visible, ensuring proper
-  // z-ordering regardless of timeline positions. Drawtext filters are treated as overlays
-  // and can be positioned between image overlays based on layer order.
-  
-  interface OverlayItem {
-    layer: number;
-    type: 'text' | 'image';
-    segment: any; // TextSegment or ProcessedTimelineSegment
-  }
-  
-  // Collect all overlays from all layers (both text drawtext and image overlays)
-  const allOverlays: OverlayItem[] = [];
-  
-  for (const [layerNum, track] of sortedLayers) {
-    // Add text segments (drawtext overlays)
-    if (track.textSegments && track.textSegments.length > 0) {
-      track.textSegments.forEach((textSegment: any) => {
-        allOverlays.push({
-          layer: layerNum,
-          type: 'text',
-          segment: textSegment,
-        });
-      });
-    }
-    
-    // Add image segments (image overlays)
-    if (track.imageSegments && track.imageSegments.length > 0) {
-      track.imageSegments.forEach((imageSegment: ProcessedTimelineSegment) => {
-        allOverlays.push({
-          layer: layerNum,
-          type: 'image',
-          segment: imageSegment,
-        });
-      });
-    }
-  }
-  
-  // Sort by layer number (ascending) - lower layers processed first, higher layers on top
-  // This ensures proper z-ordering: layer 2 image will be under layer 3 text, etc.
-  allOverlays.sort((a, b) => a.layer - b.layer);
-  
-  console.log(`🎬 Processing ${allOverlays.length} overlay(s) in unified overlay chain (layer order):`);
-  allOverlays.forEach((overlay, idx) => {
-    const timeInfo = overlay.type === 'text' 
-      ? `[${overlay.segment.startTime.toFixed(2)}s-${overlay.segment.endTime.toFixed(2)}s]`
-      : `[${overlay.segment.startTime.toFixed(2)}s-${overlay.segment.endTime.toFixed(2)}s]`;
-    console.log(`   ${idx + 1}. Layer ${overlay.layer} (${overlay.type}): ${timeInfo}`);
-  });
-  
-  let currentOverlayLabel = currentVideoLabelForText;
-  let overlayIndex = 0;
-  const totalDuration = totalVideoDuration;
-  
-  // Process each overlay in layer order, building a unified overlay chain
-  // Drawtext filters and image overlays are processed identically - each takes the
-  // current overlay label as input and produces a new overlay label as output.
-  // This allows drawtext filters to be positioned between image overlays.
-  for (let i = 0; i < allOverlays.length; i++) {
-    const overlay = allOverlays[i];
-    const isLast = i === allOverlays.length - 1;
-    
-    if (overlay.type === 'text') {
-      // Process text overlay (drawtext filter)
-      // Drawtext filters are part of the overlay chain and can be positioned
-      // between image overlays based on layer order
-      const textSegment = overlay.segment;
-      const drawtextFilter = generateDrawtextFilter(
-        textSegment,
-        job.operations.textStyle,
-        job.videoDimensions,
-      );
-      
-      // Apply drawtext filter to current overlay chain, producing next overlay label
-      const outputLabel = isLast ? 'video' : `overlay_${overlayIndex}`;
-      textLayerFilters.push(`[${currentOverlayLabel}]${drawtextFilter}[${outputLabel}]`);
-      currentOverlayLabel = outputLabel;
-      overlayIndex++;
-      console.log(`  📝 Applied text overlay (drawtext) at layer ${overlay.layer} -> [${outputLabel}]`);
-    } else {
-      // Process image overlay
-      // For images, we need to process them one at a time since buildImageOverlayFilters
-      // processes multiple segments. We'll create a single-segment version.
-      const imageSegment = overlay.segment;
-      const { input: trackInfo, originalIndex, duration } = imageSegment;
-      const startTime = Math.round(imageSegment.startTime * 1000) / 1000;
-      const endTime = Math.round(imageSegment.endTime * 1000) / 1000;
-      
-      // Find the file index for this image
-      const fileIndex = findFileIndexForSegment(
-        imageSegment,
-        categorizedInputs,
-        'video',
-      );
-      
-      if (fileIndex === undefined) {
-        console.warn(`❌ Could not find file index for image segment ${originalIndex}`);
-        continue;
-      }
-      
-      // Get transform settings
-      const transform = trackInfo.imageTransform || {
-        x: 0,
-        y: 0,
-        scale: 1,
-        rotation: 0,
-        width: trackInfo.width || (job.videoDimensions || desiredOutputDimensions).width,
-        height: trackInfo.height || (job.videoDimensions || desiredOutputDimensions).height,
-      };
-      
-      const imageInputRef = `[${fileIndex}:v]`;
-      const imagePreparedRef = `[img${overlayIndex}_prepared]`;
-      const imageScaledRef = `[img${overlayIndex}_scaled]`;
-      const imageRotatedRef = `[img${overlayIndex}_rotated]`;
-      const newOutputLabel = isLast ? 'video' : `overlay_${overlayIndex}`;
-      
-      // Step 1: Prepare image - trim to duration and add padding
-      const tpadFilter = startTime > 0 
-        ? `,tpad=start_duration=${startTime}:start_mode=add:color=black@0.0`
-        : '';
-      textLayerFilters.push(
-        `${imageInputRef}trim=duration=${duration},setsar=1${tpadFilter}${imagePreparedRef}`,
-      );
-      
-      // Step 2: Apply scaling if needed
-      let currentImageRef = imagePreparedRef;
-      let currentWidth = transform.width;
-      let currentHeight = transform.height;
-      
-      if (transform.scale !== 1.0) {
-        const scaledWidth = Math.round(transform.width * transform.scale);
-        const scaledHeight = Math.round(transform.height * transform.scale);
-        const scaleFilter = buildScaleFilter(
-          imagePreparedRef,
-          imageScaledRef,
-          scaledWidth,
-          scaledHeight,
-          hwAccel,
-          { forceOriginalAspectRatio: 'decrease', pad: false },
-        );
-        textLayerFilters.push(scaleFilter);
-        currentImageRef = imageScaledRef;
-        currentWidth = scaledWidth;
-        currentHeight = scaledHeight;
-      }
-      
-      // Step 3: Apply rotation if needed
-      if (transform.rotation !== 0) {
-        const rotationRadians = (transform.rotation * Math.PI) / 180;
-        const absRotation = Math.abs(rotationRadians);
-        const cosTheta = Math.abs(Math.cos(absRotation));
-        const sinTheta = Math.abs(Math.sin(absRotation));
-        const rotatedWidth = Math.ceil(currentWidth * cosTheta + currentHeight * sinTheta);
-        const rotatedHeight = Math.ceil(currentWidth * sinTheta + currentHeight * cosTheta);
-        
-        textLayerFilters.push(
-          `${currentImageRef}rotate=${rotationRadians}:out_w=${rotatedWidth}:out_h=${rotatedHeight}:fillcolor=none${imageRotatedRef}`,
-        );
-        currentImageRef = imageRotatedRef;
-        currentWidth = rotatedWidth;
-        currentHeight = rotatedHeight;
-      }
-      
-      // Step 4: Calculate overlay position
-      const targetDims = job.videoDimensions || desiredOutputDimensions;
-      const overlayX = transform.x >= 0
-        ? `(W-w)/2+${transform.x}*W/2`
-        : `(W-w)/2${transform.x}*W/2`;
-      const overlayY = transform.y >= 0
-        ? `(H-h)/2+${transform.y}*H/2`
-        : `(H-h)/2${transform.y}*H/2`;
-      
-      // Step 5: Overlay the image with enable expression
-      const overlayFilter = buildOverlayFilter(
-        `[${currentOverlayLabel}]`,
-        currentImageRef,
-        `[${newOutputLabel}]`,
-        overlayX,
-        overlayY,
-        hwAccel,
-        { enable: `between(t,${startTime},${endTime})` },
-      );
-      textLayerFilters.push(overlayFilter);
-      
-      currentOverlayLabel = newOutputLabel;
-      overlayIndex++;
-      console.log(`  🖼️ Applied image overlay at layer ${overlay.layer} -> [${newOutputLabel}]`);
-    }
-  }
-  
-  // Final output label
-  if (currentOverlayLabel !== 'video') {
-    textLayerFilters.push(`[${currentOverlayLabel}]copy[video]`);
+    videoFilters.push(`[${currentVideoLabelForText}]setsar=1[video]`);
+  } else if (currentVideoLabelForText !== 'video') {
+    // If no subtitles, rename final composite to [video]
+    videoFilters.push(`[${currentVideoLabelForText}]copy[video]`);
   }
 
   // Combine all filters in the correct order:
-  // 1. Video processing (concat, etc.)
+  // 1. Video processing (concat, video/image/text overlays in layer order)
   // 2. Audio processing
   // 3. Aspect ratio crop (if needed) - scales and crops to correct aspect ratio at source resolution
   // 4. Final downscale (if needed) - downscales to custom dimensions
   // 5. Subtitles (applied AFTER downscale at final output dimensions)
-  // 6. Overlays (text + images) applied in layer order AFTER subtitles
   const allFilters = [...videoFilters, ...audioFilters];
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
   if (aspectRatioCropFilter) {
@@ -2151,11 +2117,7 @@ export function buildSeparateTimelineFilterComplex(
     console.log('📝 ✅ ADDING SUBTITLE FILTER TO CHAIN (AFTER DOWNSCALE)');
     allFilters.push(subtitleFilter);
   }
-  // Text and image overlays are interleaved by layer in textLayerFilters
-  if (textLayerFilters.length > 0) {
-    console.log(`📝 ✅ ADDING ${textLayerFilters.length} OVERLAY FILTERS (TEXT + IMAGES) TO CHAIN IN LAYER ORDER`);
-    allFilters.push(...textLayerFilters);
-  }
+  // Note: Text and image overlays are already processed in layer order during main compositing loop
   const filterComplex = allFilters.join(';');
 
   return filterComplex;
