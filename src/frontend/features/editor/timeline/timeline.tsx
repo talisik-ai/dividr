@@ -51,7 +51,6 @@ import {
   isContextMenuClick,
   TimelineInteractionHandlers,
 } from './utils/timelineInteractionHandlers';
-import { getTrackRowHeight, getTrackRowTop } from './utils/trackRowPositions';
 
 interface TimelineProps {
   className?: string;
@@ -96,10 +95,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       number | null
     >(null);
     const [hoveredTrack, setHoveredTrack] = useState<VideoTrack | null>(null);
-    const [hoveredTrackRow, setHoveredTrackRow] = useState<string | null>(null);
+    const [hoveredTrackRowId, setHoveredTrackRowId] = useState<string | null>(
+      null,
+    );
     const [, setVerticalScrollY] = useState(0);
     const [linkedTrackIndicators, setLinkedTrackIndicators] = useState<
-      Array<{ trackType: string; position: number }>
+      Array<{ rowId: string; position: number }>
     >([]);
     const [marqueeSelection, setMarqueeSelection] = useState<{
       isActive: boolean;
@@ -181,6 +182,14 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         ? Math.max(...tracks.map((track) => track.endFrame))
         : timeline.totalFrames;
     }, [tracks, timeline.totalFrames]);
+
+    // Extend timeline length with a lightweight buffer so users can plan ahead
+    const displayedTotalFrames = useMemo(() => {
+      const baseBufferFrames = 100000; // ~20s at 30fps – keeps scrolling roomy without being heavy
+      const percentageBuffer = Math.floor(effectiveEndFrame * 0.25);
+      const bufferFrames = Math.max(baseBufferFrames, percentageBuffer);
+      return Math.max(timeline.totalFrames, effectiveEndFrame + bufferFrames);
+    }, [effectiveEndFrame, timeline.totalFrames]);
 
     const parseMediaDropPayload = useCallback((dataTransfer: DataTransfer) => {
       const jsonPayload = dataTransfer.getData('application/json');
@@ -268,6 +277,23 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       return completeRows;
     }, [dynamicRows]);
 
+    // Placeholder-aware bounds for interaction/split indicators
+    const interactionRowBounds = useMemo(
+      () =>
+        buildInteractionRowBounds(
+          dynamicRowsWithPlaceholders,
+          visibleTrackRows,
+          48,
+        ),
+      [dynamicRowsWithPlaceholders, visibleTrackRows],
+    );
+
+    const getRowBoundsById = useCallback(
+      (rowId: string | null) =>
+        interactionRowBounds.find((row) => row.rowId === rowId) || null,
+      [interactionRowBounds],
+    );
+
     // Animation loop for playback
     useEffect(() => {
       if (!playback.isPlaying) {
@@ -293,10 +319,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         // Linear playback - respect gaps like Premiere Pro
         // No gap skipping - playhead moves continuously through the entire timeline
 
-        if (targetFrame >= effectiveEndFrame) {
+        if (targetFrame >= displayedTotalFrames) {
           const finalFrame = playback.isLooping
             ? 0
-            : Math.max(0, effectiveEndFrame - 1);
+            : Math.max(0, displayedTotalFrames - 1);
           lastFrameUpdateRef.current = finalFrame;
           setCurrentFrame(finalFrame);
 
@@ -313,10 +339,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   newElapsed * displayFps * playback.playbackRate;
                 const newTargetFrame = Math.floor(newFrameAdvance);
 
-                if (newTargetFrame < effectiveEndFrame) {
+                if (newTargetFrame < displayedTotalFrames) {
                   const clampedFrame = Math.max(
                     0,
-                    Math.min(newTargetFrame, effectiveEndFrame - 1),
+                    Math.min(newTargetFrame, displayedTotalFrames - 1),
                   );
                   lastFrameUpdateRef.current = clampedFrame;
                   setCurrentFrame(clampedFrame);
@@ -333,7 +359,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         } else {
           const clampedFrame = Math.max(
             0,
-            Math.min(targetFrame, effectiveEndFrame - 1),
+            Math.min(targetFrame, displayedTotalFrames - 1),
           );
           lastFrameUpdateRef.current = clampedFrame;
           setCurrentFrame(clampedFrame);
@@ -353,7 +379,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       playback.isPlaying,
       playback.isLooping,
       playback.playbackRate,
-      effectiveEndFrame,
+      displayedTotalFrames,
       setCurrentFrame,
       tracks,
     ]);
@@ -1054,12 +1080,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Calculate timeline width - always span at least the full viewport width
     // This ensures a professional full-width grid like Premiere Pro/DaVinci Resolve
     const timelineWidth = useMemo(() => {
-      const contentWidth = effectiveEndFrame * frameWidth;
+      const contentWidth = displayedTotalFrames * frameWidth;
       // Use the larger of content width or viewport width to ensure full grid coverage
       // Account for sidebar width (~200px track controllers + ~200px left padding)
       const effectiveViewportWidth = viewportWidth;
       return Math.max(contentWidth, effectiveViewportWidth);
-    }, [effectiveEndFrame, frameWidth, viewportWidth]);
+    }, [displayedTotalFrames, frameWidth, viewportWidth]);
 
     // Auto-follow playhead during playback
     const autoFollowPlayhead = useCallback(() => {
@@ -1187,7 +1213,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         if (!isSplitModeActive || !tracksRef.current) {
           setSplitIndicatorPosition(null);
           setHoveredTrack(null);
-          setHoveredTrackRow(null);
+          setHoveredTrackRowId(null);
           setLinkedTrackIndicators([]);
           return;
         }
@@ -1199,7 +1225,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           frameWidth,
           tracks,
           visibleTrackRows,
-          dynamicRows,
+          dynamicRowsWithPlaceholders,
         );
 
         if (hoveredTrackAtPosition) {
@@ -1210,11 +1236,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             frame * frameWidth - tracksRef.current.scrollLeft;
 
           setHoveredTrack(hoveredTrackAtPosition);
-          setHoveredTrackRow(hoveredTrackAtPosition.type);
+          setHoveredTrackRowId(getTrackRowId(hoveredTrackAtPosition));
           setSplitIndicatorPosition(indicatorPosition);
 
           // Handle linked track indicators
-          const indicators: Array<{ trackType: string; position: number }> = [];
+          const indicators: Array<{ rowId: string; position: number }> = [];
 
           if (
             hoveredTrackAtPosition.isLinked &&
@@ -1230,7 +1256,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             ) {
               // Add indicator for the linked track
               indicators.push({
-                trackType: linkedTrack.type,
+                rowId: getTrackRowId(linkedTrack),
                 position: indicatorPosition,
               });
             }
@@ -1239,18 +1265,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           setLinkedTrackIndicators(indicators);
         } else {
           setHoveredTrack(null);
-          setHoveredTrackRow(null);
+          setHoveredTrackRowId(null);
           setSplitIndicatorPosition(null);
           setLinkedTrackIndicators([]);
         }
       },
-      [isSplitModeActive, frameWidth, tracks],
+      [dynamicRowsWithPlaceholders, frameWidth, isSplitModeActive, tracks],
     );
 
     const handleSplitMouseLeave = useCallback(() => {
       setSplitIndicatorPosition(null);
       setHoveredTrack(null);
-      setHoveredTrackRow(null);
+      setHoveredTrackRowId(null);
       setLinkedTrackIndicators([]);
     }, []);
 
@@ -1420,18 +1446,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     ]);
 
     // Helper functions to get track row positions (using dynamic utilities)
-    const getTrackRowTopPosition = useCallback(
-      (trackType: string) => {
-        // Use includeCenteringOffset=true to get absolute position including centering
-        return getTrackRowTop(trackType, visibleTrackRows, true);
-      },
-      [visibleTrackRows],
-    );
-
-    const getTrackRowHeightValue = useCallback((trackType?: string) => {
-      return getTrackRowHeight(trackType);
-    }, []);
-
     // Playhead drag handler
     const handlePlayheadDragStart = useCallback(() => {
       if (!tracksRef.current) return;
@@ -1447,7 +1461,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         const frame = Math.floor(x / frameWidth);
         const clampedFrame = Math.max(
           0,
-          Math.min(frame, effectiveEndFrame - 1),
+          Math.min(frame, displayedTotalFrames - 1),
         );
 
         // Update frame in real-time during drag
@@ -1512,7 +1526,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
             const clampedFrame = Math.max(
               0,
-              Math.min(frame, effectiveEndFrame - 1),
+              Math.min(frame, displayedTotalFrames - 1),
             );
             pause();
             isManualScrollingRef.current = true;
@@ -1585,7 +1599,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         },
       }),
       [
-        effectiveEndFrame,
+        displayedTotalFrames,
         pause,
         setCurrentFrame,
         setSelectedTracks,
@@ -1631,7 +1645,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           e.clientX,
           tracksRef.current,
           frameWidth,
-          effectiveEndFrame - 1,
+          displayedTotalFrames - 1,
         );
 
         const clickInfo: ClickInfo = {
@@ -1675,7 +1689,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         tracksRef,
         frameWidth,
         tracks,
-        effectiveEndFrame,
+        displayedTotalFrames,
         isSplitModeActive,
         interactionHandlers,
         visibleTrackRows,
@@ -1740,7 +1754,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               >
                 <TimelineRuler
                   frameWidth={frameWidth}
-                  totalFrames={timeline.totalFrames}
+                  totalFrames={displayedTotalFrames}
                   scrollX={timeline.scrollX}
                   fps={timeline.fps}
                   tracks={tracks}
@@ -1857,29 +1871,15 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                 {/* Split Indicator Line - confined to hovered track row */}
                 {isSplitModeActive &&
                   splitIndicatorPosition !== null &&
-                  hoveredTrackRow && (
-                    <div
-                      className="split-indicator"
-                      style={{
-                        left: `${splitIndicatorPosition}px`,
-                        top: `${getTrackRowTopPosition(hoveredTrackRow) - (tracksRef.current?.scrollTop || 0)}px`,
-                        height: `${getTrackRowHeightValue(hoveredTrackRow)}px`,
-                      }}
-                    />
-                  )}
-
-                {/* Split Indicator Line - confined to hovered track row */}
-                {isSplitModeActive &&
-                  splitIndicatorPosition !== null &&
-                  hoveredTrackRow &&
+                  hoveredTrackRowId &&
                   tracksRef.current &&
                   (() => {
+                    const rowBounds = getRowBoundsById(hoveredTrackRowId);
+                    if (!rowBounds) return null;
                     const currentScrollY = tracksRef.current.scrollTop;
                     const viewportHeight = tracksRef.current.clientHeight;
-                    const indicatorTop =
-                      getTrackRowTopPosition(hoveredTrackRow) - currentScrollY;
-                    const indicatorHeight =
-                      getTrackRowHeightValue(hoveredTrackRow);
+                    const indicatorTop = rowBounds.top - currentScrollY;
+                    const indicatorHeight = rowBounds.bottom - rowBounds.top;
 
                     // Viewport clipping
                     if (
@@ -1906,14 +1906,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                   tracksRef.current &&
                   linkedTrackIndicators.map((indicator, index) => {
                     if (!tracksRef.current) return null;
+                    const rowBounds = getRowBoundsById(indicator.rowId);
+                    if (!rowBounds) return null;
                     const currentScrollY = tracksRef.current.scrollTop;
                     const viewportHeight = tracksRef.current.clientHeight;
-                    const indicatorTop =
-                      getTrackRowTopPosition(indicator.trackType) -
-                      currentScrollY;
-                    const indicatorHeight = getTrackRowHeightValue(
-                      indicator.trackType,
-                    );
+                    const indicatorTop = rowBounds.top - currentScrollY;
+                    const indicatorHeight = rowBounds.bottom - rowBounds.top;
 
                     // Viewport clipping
                     if (
@@ -2104,10 +2102,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
               // Calculate relative offsets for all tracks from the primary track
               const primaryTrackStartFrame = primaryTrack.startFrame;
-              const primaryTrackRowTop = getTrackRowTop(
-                primaryTrack.type,
-                visibleTrackRows,
+              const primaryTrackRowBounds = getRowBoundsById(
+                getTrackRowId(primaryTrack),
               );
+              const primaryTrackRowTop = primaryTrackRowBounds
+                ? primaryTrackRowBounds.top
+                : 0;
 
               return (
                 <>
@@ -2118,10 +2118,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
                     const horizontalOffset = frameOffset * frameWidth;
 
                     // Calculate vertical offset from primary track row
-                    const trackRowTop = getTrackRowTop(
-                      track.type,
-                      visibleTrackRows,
+                    const trackRowBounds = getRowBoundsById(
+                      getTrackRowId(track),
                     );
+                    const trackRowTop = trackRowBounds
+                      ? trackRowBounds.top
+                      : primaryTrackRowTop;
                     const verticalOffset = trackRowTop - primaryTrackRowTop;
 
                     // For non-primary tracks, adjust mouse position but keep offset the same
