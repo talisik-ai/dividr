@@ -889,9 +889,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         <ContextMenuContent className="w-fit !text-xs">
           <ContextMenuItem
             onClick={() => removeFile(file.id)}
-            className="text-destructive focus:text-destructive"
+            className="group text-red-500 dark:text-red-400 focus:text-red-600 dark:focus:text-red-300 data-[highlighted]:bg-red-500/10 dark:data-[highlighted]:bg-red-400/20 data-[highlighted]:text-red-600 dark:data-[highlighted]:text-red-300"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-3 w-3 text-current" />
             <span>Delete</span>
           </ContextMenuItem>
           <ContextMenuItem

@@ -362,9 +362,9 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               {/* Delete from timeline - always shown as first item */}
               <DropdownMenuItem
                 onClick={handleDeleteAllTracks}
-                className="text-red-500 dark:text-red-700 focus:text-red-500 dark:focus:text-red-700"
+                className="group text-red-500 dark:text-red-400 focus:text-red-600 dark:focus:text-red-300 data-[highlighted]:bg-red-500/10 dark:data-[highlighted]:bg-red-400/20 data-[highlighted]:text-red-600 dark:data-[highlighted]:text-red-300"
               >
-                <Trash2 className="h-3 w-3 text-red-500 dark:text-red-700 focus:text-red-500 dark:focus:text-red-700" />
+                <Trash2 className="h-3 w-3 text-current" />
                 Delete from timeline
               </DropdownMenuItem>
 
