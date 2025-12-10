@@ -21,7 +21,6 @@ import {
   findAllSnapPoints,
 } from './utils/collisionDetection';
 import {
-  BASE_ROW_DEFINITIONS,
   calculateRowBoundsWithPlaceholders,
   detectInsertionPoint,
   generateDynamicRows,
@@ -887,14 +886,13 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
-    const currentTranscribingTrackId = useVideoEditorStore(
-      (state) => state.currentTranscribingTrackId,
+    const transcribingSubtitleRowIndex = useVideoEditorStore(
+      (state) => state.transcribingSubtitleRowIndex,
     );
+    const isTranscribing = useVideoEditorStore((state) => state.isTranscribing);
     const addTrackFromMediaLibrary = useVideoEditorStore(
       (state) => state.addTrackFromMediaLibrary,
     );
-    const isSubtitleRowTranscribing =
-      rowDef.trackTypes.includes('subtitle') && !!currentTranscribingTrackId;
 
     const parsedRow = useMemo(() => {
       const parsed = parseRowId(rowDef.id);
@@ -902,7 +900,15 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       return parsed;
     }, [rowDef.id, rowDef.trackTypes]);
 
+    const isSubtitleRowTranscribing =
+      rowDef.trackTypes.includes('subtitle') &&
+      isTranscribing &&
+      transcribingSubtitleRowIndex !== null &&
+      parsedRow.rowIndex === transcribingSubtitleRowIndex;
+
     const isEvenRow = parsedRow.rowIndex % 2 === 0;
+
+    const skeletonHeightClass = getTrackItemHeightClasses(rowDef.id);
 
     const visibleTracks = useMemo(() => {
       if (!window || tracks.length === 0) return tracks;
@@ -1042,13 +1048,27 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         <div className="h-full flex items-center">
           {isSubtitleRowTranscribing ? (
             <div className="h-full w-full flex items-center gap-2 px-2">
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[120px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[80px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[150px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[100px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[90px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[110px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[130px] rounded" />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[120px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[80px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[150px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[100px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[90px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[110px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[130px] rounded')}
+              />
             </div>
           ) : (
             visibleTracks.map((track) => (
@@ -1125,25 +1145,6 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
   },
 );
 
-function getDefaultRows(): TrackRowDefinition[] {
-  return [
-    {
-      id: 'video-0',
-      name: 'Video',
-      trackTypes: ['video'],
-      color: BASE_ROW_DEFINITIONS.video.color,
-      icon: BASE_ROW_DEFINITIONS.video.icon,
-    },
-    {
-      id: 'audio-0',
-      name: 'Audio',
-      trackTypes: ['audio'],
-      color: BASE_ROW_DEFINITIONS.audio.color,
-      icon: BASE_ROW_DEFINITIONS.audio.icon,
-    },
-  ];
-}
-
 // Placeholder row definition for empty space
 const PLACEHOLDER_ROW_HEIGHT = 48;
 
@@ -1180,6 +1181,9 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
     const visibleTrackRows = useVideoEditorStore(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
     );
+    const transcribingSubtitleRowIndex = useVideoEditorStore(
+      (state) => state.transcribingSubtitleRowIndex,
+    );
 
     const isEmptyTimeline = tracks.length === 0;
 
@@ -1188,12 +1192,13 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       [tracks],
     );
 
-    const dynamicRows = useMemo(() => {
-      if (isEmptyTimeline) {
-        return getDefaultRows();
-      }
-      return generateDynamicRows(migratedTracks);
-    }, [migratedTracks, isEmptyTimeline]);
+    const dynamicRows = useMemo(
+      () =>
+        generateDynamicRows(migratedTracks, {
+          transcribingSubtitleRowIndex,
+        }),
+      [migratedTracks, transcribingSubtitleRowIndex],
+    );
 
     const [subtitleImportConfirmation, setSubtitleImportConfirmation] =
       useState<{

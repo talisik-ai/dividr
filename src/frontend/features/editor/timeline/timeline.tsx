@@ -124,6 +124,9 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
     );
     const dragGhost = useVideoEditorStore((state) => state.playback.dragGhost);
+    const transcribingSubtitleRowIndex = useVideoEditorStore(
+      (state) => state.transcribingSubtitleRowIndex,
+    );
 
     // Generate dynamic rows for vertical drag detection
     const migratedTracks = useMemo(
@@ -131,8 +134,11 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       [tracks],
     );
     const dynamicRows = useMemo(
-      () => generateDynamicRows(migratedTracks),
-      [migratedTracks],
+      () =>
+        generateDynamicRows(migratedTracks, {
+          transcribingSubtitleRowIndex,
+        }),
+      [migratedTracks, transcribingSubtitleRowIndex],
     );
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,

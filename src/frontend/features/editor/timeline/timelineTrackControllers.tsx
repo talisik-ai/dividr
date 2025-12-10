@@ -443,26 +443,6 @@ interface TimelineTrackControllersProps {
   scrollbarHeight: number;
 }
 
-// Default rows when timeline is empty
-function getDefaultRows(): TrackRowDefinition[] {
-  return [
-    {
-      id: 'video-0',
-      name: 'Video',
-      trackTypes: ['video'],
-      color: '#3b82f6',
-      icon: 'video',
-    },
-    {
-      id: 'audio-0',
-      name: 'Audio',
-      trackTypes: ['audio'],
-      color: '#22c55e',
-      icon: 'audio',
-    },
-  ];
-}
-
 // Placeholder row height
 const PLACEHOLDER_ROW_HEIGHT = 48;
 
@@ -473,8 +453,9 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
       const visibleTrackRows = useVideoEditorStore(
         (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
       );
-
-      const isEmptyTimeline = tracks.length === 0;
+      const transcribingSubtitleRowIndex = useVideoEditorStore(
+        (state) => state.transcribingSubtitleRowIndex,
+      );
 
       // Migrate tracks to ensure they have trackRowIndex
       const migratedTracks = useMemo(
@@ -482,13 +463,14 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
         [tracks],
       );
 
-      // Generate dynamic rows based on existing tracks
-      const dynamicRows = useMemo(() => {
-        if (isEmptyTimeline) {
-          return getDefaultRows();
-        }
-        return generateDynamicRows(migratedTracks);
-      }, [migratedTracks, isEmptyTimeline]);
+      // Generate dynamic rows based on existing tracks (includes transient subtitle row)
+      const dynamicRows = useMemo(
+        () =>
+          generateDynamicRows(migratedTracks, {
+            transcribingSubtitleRowIndex,
+          }),
+        [migratedTracks, transcribingSubtitleRowIndex],
+      );
 
       // Calculate placeholder rows needed - MUST MATCH timelineTracks.tsx
       const MAX_PLACEHOLDER_ROWS = 3;

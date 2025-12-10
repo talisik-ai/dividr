@@ -48,6 +48,7 @@ export interface TranscriptionSlice {
   isTranscribing: boolean;
   currentTranscribingMediaId: string | null;
   currentTranscribingTrackId: string | null;
+  transcribingSubtitleRowIndex: number | null;
   transcriptionProgress: {
     stage: 'loading' | 'processing' | 'complete' | 'error';
     progress: number;
@@ -181,6 +182,7 @@ export const createTranscriptionSlice: StateCreator<
   isTranscribing: false,
   currentTranscribingMediaId: null,
   currentTranscribingTrackId: null,
+  transcribingSubtitleRowIndex: null,
   transcriptionProgress: null,
 
   setTranscriptionProgress: (progress) => {
@@ -343,10 +345,17 @@ export const createTranscriptionSlice: StateCreator<
       };
     }
 
+    const subtitleRowIndex = resolveSubtitleRowIndex(
+      state.tracks || [],
+      undefined,
+      Boolean(options.keepExistingSubtitles),
+    );
+
     // Start transcription
     set({
       isTranscribing: true,
       currentTranscribingMediaId: mediaId,
+      transcribingSubtitleRowIndex: subtitleRowIndex,
       transcriptionProgress: null,
     });
 
@@ -448,11 +457,6 @@ export const createTranscriptionSlice: StateCreator<
       // Convert Whisper segments to subtitle tracks (word-level karaoke)
       const fps = state.timeline?.fps || 30;
       const currentTrackCount = state.tracks?.length || 0;
-      const subtitleRowIndex = resolveSubtitleRowIndex(
-        state.tracks || [],
-        undefined,
-        Boolean(options.keepExistingSubtitles),
-      );
 
       // Timeline-aware positioning: Calculate offset based on source track
       const sourceTrack = options.sourceTrack; // Track context passed from generateKaraokeSubtitlesFromTrack
@@ -729,6 +733,7 @@ export const createTranscriptionSlice: StateCreator<
       set({
         isTranscribing: false,
         currentTranscribingMediaId: null,
+        transcribingSubtitleRowIndex: null,
         transcriptionProgress: null,
       });
 
@@ -743,6 +748,7 @@ export const createTranscriptionSlice: StateCreator<
       set({
         isTranscribing: false,
         currentTranscribingMediaId: null,
+        transcribingSubtitleRowIndex: null,
         transcriptionProgress: null,
       });
       return {
@@ -763,6 +769,7 @@ export const createTranscriptionSlice: StateCreator<
         isTranscribing: false,
         currentTranscribingMediaId: null,
         currentTranscribingTrackId: null,
+        transcribingSubtitleRowIndex: null,
         transcriptionProgress: null,
       });
     } catch (error) {
