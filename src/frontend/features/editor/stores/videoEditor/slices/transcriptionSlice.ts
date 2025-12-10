@@ -22,14 +22,21 @@ const getTrackColor = (index: number) =>
 const resolveSubtitleRowIndex = (
   tracks: VideoTrack[],
   providedRowIndex?: number,
+  preferNewRow = false,
 ): number => {
   if (providedRowIndex !== undefined) {
     return providedRowIndex;
   }
 
-  const existingSubtitle = tracks.find((t) => t.type === 'subtitle');
-  if (existingSubtitle?.trackRowIndex !== undefined) {
-    return existingSubtitle.trackRowIndex;
+  const subtitleIndices = tracks
+    .filter((t) => t.type === 'subtitle')
+    .map((t) => t.trackRowIndex ?? 0);
+
+  if (subtitleIndices.length > 0) {
+    if (preferNewRow) {
+      return Math.max(...subtitleIndices) + 1;
+    }
+    return subtitleIndices[0];
   }
 
   // Default to overlay positioning above video (minimum index 1)
@@ -51,6 +58,7 @@ export interface TranscriptionSlice {
   generateKaraokeSubtitlesFromTrack: (
     trackId: string,
     options?: {
+      keepExistingSubtitles?: boolean;
       model?:
         | 'tiny'
         | 'base'
@@ -102,6 +110,7 @@ export interface TranscriptionSlice {
   generateKaraokeSubtitles: (
     mediaId: string,
     options?: {
+      keepExistingSubtitles?: boolean;
       model?:
         | 'tiny'
         | 'base'
@@ -439,7 +448,11 @@ export const createTranscriptionSlice: StateCreator<
       // Convert Whisper segments to subtitle tracks (word-level karaoke)
       const fps = state.timeline?.fps || 30;
       const currentTrackCount = state.tracks?.length || 0;
-      const subtitleRowIndex = resolveSubtitleRowIndex(state.tracks || []);
+      const subtitleRowIndex = resolveSubtitleRowIndex(
+        state.tracks || [],
+        undefined,
+        Boolean(options.keepExistingSubtitles),
+      );
 
       // Timeline-aware positioning: Calculate offset based on source track
       const sourceTrack = options.sourceTrack; // Track context passed from generateKaraokeSubtitlesFromTrack
@@ -581,7 +594,7 @@ export const createTranscriptionSlice: StateCreator<
                   ),
                   subtitleText: word.word,
                   subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
-                trackRowIndex: subtitleRowIndex,
+                  trackRowIndex: subtitleRowIndex,
                   sourceStartTime: wordStartInSource,
                   sourceDuration: wordEndInSource - wordStartInSource,
                   subtitleStartTime: wordStartInSource,

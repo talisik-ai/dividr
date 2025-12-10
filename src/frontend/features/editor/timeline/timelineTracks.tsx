@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
 import {
   importMediaFromDialogUnified,
   importMediaUnified,
@@ -24,6 +25,7 @@ import {
   calculateRowBoundsWithPlaceholders,
   detectInsertionPoint,
   generateDynamicRows,
+  getNextAvailableRowIndex,
   getTrackRowId,
   migrateTracksWithRowIndex,
   parseRowId,
@@ -851,6 +853,12 @@ interface TrackRowProps {
     newEndFrame?: number,
   ) => void;
   onDrop: (rowId: string, files: FileList) => void;
+  onSubtitleImportAttempt?: (params: {
+    mediaId: string;
+    mediaName: string;
+    targetFrame: number;
+    targetRowIndex: number;
+  }) => boolean | Promise<boolean>;
   allTracksCount: number;
   onPlaceholderClick?: () => void;
   isSplitModeActive: boolean;
@@ -871,6 +879,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     onTrackMove,
     onTrackResize,
     onDrop,
+    onSubtitleImportAttempt,
     onPlaceholderClick,
     isSplitModeActive,
     isEmptyTimeline,
@@ -926,7 +935,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     }, []);
 
     const handleDrop = useCallback(
-      (e: React.DragEvent) => {
+      async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragOver(false);
@@ -944,6 +953,31 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           const cursorX = e.clientX - rect.left + scrollX;
           const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
           const targetRowIndex = parsedRow?.rowIndex ?? 0;
+
+          const mediaItem = useVideoEditorStore
+            .getState()
+            .mediaLibrary?.find(
+              (item: { id: string; type?: string; name?: string }) =>
+                item.id === payload.mediaId,
+            );
+          const isSubtitleDrop =
+            payload.type === 'subtitle' ||
+            mediaItem?.type === 'subtitle' ||
+            (mediaItem?.name || '').toLowerCase().endsWith('.srt') ||
+            (mediaItem?.name || '').toLowerCase().endsWith('.vtt');
+
+          if (isSubtitleDrop && onSubtitleImportAttempt) {
+            const handled = await onSubtitleImportAttempt({
+              mediaId: payload.mediaId,
+              mediaName: mediaItem?.name || 'Subtitles',
+              targetFrame,
+              targetRowIndex,
+            });
+
+            if (handled) {
+              return;
+            }
+          }
 
           addTrackFromMediaLibrary(
             payload.mediaId,
@@ -964,6 +998,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         scrollX,
         frameWidth,
         addTrackFromMediaLibrary,
+        onSubtitleImportAttempt,
       ],
     );
 
@@ -1137,6 +1172,9 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       importMediaFromDrop,
       addTrackFromMediaLibrary,
       importMediaFromDialog,
+      beginGroup,
+      endGroup,
+      removeTrack,
     } = useVideoEditorStore();
 
     const visibleTrackRows = useVideoEditorStore(
@@ -1156,6 +1194,21 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       }
       return generateDynamicRows(migratedTracks);
     }, [migratedTracks, isEmptyTimeline]);
+
+    const [subtitleImportConfirmation, setSubtitleImportConfirmation] =
+      useState<{
+        show: boolean;
+        mediaId: string | null;
+        mediaName: string;
+        targetFrame: number;
+        generatedSubtitleIds: string[];
+      }>({
+        show: false,
+        mediaId: null,
+        mediaName: '',
+        targetFrame: 0,
+        generatedSubtitleIds: [],
+      });
 
     // Calculate placeholder rows needed
     const MAX_PLACEHOLDER_ROWS = 3;
@@ -1226,6 +1279,117 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         }
       },
       [onTrackSelect],
+    );
+
+    const handleSubtitleDialogOpenChange = useCallback((open: boolean) => {
+      if (!open) {
+        setSubtitleImportConfirmation({
+          show: false,
+          mediaId: null,
+          mediaName: '',
+          targetFrame: 0,
+          generatedSubtitleIds: [],
+        });
+      }
+    }, []);
+
+    const handleConfirmSubtitleImport = useCallback(
+      async (deleteExisting: boolean) => {
+        if (!subtitleImportConfirmation.mediaId) {
+          handleSubtitleDialogOpenChange(false);
+          return;
+        }
+
+        const { mediaId, mediaName, targetFrame, generatedSubtitleIds } =
+          subtitleImportConfirmation;
+
+        if (deleteExisting) {
+          beginGroup?.(`Import Subtitles for ${mediaName}`);
+        }
+
+        try {
+          if (deleteExisting && generatedSubtitleIds.length > 0) {
+            generatedSubtitleIds.forEach((id) => removeTrack(id));
+          }
+
+          const latestTracks = (
+            useVideoEditorStore.getState() as { tracks: VideoTrack[] }
+          ).tracks;
+          const subtitleRowIndex = getNextAvailableRowIndex(
+            latestTracks,
+            'subtitle',
+          );
+
+          await addTrackFromMediaLibrary(
+            mediaId,
+            targetFrame,
+            subtitleRowIndex,
+          );
+        } finally {
+          if (deleteExisting) {
+            endGroup?.();
+          }
+          handleSubtitleDialogOpenChange(false);
+        }
+      },
+      [
+        subtitleImportConfirmation,
+        handleSubtitleDialogOpenChange,
+        beginGroup,
+        removeTrack,
+        addTrackFromMediaLibrary,
+        endGroup,
+      ],
+    );
+
+    const handleSubtitleImportAttempt = useCallback(
+      async ({
+        mediaId,
+        mediaName,
+        targetFrame,
+      }: {
+        mediaId: string;
+        mediaName: string;
+        targetFrame: number;
+        targetRowIndex: number;
+      }) => {
+        const state = useVideoEditorStore.getState() as {
+          tracks: VideoTrack[];
+          mediaLibrary?: Array<{ id: string; type?: string; name?: string }>;
+        };
+        const mediaItem = state.mediaLibrary?.find(
+          (item) => item.id === mediaId,
+        );
+
+        const isSubtitle =
+          mediaItem?.type === 'subtitle' ||
+          (mediaItem?.name || '').toLowerCase().endsWith('.srt') ||
+          (mediaItem?.name || '').toLowerCase().endsWith('.vtt');
+
+        if (!isSubtitle) {
+          return false;
+        }
+
+        const generatedSubtitles = (state.tracks as VideoTrack[]).filter(
+          (track) =>
+            track.type === 'subtitle' && track.subtitleType === 'karaoke',
+        );
+
+        if (generatedSubtitles.length === 0) {
+          return false;
+        }
+
+        setSubtitleImportConfirmation({
+          show: true,
+          mediaId,
+          mediaName,
+          targetFrame,
+          generatedSubtitleIds: generatedSubtitles.map((t) => t.id),
+        });
+
+        return true;
+      },
+      [],
     );
 
     const handleTrackMove = useCallback(
@@ -1533,6 +1697,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
                   onTrackMove={memoizedHandlers.onTrackMove}
                   onTrackResize={memoizedHandlers.onTrackResize}
                   onDrop={memoizedHandlers.onDrop}
+                  onSubtitleImportAttempt={handleSubtitleImportAttempt}
                   allTracksCount={tracks.length}
                   onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
                   isSplitModeActive={isSplitModeActive}
@@ -1582,6 +1747,17 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
               </div>
             );
           })}
+
+          <KaraokeConfirmationDialog
+            open={subtitleImportConfirmation.show}
+            onOpenChange={handleSubtitleDialogOpenChange}
+            mediaName={subtitleImportConfirmation.mediaName}
+            existingSubtitleCount={
+              subtitleImportConfirmation.generatedSubtitleIds.length
+            }
+            onConfirm={handleConfirmSubtitleImport}
+            mode="import"
+          />
         </div>
       </div>
     );

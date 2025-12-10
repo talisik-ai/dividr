@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
 import { useTrackDragRecording } from '../stores/videoEditor/hooks/useTrackDragRecording';
 import { useUndoRedoShortcuts } from '../stores/videoEditor/hooks/useUndoRedoShortcuts';
 import {
@@ -35,6 +36,7 @@ import {
   calculateRowBoundsWithPlaceholders,
   detectInsertionPoint,
   generateDynamicRows,
+  getNextAvailableRowIndex,
   getTrackRowId,
   migrateTracksWithRowIndex,
   parseRowId,
@@ -95,7 +97,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     >(null);
     const [hoveredTrack, setHoveredTrack] = useState<VideoTrack | null>(null);
     const [hoveredTrackRow, setHoveredTrackRow] = useState<string | null>(null);
-    const [_verticalScrollY, setVerticalScrollY] = useState(0);
+    const [, setVerticalScrollY] = useState(0);
     const [linkedTrackIndicators, setLinkedTrackIndicators] = useState<
       Array<{ trackType: string; position: number }>
     >([]);
@@ -152,6 +154,10 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const addTrackFromMediaLibrary = useVideoEditorStore(
       (state) => state.addTrackFromMediaLibrary,
     );
+    const beginGroup = useVideoEditorStore((state) => state.beginGroup);
+    const endGroup = useVideoEditorStore((state) => state.endGroup);
+    const removeTrack = useVideoEditorStore((state) => state.removeTrack);
+    const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
     const startDraggingPlayhead = useVideoEditorStore(
       (state) => state.startDraggingPlayhead,
     );
@@ -605,6 +611,23 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     // Calculate frame width based on zoom - memoized
     const frameWidth = useMemo(() => 2 * timeline.zoom, [timeline.zoom]);
 
+    const [subtitleImportConfirmation, setSubtitleImportConfirmation] =
+      useState<{
+        show: boolean;
+        mediaId: string | null;
+        mediaName: string;
+        targetFrame: number;
+        targetRowIndex: number;
+        generatedSubtitleIds: string[];
+      }>({
+        show: false,
+        mediaId: null,
+        mediaName: '',
+        targetFrame: 0,
+        targetRowIndex: 0,
+        generatedSubtitleIds: [],
+      });
+
     const handleDrop = useCallback(
       async (e: React.DragEvent) => {
         e.preventDefault();
@@ -653,6 +676,32 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           targetRowIndex = fallbackRow?.rowIndex ?? 0;
         }
 
+        const mediaItem = mediaLibrary?.find(
+          (item) => item.id === payload.mediaId,
+        );
+        const isSubtitleDrop =
+          payload.type === 'subtitle' ||
+          mediaItem?.type === 'subtitle' ||
+          (mediaItem?.name || '').toLowerCase().endsWith('.srt') ||
+          (mediaItem?.name || '').toLowerCase().endsWith('.vtt');
+
+        const existingGeneratedSubtitles = tracks.filter(
+          (track) =>
+            track.type === 'subtitle' && track.subtitleType === 'karaoke',
+        );
+
+        if (isSubtitleDrop && existingGeneratedSubtitles.length > 0) {
+          setSubtitleImportConfirmation({
+            show: true,
+            mediaId: payload.mediaId,
+            mediaName: mediaItem?.name || 'Subtitles',
+            targetFrame,
+            targetRowIndex: targetRowIndex ?? 0,
+            generatedSubtitleIds: existingGeneratedSubtitles.map((t) => t.id),
+          });
+          return;
+        }
+
         addTrackFromMediaLibrary(
           payload.mediaId,
           targetFrame,
@@ -666,6 +715,68 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         visibleTrackRows,
         frameWidth,
         tracks,
+        mediaLibrary,
+      ],
+    );
+
+    const handleSubtitleDialogOpenChange = useCallback((open: boolean) => {
+      if (!open) {
+        setSubtitleImportConfirmation({
+          show: false,
+          mediaId: null,
+          mediaName: '',
+          targetFrame: 0,
+          targetRowIndex: 0,
+          generatedSubtitleIds: [],
+        });
+      }
+    }, []);
+
+    const handleConfirmSubtitleImport = useCallback(
+      async (deleteExisting: boolean) => {
+        if (!subtitleImportConfirmation.mediaId) {
+          handleSubtitleDialogOpenChange(false);
+          return;
+        }
+
+        const { mediaId, mediaName, targetFrame, generatedSubtitleIds } =
+          subtitleImportConfirmation;
+
+        if (deleteExisting) {
+          beginGroup?.(`Import Subtitles for ${mediaName}`);
+        }
+
+        try {
+          if (deleteExisting && generatedSubtitleIds.length > 0) {
+            generatedSubtitleIds.forEach((id) => removeTrack(id));
+          }
+
+          const latestTracks = (useVideoEditorStore.getState() as any)
+            .tracks as VideoTrack[];
+          const subtitleRowIndex = getNextAvailableRowIndex(
+            latestTracks,
+            'subtitle',
+          );
+
+          await addTrackFromMediaLibrary(
+            mediaId,
+            targetFrame,
+            subtitleRowIndex,
+          );
+        } finally {
+          if (deleteExisting) {
+            endGroup?.();
+          }
+          handleSubtitleDialogOpenChange(false);
+        }
+      },
+      [
+        subtitleImportConfirmation,
+        handleSubtitleDialogOpenChange,
+        beginGroup,
+        removeTrack,
+        addTrackFromMediaLibrary,
+        endGroup,
       ],
     );
 
@@ -2034,6 +2145,18 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
             })()}
           </>
         )}
+
+        {/* Subtitle Import Safety Dialog */}
+        <KaraokeConfirmationDialog
+          open={subtitleImportConfirmation.show}
+          onOpenChange={handleSubtitleDialogOpenChange}
+          mediaName={subtitleImportConfirmation.mediaName}
+          existingSubtitleCount={
+            subtitleImportConfirmation.generatedSubtitleIds.length
+          }
+          onConfirm={handleConfirmSubtitleImport}
+          mode="import"
+        />
 
         {/* Project Shortcut Confirmation Dialog */}
         <ConfirmationDialog />

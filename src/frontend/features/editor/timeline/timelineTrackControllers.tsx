@@ -223,6 +223,8 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
             const result = await generateKaraokeSubtitlesFromTrack(trackId, {
               model: 'base',
               processOnlyThisSegment: true, // Row Controller: process each segment individually
+              keepExistingSubtitles:
+                !deleteExisting && allTracks.some((t) => t.type === 'subtitle'),
               onProgress: (progress) => {
                 console.log('📊 Transcription progress:', progress);
               },
