@@ -1,4 +1,3 @@
-// import { MakerPKG } from '@electron-forge/maker-pkg';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
@@ -13,8 +12,8 @@ const config: ForgeConfig = {
         '**/node_modules/{@ffmpeg-installer,ffmpeg-static,ffprobe-static}/**/*',
     },
     icon: './favicon.ico',
-    name: 'Dividr',
-    executableName: 'Dividr',
+    name: 'DiviDr',
+    executableName: 'DiviDr',
     extraResource: ['./src/frontend/assets/logo', './src/backend/scripts'],
     ignore: [
       // Git and docs
@@ -51,22 +50,11 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [
-    // macOS PKG installer
-    /* new MakerPKG({
-      identity: null, // Set to null for development, add your Apple Developer ID for production
-      signing: {
-        identity: null, // Same as above
-        "entitlements": null,
-        "entitlements-inherit": null,
-        "gatekeeper-assess": false,
-      },
-    }),*/
-
     // Windows NSIS installer
     {
       name: '@felixrieseberg/electron-forge-maker-nsis',
       config: {
-        name: 'Dividr',
+        name: 'DiviDr',
         description:
           'A powerful video editing application built with Electron and FFmpeg',
         manufacturer: 'Talisik',
@@ -74,7 +62,7 @@ const config: ForgeConfig = {
         outputDirectory: undefined,
         installerIcon: './favicon.ico',
         uninstallerIcon: './favicon.ico',
-        exe: 'Dividr.exe',
+        exe: 'DiviDr.exe',
         setupIcon: './favicon.ico',
         oneClick: false,
         perMachine: false,
@@ -82,7 +70,7 @@ const config: ForgeConfig = {
         runAfterFinish: true,
         createDesktopShortcut: true,
         createStartMenuShortcut: true,
-        shortcutName: 'Dividr',
+        shortcutName: 'DiviDr',
         deleteAppDataOnUninstall: false,
         menuCategory: false,
         language: 'English',

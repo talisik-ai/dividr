@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { StateCreator } from 'zustand';
+import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
 import { VideoTrack } from '../types/track.types';
 
 const TRACK_COLORS = [
@@ -18,11 +19,36 @@ const TRACK_COLORS = [
 const getTrackColor = (index: number) =>
   TRACK_COLORS[index % TRACK_COLORS.length];
 
+const resolveSubtitleRowIndex = (
+  tracks: VideoTrack[],
+  providedRowIndex?: number,
+  preferNewRow = false,
+): number => {
+  if (providedRowIndex !== undefined) {
+    return providedRowIndex;
+  }
+
+  const subtitleIndices = tracks
+    .filter((t) => t.type === 'subtitle')
+    .map((t) => t.trackRowIndex ?? 0);
+
+  if (subtitleIndices.length > 0) {
+    if (preferNewRow) {
+      return Math.max(...subtitleIndices) + 1;
+    }
+    return subtitleIndices[0];
+  }
+
+  // Default to overlay positioning above video (minimum index 1)
+  return Math.max(1, getNextAvailableRowIndex(tracks, 'subtitle'));
+};
+
 export interface TranscriptionSlice {
   // State
   isTranscribing: boolean;
   currentTranscribingMediaId: string | null;
   currentTranscribingTrackId: string | null;
+  transcribingSubtitleRowIndex: number | null;
   transcriptionProgress: {
     stage: 'loading' | 'processing' | 'complete' | 'error';
     progress: number;
@@ -33,6 +59,7 @@ export interface TranscriptionSlice {
   generateKaraokeSubtitlesFromTrack: (
     trackId: string,
     options?: {
+      keepExistingSubtitles?: boolean;
       model?:
         | 'tiny'
         | 'base'
@@ -84,6 +111,7 @@ export interface TranscriptionSlice {
   generateKaraokeSubtitles: (
     mediaId: string,
     options?: {
+      keepExistingSubtitles?: boolean;
       model?:
         | 'tiny'
         | 'base'
@@ -154,6 +182,7 @@ export const createTranscriptionSlice: StateCreator<
   isTranscribing: false,
   currentTranscribingMediaId: null,
   currentTranscribingTrackId: null,
+  transcribingSubtitleRowIndex: null,
   transcriptionProgress: null,
 
   setTranscriptionProgress: (progress) => {
@@ -316,10 +345,17 @@ export const createTranscriptionSlice: StateCreator<
       };
     }
 
+    const subtitleRowIndex = resolveSubtitleRowIndex(
+      state.tracks || [],
+      undefined,
+      Boolean(options.keepExistingSubtitles),
+    );
+
     // Start transcription
     set({
       isTranscribing: true,
       currentTranscribingMediaId: mediaId,
+      transcribingSubtitleRowIndex: subtitleRowIndex,
       transcriptionProgress: null,
     });
 
@@ -529,6 +565,7 @@ export const createTranscriptionSlice: StateCreator<
                       ),
                       subtitleText: word.word,
                       subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
+                      trackRowIndex: subtitleRowIndex,
                       // Store RELATIVE timing (relative to clip start)
                       sourceStartTime: relativeStartTime,
                       sourceDuration: relativeEndTime - relativeStartTime,
@@ -561,6 +598,7 @@ export const createTranscriptionSlice: StateCreator<
                   ),
                   subtitleText: word.word,
                   subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
+                  trackRowIndex: subtitleRowIndex,
                   sourceStartTime: wordStartInSource,
                   sourceDuration: wordEndInSource - wordStartInSource,
                   subtitleStartTime: wordStartInSource,
@@ -622,6 +660,7 @@ export const createTranscriptionSlice: StateCreator<
                     ),
                     subtitleText: segment.text,
                     subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
+                    trackRowIndex: subtitleRowIndex,
                     sourceStartTime: relativeStartTime,
                     sourceDuration: relativeEndTime - relativeStartTime,
                     subtitleStartTime: segmentStartInSource,
@@ -653,6 +692,7 @@ export const createTranscriptionSlice: StateCreator<
                 color: getTrackColor(currentTrackCount + subtitleTracks.length),
                 subtitleText: segment.text,
                 subtitleType: 'karaoke' as const, // Mark as karaoke subtitle
+                trackRowIndex: subtitleRowIndex,
                 sourceStartTime: segmentStartInSource,
                 sourceDuration: segmentEndInSource - segmentStartInSource,
                 subtitleStartTime: segmentStartInSource,
@@ -693,6 +733,7 @@ export const createTranscriptionSlice: StateCreator<
       set({
         isTranscribing: false,
         currentTranscribingMediaId: null,
+        transcribingSubtitleRowIndex: null,
         transcriptionProgress: null,
       });
 
@@ -707,6 +748,7 @@ export const createTranscriptionSlice: StateCreator<
       set({
         isTranscribing: false,
         currentTranscribingMediaId: null,
+        transcribingSubtitleRowIndex: null,
         transcriptionProgress: null,
       });
       return {
@@ -727,6 +769,7 @@ export const createTranscriptionSlice: StateCreator<
         isTranscribing: false,
         currentTranscribingMediaId: null,
         currentTranscribingTrackId: null,
+        transcribingSubtitleRowIndex: null,
         transcriptionProgress: null,
       });
     } catch (error) {

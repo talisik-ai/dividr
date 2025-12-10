@@ -3,7 +3,7 @@
 import { cn } from '@/frontend/utils/utils';
 import { Type } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { importMediaFromDialogUnified } from '../services/mediaImportService';
 import { usePreviewShortcuts } from '../stores/videoEditor/hooks/usePreviewShortcuts';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
 import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
@@ -59,7 +59,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     getTextStyleForSubtitle,
     setGlobalSubtitlePosition,
     importMediaFromDialog,
+    importMediaFromDrop,
     importMediaToTimeline,
+    addTrackFromMediaLibrary,
     setCurrentFrame,
     setPreviewPan,
     setPreviewScale,
@@ -109,6 +111,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   // Drag and drop functionality
   const { dragActive, handleDrag, handleDrop } = useDragDrop({
     importMediaToTimeline,
+    importMediaFromDrop,
+    addTrackFromMediaLibrary,
   });
 
   // Get display FPS from source video tracks
@@ -601,20 +605,17 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   );
 
   const handleImportFromPlaceholder = useCallback(async () => {
-    const result = await importMediaFromDialog();
-    if (!result || (!result.success && !result.error)) return;
-
-    if (result.success && result.importedFiles.length > 0) {
-      console.log(
-        `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
-      );
-    } else {
-      const errorMessage =
-        result.error ||
-        'All files were rejected due to corruption or invalid format';
-      toast.error(errorMessage);
-    }
-  }, [importMediaFromDialog]);
+    await importMediaFromDialogUnified(
+      importMediaFromDialog,
+      { importMediaFromDrop, importMediaToTimeline, addTrackFromMediaLibrary },
+      { addToTimeline: true, showToasts: true },
+    );
+  }, [
+    importMediaFromDialog,
+    importMediaFromDrop,
+    importMediaToTimeline,
+    addTrackFromMediaLibrary,
+  ]);
 
   // Overlay render props
   const overlayProps = {
@@ -655,9 +656,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       style={
         !tracks.length
           ? {
-              height: '374px',
-              maxWidth: '66.67%',
-              aspectRatio: '16 / 9',
+              height: '90%',
+              maxWidth: '80%',
               margin: '0 auto',
             }
           : undefined
@@ -701,14 +701,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           />
         )}
 
-      {/* 
-        UNIFIED OVERLAY RENDERER - AUDIO FIX
-        
-        Key changes:
-        1. Pass setCurrentFrame - DualBufferVideo will update timeline
-        2. Pass independentAudioTrack - determines audio routing
-        3. DualBufferVideo now handles ALL playback including audio
-      */}
       <UnifiedOverlayRenderer
         {...overlayProps}
         videoRef={videoRef}

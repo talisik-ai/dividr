@@ -19,7 +19,6 @@ import {
   Trash2,
   Volume2,
   VolumeX,
-  X,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
@@ -51,7 +50,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const toggleTrackMute = useVideoEditorStore(
       (state) => state.toggleTrackMute,
     );
-    const removeTrackRow = useVideoEditorStore((state) => state.removeTrackRow);
     const deleteTrack = useVideoEditorStore((state) => state.removeTrack);
     const allTracks = useVideoEditorStore((state) => state.tracks);
     const currentTranscribingTrackId = useVideoEditorStore(
@@ -96,7 +94,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
 
     // Check if video and audio tracks are linked (NO selection requirement for row controllers)
     const hasLinkedAudioVideo = useMemo(() => {
-      if (rowDef.id !== 'video') return false;
+      if (!rowDef.trackTypes.includes('video')) return false;
 
       const videoTracks = tracks.filter((t) => t.type === 'video');
       return videoTracks.some((videoTrack) => {
@@ -125,13 +123,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         }
       });
     }, [tracks, toggleTrackMute]);
-
-    const handleRemoveRow = useCallback(() => {
-      // Only allow removing rows that have no tracks
-      if (tracks.length === 0) {
-        removeTrackRow(rowDef.id);
-      }
-    }, [tracks.length, removeTrackRow, rowDef.id]);
 
     const handleDeleteAllTracks = useCallback(() => {
       // Batch delete: collect all track IDs including linked tracks
@@ -232,6 +223,8 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
             const result = await generateKaraokeSubtitlesFromTrack(trackId, {
               model: 'base',
               processOnlyThisSegment: true, // Row Controller: process each segment individually
+              keepExistingSubtitles:
+                !deleteExisting && allTracks.some((t) => t.type === 'subtitle'),
               onProgress: (progress) => {
                 console.log('📊 Transcription progress:', progress);
               },
@@ -268,9 +261,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         });
       }
     }, []);
-    // Can only remove non-essential rows (not video or audio) and only if they have no tracks
-    const canRemoveRow =
-      rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
 
     // Parse row ID to get row index and type for label
     const parsedRow = useMemo(() => {
@@ -372,14 +362,14 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               {/* Delete from timeline - always shown as first item */}
               <DropdownMenuItem
                 onClick={handleDeleteAllTracks}
-                className="text-destructive focus:text-destructive"
+                className="text-red-500 dark:text-red-700 focus:text-red-500 dark:focus:text-red-700"
               >
-                <Trash2 className="h-3 w-3" />
+                <Trash2 className="h-3 w-3 text-red-500 dark:text-red-700 focus:text-red-500 dark:focus:text-red-700" />
                 Delete from timeline
               </DropdownMenuItem>
 
               {/* Generate karaoke subtitles - only for video tracks with linked audio */}
-              {rowDef.id === 'video' && hasLinkedAudioVideo && (
+              {rowDef.trackTypes.includes('video') && hasLinkedAudioVideo && (
                 <>
                   <DropdownMenuItem
                     onClick={handleGenerateKaraokeSubtitles}
@@ -392,23 +382,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Show remove button for non-essential rows when empty */}
-          {canRemoveRow && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 hover:text-destructive"
-                  onClick={handleRemoveRow}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Remove empty track row</TooltipContent>
-            </Tooltip>
-          )}
         </div>
 
         {/* Karaoke Confirmation Dialog */}
@@ -470,26 +443,6 @@ interface TimelineTrackControllersProps {
   scrollbarHeight: number;
 }
 
-// Default rows when timeline is empty
-function getDefaultRows(): TrackRowDefinition[] {
-  return [
-    {
-      id: 'video-0',
-      name: 'Video',
-      trackTypes: ['video'],
-      color: '#3b82f6',
-      icon: 'video',
-    },
-    {
-      id: 'audio-0',
-      name: 'Audio',
-      trackTypes: ['audio'],
-      color: '#22c55e',
-      icon: 'audio',
-    },
-  ];
-}
-
 // Placeholder row height
 const PLACEHOLDER_ROW_HEIGHT = 48;
 
@@ -500,8 +453,9 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
       const visibleTrackRows = useVideoEditorStore(
         (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
       );
-
-      const isEmptyTimeline = tracks.length === 0;
+      const transcribingSubtitleRowIndex = useVideoEditorStore(
+        (state) => state.transcribingSubtitleRowIndex,
+      );
 
       // Migrate tracks to ensure they have trackRowIndex
       const migratedTracks = useMemo(
@@ -509,13 +463,14 @@ export const TimelineTrackControllers: React.FC<TimelineTrackControllersProps> =
         [tracks],
       );
 
-      // Generate dynamic rows based on existing tracks
-      const dynamicRows = useMemo(() => {
-        if (isEmptyTimeline) {
-          return getDefaultRows();
-        }
-        return generateDynamicRows(migratedTracks);
-      }, [migratedTracks, isEmptyTimeline]);
+      // Generate dynamic rows based on existing tracks (includes transient subtitle row)
+      const dynamicRows = useMemo(
+        () =>
+          generateDynamicRows(migratedTracks, {
+            transcribingSubtitleRowIndex,
+          }),
+        [migratedTracks, transcribingSubtitleRowIndex],
+      );
 
       // Calculate placeholder rows needed - MUST MATCH timelineTracks.tsx
       const MAX_PLACEHOLDER_ROWS = 3;

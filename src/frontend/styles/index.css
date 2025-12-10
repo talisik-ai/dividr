@@ -18,22 +18,23 @@ body {
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 7px; /* Width of the scrollbar */
-  height: 8px;
+  width: 5px; /* Thin scrollbar width */
+  height: 5px; /* Thin scrollbar height */
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent; /* Track background */
-  margin-bottom: 5px;
+  background: transparent; /* Transparent track */
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888; /* Scrollbar color */
-  border-radius: 4px; /* Rounded corners */
+  background: rgba(128, 128, 128, 0.3); /* Subtle gray, semi-transparent */
+  border-radius: 2px; /* Rounded corners */
+  transition: background 0.2s ease; /* Smooth transition */
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #666; /* Darker on hover */
+  background: rgba(128, 128, 128, 0.7); /* Brighter on hover */
+  cursor: pointer;
 }
 
 /* Hide scrollbar buttons */

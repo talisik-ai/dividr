@@ -40,7 +40,14 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { BasePanel } from '../../../components/panels/basePanel';
 import { CustomPanelProps } from '../../../components/panels/panelRegistry';
+import {
+  importMediaFromDialogUnified,
+  importMediaUnified,
+} from '../../../services/mediaImportService';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
+import { VideoTrack } from '../../../stores/videoEditor/types';
+import { isSubtitleFile } from '../../../stores/videoEditor/utils/subtitleParser';
+import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
 import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
 interface MediaItem {
   id: string;
@@ -82,12 +89,18 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   );
   const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
   const tracks = useVideoEditorStore((state) => state.tracks);
+  const importMediaToTimeline = useVideoEditorStore(
+    (state) => state.importMediaToTimeline,
+  );
   const addTrackFromMediaLibrary = useVideoEditorStore(
     (state) => state.addTrackFromMediaLibrary,
   );
   const removeFromMediaLibrary = useVideoEditorStore(
     (state) => state.removeFromMediaLibrary,
   );
+  const beginGroup = useVideoEditorStore((state) => state.beginGroup);
+  const endGroup = useVideoEditorStore((state) => state.endGroup);
+  const removeTrack = useVideoEditorStore((state) => state.removeTrack);
   const isGeneratingSpriteSheet = useVideoEditorStore(
     (state) => state.isGeneratingSpriteSheet,
   );
@@ -111,7 +124,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   const [dragActive, setDragActive] = useState(false);
   const dragCounter = useRef(0);
-  const [draggedMediaId, setDraggedMediaId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
@@ -124,6 +136,20 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     mediaId: null,
     mediaName: '',
     affectedTracksCount: 0,
+  });
+
+  const [subtitleImportConfirmation, setSubtitleImportConfirmation] = useState<{
+    show: boolean;
+    mediaId: string | null;
+    mediaName: string;
+    targetFrame: number;
+    generatedSubtitleIds: string[];
+  }>({
+    show: false,
+    mediaId: null,
+    mediaName: '',
+    targetFrame: 0,
+    generatedSubtitleIds: [],
   });
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -149,38 +175,18 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   const handleFiles = useCallback(
     async (files: File[]) => {
-      try {
-        const loadingToast = toast.loading(
-          `Validating and importing ${files.length} ${files.length === 1 ? 'file' : 'files'}...`,
-        );
-        const result = await importMediaFromDrop(files);
-        if (!result || (!result.success && !result.error)) return;
-        toast.dismiss(loadingToast);
-        const importedCount = result.importedFiles.length;
-        const rejectedCount = result.rejectedFiles?.length || 0;
-        if (importedCount > 0) {
-          toast.success(
-            `Successfully imported ${importedCount} ${importedCount === 1 ? 'file' : 'files'}` +
-              (rejectedCount > 0 ? ` (${rejectedCount} rejected)` : ''),
-          );
-        } else if (rejectedCount > 0) {
-          const errorMessage =
-            result.error ||
-            'All files were rejected due to corruption or invalid format';
-          toast.error(errorMessage);
-        } else {
-          toast.error('No files to import');
-        }
-      } catch (error: unknown) {
-        console.error('Error handling files:', error);
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : 'Failed to import files. Please try again.',
-        );
-      }
+      await importMediaUnified(
+        files,
+        'library-drop',
+        {
+          importMediaFromDrop,
+          importMediaToTimeline,
+          addTrackFromMediaLibrary,
+        },
+        { addToTimeline: false, showToasts: true },
+      );
     },
-    [importMediaFromDrop],
+    [importMediaFromDrop, importMediaToTimeline, addTrackFromMediaLibrary],
   );
 
   const handleDragOut = useCallback((e: React.DragEvent) => {
@@ -268,12 +274,83 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     }
   }, []);
 
+  const handleSubtitleDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setSubtitleImportConfirmation({
+        show: false,
+        mediaId: null,
+        mediaName: '',
+        targetFrame: 0,
+        generatedSubtitleIds: [],
+      });
+    }
+  }, []);
+
+  const handleConfirmSubtitleImport = useCallback(
+    async (deleteExisting: boolean) => {
+      if (!subtitleImportConfirmation.mediaId) {
+        handleSubtitleDialogOpenChange(false);
+        return;
+      }
+
+      const { mediaId, mediaName, targetFrame, generatedSubtitleIds } =
+        subtitleImportConfirmation;
+
+      if (deleteExisting) {
+        beginGroup?.(`Import Subtitles for ${mediaName}`);
+      }
+
+      try {
+        if (deleteExisting && generatedSubtitleIds.length > 0) {
+          generatedSubtitleIds.forEach((id) => removeTrack(id));
+        }
+
+        const latestTracks = (
+          useVideoEditorStore.getState() as { tracks: VideoTrack[] }
+        ).tracks;
+        const subtitleRowIndex = getNextAvailableRowIndex(
+          latestTracks,
+          'subtitle',
+        );
+
+        await addTrackFromMediaLibrary(mediaId, targetFrame, subtitleRowIndex);
+      } finally {
+        if (deleteExisting) {
+          endGroup?.();
+        }
+        handleSubtitleDialogOpenChange(false);
+      }
+    },
+    [
+      subtitleImportConfirmation,
+      handleSubtitleDialogOpenChange,
+      beginGroup,
+      removeTrack,
+      addTrackFromMediaLibrary,
+      endGroup,
+    ],
+  );
+
   const handleMediaDragStart = useCallback(
     (e: React.DragEvent, mediaId: string) => {
-      setDraggedMediaId(mediaId);
+      const mediaItem = mediaLibrary.find((item) => item.id === mediaId);
+      const payload = mediaItem
+        ? {
+            mediaId,
+            type: mediaItem.type,
+            duration: mediaItem.duration,
+            mimeType: mediaItem.mimeType,
+            thumbnail: mediaItem.thumbnail || mediaItem.previewUrl,
+            waveform: mediaItem.waveform?.cacheKey,
+            source: mediaItem.source,
+          }
+        : { mediaId };
+
+      // Provide both JSON and plain text for compatibility with existing handlers
+      e.dataTransfer.setData('application/json', JSON.stringify(payload));
       e.dataTransfer.setData('text/plain', mediaId);
       e.dataTransfer.effectAllowed = 'copy';
-      const mediaItem = mediaLibrary.find((item) => item.id === mediaId);
+
       if (mediaItem) {
         const dragImage = document.createElement('div');
         dragImage.textContent = `🎬 ${mediaItem.name}`;
@@ -294,22 +371,43 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     [mediaLibrary],
   );
 
-  const handleMediaDragEnd = useCallback(() => {
-    setDraggedMediaId(null);
-  }, []);
-
   const handleAddToTimeline = useCallback(
     async (fileId: string) => {
-      await addTrackFromMediaLibrary(fileId, 0);
+      const mediaItem = mediaLibrary.find((item) => item.id === fileId);
+      const isSubtitleDrop =
+        mediaItem?.type === 'subtitle' ||
+        (mediaItem?.name ? isSubtitleFile(mediaItem.name) : false);
+
+      const generatedSubtitles = tracks.filter(
+        (track) =>
+          track.type === 'subtitle' && track.subtitleType === 'karaoke',
+      );
+
+      if (isSubtitleDrop && generatedSubtitles.length > 0) {
+        setSubtitleImportConfirmation({
+          show: true,
+          mediaId: fileId,
+          mediaName: mediaItem?.name || 'Subtitles',
+          targetFrame: 0,
+          generatedSubtitleIds: generatedSubtitles.map((t) => t.id),
+        });
+        return;
+      }
+
+      const subtitleRowIndex =
+        isSubtitleDrop && tracks.length > 0
+          ? getNextAvailableRowIndex(tracks as VideoTrack[], 'subtitle')
+          : undefined;
+
+      await addTrackFromMediaLibrary(fileId, 0, subtitleRowIndex);
       toast.success('Added to timeline');
     },
-    [addTrackFromMediaLibrary],
+    [addTrackFromMediaLibrary, mediaLibrary, tracks],
   );
 
   const generateKaraokeSubtitles = useVideoEditorStore(
     (state) => state.generateKaraokeSubtitles,
   );
-  const removeTrack = useVideoEditorStore((state) => state.removeTrack);
 
   const [karaokeConfirmation, setKaraokeConfirmation] = useState<{
     show: boolean;
@@ -380,6 +478,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       try {
         const result = await generateKaraokeSubtitles(fileId, {
           model: 'base',
+          keepExistingSubtitles:
+            !deleteExisting &&
+            tracks.some((track) => track.type === 'subtitle'),
           onProgress: (progress) => {
             console.log('📊 Transcription progress:', progress);
           },
@@ -477,21 +578,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     }
   };
 
-  const isSubtitleFile = (fileName: string): boolean => {
-    const subtitleExtensions = [
-      '.srt',
-      '.vtt',
-      '.ass',
-      '.ssa',
-      '.sub',
-      '.sbv',
-      '.lrc',
-    ];
-    return subtitleExtensions.some((ext) =>
-      fileName.toLowerCase().endsWith(ext),
-    );
-  };
-
   const getFileIcon = (type: string, fileName?: string) => {
     if (type.startsWith('video/'))
       return <Video className="size-6 text-black" />;
@@ -518,18 +604,15 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         onDragOver={handleDrag}
         onDrop={handleDrop}
         onClick={async () => {
-          const result = await importMediaFromDialog();
-          if (!result || (!result.success && !result.error)) return;
-          if (result.success && result.importedFiles.length > 0) {
-            console.log(
-              `✅ Successfully imported ${result.importedFiles.length} files via dialog`,
-            );
-          } else {
-            const errorMessage =
-              result.error ||
-              'All files were rejected due to corruption or invalid format';
-            toast.error(errorMessage);
-          }
+          await importMediaFromDialogUnified(
+            importMediaFromDialog,
+            {
+              importMediaFromDrop,
+              importMediaToTimeline,
+              addTrackFromMediaLibrary,
+            },
+            { addToTimeline: false, showToasts: true },
+          );
         }}
       >
         <div className="hidden lg:block text-xs text-muted-foreground space-y-2">
@@ -702,7 +785,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                   e.preventDefault();
                 }
               }}
-              onDragEnd={handleMediaDragEnd}
               className={cn(
                 'group relative h-[98px] rounded-md transition-all duration-200 overflow-hidden',
                 !file.isOnTimeline &&
@@ -715,11 +797,10 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                   file.isGeneratingWaveform ||
                   file.isGeneratingSubtitles) &&
                   'cursor-default',
-                draggedMediaId === file.id && 'opacity-50',
                 (file.isGeneratingSprites ||
                   file.isGeneratingWaveform ||
                   file.isGeneratingSubtitles) &&
-                  'opacity-60 pointer-events-none',
+                  'pointer-events-none',
               )}
               onClick={async () => {
                 if (
@@ -728,7 +809,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                   !file.isGeneratingWaveform &&
                   !file.isGeneratingSubtitles
                 ) {
-                  await addTrackFromMediaLibrary(file.id, 0);
+                  await handleAddToTimeline(file.id);
                 }
               }}
               title={
@@ -985,18 +1066,15 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         <div className="flex flex-col flex-1 min-h-0 gap-4">
           <Button
             onClick={async () => {
-              const result = await importMediaFromDialog();
-              if (!result || (!result.success && !result.error)) return;
-              if (result.success && result.importedFiles.length > 0) {
-                console.log(
-                  `✅ Successfully imported ${result.importedFiles.length} files via upload button`,
-                );
-              } else {
-                const errorMessage =
-                  result.error ||
-                  'All files were rejected due to corruption or invalid format';
-                toast.error(errorMessage);
-              }
+              await importMediaFromDialogUnified(
+                importMediaFromDialog,
+                {
+                  importMediaFromDrop,
+                  importMediaToTimeline,
+                  addTrackFromMediaLibrary,
+                },
+                { addToTimeline: false, showToasts: true },
+              );
             }}
             className="w-full bg-accent text-accent-foreground hover:bg-accent/80 font-normal text-sm rounded-sm"
             variant="ghost"
@@ -1083,6 +1161,17 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <KaraokeConfirmationDialog
+        open={subtitleImportConfirmation.show}
+        onOpenChange={handleSubtitleDialogOpenChange}
+        mediaName={subtitleImportConfirmation.mediaName}
+        existingSubtitleCount={
+          subtitleImportConfirmation.generatedSubtitleIds.length
+        }
+        onConfirm={handleConfirmSubtitleImport}
+        mode="import"
+      />
 
       <KaraokeConfirmationDialog
         open={karaokeConfirmation.show}

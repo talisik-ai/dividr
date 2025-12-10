@@ -16,17 +16,27 @@ interface KaraokeConfirmationDialogProps {
   mediaName: string;
   existingSubtitleCount: number;
   onConfirm: (deleteExisting: boolean) => void;
+  mode?: 'generate' | 'import';
 }
 
 export const KaraokeConfirmationDialog: React.FC<
   KaraokeConfirmationDialogProps
-> = ({ open, onOpenChange, mediaName, existingSubtitleCount, onConfirm }) => {
+> = ({
+  open,
+  onOpenChange,
+  mediaName,
+  existingSubtitleCount,
+  onConfirm,
+  mode = 'generate',
+}) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Generate Karaoke Subtitles for{' '}
+            {mode === 'generate'
+              ? 'Generate Karaoke Subtitles for '
+              : 'Import Subtitles for '}
             <span className="font-normal text-foreground">"{mediaName}"</span>
           </AlertDialogTitle>
           <AlertDialogDescription className="space-y-3">
@@ -42,10 +52,17 @@ export const KaraokeConfirmationDialog: React.FC<
                 </p>
               </div>
             )}
-            <p className="text-xs text-muted-foreground">
-              This will use Whisper AI to transcribe the audio and create
-              word-level subtitle tracks for karaoke-style animations.
-            </p>
+            {mode === 'generate' ? (
+              <p className="text-xs text-muted-foreground">
+                This will use Whisper AI to transcribe the audio and create
+                word-level subtitle tracks for karaoke-style animations.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Importing subtitles will add a new subtitle track without
+                merging into existing generated/karaoke subtitles.
+              </p>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
