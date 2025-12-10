@@ -19,7 +19,6 @@ import {
   Trash2,
   Volume2,
   VolumeX,
-  X,
 } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
@@ -51,7 +50,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
     const toggleTrackMute = useVideoEditorStore(
       (state) => state.toggleTrackMute,
     );
-    const removeTrackRow = useVideoEditorStore((state) => state.removeTrackRow);
     const deleteTrack = useVideoEditorStore((state) => state.removeTrack);
     const allTracks = useVideoEditorStore((state) => state.tracks);
     const currentTranscribingTrackId = useVideoEditorStore(
@@ -125,13 +123,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         }
       });
     }, [tracks, toggleTrackMute]);
-
-    const handleRemoveRow = useCallback(() => {
-      // Only allow removing rows that have no tracks
-      if (tracks.length === 0) {
-        removeTrackRow(rowDef.id);
-      }
-    }, [tracks.length, removeTrackRow, rowDef.id]);
 
     const handleDeleteAllTracks = useCallback(() => {
       // Batch delete: collect all track IDs including linked tracks
@@ -268,9 +259,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         });
       }
     }, []);
-    // Can only remove non-essential rows (not video or audio) and only if they have no tracks
-    const canRemoveRow =
-      rowDef.id !== 'video' && rowDef.id !== 'audio' && tracks.length === 0;
 
     // Parse row ID to get row index and type for label
     const parsedRow = useMemo(() => {
@@ -372,9 +360,9 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               {/* Delete from timeline - always shown as first item */}
               <DropdownMenuItem
                 onClick={handleDeleteAllTracks}
-                className="text-destructive focus:text-destructive"
+                className="text-red-500 dark:text-red-700 focus:text-red-500 dark:focus:text-red-700"
               >
-                <Trash2 className="h-3 w-3" />
+                <Trash2 className="h-3 w-3 text-red-500 dark:text-red-700 focus:text-red-500 dark:focus:text-red-700" />
                 Delete from timeline
               </DropdownMenuItem>
 
@@ -392,23 +380,6 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Show remove button for non-essential rows when empty */}
-          {canRemoveRow && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 hover:text-destructive"
-                  onClick={handleRemoveRow}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Remove empty track row</TooltipContent>
-            </Tooltip>
-          )}
         </div>
 
         {/* Karaoke Confirmation Dialog */}
