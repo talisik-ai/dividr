@@ -16,7 +16,7 @@ const config: ForgeConfig = {
     },
     icon: './favicon.ico',
     name: 'Dividr',
-    executableName: 'Dividr',
+    executableName: 'dividr',
     extraResource: ['./src/frontend/assets/logo', './src/backend/scripts'],
     ignore: [
       // Git and docs
@@ -76,7 +76,7 @@ const config: ForgeConfig = {
         outputDirectory: undefined,
         installerIcon: './favicon.ico',
         uninstallerIcon: './favicon.ico',
-        exe: 'Dividr.exe',
+        exe: 'dividr.exe',
         setupIcon: './favicon.ico',
         oneClick: false,
         perMachine: false,
