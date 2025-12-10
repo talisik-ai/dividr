@@ -94,7 +94,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
 
     // Check if video and audio tracks are linked (NO selection requirement for row controllers)
     const hasLinkedAudioVideo = useMemo(() => {
-      if (rowDef.id !== 'video') return false;
+      if (!rowDef.trackTypes.includes('video')) return false;
 
       const videoTracks = tracks.filter((t) => t.type === 'video');
       return videoTracks.some((videoTrack) => {
@@ -369,7 +369,7 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               </DropdownMenuItem>
 
               {/* Generate karaoke subtitles - only for video tracks with linked audio */}
-              {rowDef.id === 'video' && hasLinkedAudioVideo && (
+              {rowDef.trackTypes.includes('video') && hasLinkedAudioVideo && (
                 <>
                   <DropdownMenuItem
                     onClick={handleGenerateKaraokeSubtitles}
