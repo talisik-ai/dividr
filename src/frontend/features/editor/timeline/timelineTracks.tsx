@@ -21,6 +21,8 @@ import {
 } from './utils/collisionDetection';
 import {
   BASE_ROW_DEFINITIONS,
+  calculateRowBoundsWithPlaceholders,
+  detectInsertionPoint,
   generateDynamicRows,
   getTrackRowId,
   migrateTracksWithRowIndex,
@@ -36,6 +38,38 @@ import {
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 const DRAG_ACTIVATION_THRESHOLD = 5;
+
+type MediaDragPayload = {
+  mediaId: string;
+  type?: VideoTrack['type'];
+  duration?: number;
+  mimeType?: string;
+  thumbnail?: string;
+  waveform?: string;
+};
+
+const parseMediaDragPayload = (
+  dataTransfer: DataTransfer,
+): MediaDragPayload | null => {
+  const jsonPayload = dataTransfer.getData('application/json');
+  if (jsonPayload) {
+    try {
+      const parsed = JSON.parse(jsonPayload);
+      if (parsed?.mediaId) {
+        return parsed;
+      }
+    } catch (error) {
+      console.warn('Failed to parse drag payload', error);
+    }
+  }
+
+  const mediaId = dataTransfer.getData('text/plain');
+  if (mediaId) {
+    return { mediaId };
+  }
+
+  return null;
+};
 
 interface TimelineTracksProps {
   tracks: VideoTrack[];
@@ -847,6 +881,9 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     const currentTranscribingTrackId = useVideoEditorStore(
       (state) => state.currentTranscribingTrackId,
     );
+    const addTrackFromMediaLibrary = useVideoEditorStore(
+      (state) => state.addTrackFromMediaLibrary,
+    );
     const isSubtitleRowTranscribing =
       rowDef.trackTypes.includes('subtitle') && !!currentTranscribingTrackId;
 
@@ -879,6 +916,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
       e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
       setIsDragOver(true);
     }, []);
 
@@ -892,11 +930,41 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         e.preventDefault();
         e.stopPropagation();
         setIsDragOver(false);
+
+        const payload = parseMediaDragPayload(e.dataTransfer);
+        const parsedRow = parseRowId(rowDef.id);
+        const expectedType = parsedRow?.type || rowDef.trackTypes[0];
+
+        if (payload) {
+          if (payload.type && expectedType && payload.type !== expectedType) {
+            return;
+          }
+
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const cursorX = e.clientX - rect.left + scrollX;
+          const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
+          const targetRowIndex = parsedRow?.rowIndex ?? 0;
+
+          addTrackFromMediaLibrary(
+            payload.mediaId,
+            targetFrame,
+            targetRowIndex,
+          ).catch(console.error);
+          return;
+        }
+
         if (e.dataTransfer.files) {
           onDrop(rowDef.id, e.dataTransfer.files);
         }
       },
-      [rowDef.id, onDrop],
+      [
+        rowDef.id,
+        rowDef.trackTypes,
+        onDrop,
+        scrollX,
+        frameWidth,
+        addTrackFromMediaLibrary,
+      ],
     );
 
     const isBaseVideoRow = rowDef.id === 'video-0';
@@ -1307,6 +1375,84 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       }));
     }, [placeholderRowsBelow]);
 
+    const [placeholderHoverId, setPlaceholderHoverId] = useState<string | null>(
+      null,
+    );
+
+    // Global safety net to clear hover highlight if drag ends elsewhere
+    useEffect(() => {
+      const clearHover = () => setPlaceholderHoverId(null);
+      document.addEventListener('drop', clearHover, true);
+      document.addEventListener('dragend', clearHover, true);
+      document.addEventListener('dragleave', clearHover, true);
+      return () => {
+        document.removeEventListener('drop', clearHover, true);
+        document.removeEventListener('dragend', clearHover, true);
+        document.removeEventListener('dragleave', clearHover, true);
+      };
+    }, []);
+
+    const handlePlaceholderDrop = () => async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPlaceholderHoverId(null);
+
+      const payload = parseMediaDragPayload(e.dataTransfer);
+      if (!payload) return;
+
+      const scrollContainer = (e.currentTarget as HTMLElement).closest(
+        '.overflow-auto',
+      ) as HTMLElement | null;
+      const scrollLeft = scrollContainer?.scrollLeft || 0;
+      const scrollTop = scrollContainer?.scrollTop || 0;
+      const rect =
+        scrollContainer?.getBoundingClientRect() ||
+        (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+      const cursorX = e.clientX - rect.left + scrollLeft;
+      const cursorY = e.clientY - rect.top + scrollTop;
+
+      const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
+
+      const rowBounds = calculateRowBoundsWithPlaceholders(
+        dynamicRows,
+        visibleTrackRows,
+        placeholderRowsAbove,
+        placeholderRowsBelow,
+        PLACEHOLDER_ROW_HEIGHT,
+      );
+
+      const insertion = detectInsertionPoint(
+        cursorY,
+        rowBounds,
+        (payload.type as VideoTrack['type']) || 'video',
+        tracks,
+      );
+
+      let targetRowIndex: number | null = null;
+      if (insertion) {
+        targetRowIndex =
+          insertion.existingRowId &&
+          parseRowId(insertion.existingRowId)?.rowIndex !== undefined
+            ? parseRowId(insertion.existingRowId)?.rowIndex || null
+            : insertion.targetRowIndex;
+      }
+
+      if (targetRowIndex === null) {
+        const fallbackRow = rowBounds.find(
+          (row) =>
+            row.type === ((payload.type as VideoTrack['type']) || 'video'),
+        );
+        targetRowIndex = fallbackRow?.rowIndex ?? 0;
+      }
+
+      addTrackFromMediaLibrary(
+        payload.mediaId,
+        targetFrame,
+        targetRowIndex ?? 0,
+      ).catch(console.error);
+    };
+
     return (
       <div
         className="relative overflow-visible"
@@ -1324,28 +1470,44 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           }}
         >
           {/* Placeholder rows above */}
-          {Array.from({ length: placeholderRowsAbove }, (_, i) => (
-            <div
-              key={`placeholder-above-${i}`} // Distinct key prevents confusion
-              className="relative h-12 border-l-[3px] border-l-transparent"
-            >
-              {/* Grid lines - visual only, no interaction handlers */}
+          {Array.from({ length: placeholderRowsAbove }, (_, i) => {
+            const id = `placeholder-above-${i}`;
+            const isHover = placeholderHoverId === id;
+            return (
               <div
-                className="absolute top-0 h-full pointer-events-none"
-                style={{
-                  left: 0,
-                  width: timelineWidth,
-                  background: `repeating-linear-gradient(
+                key={id} // Distinct key prevents confusion
+                className={cn(
+                  'relative h-12 border-l-[3px] border-l-transparent',
+                  isHover ? 'bg-secondary/10' : '',
+                )}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                  setPlaceholderHoverId(id);
+                }}
+                onDragLeave={() => {
+                  setPlaceholderHoverId((prev) => (prev === id ? null : prev));
+                }}
+                onDrop={handlePlaceholderDrop}
+              >
+                {/* Grid lines - visual only, now a drop zone */}
+                <div
+                  className="absolute top-0 h-full pointer-events-none"
+                  style={{
+                    left: 0,
+                    width: timelineWidth,
+                    background: `repeating-linear-gradient(
                     90deg,
                     transparent,
                     transparent ${frameWidth * 30 - 1}px,
                     hsl(var(--foreground) / 0.03) ${frameWidth * 30 - 1}px,
                     hsl(var(--foreground) / 0.03) ${frameWidth * 30}px
                   )`,
-                }}
-              />
-            </div>
-          ))}
+                  }}
+                />
+              </div>
+            );
+          })}
 
           {/* Actual track rows */}
           {visibleRows.map((rowDef) => {
@@ -1381,28 +1543,45 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           })}
 
           {/* Placeholder rows below */}
-          {placeholderRowDefsBelow.map((placeholder) => (
-            <div
-              key={placeholder.id}
-              className="relative h-12 border-l-[3px] border-l-transparent"
-            >
-              {/* Grid lines for placeholder */}
+          {placeholderRowDefsBelow.map((placeholder) => {
+            const isHover = placeholderHoverId === placeholder.id;
+            return (
               <div
-                className="absolute top-0 h-full pointer-events-none"
-                style={{
-                  left: 0,
-                  width: timelineWidth,
-                  background: `repeating-linear-gradient(
+                key={placeholder.id}
+                className={cn(
+                  'relative h-12 border-l-[3px] border-l-transparent',
+                  isHover ? 'bg-secondary/10' : '',
+                )}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                  setPlaceholderHoverId(placeholder.id);
+                }}
+                onDragLeave={() => {
+                  setPlaceholderHoverId((prev) =>
+                    prev === placeholder.id ? null : prev,
+                  );
+                }}
+                onDrop={handlePlaceholderDrop}
+              >
+                {/* Grid lines for placeholder */}
+                <div
+                  className="absolute top-0 h-full pointer-events-none"
+                  style={{
+                    left: 0,
+                    width: timelineWidth,
+                    background: `repeating-linear-gradient(
                     90deg,
                     transparent,
                     transparent ${frameWidth * 30 - 1}px,
                     hsl(var(--foreground) / 0.03) ${frameWidth * 30 - 1}px,
                     hsl(var(--foreground) / 0.03) ${frameWidth * 30}px
                   )`,
-                }}
-              />
-            </div>
-          ))}
+                  }}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     );

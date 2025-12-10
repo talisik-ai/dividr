@@ -240,6 +240,7 @@ export interface TracksSlice {
   addTrackFromMediaLibrary: (
     mediaId: string,
     startFrame?: number,
+    trackRowIndex?: number,
   ) => Promise<string>;
   removeTrack: (trackId: string) => void;
   removeSelectedTracks: () => void;
@@ -692,7 +693,11 @@ export const createTracksSlice: StateCreator<
     return trackIds;
   },
 
-  addTrackFromMediaLibrary: async (mediaId, startFrame = 0) => {
+  addTrackFromMediaLibrary: async (
+    mediaId,
+    startFrame = 0,
+    trackRowIndex?: number,
+  ) => {
     const state = get() as any;
     const mediaItem = state.mediaLibrary?.find(
       (item: any) => item.id === mediaId,
@@ -811,6 +816,7 @@ export const createTracksSlice: StateCreator<
       visible: true,
       locked: false,
       color: getTrackColor(state.tracks.length),
+      trackRowIndex,
       ...(mediaItem.type === 'subtitle' && {
         subtitleText: `Subtitle: ${mediaItem.name}`,
       }),

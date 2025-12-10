@@ -118,7 +118,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   const [dragActive, setDragActive] = useState(false);
   const dragCounter = useRef(0);
-  const [draggedMediaId, setDraggedMediaId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
@@ -257,10 +256,24 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
 
   const handleMediaDragStart = useCallback(
     (e: React.DragEvent, mediaId: string) => {
-      setDraggedMediaId(mediaId);
+      const mediaItem = mediaLibrary.find((item) => item.id === mediaId);
+      const payload = mediaItem
+        ? {
+            mediaId,
+            type: mediaItem.type,
+            duration: mediaItem.duration,
+            mimeType: mediaItem.mimeType,
+            thumbnail: mediaItem.thumbnail || mediaItem.previewUrl,
+            waveform: mediaItem.waveform?.cacheKey,
+            source: mediaItem.source,
+          }
+        : { mediaId };
+
+      // Provide both JSON and plain text for compatibility with existing handlers
+      e.dataTransfer.setData('application/json', JSON.stringify(payload));
       e.dataTransfer.setData('text/plain', mediaId);
       e.dataTransfer.effectAllowed = 'copy';
-      const mediaItem = mediaLibrary.find((item) => item.id === mediaId);
+
       if (mediaItem) {
         const dragImage = document.createElement('div');
         dragImage.textContent = `🎬 ${mediaItem.name}`;
@@ -280,10 +293,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     },
     [mediaLibrary],
   );
-
-  const handleMediaDragEnd = useCallback(() => {
-    setDraggedMediaId(null);
-  }, []);
 
   const handleAddToTimeline = useCallback(
     async (fileId: string) => {
@@ -686,7 +695,6 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                   e.preventDefault();
                 }
               }}
-              onDragEnd={handleMediaDragEnd}
               className={cn(
                 'group relative h-[98px] rounded-md transition-all duration-200 overflow-hidden',
                 !file.isOnTimeline &&
@@ -699,11 +707,10 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                   file.isGeneratingWaveform ||
                   file.isGeneratingSubtitles) &&
                   'cursor-default',
-                draggedMediaId === file.id && 'opacity-50',
                 (file.isGeneratingSprites ||
                   file.isGeneratingWaveform ||
                   file.isGeneratingSubtitles) &&
-                  'opacity-60 pointer-events-none',
+                  'pointer-events-none',
               )}
               onClick={async () => {
                 if (

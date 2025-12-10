@@ -176,6 +176,34 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         : timeline.totalFrames;
     }, [tracks, timeline.totalFrames]);
 
+    const parseMediaDropPayload = useCallback((dataTransfer: DataTransfer) => {
+      const jsonPayload = dataTransfer.getData('application/json');
+      if (jsonPayload) {
+        try {
+          const parsed = JSON.parse(jsonPayload);
+          if (parsed?.mediaId) {
+            return parsed as {
+              mediaId: string;
+              type?: VideoTrack['type'];
+              duration?: number;
+              mimeType?: string;
+              thumbnail?: string;
+              waveform?: string;
+            };
+          }
+        } catch (error) {
+          console.warn('Failed to parse drag payload', error);
+        }
+      }
+
+      const mediaId = dataTransfer.getData('text/plain');
+      if (mediaId) {
+        return { mediaId };
+      }
+
+      return null;
+    }, []);
+
     // Drop handlers for media from library
     const handleDragOver = useCallback((e: React.DragEvent) => {
       e.preventDefault();
@@ -189,22 +217,6 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         setDropActive(false);
       }
     }, []);
-
-    const handleDrop = useCallback(
-      async (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDropActive(false);
-
-        // Only handle media library drags here
-        // File drops are handled by TimelineTracks
-        const mediaId = e.dataTransfer.getData('text/plain');
-        if (mediaId) {
-          addTrackFromMediaLibrary(mediaId, 0).catch(console.error);
-        }
-      },
-      [addTrackFromMediaLibrary],
-    );
 
     const dynamicRowsWithPlaceholders = useMemo(() => {
       const MAX_PLACEHOLDER_ROWS = 3;
@@ -592,6 +604,70 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
     // Calculate frame width based on zoom - memoized
     const frameWidth = useMemo(() => 2 * timeline.zoom, [timeline.zoom]);
+
+    const handleDrop = useCallback(
+      async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDropActive(false);
+
+        const payload = parseMediaDropPayload(e.dataTransfer);
+        if (!payload || !tracksRef.current) {
+          return;
+        }
+
+        const tracksElement = tracksRef.current;
+        const rect = tracksElement.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left + (tracksElement.scrollLeft || 0);
+        const cursorY = e.clientY - rect.top + (tracksElement.scrollTop || 0);
+
+        const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
+
+        const rowBounds = buildInteractionRowBounds(
+          dynamicRowsWithPlaceholders,
+          visibleTrackRows,
+          48,
+        );
+
+        const insertion = detectInsertionPoint(
+          cursorY,
+          rowBounds,
+          (payload.type as VideoTrack['type']) || 'video',
+          tracks,
+        );
+
+        let targetRowIndex: number | null = null;
+        if (insertion) {
+          targetRowIndex =
+            insertion.existingRowId &&
+            parseRowId(insertion.existingRowId)?.rowIndex !== undefined
+              ? parseRowId(insertion.existingRowId)?.rowIndex || null
+              : insertion.targetRowIndex;
+        }
+
+        if (targetRowIndex === null) {
+          const fallbackRow = rowBounds.find(
+            (row) =>
+              row.type === ((payload.type as VideoTrack['type']) || 'video'),
+          );
+          targetRowIndex = fallbackRow?.rowIndex ?? 0;
+        }
+
+        addTrackFromMediaLibrary(
+          payload.mediaId,
+          targetFrame,
+          targetRowIndex ?? 0,
+        ).catch(console.error);
+      },
+      [
+        addTrackFromMediaLibrary,
+        parseMediaDropPayload,
+        dynamicRowsWithPlaceholders,
+        visibleTrackRows,
+        frameWidth,
+        tracks,
+      ],
+    );
 
     // track mouse position during drag for auto-scroll
     // track mouse position during drag for auto-scroll
