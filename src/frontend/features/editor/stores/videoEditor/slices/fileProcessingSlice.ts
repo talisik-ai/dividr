@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { FileIntegrityValidator } from '@/frontend/utils/fileValidator';
 import { StateCreator } from 'zustand';
+import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
 import {
   FileProcessingSlice,
   ImportResult,
@@ -161,15 +162,19 @@ const processSubtitleFile = async (
   fileContent: string,
   currentTrackCount: number,
   fps: number,
+  trackRowIndex: number,
   previewUrl?: string,
 ): Promise<Omit<VideoTrack, 'id'>[]> => {
   try {
     // Parse subtitle segments
     const segments = parseSubtitleContent(fileContent, fileInfo.name);
+    const sortedSegments = [...segments].sort(
+      (a, b) => a.startTime - b.startTime,
+    );
 
-    if (segments.length > 0) {
+    if (sortedSegments.length > 0) {
       // Create individual tracks for each subtitle segment
-      const subtitleTracks = segments.map((segment, segmentIndex) => {
+      const subtitleTracks = sortedSegments.map((segment, segmentIndex) => {
         // Convert precise seconds to frames using Math.floor for start (inclusive)
         // and Math.ceil for end (exclusive) to ensure full coverage
         const startFrame = Math.floor(segment.startTime * fps);
@@ -192,6 +197,7 @@ const processSubtitleFile = async (
           color: getTrackColor(currentTrackCount + segmentIndex),
           subtitleText: segment.text,
           subtitleType: 'regular' as const, // Mark as regular imported subtitle
+          trackRowIndex,
           // Store original precise timing from SRT for reference
           subtitleStartTime: segment.startTime,
           subtitleEndTime: segment.endTime,
@@ -218,6 +224,7 @@ const processSubtitleFile = async (
       color: getTrackColor(currentTrackCount),
       subtitleText: `Subtitle: ${fileInfo.name}`,
       subtitleType: 'regular' as const, // Mark as regular imported subtitle
+      trackRowIndex,
     },
   ];
 };
@@ -521,6 +528,7 @@ const processImportedFile = async (
             subtitleContent,
             0, // Will be repositioned by addTrack
             fps,
+            1,
             previewUrl,
           );
 
@@ -547,6 +555,7 @@ const processImportedFile = async (
           color: getTrackColor(0),
           subtitleText: `Subtitle: ${fileInfo.name}`,
           subtitleType: 'regular' as const, // Mark as regular imported subtitle
+          trackRowIndex: 1,
         });
       }
     } else {
@@ -833,6 +842,12 @@ export const createFileProcessingSlice: StateCreator<
       return;
     }
 
+    // Determine target subtitle row index so all imported cues stay on one row
+    const existingTracks = (get() as any).tracks as VideoTrack[];
+    const subtitleRowIndex =
+      existingTracks.find((t) => t.type === 'subtitle')?.trackRowIndex ??
+      Math.max(1, getNextAvailableRowIndex(existingTracks, 'subtitle'));
+
     // Continue with existing implementation for valid files only
     const newTracks = await Promise.all(
       validFiles.map(async (file, index) => {
@@ -857,6 +872,8 @@ export const createFileProcessingSlice: StateCreator<
               fileContent,
               (get() as any).tracks.length + index,
               (get() as any).timeline.fps,
+              subtitleRowIndex,
+              undefined,
             );
 
             return subtitleTracks;
@@ -879,6 +896,7 @@ export const createFileProcessingSlice: StateCreator<
               color: getTrackColor((get() as any).tracks.length + index),
               subtitleText: `Subtitle: ${file.name}`,
               subtitleType: 'regular' as const, // Mark as regular imported subtitle
+              trackRowIndex: subtitleRowIndex,
             };
           }
         }
@@ -936,7 +954,10 @@ export const createFileProcessingSlice: StateCreator<
         console.log(
           `⚠️ Import already in progress for these files, returning existing promise`,
         );
-        return ongoingImports.get(importKey)!;
+        const existingImport = ongoingImports.get(importKey);
+        if (existingImport) {
+          return existingImport;
+        }
       }
 
       console.log(`🔍 Validating ${files.length} dropped files...`);
@@ -1131,7 +1152,10 @@ export const createFileProcessingSlice: StateCreator<
         console.log(
           `⚠️ Import already in progress for these files, returning existing promise`,
         );
-        return ongoingImports.get(importKey)!;
+        const existingImport = ongoingImports.get(importKey);
+        if (existingImport) {
+          return existingImport;
+        }
       }
 
       console.log(`🔍 Validating ${files.length} files for timeline import...`);
