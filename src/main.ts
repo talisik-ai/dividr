@@ -481,6 +481,36 @@ if (started) {
   app.quit();
 }
 
+// Startup timing logs removed for production cleanliness
+const logStartupPerf = (..._args: unknown[]): void => {
+  // no-op
+};
+
+let deferredInitStarted = false;
+const kickoffDeferredInitialization = () => {
+  if (deferredInitStarted) return;
+  deferredInitStarted = true;
+
+  setTimeout(() => {
+    initializeFfmpegPaths()
+      .then(() => logStartupPerf())
+      .catch((error) => {
+        console.error('⚠️ FFmpeg init failed (non-blocking):', error);
+      });
+  }, 0);
+};
+
+const ensurePythonInitialized = async (_reason: string): Promise<void> => {
+  if (getPythonWhisperStatus().available) return;
+
+  try {
+    await initializePythonWhisper();
+  } catch (error) {
+    console.error('⚠️ Python Whisper initialization failed:', error);
+    throw error;
+  }
+};
+
 // Create a simple HTTP server to serve media files
 let mediaServer: http.Server | null = null;
 const MEDIA_SERVER_PORT = 3001;
@@ -556,6 +586,7 @@ function createMediaServer() {
     console.log(
       `📁 Media server started on http://localhost:${MEDIA_SERVER_PORT}`,
     );
+    logStartupPerf();
   });
 
   mediaServer.on('error', (error) => {
@@ -2081,6 +2112,8 @@ ipcMain.handle(
     console.log('   Options:', options);
 
     try {
+      await ensurePythonInitialized('ipc:whisper:transcribe');
+
       const result: WhisperResult = await transcribeAudio(audioPath, {
         ...options,
         onProgress: (progress: WhisperProgress) => {
@@ -2210,10 +2243,36 @@ const createWindow = () => {
     },
   });
 
+  logStartupPerf();
+
   if (mainWindow) {
+    const fallbackShow = setTimeout(() => {
+      if (!mainWindow) return;
+      if (!mainWindow.isVisible()) {
+        logStartupPerf();
+        mainWindow.show();
+      }
+      kickoffDeferredInitialization();
+    }, 1200);
+
+    mainWindow.webContents.once('did-start-loading', () => {
+      logStartupPerf();
+    });
+
+    mainWindow.webContents.once('dom-ready', () => {
+      logStartupPerf();
+    });
+
+    mainWindow.webContents.once('did-finish-load', () => {
+      logStartupPerf();
+    });
+
     // Show window only when ready to prevent white flash
     mainWindow.once('ready-to-show', () => {
+      clearTimeout(fallbackShow);
+      logStartupPerf();
       mainWindow?.show();
+      kickoffDeferredInitialization();
     });
 
     if (
@@ -2331,22 +2390,8 @@ async function getRunInBackgroundSetting(): Promise<boolean> {
 
 app.on('ready', async () => {
   // Create window first to show loader immediately
+  logStartupPerf();
   createWindow();
-
-  // Initialize FFmpeg paths in background (non-blocking)
-  // This can happen after window is shown
-  initializeFfmpegPaths().catch(() => {
-    // App can still function without FFmpeg for project management
-  });
-
-  // Initialize Python Whisper in background (non-blocking)
-  initializePythonWhisper().catch((error) => {
-    console.error('⚠️ Python Whisper initialization failed:', error);
-    console.error(
-      '💡 Make sure Python 3.9+ is installed and faster-whisper is available',
-    );
-    // App can still function without Whisper for transcription
-  });
 });
 
 app.on('window-all-closed', () => {
