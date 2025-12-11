@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { StateCreator } from 'zustand';
-import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
 import { VideoTrack } from '../types/track.types';
 
 const TRACK_COLORS = [
@@ -22,25 +21,23 @@ const getTrackColor = (index: number) =>
 const resolveSubtitleRowIndex = (
   tracks: VideoTrack[],
   providedRowIndex?: number,
-  preferNewRow = false,
 ): number => {
   if (providedRowIndex !== undefined) {
     return providedRowIndex;
   }
 
-  const subtitleIndices = tracks
-    .filter((t) => t.type === 'subtitle')
+  // Always place at the absolute top of ALL non-audio rows
+  // This matches new-track placement and ensures the loader sits above every overlay
+  const safeTracks = Array.isArray(tracks) ? tracks : [];
+  const nonAudioIndices = safeTracks
+    .filter((t) => t && t.type !== 'audio')
     .map((t) => t.trackRowIndex ?? 0);
 
-  if (subtitleIndices.length > 0) {
-    if (preferNewRow) {
-      return Math.max(...subtitleIndices) + 1;
-    }
-    return subtitleIndices[0];
-  }
+  const topMostIndex =
+    nonAudioIndices.length > 0 ? Math.max(...nonAudioIndices) + 1 : 1;
 
   // Default to overlay positioning above video (minimum index 1)
-  return Math.max(1, getNextAvailableRowIndex(tracks, 'subtitle'));
+  return Math.max(1, Math.ceil(topMostIndex));
 };
 
 export interface TranscriptionSlice {
@@ -345,11 +342,7 @@ export const createTranscriptionSlice: StateCreator<
       };
     }
 
-    const subtitleRowIndex = resolveSubtitleRowIndex(
-      state.tracks || [],
-      undefined,
-      Boolean(options.keepExistingSubtitles),
-    );
+    const subtitleRowIndex = resolveSubtitleRowIndex(state.tracks || []);
 
     // Start transcription
     set({
