@@ -1555,10 +1555,19 @@ export function buildSeparateTimelineFilterComplex(
             audioFilters.push(`${trimResult.filterRef}acopy${delayedRef}`);
           }
           
+          // Trim all audio streams to totalVideoDuration to prevent amix from extending beyond video duration
+          // This fixes the issue where adelay extends stream duration and amix matches the longest stream
+          // We pad first to ensure streams are at least totalVideoDuration, then trim to exact duration
+          const paddedRef = `[a${segmentIndex}_padded]`;
+          const finalRef = `[a${segmentIndex}_final]`;
+          audioFilters.push(`${delayedRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedRef}`);
+          audioFilters.push(`${paddedRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalRef}`);
+          console.log(`🎵 Padded and trimmed audio stream ${segmentIndex} to exact ${totalVideoDuration.toFixed(3)}s to match video duration`);
+          
           audioSegmentsWithTiming.push({
             segment,
             segmentIndex,
-            filterRef: delayedRef,
+            filterRef: finalRef,
           });
         } else {
           console.warn(
@@ -1573,9 +1582,14 @@ export function buildSeparateTimelineFilterComplex(
       console.log(`🎵 Mixing ${audioSegmentsWithTiming.length} audio streams (supports overlapping)`);
       
       if (audioSegmentsWithTiming.length === 1) {
-        // Single audio stream - just pad to total duration
-        const inputRef = audioSegmentsWithTiming[0].filterRef.replace('[', '').replace(']', '');
-        audioConcatInputs.push(`[${inputRef}]`);
+        // Single audio stream - trim to exact totalVideoDuration to match video
+        const inputRef = audioSegmentsWithTiming[0].filterRef;
+        const finalAudioRef = '[audio]';
+        audioFilters.push(
+          `${inputRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalAudioRef}`,
+        );
+        audioConcatInputs.push(finalAudioRef);
+        console.log(`✅ Trimmed single audio stream to exact ${totalVideoDuration.toFixed(3)}s`);
       } else {
         // Multiple audio streams - use amix for overlapping support
         const mixInputs = audioSegmentsWithTiming.map(a => a.filterRef).join('');
@@ -1583,13 +1597,20 @@ export function buildSeparateTimelineFilterComplex(
         
         // amix filter: inputs=N:duration=longest:dropout_transition=0
         // - inputs=N: number of input streams
-        // - duration=longest: output duration is the longest input
+        // - duration=longest: output duration is the longest input (all streams are padded to totalVideoDuration)
         // - dropout_transition=0: no fade when streams start/end
+        // NOTE: All streams are padded to totalVideoDuration before mixing, so longest will match video duration
         audioFilters.push(
           `${mixInputs}amix=inputs=${audioSegmentsWithTiming.length}:duration=longest:dropout_transition=0:normalize=0${mixRef}`,
         );
-        audioConcatInputs.push(mixRef);
-        console.log(`✅ Created audio mix with ${audioSegmentsWithTiming.length} overlapping streams`);
+        
+        // This ensures the audio duration matches the video duration exactly
+        const finalAudioRef = '[audio]';
+        audioFilters.push(
+          `${mixRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalAudioRef}`,
+        );
+        audioConcatInputs.push(finalAudioRef);
+        console.log(`✅ Created audio mix with ${audioSegmentsWithTiming.length} overlapping streams, trimmed to exact ${totalVideoDuration.toFixed(3)}s`);
       }
     }
   } else {
@@ -1935,12 +1956,23 @@ export function buildSeparateTimelineFilterComplex(
 
   // Step 1.5: Force SAR=1 after subtitles to avoid aspect ratio propagation from ASS renderer
   // This ensures clean aspect ratio before final output
+  // Also trim video to exactly totalVideoDuration to match audio duration
   if (currentVideoLabelForText === 'video_with_subtitles' && hasVideoContent) {
-    // Add setsar=1 filter after subtitles
-    videoFilters.push(`[${currentVideoLabelForText}]setsar=1[video]`);
+    // Add setsar=1 filter after subtitles, then trim to exact duration
+    const tempVideoRef = '[video_temp_sar]';
+    videoFilters.push(`[${currentVideoLabelForText}]setsar=1${tempVideoRef}`);
+    videoFilters.push(`${tempVideoRef}trim=duration=${totalVideoDuration.toFixed(6)}[video]`);
+    console.log(`✅ Trimmed final video stream to exact ${totalVideoDuration.toFixed(3)}s`);
   } else if (currentVideoLabelForText !== 'video') {
-    // If no subtitles, rename final composite to [video]
-    videoFilters.push(`[${currentVideoLabelForText}]copy[video]`);
+    // If no subtitles, trim to exact duration
+    videoFilters.push(`[${currentVideoLabelForText}]trim=duration=${totalVideoDuration.toFixed(6)}[video]`);
+    console.log(`✅ Trimmed final video stream to exact ${totalVideoDuration.toFixed(3)}s`);
+  } else {
+    // Already named [video], need to use temp ref to avoid circular reference
+    const tempVideoRef = '[video_temp_trim]';
+    videoFilters.push(`[${currentVideoLabelForText}]trim=duration=${totalVideoDuration.toFixed(6)}${tempVideoRef}`);
+    videoFilters.push(`${tempVideoRef}copy[video]`);
+    console.log(`✅ Trimmed final video stream to exact ${totalVideoDuration.toFixed(3)}s`);
   }
 
   // Combine all filters in the correct order:
