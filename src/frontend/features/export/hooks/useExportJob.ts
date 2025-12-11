@@ -10,6 +10,7 @@ import {
 } from '../../editor/stores/videoEditor/index';
 import { detectAspectRatio } from '../../editor/stores/videoEditor/utils/aspectRatioHelpers';
 import { generateSubtitleContent } from '../utils/subtitleUtils';
+import { generateTextLayerSegments } from '../utils/textLayerUtils';
 
 export const useExportJob = () => {
   const tracks = useVideoEditorStore((state) => state.tracks);
@@ -99,8 +100,9 @@ export const useExportJob = () => {
         videoTracks,
         audioTracks,
         imageTracks,
+        textTracks,
         mediaLibrary,
-        customDimensions, // Pass custom dimensions to use instead of track dimensions
+        customDimensions,
       );
 
       // Sort by timeline position
@@ -164,30 +166,53 @@ export const useExportJob = () => {
         }
       }
 
-      // Calculate final video dimensions after aspect ratio conversion (scale+crop)
-      // This ensures subtitles and text are positioned correctly relative to the final video
-      const finalVideoDimensions = calculateFinalDimensions(
-        videoDimensions,
+      // Calculate dimensions for subtitle/image positioning
+      // Subtitles and images are positioned at the aspect-ratio-cropped resolution (before final downscale)
+      // We need to find the actual source video dimensions to calculate the intermediate dimensions
+      const sourceVideoDimensions = getSourceVideoDimensions(videoTracks);
+
+      // Calculate the intermediate dimensions after aspect ratio crop (at source resolution)
+      const intermediateVideoDimensions = calculateIntermediateDimensions(
+        sourceVideoDimensions,
         targetAspectRatio,
       );
 
+      // The final output dimensions are the custom dimensions from the canvas
+      const finalOutputDimensions = videoDimensions;
+
       console.log(
-        `📐 Video dimensions: source=${videoDimensions.width}x${videoDimensions.height}, ` +
-          `final=${finalVideoDimensions.width}x${finalVideoDimensions.height} ` +
+        `📐 Video dimensions: ` +
+          `source=${sourceVideoDimensions.width}x${sourceVideoDimensions.height}, ` +
+          `intermediate (after aspect crop)=${intermediateVideoDimensions.width}x${intermediateVideoDimensions.height}, ` +
+          `final output=${finalOutputDimensions.width}x${finalOutputDimensions.height} ` +
           `(aspect ratio: ${targetAspectRatio || 'none'})`,
       );
 
-      // Generate subtitle content (now includes text clips bundled together)
-      // Use finalVideoDimensions so subtitles are positioned for the final video after scale+crop
+      // Generate subtitle content (ONLY subtitles - text clips handled separately)
+      // Use finalOutputDimensions so subtitles are positioned for the final output video
+      // Subtitles will be applied AFTER the final downscale to match the output dimensions
       const { subtitleContent, currentTextStyle, fontFamilies } =
         generateSubtitleContent(
           subtitleTracks,
-          textTracks, // Pass text tracks to be bundled with subtitles
+          [], // Text tracks are now processed separately
           textStyle,
           getTextStyleForSubtitle,
-          finalVideoDimensions, // Use final dimensions after aspect ratio conversion
+          finalOutputDimensions, // Use final output dimensions for subtitle positioning
           timelineStartFrame, // Pass start frame for time offset adjustment
         );
+
+      // Generate text layer segments separately (for multi-track rendering)
+      // Text layers will be converted to drawtext filters in the FFmpeg filter complex
+      const textLayerResult =
+        textTracks.length > 0
+          ? generateTextLayerSegments(
+              textTracks,
+              textStyle,
+              getTextStyleForSubtitle,
+              finalOutputDimensions,
+              timelineStartFrame,
+            )
+          : { textSegments: [], currentTextStyle: undefined };
 
       return {
         inputs: trackInfos,
@@ -204,15 +229,13 @@ export const useExportJob = () => {
           useHardwareAcceleration: false,
           hwaccelType: 'auto', // Auto-detect best available hardware acceleration
           preferHEVC: false, // Use H.264 (set to true for H.265/HEVC)
+          aspect: targetAspectRatio, // Pass target aspect ratio for aspect ratio conversion
         },
-        subtitleContent, // Now includes both subtitles and text clips
-        subtitleFormat:
-          subtitleTracks.length > 0 || textTracks.length > 0
-            ? 'ass'
-            : undefined,
-        subtitleFontFamilies: fontFamilies, // Pass font families, main process will resolve paths
-        videoDimensions: finalVideoDimensions, // Use final dimensions after aspect ratio conversion
-        // textClips and textClipsContent removed - now bundled with subtitles
+        subtitleContent, // Only subtitles
+        subtitleFormat: subtitleTracks.length > 0 ? 'ass' : undefined,
+        textClips: textLayerResult.textSegments, // Text segments for drawtext filters
+        subtitleFontFamilies: fontFamilies, // Subtitle fonts
+        videoDimensions: finalOutputDimensions, // Pass final output dimensions for commandBuilder
       };
     },
     [
@@ -274,10 +297,35 @@ function getCustomDimensions(
 }
 
 /**
- * Calculate final video dimensions after aspect ratio conversion
+ * Get source video dimensions from the first video track
+ */
+function getSourceVideoDimensions(videoTracks: VideoTrack[]): {
+  width: number;
+  height: number;
+} {
+  // Find first visible video track with valid dimensions
+  for (const track of videoTracks) {
+    if (track.visible && track.width && track.height) {
+      console.log(
+        `📐 Source video dimensions from track "${track.name}": ${track.width}x${track.height}`,
+      );
+      return { width: track.width, height: track.height };
+    }
+  }
+
+  // Fallback to default dimensions
+  console.warn(
+    `⚠️ No valid video track dimensions found, using default: 1920x1080`,
+  );
+  return { width: 1920, height: 1080 };
+}
+
+/**
+ * Calculate intermediate video dimensions after aspect ratio conversion (scale+crop)
+ * This is the resolution BEFORE final downscaling to custom dimensions
  * This matches the logic in commandBuilder.ts for scale+crop operations
  */
-function calculateFinalDimensions(
+function calculateIntermediateDimensions(
   sourceDimensions: { width: number; height: number },
   targetAspectRatio?: string,
 ): { width: number; height: number } {
@@ -301,7 +349,7 @@ function calculateFinalDimensions(
     return sourceDimensions;
   }
 
-  // Calculate final dimensions after scale+crop
+  // Calculate intermediate dimensions after scale+crop at source resolution
   // Universal strategy: Always preserve the SMALLER source dimension
   const smallerDimension = Math.min(
     sourceDimensions.width,
@@ -316,13 +364,13 @@ function calculateFinalDimensions(
     cropWidth = smallerDimension;
     cropHeight = Math.round(cropWidth / targetRatio);
   } else {
-    // Landscape target (width > height) - smaller dimension becomes final height
+    // Landscape target (width >= height) - smaller dimension becomes final height
     cropHeight = smallerDimension;
     cropWidth = Math.round(cropHeight * targetRatio);
   }
 
   console.log(
-    `📐 Calculated final dimensions: ${cropWidth}x${cropHeight} from ${sourceDimensions.width}x${sourceDimensions.height} (ratio ${sourceRatio.toFixed(3)} → ${targetRatio.toFixed(3)})`,
+    `📐 Calculated intermediate dimensions (after aspect crop): ${cropWidth}x${cropHeight} from ${sourceDimensions.width}x${sourceDimensions.height} (ratio ${sourceRatio.toFixed(3)} → ${targetRatio.toFixed(3)})`,
   );
   return { width: cropWidth, height: cropHeight };
 }
@@ -334,6 +382,7 @@ function processLinkedTracks(
   videoTracks: VideoTrack[],
   audioTracks: VideoTrack[],
   imageTracks: VideoTrack[],
+  textTracks: VideoTrack[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   mediaLibrary: {
     id: string;
@@ -389,11 +438,6 @@ function processLinkedTracks(
     }
   }
 
-  // Add all unprocessed audio tracks (process independently from video)
-  console.log(`🔍 Adding unprocessed audio tracks...`);
-  console.log(`   Total audio tracks: ${audioTracks.length}`);
-  console.log(`   Processed track IDs:`, Array.from(processedTrackIds));
-
   for (const audioTrack of audioTracks) {
     if (!processedTrackIds.has(audioTrack.id)) {
       console.log(
@@ -409,6 +453,9 @@ function processLinkedTracks(
 
   // Add image tracks
   processedTracks.push(...imageTracks);
+
+  // Add text tracks
+  processedTracks.push(...textTracks);
 
   return {
     processedTracks,
@@ -443,7 +490,7 @@ function convertTracksToFFmpegInputs(
     // DON'T attach audio to video tracks - process them independently
     // Video tracks will be video-only, audio tracks will be audio-only
     const trackInfo: TrackInfo = {
-      path: track.source,
+      path: track.type === 'text' ? '' : track.source, // Text tracks don't have a file path
       audioPath: undefined, // Always undefined - no audio attached to video
       startTime: sourceStartTime, // Where to start reading from source file
       duration: Math.max(0.033, trackDurationSeconds), // How long to read from source
@@ -492,6 +539,21 @@ function convertTracksToFFmpegInputs(
       };
       console.log(
         `🎥 Video transform for "${track.name}": pos=(${track.textTransform.x.toFixed(2)}, ${track.textTransform.y.toFixed(2)}), scale=${track.textTransform.scale.toFixed(2)}, rotation=${track.textTransform.rotation.toFixed(1)}°, size=${track.textTransform.width}x${track.textTransform.height}`,
+      );
+    }
+
+    // Add text transform for text tracks
+    if (track.type === 'text' && track.textTransform) {
+      trackInfo.videoTransform = {
+        x: track.textTransform.x,
+        y: track.textTransform.y,
+        scale: track.textTransform.scale,
+        rotation: track.textTransform.rotation,
+        width: track.textTransform.width,
+        height: track.textTransform.height,
+      };
+      console.log(
+        `🔤 Text transform for "${track.name}": pos=(${track.textTransform.x.toFixed(2)}, ${track.textTransform.y.toFixed(2)}), scale=${track.textTransform.scale.toFixed(2)}, rotation=${track.textTransform.rotation.toFixed(1)}°, size=${track.textTransform.width}x${track.textTransform.height}`,
       );
     }
 

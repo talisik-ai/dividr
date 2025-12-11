@@ -135,13 +135,17 @@ export async function processSubtitleFile(
   currentTrackCount: number,
   fps: number,
   getTrackColor: (index: number) => string,
+  trackRowIndex: number,
   previewUrl?: string,
 ): Promise<Omit<VideoTrack, 'id'>[]> {
   try {
     const segments = parseSubtitleContent(fileContent, fileInfo.name);
+    const sortedSegments = [...segments].sort(
+      (a, b) => a.startTime - b.startTime,
+    );
 
-    if (segments.length > 0) {
-      const subtitleTracks = segments.map((segment, segmentIndex) => {
+    if (sortedSegments.length > 0) {
+      const subtitleTracks = sortedSegments.map((segment, segmentIndex) => {
         // Convert precise seconds to frames using Math.floor for start (inclusive)
         // and Math.ceil for end (exclusive) to ensure full coverage
         const startFrame = Math.floor(segment.startTime * fps);
@@ -162,7 +166,9 @@ export async function processSubtitleFile(
           visible: true,
           locked: false,
           color: getTrackColor(currentTrackCount + segmentIndex),
+          trackRowIndex,
           subtitleText: segment.text,
+          subtitleType: 'regular' as const,
           // Store original precise timing from SRT for reference
           subtitleStartTime: segment.startTime,
           subtitleEndTime: segment.endTime,
@@ -189,6 +195,8 @@ export async function processSubtitleFile(
       locked: false,
       color: getTrackColor(currentTrackCount),
       subtitleText: `Subtitle: ${fileInfo.name}`,
+      subtitleType: 'regular' as const,
+      trackRowIndex,
     },
   ];
 }

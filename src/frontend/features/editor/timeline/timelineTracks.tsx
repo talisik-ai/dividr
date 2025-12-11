@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
 import {
   importMediaFromDialogUnified,
   importMediaUnified,
@@ -20,8 +21,10 @@ import {
   findAllSnapPoints,
 } from './utils/collisionDetection';
 import {
-  BASE_ROW_DEFINITIONS,
+  calculateRowBoundsWithPlaceholders,
+  detectInsertionPoint,
   generateDynamicRows,
+  getNextAvailableRowIndex,
   getTrackRowId,
   migrateTracksWithRowIndex,
   parseRowId,
@@ -36,6 +39,38 @@ import {
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 const DRAG_ACTIVATION_THRESHOLD = 5;
+
+type MediaDragPayload = {
+  mediaId: string;
+  type?: VideoTrack['type'];
+  duration?: number;
+  mimeType?: string;
+  thumbnail?: string;
+  waveform?: string;
+};
+
+const parseMediaDragPayload = (
+  dataTransfer: DataTransfer,
+): MediaDragPayload | null => {
+  const jsonPayload = dataTransfer.getData('application/json');
+  if (jsonPayload) {
+    try {
+      const parsed = JSON.parse(jsonPayload);
+      if (parsed?.mediaId) {
+        return parsed;
+      }
+    } catch (error) {
+      console.warn('Failed to parse drag payload', error);
+    }
+  }
+
+  const mediaId = dataTransfer.getData('text/plain');
+  if (mediaId) {
+    return { mediaId };
+  }
+
+  return null;
+};
 
 interface TimelineTracksProps {
   tracks: VideoTrack[];
@@ -817,6 +852,12 @@ interface TrackRowProps {
     newEndFrame?: number,
   ) => void;
   onDrop: (rowId: string, files: FileList) => void;
+  onSubtitleImportAttempt?: (params: {
+    mediaId: string;
+    mediaName: string;
+    targetFrame: number;
+    targetRowIndex: number;
+  }) => boolean | Promise<boolean>;
   allTracksCount: number;
   onPlaceholderClick?: () => void;
   isSplitModeActive: boolean;
@@ -837,6 +878,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     onTrackMove,
     onTrackResize,
     onDrop,
+    onSubtitleImportAttempt,
     onPlaceholderClick,
     isSplitModeActive,
     isEmptyTimeline,
@@ -844,11 +886,13 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
-    const currentTranscribingTrackId = useVideoEditorStore(
-      (state) => state.currentTranscribingTrackId,
+    const transcribingSubtitleRowIndex = useVideoEditorStore(
+      (state) => state.transcribingSubtitleRowIndex,
     );
-    const isSubtitleRowTranscribing =
-      rowDef.trackTypes.includes('subtitle') && !!currentTranscribingTrackId;
+    const isTranscribing = useVideoEditorStore((state) => state.isTranscribing);
+    const addTrackFromMediaLibrary = useVideoEditorStore(
+      (state) => state.addTrackFromMediaLibrary,
+    );
 
     const parsedRow = useMemo(() => {
       const parsed = parseRowId(rowDef.id);
@@ -856,7 +900,15 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       return parsed;
     }, [rowDef.id, rowDef.trackTypes]);
 
+    const isSubtitleRowTranscribing =
+      rowDef.trackTypes.includes('subtitle') &&
+      isTranscribing &&
+      transcribingSubtitleRowIndex !== null &&
+      parsedRow.rowIndex === transcribingSubtitleRowIndex;
+
     const isEvenRow = parsedRow.rowIndex % 2 === 0;
+
+    const skeletonHeightClass = getTrackItemHeightClasses(rowDef.id);
 
     const visibleTracks = useMemo(() => {
       if (!window || tracks.length === 0) return tracks;
@@ -879,6 +931,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
       e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
       setIsDragOver(true);
     }, []);
 
@@ -888,15 +941,71 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     }, []);
 
     const handleDrop = useCallback(
-      (e: React.DragEvent) => {
+      async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragOver(false);
+
+        const payload = parseMediaDragPayload(e.dataTransfer);
+        const parsedRow = parseRowId(rowDef.id);
+        const expectedType = parsedRow?.type || rowDef.trackTypes[0];
+
+        if (payload) {
+          if (payload.type && expectedType && payload.type !== expectedType) {
+            return;
+          }
+
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const cursorX = e.clientX - rect.left + scrollX;
+          const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
+          const targetRowIndex = parsedRow?.rowIndex ?? 0;
+
+          const mediaItem = useVideoEditorStore
+            .getState()
+            .mediaLibrary?.find(
+              (item: { id: string; type?: string; name?: string }) =>
+                item.id === payload.mediaId,
+            );
+          const isSubtitleDrop =
+            payload.type === 'subtitle' ||
+            mediaItem?.type === 'subtitle' ||
+            (mediaItem?.name || '').toLowerCase().endsWith('.srt') ||
+            (mediaItem?.name || '').toLowerCase().endsWith('.vtt');
+
+          if (isSubtitleDrop && onSubtitleImportAttempt) {
+            const handled = await onSubtitleImportAttempt({
+              mediaId: payload.mediaId,
+              mediaName: mediaItem?.name || 'Subtitles',
+              targetFrame,
+              targetRowIndex,
+            });
+
+            if (handled) {
+              return;
+            }
+          }
+
+          addTrackFromMediaLibrary(
+            payload.mediaId,
+            targetFrame,
+            targetRowIndex,
+          ).catch(console.error);
+          return;
+        }
+
         if (e.dataTransfer.files) {
           onDrop(rowDef.id, e.dataTransfer.files);
         }
       },
-      [rowDef.id, onDrop],
+      [
+        rowDef.id,
+        rowDef.trackTypes,
+        onDrop,
+        scrollX,
+        frameWidth,
+        addTrackFromMediaLibrary,
+        onSubtitleImportAttempt,
+      ],
     );
 
     const isBaseVideoRow = rowDef.id === 'video-0';
@@ -939,13 +1048,27 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         <div className="h-full flex items-center">
           {isSubtitleRowTranscribing ? (
             <div className="h-full w-full flex items-center gap-2 px-2">
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[120px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[80px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[150px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[100px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[90px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[110px] rounded" />
-              <Skeleton className="sm:h-[22px] md:h-6 lg:h-7 w-[130px] rounded" />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[120px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[80px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[150px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[100px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[90px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[110px] rounded')}
+              />
+              <Skeleton
+                className={cn(skeletonHeightClass, 'w-[130px] rounded')}
+              />
             </div>
           ) : (
             visibleTracks.map((track) => (
@@ -1022,25 +1145,6 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
   },
 );
 
-function getDefaultRows(): TrackRowDefinition[] {
-  return [
-    {
-      id: 'video-0',
-      name: 'Video',
-      trackTypes: ['video'],
-      color: BASE_ROW_DEFINITIONS.video.color,
-      icon: BASE_ROW_DEFINITIONS.video.icon,
-    },
-    {
-      id: 'audio-0',
-      name: 'Audio',
-      trackTypes: ['audio'],
-      color: BASE_ROW_DEFINITIONS.audio.color,
-      icon: BASE_ROW_DEFINITIONS.audio.icon,
-    },
-  ];
-}
-
 // Placeholder row definition for empty space
 const PLACEHOLDER_ROW_HEIGHT = 48;
 
@@ -1069,10 +1173,16 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       importMediaFromDrop,
       addTrackFromMediaLibrary,
       importMediaFromDialog,
+      beginGroup,
+      endGroup,
+      removeTrack,
     } = useVideoEditorStore();
 
     const visibleTrackRows = useVideoEditorStore(
       (state) => state.timeline.visibleTrackRows || ['video', 'audio'],
+    );
+    const transcribingSubtitleRowIndex = useVideoEditorStore(
+      (state) => state.transcribingSubtitleRowIndex,
     );
 
     const isEmptyTimeline = tracks.length === 0;
@@ -1082,12 +1192,28 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       [tracks],
     );
 
-    const dynamicRows = useMemo(() => {
-      if (isEmptyTimeline) {
-        return getDefaultRows();
-      }
-      return generateDynamicRows(migratedTracks);
-    }, [migratedTracks, isEmptyTimeline]);
+    const dynamicRows = useMemo(
+      () =>
+        generateDynamicRows(migratedTracks, {
+          transcribingSubtitleRowIndex,
+        }),
+      [migratedTracks, transcribingSubtitleRowIndex],
+    );
+
+    const [subtitleImportConfirmation, setSubtitleImportConfirmation] =
+      useState<{
+        show: boolean;
+        mediaId: string | null;
+        mediaName: string;
+        targetFrame: number;
+        generatedSubtitleIds: string[];
+      }>({
+        show: false,
+        mediaId: null,
+        mediaName: '',
+        targetFrame: 0,
+        generatedSubtitleIds: [],
+      });
 
     // Calculate placeholder rows needed
     const MAX_PLACEHOLDER_ROWS = 3;
@@ -1158,6 +1284,117 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
         }
       },
       [onTrackSelect],
+    );
+
+    const handleSubtitleDialogOpenChange = useCallback((open: boolean) => {
+      if (!open) {
+        setSubtitleImportConfirmation({
+          show: false,
+          mediaId: null,
+          mediaName: '',
+          targetFrame: 0,
+          generatedSubtitleIds: [],
+        });
+      }
+    }, []);
+
+    const handleConfirmSubtitleImport = useCallback(
+      async (deleteExisting: boolean) => {
+        if (!subtitleImportConfirmation.mediaId) {
+          handleSubtitleDialogOpenChange(false);
+          return;
+        }
+
+        const { mediaId, mediaName, targetFrame, generatedSubtitleIds } =
+          subtitleImportConfirmation;
+
+        if (deleteExisting) {
+          beginGroup?.(`Import Subtitles for ${mediaName}`);
+        }
+
+        try {
+          if (deleteExisting && generatedSubtitleIds.length > 0) {
+            generatedSubtitleIds.forEach((id) => removeTrack(id));
+          }
+
+          const latestTracks = (
+            useVideoEditorStore.getState() as { tracks: VideoTrack[] }
+          ).tracks;
+          const subtitleRowIndex = getNextAvailableRowIndex(
+            latestTracks,
+            'subtitle',
+          );
+
+          await addTrackFromMediaLibrary(
+            mediaId,
+            targetFrame,
+            subtitleRowIndex,
+          );
+        } finally {
+          if (deleteExisting) {
+            endGroup?.();
+          }
+          handleSubtitleDialogOpenChange(false);
+        }
+      },
+      [
+        subtitleImportConfirmation,
+        handleSubtitleDialogOpenChange,
+        beginGroup,
+        removeTrack,
+        addTrackFromMediaLibrary,
+        endGroup,
+      ],
+    );
+
+    const handleSubtitleImportAttempt = useCallback(
+      async ({
+        mediaId,
+        mediaName,
+        targetFrame,
+      }: {
+        mediaId: string;
+        mediaName: string;
+        targetFrame: number;
+        targetRowIndex: number;
+      }) => {
+        const state = useVideoEditorStore.getState() as {
+          tracks: VideoTrack[];
+          mediaLibrary?: Array<{ id: string; type?: string; name?: string }>;
+        };
+        const mediaItem = state.mediaLibrary?.find(
+          (item) => item.id === mediaId,
+        );
+
+        const isSubtitle =
+          mediaItem?.type === 'subtitle' ||
+          (mediaItem?.name || '').toLowerCase().endsWith('.srt') ||
+          (mediaItem?.name || '').toLowerCase().endsWith('.vtt');
+
+        if (!isSubtitle) {
+          return false;
+        }
+
+        const generatedSubtitles = (state.tracks as VideoTrack[]).filter(
+          (track) =>
+            track.type === 'subtitle' && track.subtitleType === 'karaoke',
+        );
+
+        if (generatedSubtitles.length === 0) {
+          return false;
+        }
+
+        setSubtitleImportConfirmation({
+          show: true,
+          mediaId,
+          mediaName,
+          targetFrame,
+          generatedSubtitleIds: generatedSubtitles.map((t) => t.id),
+        });
+
+        return true;
+      },
+      [],
     );
 
     const handleTrackMove = useCallback(
@@ -1307,6 +1544,84 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       }));
     }, [placeholderRowsBelow]);
 
+    const [placeholderHoverId, setPlaceholderHoverId] = useState<string | null>(
+      null,
+    );
+
+    // Global safety net to clear hover highlight if drag ends elsewhere
+    useEffect(() => {
+      const clearHover = () => setPlaceholderHoverId(null);
+      document.addEventListener('drop', clearHover, true);
+      document.addEventListener('dragend', clearHover, true);
+      document.addEventListener('dragleave', clearHover, true);
+      return () => {
+        document.removeEventListener('drop', clearHover, true);
+        document.removeEventListener('dragend', clearHover, true);
+        document.removeEventListener('dragleave', clearHover, true);
+      };
+    }, []);
+
+    const handlePlaceholderDrop = () => async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPlaceholderHoverId(null);
+
+      const payload = parseMediaDragPayload(e.dataTransfer);
+      if (!payload) return;
+
+      const scrollContainer = (e.currentTarget as HTMLElement).closest(
+        '.overflow-auto',
+      ) as HTMLElement | null;
+      const scrollLeft = scrollContainer?.scrollLeft || 0;
+      const scrollTop = scrollContainer?.scrollTop || 0;
+      const rect =
+        scrollContainer?.getBoundingClientRect() ||
+        (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+      const cursorX = e.clientX - rect.left + scrollLeft;
+      const cursorY = e.clientY - rect.top + scrollTop;
+
+      const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
+
+      const rowBounds = calculateRowBoundsWithPlaceholders(
+        dynamicRows,
+        visibleTrackRows,
+        placeholderRowsAbove,
+        placeholderRowsBelow,
+        PLACEHOLDER_ROW_HEIGHT,
+      );
+
+      const insertion = detectInsertionPoint(
+        cursorY,
+        rowBounds,
+        (payload.type as VideoTrack['type']) || 'video',
+        tracks,
+      );
+
+      let targetRowIndex: number | null = null;
+      if (insertion) {
+        targetRowIndex =
+          insertion.existingRowId &&
+          parseRowId(insertion.existingRowId)?.rowIndex !== undefined
+            ? parseRowId(insertion.existingRowId)?.rowIndex || null
+            : insertion.targetRowIndex;
+      }
+
+      if (targetRowIndex === null) {
+        const fallbackRow = rowBounds.find(
+          (row) =>
+            row.type === ((payload.type as VideoTrack['type']) || 'video'),
+        );
+        targetRowIndex = fallbackRow?.rowIndex ?? 0;
+      }
+
+      addTrackFromMediaLibrary(
+        payload.mediaId,
+        targetFrame,
+        targetRowIndex ?? 0,
+      ).catch(console.error);
+    };
+
     return (
       <div
         className="relative overflow-visible"
@@ -1324,28 +1639,44 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           }}
         >
           {/* Placeholder rows above */}
-          {Array.from({ length: placeholderRowsAbove }, (_, i) => (
-            <div
-              key={`placeholder-above-${i}`} // Distinct key prevents confusion
-              className="relative h-12 border-l-[3px] border-l-transparent"
-            >
-              {/* Grid lines - visual only, no interaction handlers */}
+          {Array.from({ length: placeholderRowsAbove }, (_, i) => {
+            const id = `placeholder-above-${i}`;
+            const isHover = placeholderHoverId === id;
+            return (
               <div
-                className="absolute top-0 h-full pointer-events-none"
-                style={{
-                  left: 0,
-                  width: timelineWidth,
-                  background: `repeating-linear-gradient(
+                key={id} // Distinct key prevents confusion
+                className={cn(
+                  'relative h-12 border-l-[3px] border-l-transparent',
+                  isHover ? 'bg-secondary/10' : '',
+                )}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                  setPlaceholderHoverId(id);
+                }}
+                onDragLeave={() => {
+                  setPlaceholderHoverId((prev) => (prev === id ? null : prev));
+                }}
+                onDrop={handlePlaceholderDrop}
+              >
+                {/* Grid lines - visual only, now a drop zone */}
+                <div
+                  className="absolute top-0 h-full pointer-events-none"
+                  style={{
+                    left: 0,
+                    width: timelineWidth,
+                    background: `repeating-linear-gradient(
                     90deg,
                     transparent,
                     transparent ${frameWidth * 30 - 1}px,
                     hsl(var(--foreground) / 0.03) ${frameWidth * 30 - 1}px,
                     hsl(var(--foreground) / 0.03) ${frameWidth * 30}px
                   )`,
-                }}
-              />
-            </div>
-          ))}
+                  }}
+                />
+              </div>
+            );
+          })}
 
           {/* Actual track rows */}
           {visibleRows.map((rowDef) => {
@@ -1371,6 +1702,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
                   onTrackMove={memoizedHandlers.onTrackMove}
                   onTrackResize={memoizedHandlers.onTrackResize}
                   onDrop={memoizedHandlers.onDrop}
+                  onSubtitleImportAttempt={handleSubtitleImportAttempt}
                   allTracksCount={tracks.length}
                   onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
                   isSplitModeActive={isSplitModeActive}
@@ -1381,28 +1713,56 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           })}
 
           {/* Placeholder rows below */}
-          {placeholderRowDefsBelow.map((placeholder) => (
-            <div
-              key={placeholder.id}
-              className="relative h-12 border-l-[3px] border-l-transparent"
-            >
-              {/* Grid lines for placeholder */}
+          {placeholderRowDefsBelow.map((placeholder) => {
+            const isHover = placeholderHoverId === placeholder.id;
+            return (
               <div
-                className="absolute top-0 h-full pointer-events-none"
-                style={{
-                  left: 0,
-                  width: timelineWidth,
-                  background: `repeating-linear-gradient(
+                key={placeholder.id}
+                className={cn(
+                  'relative h-12 border-l-[3px] border-l-transparent',
+                  isHover ? 'bg-secondary/10' : '',
+                )}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                  setPlaceholderHoverId(placeholder.id);
+                }}
+                onDragLeave={() => {
+                  setPlaceholderHoverId((prev) =>
+                    prev === placeholder.id ? null : prev,
+                  );
+                }}
+                onDrop={handlePlaceholderDrop}
+              >
+                {/* Grid lines for placeholder */}
+                <div
+                  className="absolute top-0 h-full pointer-events-none"
+                  style={{
+                    left: 0,
+                    width: timelineWidth,
+                    background: `repeating-linear-gradient(
                     90deg,
                     transparent,
                     transparent ${frameWidth * 30 - 1}px,
                     hsl(var(--foreground) / 0.03) ${frameWidth * 30 - 1}px,
                     hsl(var(--foreground) / 0.03) ${frameWidth * 30}px
                   )`,
-                }}
-              />
-            </div>
-          ))}
+                  }}
+                />
+              </div>
+            );
+          })}
+
+          <KaraokeConfirmationDialog
+            open={subtitleImportConfirmation.show}
+            onOpenChange={handleSubtitleDialogOpenChange}
+            mediaName={subtitleImportConfirmation.mediaName}
+            existingSubtitleCount={
+              subtitleImportConfirmation.generatedSubtitleIds.length
+            }
+            onConfirm={handleConfirmSubtitleImport}
+            mode="import"
+          />
         </div>
       </div>
     );

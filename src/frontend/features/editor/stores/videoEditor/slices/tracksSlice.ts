@@ -24,6 +24,23 @@ import {
   getTrackColor,
 } from '../utils/trackHelpers';
 
+const resolveSubtitleRowIndex = (
+  tracks: VideoTrack[],
+  providedRowIndex?: number,
+): number => {
+  if (providedRowIndex !== undefined) {
+    return providedRowIndex;
+  }
+
+  const existingSubtitle = tracks.find((t) => t.type === 'subtitle');
+  if (existingSubtitle?.trackRowIndex !== undefined) {
+    return existingSubtitle.trackRowIndex;
+  }
+
+  // Default to overlay positioning above video (minimum index 1)
+  return Math.max(1, getNextAvailableRowIndex(tracks, 'subtitle'));
+};
+
 /**
  * CapCut-style non-destructive trimming helper with adjacent clip boundary checking
  * Clamps track resizing within:
@@ -240,6 +257,7 @@ export interface TracksSlice {
   addTrackFromMediaLibrary: (
     mediaId: string,
     startFrame?: number,
+    trackRowIndex?: number,
   ) => Promise<string>;
   removeTrack: (trackId: string) => void;
   removeSelectedTracks: () => void;
@@ -692,7 +710,11 @@ export const createTracksSlice: StateCreator<
     return trackIds;
   },
 
-  addTrackFromMediaLibrary: async (mediaId, startFrame = 0) => {
+  addTrackFromMediaLibrary: async (
+    mediaId,
+    startFrame = 0,
+    trackRowIndex?: number,
+  ) => {
     const state = get() as any;
     const mediaItem = state.mediaLibrary?.find(
       (item: any) => item.id === mediaId,
@@ -710,6 +732,10 @@ export const createTracksSlice: StateCreator<
 
     // Handle subtitle files specially - parse and create individual tracks
     if (mediaItem.type === 'subtitle' && isSubtitleFile(mediaItem.name)) {
+      const subtitleRowIndex = resolveSubtitleRowIndex(
+        state.tracks,
+        trackRowIndex,
+      );
       try {
         // Read subtitle content
         const subtitleContent = await window.electronAPI.readFile(
@@ -729,6 +755,7 @@ export const createTracksSlice: StateCreator<
             state.tracks.length,
             state.timeline.fps,
             getTrackColor,
+            subtitleRowIndex,
             mediaItem.previewUrl,
           );
 
@@ -811,6 +838,10 @@ export const createTracksSlice: StateCreator<
       visible: true,
       locked: false,
       color: getTrackColor(state.tracks.length),
+      trackRowIndex:
+        mediaItem.type === 'subtitle'
+          ? resolveSubtitleRowIndex(state.tracks, trackRowIndex)
+          : trackRowIndex,
       ...(mediaItem.type === 'subtitle' && {
         subtitleText: `Subtitle: ${mediaItem.name}`,
       }),

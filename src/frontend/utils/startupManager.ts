@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Startup Manager
  *
@@ -44,8 +45,6 @@ class StartupManager {
     const duration = timestamp - this.startTime;
 
     this.metrics.push({ stage, timestamp, duration });
-
-    console.log(`🚀 [Startup] ${stage} - ${duration}ms from app start`);
 
     // Notify listeners
     const progress = this.calculateProgress(stage);
@@ -95,27 +94,10 @@ class StartupManager {
   }
 
   /**
-   * Print performance summary to console
+   * Print performance summary (console logging removed for production cleanliness)
    */
   printSummary(): void {
-    console.group('📊 Startup Performance Summary');
-    console.log(`Total startup time: ${this.getTotalStartupTime()}ms`);
-    console.table(
-      this.metrics.map((m) => ({
-        Stage: m.stage,
-        'Time (ms)': m.duration,
-      })),
-    );
-    console.groupEnd();
-
-    // Identify bottlenecks
-    const bottlenecks = this.identifyBottlenecks();
-    if (bottlenecks.length > 0) {
-      console.warn('⚠️ Potential bottlenecks detected:');
-      bottlenecks.forEach((b) => {
-        console.warn(`  - ${b.stage}: ${b.duration}ms`);
-      });
-    }
+    // Intentionally no-op
   }
 
   /**

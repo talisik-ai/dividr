@@ -5,4 +5,3 @@
 export * from './scalingUtils';
 export * from './textStyleUtils';
 export * from './trackUtils';
-export * from './unifiedAudioController';
