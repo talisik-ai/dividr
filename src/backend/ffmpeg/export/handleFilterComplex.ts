@@ -1956,7 +1956,7 @@ export function buildSeparateTimelineFilterComplex(
 
   // Step 1.5: Force SAR=1 after subtitles to avoid aspect ratio propagation from ASS renderer
   // This ensures clean aspect ratio before final output
-  // CRITICAL: Also trim video to exactly totalVideoDuration to match audio duration
+  // Also trim video to exactly totalVideoDuration to match audio duration
   if (currentVideoLabelForText === 'video_with_subtitles' && hasVideoContent) {
     // Add setsar=1 filter after subtitles, then trim to exact duration
     const tempVideoRef = '[video_temp_sar]';
