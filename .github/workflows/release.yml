@@ -25,11 +25,26 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      # Pre-download NSIS to avoid rate limiting issues during build
+      - name: Cache NSIS
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron-builder\Cache\nsis
+          key: nsis-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            nsis-${{ runner.os }}-
+
       - name: Build Windows app
-        run: yarn make --platform win32
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: yarn make --platform win32
         env:
           CI: true
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_DOWNLOAD_TIMEOUT: 120000
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
