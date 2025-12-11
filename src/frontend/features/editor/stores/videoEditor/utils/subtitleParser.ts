@@ -8,6 +8,56 @@ export interface SubtitleSegment {
   index?: number;
 }
 
+const SAFE_SUBTITLE_GAP_SECONDS = 0.05; // 50ms minimum separation
+const MIN_SUBTITLE_DURATION_SECONDS = 0.05; // Prevent zero-length clips after shifts
+
+type NormalizedSubtitleSegment = SubtitleSegment & {
+  normalizedStartTime: number;
+  normalizedEndTime: number;
+  originalStartTime: number;
+  originalEndTime: number;
+};
+
+const normalizeSubtitleSegments = (
+  segments: SubtitleSegment[],
+  safeGapSeconds: number = SAFE_SUBTITLE_GAP_SECONDS,
+): NormalizedSubtitleSegment[] => {
+  const normalized: NormalizedSubtitleSegment[] = [];
+  let previousEnd = 0;
+
+  for (const segment of segments) {
+    const originalStartTime = segment.startTime;
+    const originalEndTime = segment.endTime;
+
+    let normalizedStartTime = originalStartTime;
+    let normalizedEndTime = originalEndTime;
+
+    if (normalizedStartTime <= previousEnd) {
+      const shift = previousEnd + safeGapSeconds - normalizedStartTime;
+      normalizedStartTime += shift;
+      normalizedEndTime += shift;
+    }
+
+    if (normalizedEndTime <= normalizedStartTime) {
+      normalizedEndTime = normalizedStartTime + MIN_SUBTITLE_DURATION_SECONDS;
+    }
+
+    previousEnd = normalizedEndTime;
+
+    normalized.push({
+      ...segment,
+      startTime: normalizedStartTime,
+      endTime: normalizedEndTime,
+      normalizedStartTime,
+      normalizedEndTime,
+      originalStartTime,
+      originalEndTime,
+    });
+  }
+
+  return normalized;
+};
+
 export function isSubtitleFile(fileName: string): boolean {
   return SUBTITLE_EXTENSIONS.some((ext) =>
     fileName.toLowerCase().endsWith(ext),
@@ -144,13 +194,17 @@ export async function processSubtitleFile(
     const sortedSegments = [...segments].sort(
       (a, b) => a.startTime - b.startTime,
     );
+    const normalizedSegments = normalizeSubtitleSegments(
+      sortedSegments,
+      SAFE_SUBTITLE_GAP_SECONDS,
+    );
 
-    if (sortedSegments.length > 0) {
-      const subtitleTracks = sortedSegments.map((segment, segmentIndex) => {
+    if (normalizedSegments.length > 0) {
+      const subtitleTracks = normalizedSegments.map((segment, segmentIndex) => {
         // Convert precise seconds to frames using Math.floor for start (inclusive)
         // and Math.ceil for end (exclusive) to ensure full coverage
-        const startFrame = Math.floor(segment.startTime * fps);
-        const endFrame = Math.ceil(segment.endTime * fps);
+        const startFrame = Math.floor(segment.normalizedStartTime * fps);
+        const endFrame = Math.ceil(segment.normalizedEndTime * fps);
 
         return {
           type: 'subtitle' as const,
@@ -171,8 +225,11 @@ export async function processSubtitleFile(
           subtitleText: segment.text,
           subtitleType: 'regular' as const,
           // Store original precise timing from SRT for reference
-          subtitleStartTime: segment.startTime,
-          subtitleEndTime: segment.endTime,
+          subtitleStartTime: segment.originalStartTime,
+          subtitleEndTime: segment.originalEndTime,
+          normalizedSubtitleStartTime: segment.normalizedStartTime,
+          normalizedSubtitleEndTime: segment.normalizedEndTime,
+          subtitleSafeGapSeconds: SAFE_SUBTITLE_GAP_SECONDS,
         };
       });
 
