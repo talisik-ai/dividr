@@ -18,6 +18,17 @@ const config: ForgeConfig = {
     name: 'Dividr',
     executableName: 'dividr',
     extraResource: ['./src/frontend/assets/logo', './src/backend/scripts'],
+    // macOS code signing - uses APPLE_IDENTITY env variable
+    ...(process.env.APPLE_IDENTITY && {
+      osxSign: {
+        identity: process.env.APPLE_IDENTITY,
+        optionsForFile: () => ({
+          hardenedRuntime: true,
+          entitlements: './entitlements.plist',
+          'entitlements-inherit': './entitlements.plist',
+        }),
+      },
+    }),
     ignore: [
       // Git and docs
       /^\/\.gitignore$/,

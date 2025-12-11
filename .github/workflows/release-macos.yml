@@ -1,64 +1,36 @@
-name: Release
+name: Release macOS
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*-macos'
+      - 'v*-mac'
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Architecture to build'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - arm64
+          - x64
+      create_release:
+        description: 'Create GitHub Release'
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      # Pre-download NSIS to avoid rate limiting issues during build
-      - name: Cache NSIS
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\electron-builder\Cache\nsis
-          key: nsis-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            nsis-${{ runner.os }}-
-
-      - name: Build Windows app
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 30
-          max_attempts: 3
-          retry_wait_seconds: 30
-          command: yarn make --platform win32
-        env:
-          CI: true
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ELECTRON_BUILDER_DOWNLOAD_TIMEOUT: 120000
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dividr-windows
-          path: |
-            out/make/**/*.exe
-            out/make/**/*.zip
-
   build-macos:
     runs-on: macos-latest
     strategy:
       matrix:
-        arch: [arm64, x64]
+        arch: ${{ github.event_name == 'workflow_dispatch' && (inputs.arch == 'both' && fromJSON('["arm64", "x64"]') || fromJSON(format('["{0}"]', inputs.arch))) || fromJSON('["arm64", "x64"]') }}
 
     steps:
       - name: Checkout repository
@@ -148,44 +120,10 @@ jobs:
             out/make/**/*.dmg
             out/make/**/*.pkg
 
-  build-linux:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg fakeroot rpm
-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      - name: Build Linux app
-        run: yarn make --platform linux
-        env:
-          CI: true
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dividr-linux
-          path: |
-            out/make/**/*.deb
-            out/make/**/*.rpm
-            out/make/**/*.zip
-
   create-release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-macos]
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release) }}
 
     steps:
       - name: Checkout repository
@@ -202,12 +140,30 @@ jobs:
       - name: Flatten artifacts for release
         run: |
           mkdir -p release-assets
-          find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.dmg" -o -name "*.pkg" -o -name "*.deb" -o -name "*.rpm" \) -exec cp {} release-assets/ \;
+          find artifacts -type f \( -name "*.zip" -o -name "*.dmg" -o -name "*.pkg" \) -exec cp {} release-assets/ \;
           ls -la release-assets/
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            # Remove -macos or -mac suffix for release name
+            TAG="${GITHUB_REF#refs/tags/}"
+            BASE_TAG="${TAG%-macos}"
+            BASE_TAG="${BASE_TAG%-mac}"
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            echo "base_tag=$BASE_TAG" >> $GITHUB_OUTPUT
+          else
+            # For manual runs, use timestamp
+            echo "tag=macos-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+            echo "base_tag=macos-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "macOS Release ${{ steps.tag.outputs.base_tag }}"
           files: release-assets/*
           generate_release_notes: true
           draft: false
