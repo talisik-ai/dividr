@@ -504,8 +504,11 @@ export const SubtitleTransformBoundary: React.FC<
   const handleBlur = useCallback(() => {
     if (!editableRef.current) return;
 
-    const newText = editableRef.current.innerText.trim();
-    if (newText && newText !== track.subtitleText) {
+    const newText = editableRef.current.innerText
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+
+    if (newText !== track.subtitleText) {
       onTextUpdate?.(track.id, newText);
     }
     setIsEditing(false);
@@ -563,6 +566,8 @@ export const SubtitleTransformBoundary: React.FC<
         cursor: getCursor(),
         pointerEvents: shouldDisablePointerEvents ? 'none' : 'auto',
         display: 'inline-block',
+        width: 'fit-content', // Hug actual subtitle content
+        maxWidth: `${actualWidth}px`, // Cap wrapping to canvas width
         userSelect: isEditing ? 'text' : 'none',
         WebkitUserSelect: isEditing ? 'text' : 'none',
       }}
@@ -581,6 +586,12 @@ export const SubtitleTransformBoundary: React.FC<
           outline: 'none',
           pointerEvents: isEditing ? 'auto' : 'none',
           position: 'relative',
+          display: 'inline-block', // Prevent block-level full-width wrapping
+          width: 'fit-content', // Hug content to avoid forced wraps
+          whiteSpace: 'pre', // Keep explicit breaks but avoid wrapping when width allows
+          overflowWrap: 'normal', // Prevent browser from forcing soft-wraps
+          wordBreak: 'keep-all', // Avoid breaking words unless necessary
+          maxWidth: '100%', // Respect the parent cap while hugging content width
         }}
       >
         {children}

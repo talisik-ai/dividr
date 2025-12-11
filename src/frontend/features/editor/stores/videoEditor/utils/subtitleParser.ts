@@ -40,7 +40,8 @@ export function parseSRT(content: string): SubtitleSegment[] {
         parseInt(timeMatch[7]) +
         parseInt(timeMatch[8]) / 1000;
 
-      const text = lines.slice(2).join('\n').trim();
+      // Preserve true line breaks from the source; only normalize CRLF
+      const text = lines.slice(2).join('\n').replace(/\r/g, '');
 
       segments.push({
         startTime,

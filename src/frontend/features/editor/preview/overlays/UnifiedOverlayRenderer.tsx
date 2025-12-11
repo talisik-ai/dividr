@@ -382,6 +382,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
             activeStyle,
             renderScale,
             baseVideoWidth,
+            actualWidth,
             onSubtitleSelect,
           ),
         )}
@@ -525,6 +526,7 @@ function renderSubtitleContent(
   activeStyle: any,
   renderScale: number,
   baseVideoWidth: number,
+  actualWidth: number,
   onSelect: (id: string) => void,
 ) {
   const style = getStyle(activeStyle, track.subtitleStyle);
@@ -545,11 +547,12 @@ function renderSubtitleContent(
     letterSpacing: style.letterSpacing
       ? `${parseFloat(String(style.letterSpacing)) * renderScale}px`
       : undefined,
-    whiteSpace: 'pre-line',
+    display: 'inline-block', // Prevent block-level full-width wrapping
+    width: 'fit-content', // Hug content while we clip at canvas bounds
+    whiteSpace: 'pre', // Preserve explicit breaks; avoid soft wraps
     wordBreak: 'keep-all',
     overflowWrap: 'normal',
     padding: `${padV}px ${padH}px`,
-    maxWidth: `${baseVideoWidth * renderScale * 0.9}px`,
   };
 
   return (
@@ -567,6 +570,7 @@ function renderSubtitleContent(
           color: style.color,
           backgroundColor: style.backgroundColor,
           opacity: style.opacity,
+          maxWidth: 'none', // Avoid soft wrapping; rely on clipping
         }}
       >
         {track.subtitleText}

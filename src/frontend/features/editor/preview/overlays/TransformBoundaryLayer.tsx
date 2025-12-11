@@ -192,6 +192,9 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
 
   // Render subtitle boundary if any subtitle is selected
   const renderSubtitleBoundary = () => {
+    // Subtitle boundary now rendered in UnifiedOverlayRenderer to avoid duplicates
+    return null;
+
     if (selectedSubtitles.length === 0) return null;
 
     // Get all active subtitles for content rendering

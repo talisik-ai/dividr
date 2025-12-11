@@ -102,10 +102,10 @@ export function generateSubtitleContent(
               }
             : undefined;
 
-          // Clean up text: remove trailing newlines and extra whitespace
+          // Preserve true line breaks; only normalize CRLF to \n
           const cleanText = (track.subtitleText || '')
-            .replace(/\n\s*$/, '')
-            .trim();
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n');
 
           return {
             startTime,
@@ -120,7 +120,7 @@ export function generateSubtitleContent(
 
   // NOTE: Text clips are no longer processed here - they are handled separately by textLayerUtils.ts
   // This ensures proper multi-track rendering with text layers as separate overlays
-  
+
   // Only use subtitle segments
   const allSegments = [...subtitleSegments];
 
