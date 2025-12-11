@@ -104,18 +104,24 @@ function convertTrackStyleToTextStyle(trackStyle?: VideoTrack['textStyle']): Tex
 
 /**
  * Extracts subtitle segments from timeline tracks
+ * NOTE: This function now ONLY extracts subtitle tracks (type === 'subtitle')
+ * Text tracks (type === 'text') are now handled separately by textLayers.ts
  */
 export function extractSubtitleSegments(
   tracks: VideoTrack[],
   timeline: TimelineState,
 ): SubtitleSegment[] {
+  // ONLY filter subtitle tracks - text tracks are handled separately
   const subtitleTracks = tracks.filter(
     (track) => track.type === 'subtitle' && track.visible && track.subtitleText,
   );
 
   if (subtitleTracks.length === 0) {
+    console.log('[Subtitles] No subtitle tracks found');
     return [];
   }
+
+  console.log(`[Subtitles] Extracting ${subtitleTracks.length} subtitle segments`);
 
   // Convert tracks to subtitle segments
   const segments: SubtitleSegment[] = subtitleTracks.map((track, index) => {
@@ -132,14 +138,14 @@ export function extractSubtitleSegments(
       startTime = track.subtitleStartTime;
       endTime = track.subtitleEndTime;
       console.log(
-        `[Export] Using original SRT timing for subtitle: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s`,
+        `[Subtitles] Using original SRT timing for subtitle: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s`,
       );
     } else {
       // Calculate from frame positions for user-created subtitles
       startTime = track.startFrame / timeline.fps;
       endTime = track.endFrame / timeline.fps;
       console.log(
-        `[Export] Calculated timing from frames: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s`,
+        `[Subtitles] Calculated timing from frames: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s`,
       );
     }
 
@@ -164,78 +170,29 @@ export function extractSubtitleSegments(
     segment.index = index + 1;
   });
 
+  console.log(`✅ [Subtitles] Extracted ${segments.length} subtitle segments`);
+
   return segments;
 }
 
 /**
- * Converts TextClipData to SubtitleSegment format
- * This allows textclips to be processed alongside subtitles using ASS format
+ * DEPRECATED: Text clips are now handled separately by textLayers.ts
+ * This function is kept for backward compatibility but should not be used.
  * 
- * Transform handling:
- * - Position: Converts from normalized coordinates [-1,1] (center=0) to [0,1] (center=0.5)
- * - Rotation: Preserves rotation angle in degrees (clockwise)
- * - Scale: Not directly supported in ASS subtitles (handled via font size)
+ * @deprecated Use extractTextSegments from textLayers.ts instead
  */
 export function convertTextClipsToSubtitleSegments(
   textClips: any[], // TextClipData[] from backend schema
   fps: number,
 ): SubtitleSegment[] {
+  console.warn('⚠️ convertTextClipsToSubtitleSegments is deprecated. Use extractTextSegments from textLayers.ts instead.');
+  
   if (!textClips || textClips.length === 0) {
     return [];
   }
 
-  const segments: SubtitleSegment[] = textClips.map((clip, index) => {
-    // Convert frames to seconds
-    const startTime = clip.startFrame / fps;
-    const endTime = clip.endFrame / fps;
-
-    // Convert TextClipStyle to TextStyleOptions
-    const style: TextStyleOptions = {
-      fontFamily: clip.style.fontFamily,
-      fontWeight: clip.style.isBold ? '700' : (clip.style.fontWeight || '400'),
-      fontStyle: clip.style.isItalic ? 'italic' : (clip.style.fontStyle || 'normal'),
-      isUnderline: clip.style.isUnderline,
-      textTransform: clip.style.textTransform,
-      textDecoration: clip.style.isUnderline ? 'underline' : undefined,
-      fontSize: clip.style.fontSize ? `${clip.style.fontSize}px` : undefined,
-      color: clip.style.fillColor,
-      strokeColor: clip.style.strokeColor,
-      backgroundColor: clip.style.backgroundColor,
-      hasShadow: clip.style.hasShadow,
-      hasGlow: clip.style.hasGlow,
-      opacity: clip.style.opacity,
-      letterSpacing: clip.style.letterSpacing ? `${clip.style.letterSpacing}px` : undefined,
-      lineHeight: clip.style.lineSpacing,
-      textAlign: clip.style.textAlign,
-    };
-
-    // Convert transform to position
-    // TextClip transform uses normalized coordinates (-1 to 1, where 0 is center)
-    // We need to convert to ASS coordinates (0-1, where 0.5 is center)
-    // Scale and rotation are preserved as-is
-    const position = {
-      x: (clip.transform.x + 1) / 2, // Convert from [-1,1] to [0,1]
-      y: (clip.transform.y + 1) / 2, // Convert from [-1,1] to [0,1]
-      scale: clip.transform.scale || 1, // Scale factor (1 = 100%)
-      rotation: clip.transform.rotation || 0, // Degrees, clockwise (same as CSS)
-    };
-
-    console.log(
-      `[Export] Converting text clip "${clip.content}" to subtitle segment: ${startTime.toFixed(3)}s - ${endTime.toFixed(3)}s, position: (${position.x.toFixed(3)}, ${position.y.toFixed(3)}), scale: ${position.scale}, rotation: ${position.rotation}°`,
-    );
-
-    return {
-      startTime,
-      endTime,
-      text: clip.content,
-      index: index + 1,
-      style,
-      position,
-      isTextClip: true,
-    };
-  });
-
-  return segments;
+  // Return empty array - text clips should be processed via textLayers.ts
+  return [];
 }
 
 /**

@@ -2,7 +2,7 @@
 /**
  * Subtitle Utilities
  * Handles subtitle content generation for export
- * Now also handles text clips bundled with subtitles
+ * NOTE: Text clips are now handled separately by textLayerUtils.ts
  */
 import { generateASSContent } from '@/backend/ffmpeg/subtitles/subtitleExporter';
 import {
@@ -17,13 +17,13 @@ interface SubtitleGenerationResult {
 }
 
 /**
- * Generate subtitle content from subtitle tracks and text clips
- * Text clips are now bundled with subtitles and processed together
+ * Generate subtitle content from subtitle tracks ONLY
+ * Text clips are now handled separately by textLayerUtils.ts
  * @param timelineStartFrame - Optional start frame of the export range (for offsetting subtitle timestamps)
  */
 export function generateSubtitleContent(
   subtitleTracks: VideoTrack[],
-  textTracks: VideoTrack[],
+  textTracks: VideoTrack[], // Kept for backward compatibility but not used
   textStyle: any,
   getTextStyleForSubtitle: (styleId: string) => any,
   videoDimensions?: { width: number; height: number },
@@ -118,88 +118,11 @@ export function generateSubtitleContent(
         })
       : [];
 
-  // Convert text tracks to subtitle segments with frame-based timing
-  const textClipSegments =
-    textTracks.length > 0
-      ? textTracks.map((track, index) => {
-          // Calculate timing relative to export start frame
-          const relativeStartFrame = Math.max(
-            0,
-            track.startFrame - (timelineStartFrame || 0),
-          );
-          const relativeEndFrame = Math.max(
-            0,
-            track.endFrame - (timelineStartFrame || 0),
-          );
-
-          const startTime = relativeStartFrame / timeline.fps;
-          const endTime = relativeEndFrame / timeline.fps;
-
-          console.log(
-            `[TextClip] "${track.textContent?.substring(0, 30)}" - frames ${track.startFrame}-${track.endFrame} -> relative ${relativeStartFrame}-${relativeEndFrame} -> ${startTime.toFixed(3)}s-${endTime.toFixed(3)}s`,
-          );
-
-          // Convert track textStyle to subtitle style format
-          const style = {
-            fontFamily: track.textStyle?.fontFamily,
-            fontWeight: track.textStyle?.isBold
-              ? '700'
-              : track.textStyle?.fontWeight || '400',
-            fontStyle: track.textStyle?.isItalic
-              ? 'italic'
-              : track.textStyle?.fontStyle || 'normal',
-            isUnderline: track.textStyle?.isUnderline,
-            textTransform: track.textStyle?.textTransform,
-            textDecoration: track.textStyle?.isUnderline
-              ? 'underline'
-              : undefined,
-            fontSize: track.textStyle?.fontSize
-              ? `${track.textStyle.fontSize}px`
-              : undefined,
-            color: track.textStyle?.fillColor,
-            strokeColor: track.textStyle?.strokeColor,
-            backgroundColor: track.textStyle?.backgroundColor,
-            hasShadow: track.textStyle?.hasShadow,
-            hasGlow: track.textStyle?.hasGlow,
-            opacity: track.textStyle?.opacity,
-            letterSpacing: track.textStyle?.letterSpacing
-              ? `${track.textStyle.letterSpacing}px`
-              : undefined,
-            lineHeight: track.textStyle?.lineSpacing,
-            textAlign: track.textStyle?.textAlign,
-          };
-
-          // Convert transform to position (normalized coordinates)
-          // Position: [-1,1] (center=0) -> [0,1] (center=0.5)
-          // Rotation: degrees, clockwise (same as CSS transform rotate)
-          const position = track.textTransform
-            ? {
-                x: (track.textTransform.x + 1) / 2, // Convert from [-1,1] to [0,1]
-                y: (track.textTransform.y + 1) / 2, // Convert from [-1,1] to [0,1]
-                scale: track.textTransform.scale || 1, // Scale factor (1 = 100%)
-                rotation: track.textTransform.rotation || 0, // Degrees, clockwise
-              }
-            : undefined;
-
-          // Clean up text: remove trailing newlines and extra whitespace
-          const cleanText = (track.textContent || '')
-            .replace(/\n\s*$/, '')
-            .trim();
-
-          return {
-            startTime,
-            endTime,
-            text: cleanText,
-            index: index + 1,
-            style,
-            position,
-            isTextClip: true,
-          };
-        })
-      : [];
-
-  // Combine subtitle and text clip segments
-  const allSegments = [...subtitleSegments, ...textClipSegments];
+  // NOTE: Text clips are no longer processed here - they are handled separately by textLayerUtils.ts
+  // This ensures proper multi-track rendering with text layers as separate overlays
+  
+  // Only use subtitle segments
+  const allSegments = [...subtitleSegments];
 
   if (allSegments.length === 0) {
     return {
@@ -242,9 +165,9 @@ export function generateSubtitleContent(
   );
 
   console.log(
-    `📝 Generated combined subtitle/textclip content: ${validSegments.length} segments (${subtitleSegments.length} subtitles + ${textClipSegments.length} text clips)`,
+    `📝 [Subtitles] Generated subtitle content: ${validSegments.length} segments`,
   );
-  console.log('📝 Fonts used:', assResult.fontFamilies.join(', '));
+  console.log('📝 [Subtitles] Fonts used:', assResult.fontFamilies.join(', '));
 
   return {
     subtitleContent: assResult.content,

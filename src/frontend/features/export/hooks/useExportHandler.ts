@@ -5,7 +5,7 @@
 import {
   FfmpegCallbacks,
   runFfmpegWithProgress,
-} from '@/backend/ffmpeg/ffmpegRunner';
+} from '@/backend/ffmpeg/export/ffmpegRunner';
 import { VideoEditJob } from '@/backend/ffmpeg/schema/ffmpegConfig';
 import { useCallback, useState } from 'react';
 import {
