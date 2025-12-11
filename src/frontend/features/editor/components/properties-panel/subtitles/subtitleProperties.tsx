@@ -133,11 +133,6 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
     );
   }, [textStyle]);
 
-  // Check if opacity has changed from default
-  const hasOpacityChanged = useMemo(() => {
-    return textStyle.globalControls.opacity !== 100;
-  }, [textStyle.globalControls.opacity]);
-
   // Don't render if no subtitle tracks are selected
   if (selectedSubtitleTracks.length === 0) {
     return null;
@@ -145,6 +140,32 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
 
   const isMultipleSelected = selectedSubtitleTracks.length > 1;
   const selectedTrack = selectedSubtitleTracks[0];
+  const isGlobalStyleMode = textStyle.styleApplicationMode === 'all';
+
+  const activeSubtitleStyle = useMemo(() => {
+    if (!selectedTrack) {
+      return textStyle.globalControls;
+    }
+
+    if (isGlobalStyleMode) {
+      return textStyle.globalControls;
+    }
+
+    return {
+      ...textStyle.globalControls,
+      ...(selectedTrack.subtitleStyle || {}),
+    };
+  }, [
+    isGlobalStyleMode,
+    selectedTrack,
+    selectedTrack?.subtitleText,
+    selectedTrack?.subtitleStyle,
+    textStyle.globalControls,
+  ]);
+
+  const hasOpacityChanged = useMemo(() => {
+    return activeSubtitleStyle.opacity !== 100;
+  }, [activeSubtitleStyle.opacity]);
 
   const handleTextEdit = useCallback(() => {
     // Only save if we're in editing mode and text changed
@@ -273,14 +294,14 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
           {/* Font Family & Size Row */}
           <div className="flex gap-2">
             <FontSelector
-              value={textStyle.globalControls.fontFamily || 'Inter'}
+              value={activeSubtitleStyle.fontFamily || 'Inter'}
               onValueChange={setFontFamily}
               size="sm"
               className="flex-1"
             />
 
             <Select
-              value={String(textStyle.globalControls.fontSize)}
+              value={String(activeSubtitleStyle.fontSize)}
               onValueChange={(value) => setFontSize(Number(value))}
             >
               <SelectTrigger className="w-20" size="sm">
@@ -312,9 +333,9 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               className="justify-start gap-4"
               variant="default"
               value={[
-                ...(textStyle.globalControls.isBold ? ['bold'] : []),
-                ...(textStyle.globalControls.isItalic ? ['italic'] : []),
-                ...(textStyle.globalControls.isUnderline ? ['underline'] : []),
+                ...(activeSubtitleStyle.isBold ? ['bold'] : []),
+                ...(activeSubtitleStyle.isItalic ? ['italic'] : []),
+                ...(activeSubtitleStyle.isUnderline ? ['underline'] : []),
               ]}
               onValueChange={(values) => {
                 const wasBold = textStyle.globalControls.isBold;
@@ -359,7 +380,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                 <TooltipTrigger asChild>
                   <div className="flex-1">
                     <Select
-                      value={textStyle.globalControls.textTransform}
+                      value={activeSubtitleStyle.textTransform}
                       onValueChange={(value) =>
                         setTextTransform(
                           value as
@@ -376,13 +397,15 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                         variant="ghost"
                         chevronSize={3}
                       >
-                        {textStyle.globalControls.textTransform === 'none' && (
+                        {activeSubtitleStyle.textTransform === 'none' && (
                           <CaseSensitive className="size-5" />
                         )}
-                        {textStyle.globalControls.textTransform ===
-                          'uppercase' && <CaseUpper className="size-5" />}
-                        {textStyle.globalControls.textTransform ===
-                          'lowercase' && <CaseLower className="size-5" />}
+                        {activeSubtitleStyle.textTransform === 'uppercase' && (
+                          <CaseUpper className="size-5" />
+                        )}
+                        {activeSubtitleStyle.textTransform === 'lowercase' && (
+                          <CaseLower className="size-5" />
+                        )}
                       </SelectTrigger>
                       <SelectContent align="start">
                         <SelectItem value="none">
@@ -416,7 +439,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                 <TooltipTrigger asChild>
                   <div className="flex-1">
                     <Select
-                      value={textStyle.globalControls.textAlign}
+                      value={activeSubtitleStyle.textAlign}
                       onValueChange={(value) =>
                         setTextAlign(
                           value as 'left' | 'center' | 'right' | 'justify',
@@ -430,13 +453,13 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                         chevronSize={3}
                       >
                         <div className="relative">
-                          {textStyle.globalControls.textAlign === 'left' && (
+                          {activeSubtitleStyle.textAlign === 'left' && (
                             <AlignLeft className="size-5" />
                           )}
-                          {textStyle.globalControls.textAlign === 'center' && (
+                          {activeSubtitleStyle.textAlign === 'center' && (
                             <AlignCenter className="size-5" />
                           )}
-                          {textStyle.globalControls.textAlign === 'right' && (
+                          {activeSubtitleStyle.textAlign === 'right' && (
                             <AlignRight className="size-5" />
                           )}
                         </div>
@@ -474,14 +497,14 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                   <div className="flex-1">
                     <Select
                       value={
-                        textStyle.globalControls.letterSpacing === 0 &&
-                        textStyle.globalControls.lineSpacing === 1.2
+                        activeSubtitleStyle.letterSpacing === 0 &&
+                        activeSubtitleStyle.lineSpacing === 1.2
                           ? 'normal'
-                          : textStyle.globalControls.letterSpacing === -1 &&
-                              textStyle.globalControls.lineSpacing === 1
+                          : activeSubtitleStyle.letterSpacing === -1 &&
+                              activeSubtitleStyle.lineSpacing === 1
                             ? 'tight'
-                            : textStyle.globalControls.letterSpacing === 1 &&
-                                textStyle.globalControls.lineSpacing === 1.5
+                            : activeSubtitleStyle.letterSpacing === 1 &&
+                                activeSubtitleStyle.lineSpacing === 1.5
                               ? 'loose'
                               : 'custom'
                       }
@@ -506,18 +529,17 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                       >
                         <div className="relative flex items-center">
                           <ListChevronsUpDown className="size-5 scale-x-[-1]" />
-                          {(textStyle.globalControls.letterSpacing !== 0 ||
-                            textStyle.globalControls.lineSpacing !== 1.2) && (
+                          {(activeSubtitleStyle.letterSpacing !== 0 ||
+                            activeSubtitleStyle.lineSpacing !== 1.2) && (
                             <Badge
                               variant="secondary"
                               className="absolute -right-3 -top-1 h-3 px-1 text-[8px]"
                             >
-                              {textStyle.globalControls.letterSpacing === -1 &&
-                              textStyle.globalControls.lineSpacing === 1
+                              {activeSubtitleStyle.letterSpacing === -1 &&
+                              activeSubtitleStyle.lineSpacing === 1
                                 ? 'T'
-                                : textStyle.globalControls.letterSpacing ===
-                                      1 &&
-                                    textStyle.globalControls.lineSpacing === 1.5
+                                : activeSubtitleStyle.letterSpacing === 1 &&
+                                    activeSubtitleStyle.lineSpacing === 1.5
                                   ? 'L'
                                   : 'C'}
                             </Badge>
@@ -588,7 +610,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               <label className="text-xs text-muted-foreground">Fill</label>
               <div className="flex items-center gap-1">
                 <ColorPickerPopover
-                  value={textStyle.globalControls.fillColor}
+                  value={activeSubtitleStyle.fillColor}
                   onChange={setFillColor}
                   onChangeComplete={addRecentColor}
                   recentColors={colorHistory.recentColors}
@@ -602,7 +624,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               <label className="text-xs text-muted-foreground">Stroke</label>
               <div className="flex items-center gap-1">
                 <ColorPickerPopover
-                  value={textStyle.globalControls.strokeColor}
+                  value={activeSubtitleStyle.strokeColor}
                   onChange={setStrokeColor}
                   onChangeComplete={addRecentColor}
                   recentColors={colorHistory.recentColors}
@@ -633,7 +655,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               </label>
               <div className="flex items-center gap-1">
                 <ColorPickerPopover
-                  value={textStyle.globalControls.backgroundColor}
+                  value={activeSubtitleStyle.backgroundColor}
                   onChange={setBackgroundColor}
                   onChangeComplete={addRecentColor}
                   recentColors={colorHistory.recentColors}
@@ -662,7 +684,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               <label className="text-xs text-muted-foreground">Shadow</label>
               <div className="flex items-center gap-1">
                 <Switch
-                  checked={textStyle.globalControls.hasShadow}
+                  checked={activeSubtitleStyle.hasShadow}
                   onCheckedChange={toggleShadow}
                   className="h-4 w-7"
                   thumbClassName="size-3.5"
@@ -695,7 +717,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               Glow
             </label>
             <Switch
-              checked={textStyle.globalControls.hasGlow}
+              checked={activeSubtitleStyle.hasGlow}
               onCheckedChange={toggleGlow}
               className="h-4 w-7"
               thumbClassName="size-3.5"
@@ -711,7 +733,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
           </label>
           <div className="flex items-center gap-2">
             <Slider
-              value={[textStyle.globalControls.opacity]}
+              value={[activeSubtitleStyle.opacity]}
               onValueChange={handleOpacitySliderChange}
               min={0}
               max={100}
@@ -720,7 +742,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
             />
             <Input
               type="number"
-              value={textStyle.globalControls.opacity}
+              value={activeSubtitleStyle.opacity}
               onChange={handleOpacityInputChange}
               min={0}
               max={100}
