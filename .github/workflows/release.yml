@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v*-macos'
+      - '!v*-mac'
+      - '!v*-windows'
+      - '!v*-win'
+      - '!v*-linux'
 
 permissions:
   contents: write
