@@ -20,7 +20,7 @@ function TabsList({
   variant = 'default',
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.List> & {
-  variant?: 'default' | 'text';
+  variant?: 'default' | 'text' | 'underline';
 }) {
   return (
     <TabsPrimitive.List
@@ -32,6 +32,7 @@ function TabsList({
           'bg-muted text-muted-foreground h-9 rounded-lg p-[3px]':
             variant === 'default',
           'h-fit gap-4': variant === 'text',
+          'h-fit gap-4 bg-transparent': variant === 'underline',
         },
         className,
       )}
@@ -45,7 +46,7 @@ function TabsTrigger({
   variant,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger> & {
-  variant?: 'default' | 'text';
+  variant?: 'default' | 'text' | 'underline';
 }) {
   // Get variant from parent context or use provided variant
   const parentVariant = variant || 'default';
@@ -63,6 +64,9 @@ function TabsTrigger({
           // Text variant styles
           'relative text-muted-foreground hover:text-foreground data-[state=active]:text-primary after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-transparent after:transition-colors hover:after:bg-border':
             parentVariant === 'text',
+          // Underline variant styles
+          'relative pr-3 pb-1 text-muted-foreground hover:text-foreground data-[state=active]:text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:transition-all after:duration-200 data-[state=active]:after:bg-secondary focus-visible:ring-ring/50 focus-visible:outline-ring justify-start':
+            parentVariant === 'underline',
         },
         className,
       )}
