@@ -115,6 +115,101 @@ export const createTextStyleSlice: StateCreator<
   setStyleApplicationMode: (mode: 'all' | 'selected') =>
     set((state: any) => {
       state.markUnsavedChanges?.();
+
+      // When switching TO 'selected' mode, snapshot current global styles
+      // into selected subtitle tracks so they become self-contained
+      if (mode === 'selected') {
+        const selectedTrackIds = state.timeline?.selectedTrackIds || [];
+        const globalControls = state.textStyle.globalControls;
+
+        // Only snapshot if there are selected subtitle tracks
+        const hasSelectedSubtitles = state.tracks.some(
+          (track: any) =>
+            track.type === 'subtitle' && selectedTrackIds.includes(track.id),
+        );
+
+        if (hasSelectedSubtitles) {
+          state.recordAction?.('Switch to Per-Clip Styling');
+
+          console.log(
+            '📸 Snapshotting global styles to selected subtitle tracks:',
+            {
+              selectedTrackIds,
+              globalControls,
+            },
+          );
+
+          const updatedTracks = state.tracks.map((track: any) => {
+            if (
+              track.type === 'subtitle' &&
+              selectedTrackIds.includes(track.id)
+            ) {
+              // Snapshot ALL global controls into the track's subtitleStyle
+              // This ensures the track is self-contained and won't lose styling during export
+              const snapshotStyle = {
+                // Start with existing track style (if any)
+                ...(track.subtitleStyle || {}),
+                // Overlay with current global controls (only if not already set in track)
+                // This preserves any existing per-clip overrides
+                fontFamily:
+                  track.subtitleStyle?.fontFamily ?? globalControls.fontFamily,
+                fontSize:
+                  track.subtitleStyle?.fontSize ?? globalControls.fontSize,
+                isBold: track.subtitleStyle?.isBold ?? globalControls.isBold,
+                isItalic:
+                  track.subtitleStyle?.isItalic ?? globalControls.isItalic,
+                isUnderline:
+                  track.subtitleStyle?.isUnderline ??
+                  globalControls.isUnderline,
+                textTransform:
+                  track.subtitleStyle?.textTransform ??
+                  globalControls.textTransform,
+                textAlign:
+                  track.subtitleStyle?.textAlign ?? globalControls.textAlign,
+                fillColor:
+                  track.subtitleStyle?.fillColor ?? globalControls.fillColor,
+                strokeColor:
+                  track.subtitleStyle?.strokeColor ??
+                  globalControls.strokeColor,
+                backgroundColor:
+                  track.subtitleStyle?.backgroundColor ??
+                  globalControls.backgroundColor,
+                hasShadow:
+                  track.subtitleStyle?.hasShadow ?? globalControls.hasShadow,
+                letterSpacing:
+                  track.subtitleStyle?.letterSpacing ??
+                  globalControls.letterSpacing,
+                lineSpacing:
+                  track.subtitleStyle?.lineSpacing ??
+                  globalControls.lineSpacing,
+                hasGlow: track.subtitleStyle?.hasGlow ?? globalControls.hasGlow,
+                opacity: track.subtitleStyle?.opacity ?? globalControls.opacity,
+              };
+
+              console.log(`📸 Snapshotted style for track ${track.id}:`, {
+                before: track.subtitleStyle,
+                after: snapshotStyle,
+              });
+
+              return {
+                ...track,
+                subtitleStyle: snapshotStyle,
+              };
+            }
+            return track;
+          });
+
+          return {
+            textStyle: {
+              ...state.textStyle,
+              styleApplicationMode: mode,
+            },
+            tracks: updatedTracks,
+          };
+        }
+      }
+
+      // Default behavior (switching to 'all' or no selected subtitles)
       return {
         textStyle: {
           ...state.textStyle,
@@ -318,6 +413,81 @@ export const createTextStyleSlice: StateCreator<
           ...state.textStyle,
           globalSubtitlePosition: position,
         },
+      };
+    }),
+
+  // Snapshot global styles to selected subtitle tracks
+  // This should be called when:
+  // 1. User switches to "selected" mode (already handled in setStyleApplicationMode)
+  // 2. User selects subtitle tracks while already in "selected" mode (call this manually)
+  snapshotStylesToSelectedTracks: () =>
+    set((state: any) => {
+      const mode = state.textStyle.styleApplicationMode;
+
+      // Only snapshot if we're in 'selected' mode
+      if (mode !== 'selected') {
+        return state; // Return unchanged state
+      }
+
+      const selectedTrackIds = state.timeline?.selectedTrackIds || [];
+      const globalControls = state.textStyle.globalControls;
+
+      // Find subtitle tracks that don't have complete styling yet
+      const tracksNeedingSnapshot = state.tracks.filter(
+        (track: any) =>
+          track.type === 'subtitle' &&
+          selectedTrackIds.includes(track.id) &&
+          !track.subtitleStyle, // Only snapshot if track has no style yet
+      );
+
+      if (tracksNeedingSnapshot.length === 0) {
+        return state; // Return unchanged state
+      }
+
+      console.log(
+        `📸 Auto-snapshotting styles to ${tracksNeedingSnapshot.length} newly selected subtitle tracks`,
+      );
+
+      const updatedTracks = state.tracks.map((track: any) => {
+        if (
+          track.type === 'subtitle' &&
+          selectedTrackIds.includes(track.id) &&
+          !track.subtitleStyle
+        ) {
+          // Snapshot ALL global controls into the track's subtitleStyle
+          const snapshotStyle = {
+            fontFamily: globalControls.fontFamily,
+            fontSize: globalControls.fontSize,
+            isBold: globalControls.isBold,
+            isItalic: globalControls.isItalic,
+            isUnderline: globalControls.isUnderline,
+            textTransform: globalControls.textTransform,
+            textAlign: globalControls.textAlign,
+            fillColor: globalControls.fillColor,
+            strokeColor: globalControls.strokeColor,
+            backgroundColor: globalControls.backgroundColor,
+            hasShadow: globalControls.hasShadow,
+            letterSpacing: globalControls.letterSpacing,
+            lineSpacing: globalControls.lineSpacing,
+            hasGlow: globalControls.hasGlow,
+            opacity: globalControls.opacity,
+          };
+
+          console.log(
+            `📸 Auto-snapshotted style for newly selected track ${track.id}:`,
+            snapshotStyle,
+          );
+
+          return {
+            ...track,
+            subtitleStyle: snapshotStyle,
+          };
+        }
+        return track;
+      });
+
+      return {
+        tracks: updatedTracks,
       };
     }),
 });

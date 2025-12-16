@@ -83,6 +83,9 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const setLineSpacing = useVideoEditorStore((state) => state.setLineSpacing);
   const resetTextStyles = useVideoEditorStore((state) => state.resetTextStyles);
   const addRecentColor = useVideoEditorStore((state) => state.addRecentColor);
+  const snapshotStylesToSelectedTracks = useVideoEditorStore(
+    (state) => state.snapshotStylesToSelectedTracks,
+  );
 
   // Get selected subtitle tracks
   const selectedSubtitleTracks = tracks.filter(
@@ -227,6 +230,19 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       setEditedText(selectedTrack.subtitleText || '');
     }
   }, [isEditingText, selectedTrack.id, selectedTrack.subtitleText]);
+
+  // Auto-snapshot styles when tracks are selected in "selected" mode
+  // This ensures tracks have complete styling data for export
+  useEffect(() => {
+    if (!isGlobalStyleMode && selectedSubtitleTracks.length > 0) {
+      snapshotStylesToSelectedTracks();
+    }
+  }, [
+    selectedTrackIds,
+    isGlobalStyleMode,
+    selectedSubtitleTracks.length,
+    snapshotStylesToSelectedTracks,
+  ]);
 
   const handleReset = useCallback(() => {
     resetTextStyles();
