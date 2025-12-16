@@ -191,7 +191,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
     // Extend timeline length with a lightweight buffer so users can plan ahead
     const displayedTotalFrames = useMemo(() => {
-      const baseBufferFrames = 100000; // ~20s at 30fps – keeps scrolling roomy without being heavy
+      const baseBufferFrames = 10000; // ~20s at 30fps – keeps scrolling roomy without being heavy
       const percentageBuffer = Math.floor(effectiveEndFrame * 0.25);
       const bufferFrames = Math.max(baseBufferFrames, percentageBuffer);
       return Math.max(timeline.totalFrames, effectiveEndFrame + bufferFrames);

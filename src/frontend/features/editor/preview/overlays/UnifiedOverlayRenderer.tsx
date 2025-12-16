@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useVideoEditorStore, VideoTrack } from '../../stores/videoEditor';
 import { ImageTransformBoundary } from '../components/ImageTransformBoundary';
 import { SubtitleTransformBoundary } from '../components/SubtitleTransformBoundary';
@@ -13,6 +19,7 @@ import {
   TEXT_CLIP_PADDING_VERTICAL,
 } from '../core/constants';
 import { OverlayRenderProps } from '../core/types';
+import { createVirtualTimeline } from '../services/VirtualTimelineManager';
 import { scaleTextShadow } from '../utils/scalingUtils';
 import { getTextStyleForTextClip } from '../utils/textStyleUtils';
 import {
@@ -21,6 +28,20 @@ import {
 } from '../utils/trackUtils';
 import { DualBufferVideo, DualBufferVideoRef } from './DualBufferVideoOverlay';
 import { MultiAudioPlayer } from './MultiAudioOverlay';
+
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
+
+const PRELOAD_LOOKAHEAD_MS = 2000; // Look 2 seconds ahead for preloading
+const STALL_DETECTION_THRESHOLD_MS = 100; // Detect stalls after 100ms of no progress
+const DEBUG_OVERLAY_SYNC = false;
+
+function logOverlaySync(message: string, data?: unknown) {
+  if (DEBUG_OVERLAY_SYNC) {
+    console.log(`[OverlaySync] ${message}`, data || '');
+  }
+}
 
 export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   videoRef: React.RefObject<HTMLVideoElement>;
@@ -108,7 +129,146 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   onDragStateChange,
 }) => {
   const renderScale = coordinateSystem.baseScale;
+
+  // =========================================================================
+  // REFS FOR MULTI-TRACK COORDINATION
+  // =========================================================================
   const dualBufferRef = useRef<DualBufferVideoRef>(null);
+  const dualBufferRefsMap = useRef<Map<string, DualBufferVideoRef>>(new Map());
+
+  // Shared clock reference for synchronized playback
+  const masterClockRef = useRef<number>(0);
+  const lastFrameTimeRef = useRef<number>(0);
+
+  // Stall detection state
+  const [isAnyTrackStalled, setIsAnyTrackStalled] = useState(false);
+  const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Virtual timeline for coordinated preloading
+  const virtualTimelineRef = useRef(createVirtualTimeline(allTracks, fps));
+
+  // =========================================================================
+  // EFFECT: Update virtual timeline when tracks change
+  // =========================================================================
+  useEffect(() => {
+    virtualTimelineRef.current = createVirtualTimeline(allTracks, fps);
+    logOverlaySync('Virtual timeline updated for coordinated preloading', {
+      stats: virtualTimelineRef.current.getStats(),
+    });
+  }, [allTracks, fps]);
+
+  // =========================================================================
+  // EFFECT: Shared clock management
+  // =========================================================================
+  useEffect(() => {
+    if (isPlaying) {
+      masterClockRef.current = performance.now();
+      lastFrameTimeRef.current = currentFrame;
+      logOverlaySync('Master clock started', { frame: currentFrame });
+    }
+  }, [isPlaying, currentFrame]);
+
+  // =========================================================================
+  // EFFECT: Coordinated preloading across all video tracks
+  // =========================================================================
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const virtualTimeline = virtualTimelineRef.current;
+    const lookaheadFrames = Math.ceil(
+      (PRELOAD_LOOKAHEAD_MS / 1000) * fps * playbackRate,
+    );
+
+    // Get all upcoming segments for all tracks
+    const upcomingSegments = virtualTimeline.getUpcomingSegments(
+      currentFrame,
+      lookaheadFrames,
+    );
+
+    // Trigger preloading for segments that need different sources
+    for (const upcoming of upcomingSegments) {
+      if (upcoming.requiresSourceChange) {
+        logOverlaySync('Coordinated preload triggered', {
+          segment: upcoming.segment.trackId,
+          framesUntil: upcoming.framesUntilStart,
+        });
+        // Preloading is handled by each DualBufferVideo instance
+        // This effect ensures we're tracking what needs preloading
+      }
+    }
+  }, [currentFrame, isPlaying, fps, playbackRate]);
+
+  // =========================================================================
+  // EFFECT: Stall detection and synchronized recovery
+  // =========================================================================
+  useEffect(() => {
+    if (!isPlaying) {
+      if (stallCheckIntervalRef.current) {
+        clearInterval(stallCheckIntervalRef.current);
+        stallCheckIntervalRef.current = null;
+      }
+      setIsAnyTrackStalled(false);
+      return;
+    }
+
+    // Check for stalls periodically
+    stallCheckIntervalRef.current = setInterval(() => {
+      let anyStalled = false;
+
+      // Check the primary dual buffer
+      if (dualBufferRef.current) {
+        const status = dualBufferRef.current.getBufferStatus();
+        if (status.activeReadyState < 2) {
+          anyStalled = true;
+          logOverlaySync('Primary video stalled', {
+            readyState: status.activeReadyState,
+          });
+        }
+      }
+
+      // Check all registered dual buffers
+      dualBufferRefsMap.current.forEach((ref, trackId) => {
+        const status = ref.getBufferStatus();
+        if (status.activeReadyState < 2) {
+          anyStalled = true;
+          logOverlaySync('Track stalled', {
+            trackId,
+            readyState: status.activeReadyState,
+          });
+        }
+      });
+
+      if (anyStalled !== isAnyTrackStalled) {
+        setIsAnyTrackStalled(anyStalled);
+        if (anyStalled) {
+          logOverlaySync('Playback stalled - waiting for recovery');
+        } else {
+          logOverlaySync('Playback recovered');
+        }
+      }
+    }, STALL_DETECTION_THRESHOLD_MS);
+
+    return () => {
+      if (stallCheckIntervalRef.current) {
+        clearInterval(stallCheckIntervalRef.current);
+        stallCheckIntervalRef.current = null;
+      }
+    };
+  }, [isPlaying, isAnyTrackStalled]);
+
+  // =========================================================================
+  // CALLBACK: Register dual buffer ref for multi-track coordination
+  // =========================================================================
+  const registerDualBufferRef = useCallback(
+    (trackId: string, ref: DualBufferVideoRef | null) => {
+      if (ref) {
+        dualBufferRefsMap.current.set(trackId, ref);
+      } else {
+        dualBufferRefsMap.current.delete(trackId);
+      }
+    },
+    [],
+  );
 
   const setPreviewInteractionMode = useVideoEditorStore(
     (state) => state.setPreviewInteractionMode,
@@ -419,9 +579,11 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   return (
     <>
       {/* VIDEO LAYERS - Render ALL active video tracks */}
+      {/* CRITICAL: Use stable index-based key so DualBufferVideo persists across track changes */}
+      {/* This prevents component remounting when activeTrack changes at segment boundaries */}
       {videoRenderInfos.map((info, index) => (
         <div
-          key={`video-container-${info.track.id}`}
+          key={`video-layer-${index}`}
           className="absolute inset-0 pointer-events-none"
           style={{
             width: actualWidth,
@@ -464,12 +626,19 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
               }}
             >
               <DualBufferVideo
-                ref={index === 0 ? dualBufferRef : undefined}
+                ref={(ref) => {
+                  if (index === 0 && ref) {
+                    (
+                      dualBufferRef as React.MutableRefObject<DualBufferVideoRef | null>
+                    ).current = ref;
+                  }
+                  registerDualBufferRef(info.track.id, ref);
+                }}
                 activeTrack={info.track}
                 allTracks={allTracks}
                 currentFrame={currentFrame}
                 fps={fps}
-                isPlaying={isPlaying}
+                isPlaying={isPlaying && !isAnyTrackStalled}
                 isMuted={isMuted}
                 volume={volume}
                 playbackRate={playbackRate}
