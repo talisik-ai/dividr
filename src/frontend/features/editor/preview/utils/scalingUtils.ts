@@ -156,3 +156,75 @@ export function calculateFitDimensions(
     height: Math.round(fittedHeight),
   };
 }
+
+/**
+ * Calculate video transform to fit video within canvas based on original resolution
+ * Uses "contain" strategy - ensures video always fits within canvas without cropping
+ * This matches professional editor behavior (CapCut, Premiere Pro)
+ *
+ * @param originalWidth - Original video width (from track.width or video metadata)
+ * @param originalHeight - Original video height (from track.height or video metadata)
+ * @param canvasWidth - Canvas width
+ * @param canvasHeight - Canvas height
+ * @param currentTransform - Current transform (if any) to preserve position/rotation
+ * @returns Transform with scale and dimensions that fit the video within canvas
+ */
+export function calculateVideoFitTransform(
+  originalWidth: number,
+  originalHeight: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  currentTransform?: {
+    x?: number;
+    y?: number;
+    scale?: number;
+    rotation?: number;
+    width?: number;
+    height?: number;
+  },
+): {
+  width: number;
+  height: number;
+  scale: number;
+  x: number;
+  y: number;
+  rotation: number;
+} {
+  if (!originalWidth || !originalHeight || !canvasWidth || !canvasHeight) {
+    return {
+      width: canvasWidth || originalWidth,
+      height: canvasHeight || originalHeight,
+      scale: currentTransform?.scale || 1,
+      x: currentTransform?.x || 0,
+      y: currentTransform?.y || 0,
+      rotation: currentTransform?.rotation || 0,
+    };
+  }
+
+  // Calculate fitted dimensions using contain strategy
+  const fittedDimensions = calculateFitDimensions(
+    originalWidth,
+    originalHeight,
+    canvasWidth,
+    canvasHeight,
+  );
+
+  // Calculate scale factor based on original resolution
+  // Scale = fitted dimension / original dimension
+  const scaleX = fittedDimensions.width / originalWidth;
+  const scaleY = fittedDimensions.height / originalHeight;
+  // Use the smaller scale to ensure video fits (contain behavior)
+  const scale = Math.min(scaleX, scaleY);
+
+  // Preserve existing position and rotation, or default to center
+  return {
+    width: fittedDimensions.width,
+    height: fittedDimensions.height,
+    scale:
+      currentTransform?.scale !== undefined ? currentTransform.scale : scale,
+    x: currentTransform?.x !== undefined ? currentTransform.x : 0,
+    y: currentTransform?.y !== undefined ? currentTransform.y : 0,
+    rotation:
+      currentTransform?.rotation !== undefined ? currentTransform.rotation : 0,
+  };
+}
