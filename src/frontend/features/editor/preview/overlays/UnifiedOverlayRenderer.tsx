@@ -36,10 +36,18 @@ import { MultiAudioPlayer } from './MultiAudioOverlay';
 const PRELOAD_LOOKAHEAD_MS = 2000; // Look 2 seconds ahead for preloading
 const STALL_DETECTION_THRESHOLD_MS = 100; // Detect stalls after 100ms of no progress
 const DEBUG_OVERLAY_SYNC = false;
+const DEBUG_MULTI_LAYER = false; // Enable for debugging multi-layer compositing
 
 function logOverlaySync(message: string, data?: unknown) {
   if (DEBUG_OVERLAY_SYNC) {
     console.log(`[OverlaySync] ${message}`, data || '');
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function logMultiLayer(message: string, data?: unknown) {
+  if (DEBUG_MULTI_LAYER) {
+    console.log(`[MultiLayer] ${message}`, data || '');
   }
 }
 
@@ -315,6 +323,8 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   );
 
   // Get all video tracks to render (multi-layer support)
+  // CRITICAL: For multi-layer compositing, we need stable track rendering
+  // to prevent visual glitches at track boundaries
   const videoRenderInfos = useMemo(() => {
     // Use activeVideoTracks if provided, otherwise fall back to single activeVideoTrack
     const videoTracksToRender = activeVideoTracks?.length
@@ -323,7 +333,10 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         ? [activeVideoTrack]
         : [];
 
-    return videoTracksToRender.map((track) => {
+    // Determine if we're in multi-layer mode (multiple video tracks active at same frame)
+    const isMultiLayerMode = videoTracksToRender.length > 1;
+
+    return videoTracksToRender.map((track, index) => {
       const transform = track.textTransform || {
         x: 0,
         y: 0,
@@ -333,6 +346,59 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         height: track.height || baseVideoHeight,
       };
 
+      // For multi-layer mode, tracks are already filtered by useActiveMedia
+      // They are within range by definition (otherwise they wouldn't be in the array)
+      // Only hide if explicitly not visible
+      const isHidden = !track.visible;
+
+      // KEY STRATEGY for video layers:
+      //
+      // GOAL: Maximize component reuse while handling all cases:
+      // 1. Same-source segments (TC#3): Share component for smooth transitions
+      // 2. Vertical moves: Don't remount (source stays the same)
+      // 3. Multi-layer overlaps (TC#4): Each layer needs its own component
+      // 4. Cross-source transitions (TC#5): Different sources = different components
+      //
+      // STRATEGY: SOURCE-ONLY key with CONFLICT DETECTION
+      //
+      // Default: Use source-only key
+      // - All segments from same source share one DualBufferVideo
+      // - This enables seamless same-source transitions
+      // - Vertical moves don't change source, so no remount
+      //
+      // Conflict case: Multiple tracks with SAME source active simultaneously
+      // - Add track ID to differentiate
+      // - This is rare (same video on multiple layers at same time)
+      //
+      // WHY NOT use isMultiLayerMode?
+      // - isMultiLayerMode changes dynamically as tracks enter/exit
+      // - This would cause key changes and remounts during transitions
+      // - We only need disambiguation when there's an ACTUAL source conflict
+      //
+      const sourceKey = track.previewUrl || track.source || track.id;
+
+      // Check if there are OTHER tracks with the SAME source currently active
+      // This is the only case where we need track ID disambiguation
+      const hasSameSourceConflict = videoTracksToRender.some(
+        (other) =>
+          other.id !== track.id &&
+          (other.previewUrl || other.source) ===
+            (track.previewUrl || track.source),
+      );
+
+      // Only add track ID when there's an actual same-source conflict
+      // Otherwise, use source-only for maximum component reuse
+      const stableKey = hasSameSourceConflict
+        ? `video-layer-${sourceKey}-${track.id}` // Same-source conflict: add track ID
+        : `video-layer-${sourceKey}`; // Normal: source only
+
+      // CAPCUT-STYLE OVERLAP LAG MASKING:
+      // During multi-layer overlap, only the topmost layer updates every frame.
+      // Background layers can be throttled to reduce decode load.
+      // The topmost layer is the LAST in the array (highest z-index after sorting).
+      const isTopmostLayer = index === videoTracksToRender.length - 1;
+      const isBackgroundLayer = isMultiLayerMode && !isTopmostLayer;
+
       return {
         track,
         videoWidth:
@@ -341,7 +407,11 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
           (transform.height || track.height || baseVideoHeight) * renderScale,
         zIndex: getTrackZIndex(track, allTracks),
         isSelected: selectedTrackIds.includes(track.id),
-        isHidden: !track.visible,
+        isHidden,
+        isMultiLayerMode,
+        isTopmostLayer,
+        isBackgroundLayer,
+        stableKey,
         // First video track handles audio if no independent audio tracks
         handlesAudio:
           track === videoTracksToRender[0] && !independentAudioTrack,
@@ -579,11 +649,14 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   return (
     <>
       {/* VIDEO LAYERS - Render ALL active video tracks */}
-      {/* CRITICAL: Use stable index-based key so DualBufferVideo persists across track changes */}
-      {/* This prevents component remounting when activeTrack changes at segment boundaries */}
+      {/* KEY STRATEGY: source URL + track row index
+          - Same-source segments on same row share component (smooth transitions)
+          - Different sources or different rows get separate components
+          - When tracks end, their components unmount (no stale frames)
+      */}
       {videoRenderInfos.map((info, index) => (
         <div
-          key={`video-layer-${index}`}
+          key={info.stableKey}
           className="absolute inset-0 pointer-events-none"
           style={{
             width: actualWidth,

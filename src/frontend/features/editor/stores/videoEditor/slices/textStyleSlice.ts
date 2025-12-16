@@ -131,14 +131,6 @@ export const createTextStyleSlice: StateCreator<
         if (hasSelectedSubtitles) {
           state.recordAction?.('Switch to Per-Clip Styling');
 
-          console.log(
-            '📸 Snapshotting global styles to selected subtitle tracks:',
-            {
-              selectedTrackIds,
-              globalControls,
-            },
-          );
-
           const updatedTracks = state.tracks.map((track: any) => {
             if (
               track.type === 'subtitle' &&
@@ -185,11 +177,6 @@ export const createTextStyleSlice: StateCreator<
                 hasGlow: track.subtitleStyle?.hasGlow ?? globalControls.hasGlow,
                 opacity: track.subtitleStyle?.opacity ?? globalControls.opacity,
               };
-
-              console.log(`📸 Snapshotted style for track ${track.id}:`, {
-                before: track.subtitleStyle,
-                after: snapshotStyle,
-              });
 
               return {
                 ...track,
@@ -444,10 +431,6 @@ export const createTextStyleSlice: StateCreator<
         return state; // Return unchanged state
       }
 
-      console.log(
-        `📸 Auto-snapshotting styles to ${tracksNeedingSnapshot.length} newly selected subtitle tracks`,
-      );
-
       const updatedTracks = state.tracks.map((track: any) => {
         if (
           track.type === 'subtitle' &&
@@ -472,11 +455,6 @@ export const createTextStyleSlice: StateCreator<
             hasGlow: globalControls.hasGlow,
             opacity: globalControls.opacity,
           };
-
-          console.log(
-            `📸 Auto-snapshotted style for newly selected track ${track.id}:`,
-            snapshotStyle,
-          );
 
           return {
             ...track,
