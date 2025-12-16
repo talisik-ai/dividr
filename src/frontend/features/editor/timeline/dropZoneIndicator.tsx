@@ -3,8 +3,8 @@ import React, { useMemo } from 'react';
 import {
   calculatePlaceholderRows,
   calculateRowBoundsWithPlaceholders,
-  TrackRowDefinition,
   parseRowId,
+  TrackRowDefinition,
 } from './utils/dynamicTrackRows';
 import { getRowHeight } from './utils/timelineConstants';
 
@@ -130,7 +130,7 @@ export const DropZoneIndicator: React.FC<DropZoneIndicatorProps> = React.memo(
           left: `${position.left}px`,
           width: `${position.width}px`,
           height: `${Math.max(0, clippedHeight)}px`,
-          zIndex: 5,
+          zIndex: 50,
         }}
       />
     );
