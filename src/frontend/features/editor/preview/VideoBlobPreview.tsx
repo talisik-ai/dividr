@@ -16,6 +16,7 @@ import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 import { DragGuides } from './components/DragGuides';
 import { PreviewPlaceholder } from './components/PreviewPlaceholder';
 import { RotationInfoBadge } from './components/RotationInfoBadge';
+import { SelectionHitTestLayer } from './components/SelectionHitTestLayer';
 import { TranscriptionProgressOverlay } from './components/TranscriptionProgressOverlay';
 import {
   useActiveMedia,
@@ -461,6 +462,39 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     [setSelectedTracks, preview.interactionMode],
   );
 
+  // Unified selection handler for hit-test layer (routes to type-specific handlers)
+  const handleUnifiedSelect = useCallback(
+    (trackId: string) => {
+      const track = tracks.find((t) => t.id === trackId);
+      if (!track) return;
+
+      switch (track.type) {
+        case 'video':
+          handleVideoSelect(trackId);
+          break;
+        case 'image':
+          handleImageSelect(trackId);
+          break;
+        case 'text':
+          handleTextSelect(trackId);
+          break;
+        case 'subtitle':
+          handleSubtitleSelect(trackId);
+          break;
+        default:
+          setSelectedTracks([trackId]);
+      }
+    },
+    [
+      tracks,
+      handleVideoSelect,
+      handleImageSelect,
+      handleTextSelect,
+      handleSubtitleSelect,
+      setSelectedTracks,
+    ],
+  );
+
   const handleSubtitleTextUpdate = useCallback(
     (trackId: string, newText: string) => {
       updateTrack(trackId, { subtitleText: newText });
@@ -769,6 +803,23 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             onRotationStateChange={setIsRotating}
             onDragStateChange={handleDragStateChange}
             onEditModeChange={handleEditModeChange}
+          />
+
+          {/* Selection Hit Test Layer - z-index aware click detection */}
+          <SelectionHitTestLayer
+            tracks={tracks}
+            currentFrame={timeline.currentFrame}
+            selectedTrackIds={timeline.selectedTrackIds}
+            onSelect={handleUnifiedSelect}
+            actualWidth={actualWidth}
+            actualHeight={actualHeight}
+            baseVideoWidth={baseVideoWidth}
+            baseVideoHeight={baseVideoHeight}
+            panX={preview.panX}
+            panY={preview.panY}
+            renderScale={coordinateSystem.baseScale}
+            interactionMode={preview.interactionMode}
+            disabled={isDraggingText || isRotating}
           />
 
           {/* Alignment Guides */}
