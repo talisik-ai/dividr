@@ -32,6 +32,7 @@ import {
   supportsCUDAFilters,
   getHardwareAccelerationStatus,
 } from './hardwareFilters';
+import { processAudioTimeline, findFileIndexForSegment } from './audioHandling';
 
 const VIDEO_DEFAULTS = {
   SIZE: { width: 1920, height: 1080 },
@@ -195,97 +196,6 @@ function hasNonZeroTransform(trackInfo: TrackInfo): boolean {
   return hasTransform;
 }
 
-/**
- * Find file index for a segment in categorized inputs
- */
-function findFileIndexForSegment(
-  segment: ProcessedTimelineSegment,
-  categorizedInputs: CategorizedInputs,
-  timelineType: 'video' | 'audio',
-): number | undefined {
-  const inputs =
-    timelineType === 'video'
-      ? categorizedInputs.videoInputs
-      : categorizedInputs.audioInputs;
-  const segmentPath = getInputPath(segment.input);
-
-  console.log(`🔍 Looking for file index for ${timelineType} segment:`, {
-    segmentOriginalIndex: segment.originalIndex,
-    segmentPath: segmentPath,
-    segmentStart: segment.input.startTime,
-    segmentDuration: segment.input.duration,
-    hasAudioPath: !!segment.input.audioPath,
-  });
-
-  // If it's a gap, no file index needed
-  if (isGapInput(segmentPath)) {
-    return undefined;
-  }
-
-  // Special handling for audio segments from video tracks with separate audio files
-  if (timelineType === 'audio' && segment.input.audioPath) {
-    // Strategy 1: Look for the video input with this originalIndex
-    let videoInput = categorizedInputs.videoInputs.find(
-      (vi) => vi.originalIndex === segment.originalIndex,
-    );
-
-    // Strategy 2: If not found by originalIndex, look by audioPath match (for segments created by gap insertion)
-    if (!videoInput) {
-      videoInput = categorizedInputs.videoInputs.find(
-        (vi) => vi.trackInfo.audioPath === segment.input.audioPath,
-      );
-      if (videoInput) {
-        console.log(
-          `🔍 Found video input by audioPath match for audio segment with originalIndex ${segment.originalIndex}`,
-        );
-      }
-    }
-
-    if (videoInput && videoInput.trackInfo.audioFileIndex !== undefined) {
-      const audioFileIndex = videoInput.trackInfo.audioFileIndex;
-      console.log(
-        `✅ Found audio file index ${audioFileIndex} from video track's separate audio file (path: ${segment.input.audioPath})`,
-      );
-      return audioFileIndex;
-    }
-  }
-
-  // Strategy 1: Look for exact originalIndex match
-  const fileIndex = inputs.find(
-    (vi) => vi.originalIndex === segment.originalIndex,
-  )?.fileIndex;
-
-  if (fileIndex !== undefined) {
-    console.log(`✅ Found file index ${fileIndex} by originalIndex match`);
-    return fileIndex;
-  }
-
-  // Strategy 2: Look by path only (for split segments from the same source)
-  const matchingByPath = inputs.find(
-    (input) => getInputPath(input.trackInfo) === segmentPath,
-  );
-
-  if (matchingByPath) {
-    console.log(
-      `✅ Found file index ${matchingByPath.fileIndex} by path match`,
-    );
-    return matchingByPath.fileIndex;
-  }
-
-  // Strategy 3: Debug - log all available inputs to see what we have
-  console.log(
-    `❌ No file index found. Available ${timelineType} inputs:`,
-    inputs.map((input) => ({
-      originalIndex: input.originalIndex,
-      fileIndex: input.fileIndex,
-      path: getInputPath(input.trackInfo),
-      startTime: input.trackInfo.startTime,
-      duration: input.trackInfo.duration,
-    })),
-  );
-
-  return undefined;
-}
 
 /**
  * Builds the font directories parameter for FFmpeg subtitle filter
@@ -1501,121 +1411,16 @@ export function buildSeparateTimelineFilterComplex(
   // Set final base label for further processing (aspect ratio crop, downscale, etc.)
   const finalBaseLabel = currentCompositeLabel || 'video_base';
   
-  if (hasVideoInputs) {
-    // Group audio segments by time to detect overlaps
-    const audioSegmentsWithTiming: Array<{
-      segment: ProcessedTimelineSegment;
-      segmentIndex: number;
-      filterRef: string;
-    }> = [];
-    
-    audioTimeline.segments.forEach((segment, segmentIndex) => {
-      const { input: trackInfo } = segment;
-
-      console.log(
-        `🎵 Processing audio segment ${segmentIndex}: ${trackInfo.path} [${segment.startTime.toFixed(2)}s-${segment.endTime.toFixed(2)}s]`,
-      );
-
-      if (isGapInput(trackInfo.path)) {
-        // Skip silent gaps - we'll use adelay to position audio instead
-        console.log(`🎵 Skipping audio gap (will use adelay for positioning)`);
-        return;
-      } else {
-        // Regular audio file - find the original file index
-        const fileIndex = findFileIndexForSegment(
-          segment,
-          categorizedInputs,
-          'audio',
-        );
-
-        if (fileIndex !== undefined) {
-          console.log(
-            `🎵 Processing audio segment ${segmentIndex} with fileIndex ${fileIndex}`,
-          );
-
-          const context = {
-            trackInfo,
-            originalIndex: segmentIndex,
-            fileIndex,
-            inputStreamRef: `[${fileIndex}:a]`,
-          };
-
-          const trimResult = createAudioTrimFilters(context);
-          audioFilters.push(...trimResult.filters);
-          
-          // Add delay to position audio at correct timeline position
-          const delayMs = Math.round(segment.startTime * 1000);
-          const delayedRef = `[a${segmentIndex}_delayed]`;
-          
-          if (delayMs > 0) {
-            audioFilters.push(`${trimResult.filterRef}adelay=${delayMs}|${delayMs}${delayedRef}`);
-            console.log(`🎵 Added ${delayMs}ms delay to position audio at ${segment.startTime.toFixed(2)}s`);
-          } else {
-            // No delay needed - use acopy for audio
-            audioFilters.push(`${trimResult.filterRef}acopy${delayedRef}`);
-          }
-          
-          // Trim all audio streams to totalVideoDuration to prevent amix from extending beyond video duration
-          // This fixes the issue where adelay extends stream duration and amix matches the longest stream
-          // We pad first to ensure streams are at least totalVideoDuration, then trim to exact duration
-          const paddedRef = `[a${segmentIndex}_padded]`;
-          const finalRef = `[a${segmentIndex}_final]`;
-          audioFilters.push(`${delayedRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedRef}`);
-          audioFilters.push(`${paddedRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalRef}`);
-          console.log(`🎵 Padded and trimmed audio stream ${segmentIndex} to exact ${totalVideoDuration.toFixed(3)}s to match video duration`);
-          
-          audioSegmentsWithTiming.push({
-            segment,
-            segmentIndex,
-            filterRef: finalRef,
-          });
-        } else {
-          console.warn(
-            `❌ Could not find file index for audio segment ${segmentIndex}`,
-          );
-        }
-      }
-    });
-    
-    // Mix overlapping audio streams using amix
-    if (audioSegmentsWithTiming.length > 0) {
-      console.log(`🎵 Mixing ${audioSegmentsWithTiming.length} audio streams (supports overlapping)`);
-      
-      if (audioSegmentsWithTiming.length === 1) {
-        // Single audio stream - trim to exact totalVideoDuration to match video
-        const inputRef = audioSegmentsWithTiming[0].filterRef;
-        const finalAudioRef = '[audio]';
-        audioFilters.push(
-          `${inputRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalAudioRef}`,
-        );
-        audioConcatInputs.push(finalAudioRef);
-        console.log(`✅ Trimmed single audio stream to exact ${totalVideoDuration.toFixed(3)}s`);
-      } else {
-        // Multiple audio streams - use amix for overlapping support
-        const mixInputs = audioSegmentsWithTiming.map(a => a.filterRef).join('');
-        const mixRef = '[audio_mixed]';
-        
-        // amix filter: inputs=N:duration=longest:dropout_transition=0
-        // - inputs=N: number of input streams
-        // - duration=longest: output duration is the longest input (all streams are padded to totalVideoDuration)
-        // - dropout_transition=0: no fade when streams start/end
-        // NOTE: All streams are padded to totalVideoDuration before mixing, so longest will match video duration
-        audioFilters.push(
-          `${mixInputs}amix=inputs=${audioSegmentsWithTiming.length}:duration=longest:dropout_transition=0:normalize=0${mixRef}`,
-        );
-        
-        // This ensures the audio duration matches the video duration exactly
-        const finalAudioRef = '[audio]';
-        audioFilters.push(
-          `${mixRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalAudioRef}`,
-        );
-        audioConcatInputs.push(finalAudioRef);
-        console.log(`✅ Created audio mix with ${audioSegmentsWithTiming.length} overlapping streams, trimmed to exact ${totalVideoDuration.toFixed(3)}s`);
-      }
-    }
-  } else {
-    console.log('ℹ️ Skipping audio processing - only image inputs detected (no video inputs)');
-  }
+  // Process audio timeline using the extracted audio handling function
+  const audioProcessingResult = processAudioTimeline(
+    audioTimeline,
+    categorizedInputs,
+    hasVideoInputs,
+    totalVideoDuration,
+    createAudioTrimFilters,
+  );
+  audioFilters.push(...audioProcessingResult.audioFilters);
+  audioConcatInputs.push(...audioProcessingResult.audioConcatInputs);
 
   // Set the base video label for further processing
   let currentVideoLabel = finalBaseLabel || currentCompositeLabel;
