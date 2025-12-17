@@ -94,6 +94,13 @@ export interface TransformBoundaryLayerProps extends OverlayRenderProps {
     position?: { x: number; y: number; width: number; height: number },
   ) => void;
   onEditModeChange?: (isEditing: boolean) => void;
+
+  /**
+   * Callback to check if another element should receive this interaction.
+   * Used for proper spatial hit-testing when elements overlap.
+   * Returns the trackId that should receive the click, or null if this element should handle it.
+   */
+  getTopElementAtPoint?: (screenX: number, screenY: number) => string | null;
 }
 
 /**
@@ -160,6 +167,9 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
   onRotationStateChange,
   onDragStateChange,
   onEditModeChange,
+
+  // Spatial hit-testing callback
+  getTopElementAtPoint,
 }) => {
   const renderScale = coordinateSystem.baseScale;
 
@@ -472,6 +482,7 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
           clipHeight={actualHeight}
           boundaryOnly={true} // Only render boundary, not content
           disableAutoSizeUpdates={true}
+          getTopElementAtPoint={getTopElementAtPoint}
         >
           {/* Invisible content for boundary sizing */}
           <div
@@ -529,6 +540,7 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
           clipHeight={actualHeight}
           boundaryOnly={true} // Only render boundary, not content
           disableAutoSizeUpdates={true}
+          getTopElementAtPoint={getTopElementAtPoint}
         >
           {/* Invisible content for boundary sizing */}
           <div

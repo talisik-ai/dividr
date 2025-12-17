@@ -77,6 +77,12 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   onEditStarted?: () => void;
   onRotationStateChange: (isRotating: boolean) => void;
   onDragStateChange: (isDragging: boolean, position?: any) => void;
+  /**
+   * Callback to check if another element should receive this interaction.
+   * Used for proper spatial hit-testing when elements overlap.
+   * Returns the trackId that should receive the click, or null if this element should handle it.
+   */
+  getTopElementAtPoint?: (screenX: number, screenY: number) => string | null;
 }
 
 type InteractionMode = 'select' | 'pan' | 'text-edit';
@@ -124,6 +130,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   onEditStarted,
   onRotationStateChange,
   onDragStateChange,
+  getTopElementAtPoint,
 }) => {
   const renderScale = coordinateSystem.baseScale;
 
@@ -383,6 +390,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
           onImageSelect,
           onRotationStateChange,
           onDragStateChange,
+          getTopElementAtPoint,
         );
       }
 
@@ -409,6 +417,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
           handleEditModeChange,
           pendingEditTextId,
           onEditStarted,
+          getTopElementAtPoint,
         );
       }
 
@@ -437,6 +446,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
       handleEditModeChange,
       pendingEditTextId,
       onEditStarted,
+      getTopElementAtPoint,
     ],
   );
 
@@ -487,6 +497,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         }
         onDragStateChange={onDragStateChange}
         onEditModeChange={handleEditModeChange}
+        getTopElementAtPoint={getTopElementAtPoint}
       >
         {activeSubtitles.map((track) =>
           renderSubtitleContent(
@@ -521,6 +532,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     handleEditModeChange,
     getTextStyleForSubtitle,
     activeStyle,
+    getTopElementAtPoint,
   ]);
 
   return (
@@ -734,6 +746,7 @@ function renderImageTrack(
   onSelect: (id: string) => void,
   onRotationStateChange: (r: boolean) => void,
   onDragStateChange: (d: boolean, p?: any) => void,
+  getTopElementAtPoint?: (screenX: number, screenY: number) => string | null,
 ) {
   const url = track.previewUrl || track.source;
   const w = track.width || baseVideoWidth;
@@ -776,6 +789,7 @@ function renderImageTrack(
         clipContent={true}
         clipWidth={actualWidth}
         clipHeight={actualHeight}
+        getTopElementAtPoint={getTopElementAtPoint}
       >
         <div
           style={{
@@ -826,6 +840,7 @@ function renderTextTrack(
   onEditModeChange: (e: boolean) => void,
   pendingEditTextId?: string | null,
   onEditStarted?: () => void,
+  getTopElementAtPoint?: (screenX: number, screenY: number) => string | null,
 ) {
   const style = getTextStyleForTextClip(track);
   const scale = track.textTransform?.scale || 1;
@@ -897,6 +912,7 @@ function renderTextTrack(
         disableScaleTransform={true}
         autoEnterEditMode={pendingEditTextId === track.id}
         onEditStarted={onEditStarted}
+        getTopElementAtPoint={getTopElementAtPoint}
       >
         <div style={complete}>{track.textContent}</div>
       </TextTransformBoundary>

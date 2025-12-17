@@ -16,7 +16,10 @@ import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 import { DragGuides } from './components/DragGuides';
 import { PreviewPlaceholder } from './components/PreviewPlaceholder';
 import { RotationInfoBadge } from './components/RotationInfoBadge';
-import { SelectionHitTestLayer } from './components/SelectionHitTestLayer';
+import {
+  SelectionHitTestLayer,
+  getTopElementAtPoint as getTopElementAtPointUtil,
+} from './components/SelectionHitTestLayer';
 import { TranscriptionProgressOverlay } from './components/TranscriptionProgressOverlay';
 import {
   useActiveMedia,
@@ -538,6 +541,96 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     ],
   );
 
+  // Handle double-click from hit-test layer (for entering text edit mode)
+  const handleHitTestDoubleClick = useCallback(
+    (trackId: string) => {
+      const track = tracks.find((t) => t.id === trackId);
+      if (!track) return;
+
+      // Ensure the track is selected
+      if (!timeline.selectedTrackIds.includes(trackId)) {
+        setSelectedTracks([trackId]);
+      }
+
+      // For text tracks, enter text edit mode by setting pending edit
+      if (track.type === 'text') {
+        setPreviewInteractionMode('text-edit');
+        setPendingEditTextId(trackId);
+      }
+      // For subtitle tracks, trigger subtitle edit mode
+      // (subtitles use a different editing mechanism)
+    },
+    [
+      tracks,
+      timeline.selectedTrackIds,
+      setSelectedTracks,
+      setPreviewInteractionMode,
+    ],
+  );
+
+  // Handle deselection from hit-test layer (clicking on empty space)
+  const handleHitTestDeselect = useCallback(() => {
+    // Only deselect if there are interactive layers selected
+    const hasInteractiveLayerSelected = timeline.selectedTrackIds.some((id) => {
+      const track = tracks.find((t) => t.id === id);
+      return (
+        track?.type === 'text' ||
+        track?.type === 'image' ||
+        track?.type === 'subtitle' ||
+        track?.type === 'video'
+      );
+    });
+
+    if (hasInteractiveLayerSelected) {
+      setSelectedTracks([]);
+    }
+  }, [timeline.selectedTrackIds, tracks, setSelectedTracks]);
+
+  // Callback for transform boundaries to check if another element should receive a click
+  // This enables proper spatial hit-testing across all element types
+  const getTopElementAtPoint = useCallback(
+    (screenX: number, screenY: number): string | null => {
+      // Convert screen coordinates to preview-relative coordinates
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (!containerRect) return null;
+
+      // Calculate position relative to the preview container center
+      const containerCenterX = containerRect.left + containerRect.width / 2;
+      const containerCenterY = containerRect.top + containerRect.height / 2;
+
+      // Offset from center, adjusted for pan
+      const relativeX =
+        screenX - containerCenterX - preview.panX + actualWidth / 2;
+      const relativeY =
+        screenY - containerCenterY - preview.panY + actualHeight / 2;
+
+      return getTopElementAtPointUtil(
+        relativeX,
+        relativeY,
+        tracks,
+        timeline.currentFrame,
+        actualWidth,
+        actualHeight,
+        baseVideoWidth,
+        baseVideoHeight,
+        coordinateSystem.baseScale,
+        textStyle.globalSubtitlePosition,
+      );
+    },
+    [
+      tracks,
+      timeline.currentFrame,
+      actualWidth,
+      actualHeight,
+      baseVideoWidth,
+      baseVideoHeight,
+      coordinateSystem.baseScale,
+      textStyle.globalSubtitlePosition,
+      preview.panX,
+      preview.panY,
+    ],
+  );
+
   const handleSubtitleTextUpdate = useCallback(
     (trackId: string, newText: string) => {
       updateTrack(trackId, { subtitleText: newText });
@@ -783,13 +876,16 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             />
           )}
 
-          {/* Selection Hit Test Layer - z-index aware click detection for video elements */}
-          {/* Rendered early so it's behind other interactive elements in DOM order */}
+          {/* Selection Hit Test Layer - spatial hit-testing for ALL element types */}
+          {/* CRITICAL: This layer performs spatial hit-testing to prevent higher z-index */}
+          {/* elements from blocking selection of visible, non-overlapping elements below */}
           <SelectionHitTestLayer
             tracks={tracks}
             currentFrame={timeline.currentFrame}
             selectedTrackIds={timeline.selectedTrackIds}
             onSelect={handleUnifiedSelect}
+            onDeselect={handleHitTestDeselect}
+            onDoubleClick={handleHitTestDoubleClick}
             actualWidth={actualWidth}
             actualHeight={actualHeight}
             baseVideoWidth={baseVideoWidth}
@@ -799,6 +895,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             renderScale={coordinateSystem.baseScale}
             interactionMode={preview.interactionMode}
             disabled={isDraggingText || isRotating}
+            globalSubtitlePosition={textStyle.globalSubtitlePosition}
           />
 
           <UnifiedOverlayRenderer
@@ -838,6 +935,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             onEditStarted={handleEditStarted}
             onRotationStateChange={setIsRotating}
             onDragStateChange={handleDragStateChange}
+            getTopElementAtPoint={getTopElementAtPoint}
           />
 
           <TransformBoundaryLayer
@@ -864,6 +962,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             onRotationStateChange={setIsRotating}
             onDragStateChange={handleDragStateChange}
             onEditModeChange={handleEditModeChange}
+            getTopElementAtPoint={getTopElementAtPoint}
           />
 
           {/* Alignment Guides */}

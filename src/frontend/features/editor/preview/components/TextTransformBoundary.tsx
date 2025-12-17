@@ -45,6 +45,12 @@ interface TextTransformBoundaryProps {
   boundaryOnly?: boolean; // Whether to only render the boundary, not the content
   contentOnly?: boolean; // Whether to only render the content, not the boundary
   disableAutoSizeUpdates?: boolean; // Skip auto width/height sync when rendering boundaries only
+  /**
+   * Callback to check if another element should receive this interaction.
+   * Used for proper spatial hit-testing when elements overlap.
+   * Returns the trackId that should receive the click, or null if this element should handle it.
+   */
+  getTopElementAtPoint?: (screenX: number, screenY: number) => string | null;
 }
 
 type HandleType =
@@ -85,6 +91,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   boundaryOnly = false,
   contentOnly = false,
   disableAutoSizeUpdates = false,
+  getTopElementAtPoint,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
   // This ensures consistent positioning across different container sizes
@@ -445,6 +452,21 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         return;
       }
 
+      // CRITICAL: Check if another element should receive this click
+      // This enables proper spatial hit-testing - a higher z-index element
+      // visible at this position should be selected instead
+      if (getTopElementAtPoint) {
+        const topElementId = getTopElementAtPoint(e.clientX, e.clientY);
+        if (topElementId && topElementId !== track.id) {
+          // Another element is above this one at the cursor position
+          // Select that element instead of handling this click
+          e.stopPropagation();
+          e.preventDefault();
+          onSelect(topElementId);
+          return;
+        }
+      }
+
       // Track click time BEFORE any early returns for accurate double-click detection
       const now = Date.now();
       const timeSinceLastClick = now - lastClickTimeRef.current;
@@ -514,6 +536,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       enterEditMode,
       startDraggingTransform,
       boundaryOnly,
+      getTopElementAtPoint,
     ],
   );
 
