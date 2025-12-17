@@ -4,5 +4,6 @@
 
 export * from './CanvasOverlay';
 export * from './DualBufferVideoOverlay';
+export * from './FrameDrivenCompositor';
 export * from './MultiAudioOverlay';
 export * from './UnifiedOverlayRenderer';

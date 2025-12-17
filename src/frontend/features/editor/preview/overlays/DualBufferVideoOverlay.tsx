@@ -833,30 +833,72 @@ export const DualBufferVideo = forwardRef<
         return;
       }
 
-      // VERTICAL MOVE DETECTION:
-      // If track ID changed but source AND source time are the same,
-      // this is likely a vertical move (track reassignment).
-      // In this case, we should NOT reset playback - just update refs.
-      // The video should continue playing from the same position.
+      // =====================================================================
+      // PROFESSIONAL EDITOR BEHAVIOR: Non-destructive editing
+      // =====================================================================
+      // When a segment is moved (vertically OR horizontally), we should NOT
+      // automatically reset playback. This mimics CapCut/Premiere behavior:
+      // - Moving clips is a visual/timeline operation
+      // - Playback state should be preserved
+      // - Only seek when user explicitly plays or scrubs
+      //
+      // Detection: Same source, track ID changed (segment was edited/moved)
+      // Action: Update refs but DON'T seek - let current playback continue
+      // =====================================================================
       if (isNewTrack && !isNewSource && currentNormalized === activeVideoSrc) {
-        const targetTime = calculateVideoTime(activeTrack, currentFrame, fps);
-        const currentTime = activeVideo.currentTime;
-        const diff = Math.abs(currentTime - targetTime);
+        // This is a same-source track change (segment move, cut, trim, etc.)
+        // DON'T automatically seek - this would disrupt the editing experience
 
-        // If we're already at the right time (within 100ms), this is a vertical move
-        // Don't seek, don't reset - just update refs and continue
-        if (diff < 0.1) {
-          logDualBuffer('VERTICAL MOVE detected - continuing playback', {
+        // If video is currently playing, let it continue naturally
+        // The playback sync effect will handle any necessary seeking
+        if (!isPlaying) {
+          // If paused, we're in editing mode
+          // Don't seek automatically - wait for user to play or scrub
+          logDualBuffer('EDIT OPERATION detected (paused) - preserving state', {
             prevTrackId: prevTrackIdRef.current,
             newTrackId: activeTrack.id,
-            currentTime,
-            targetTime,
-            diff,
+            isPlaying,
           });
           prevTrackIdRef.current = activeTrack.id;
           prevSourceRef.current = currentSourceUrl;
           return;
         }
+
+        // If playing, check if we're within tolerance to continue smoothly
+        const targetTime = calculateVideoTime(activeTrack, currentFrame, fps);
+        const currentTime = activeVideo.currentTime;
+        const diff = Math.abs(currentTime - targetTime);
+
+        // Use a generous tolerance during playback (1 second)
+        // This allows smooth playback through edits
+        const playbackTolerance = 1.0;
+
+        if (diff <= playbackTolerance) {
+          logDualBuffer(
+            'EDIT OPERATION detected (playing) - continuing playback',
+            {
+              prevTrackId: prevTrackIdRef.current,
+              newTrackId: activeTrack.id,
+              currentTime,
+              targetTime,
+              diff,
+              tolerance: playbackTolerance,
+            },
+          );
+          prevTrackIdRef.current = activeTrack.id;
+          prevSourceRef.current = currentSourceUrl;
+          return;
+        }
+
+        // Large jump while playing - this is a significant timeline change
+        // Still update refs but let the normal playback sync handle it
+        logDualBuffer(
+          'EDIT OPERATION with large jump - will sync on next frame',
+          {
+            diff,
+            tolerance: playbackTolerance,
+          },
+        );
       }
 
       // TRACK STABILIZATION: Prevent rapid oscillation between tracks
@@ -907,6 +949,7 @@ export const DualBufferVideo = forwardRef<
       // Seeking causes buffering/stutter. Instead:
       // 1. If video is playing and within reasonable range, let it play
       // 2. Only seek for large jumps (e.g., truly rearranged segments)
+      // 3. When paused (editing), be very tolerant - don't seek on every edit
       // =====================================================================
       if (currentNormalized === activeVideoSrc && activeVideoSrc !== '') {
         const currentTime = activeVideo.currentTime;
@@ -914,17 +957,19 @@ export const DualBufferVideo = forwardRef<
         const isVideoPlaying =
           !activeVideo.paused && activeVideo.readyState >= 2;
 
-        // For playing video, use a much larger tolerance (500ms = ~15 frames at 30fps)
-        // This lets the video continue playing smoothly through track changes
-        // Only force a seek if we're really far off (true rearrangement)
-        const playingTolerance = 0.5; // 500ms during playback
-        const pausedTolerance = 1.0 / fps; // 1 frame when paused (for scrubbing)
+        // PROFESSIONAL EDITOR BEHAVIOR:
+        // - During playback: moderate tolerance, let video play naturally
+        // - When paused (editing): very high tolerance, don't disrupt edits
+        // - Only seek on explicit user action (play, scrub)
+        const playingTolerance = 1.0; // 1 second during playback
+        const pausedTolerance = 10.0; // 10 seconds when paused - almost never auto-seek
 
         const tolerance = isVideoPlaying ? playingTolerance : pausedTolerance;
 
         if (diff <= tolerance) {
-          // Video is close enough - let it continue playing naturally
-          logDualBuffer('SAME SOURCE - within tolerance, continuing playback', {
+          // Video is close enough - let it continue naturally
+          // The scrubbing effect will handle explicit seeks when user scrubs
+          logDualBuffer('SAME SOURCE - within tolerance, preserving state', {
             targetTime,
             currentTime,
             diff,
@@ -936,7 +981,9 @@ export const DualBufferVideo = forwardRef<
           return;
         }
 
-        logDualBuffer('SAME SOURCE NEW TRACK - large jump, seeking', {
+        // Only seek for truly large jumps (more than 10 seconds when paused)
+        // This handles cases like jumping to a completely different part of the video
+        logDualBuffer('SAME SOURCE - large jump detected, seeking', {
           targetTime,
           currentTime,
           diff,
@@ -1385,6 +1432,29 @@ export const DualBufferVideo = forwardRef<
       try {
         if (isPlaying) {
           if (activeVideo.paused && activeVideo.readyState >= MIN_READY_STATE) {
+            // PROFESSIONAL EDITOR BEHAVIOR:
+            // When playback starts, ensure we're at the correct position
+            // This handles the case where user edited while paused
+            if (activeTrack) {
+              const targetTime = calculateVideoTime(
+                activeTrack,
+                currentFrame,
+                fps,
+              );
+              const currentTime = activeVideo.currentTime;
+              const diff = Math.abs(currentTime - targetTime);
+
+              // If we're more than 100ms off, seek before playing
+              if (diff > 0.1) {
+                logDualBuffer('Play start: Syncing to correct position', {
+                  currentTime,
+                  targetTime,
+                  diff,
+                });
+                activeVideo.currentTime = targetTime;
+              }
+            }
+
             logDualBuffer('Starting playback', {
               readyState: activeVideo.readyState,
             });
@@ -1412,6 +1482,9 @@ export const DualBufferVideo = forwardRef<
       getPreloadVideo,
       activeSlot,
       enforceAudioState,
+      activeTrack,
+      currentFrame,
+      fps,
     ]);
 
     // =========================================================================

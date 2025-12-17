@@ -1,3 +1,87 @@
+// =============================================================================
+// CLIP METADATA - Pure Data Model for Frame-Driven Playback
+// =============================================================================
+//
+// ClipMetadata represents a clip as PURE DATA with NO playback state.
+// This is the foundation of the frame-driven playback architecture.
+//
+// Key principles:
+// - Clips NEVER own decoders, video elements, or playback state
+// - Clips are immutable during playback
+// - Source frames are calculated deterministically from timeline position
+// - Multiple clips can safely reference the same source
+//
+// The source frame formula:
+//   sourceFrame = timelineFrame - timelineStartFrame + inFrame
+//
+// =============================================================================
+
+/**
+ * ClipMetadata - Stateless representation of a media clip.
+ *
+ * This interface ensures clips contain ONLY metadata:
+ * - No decoder references
+ * - No loading flags
+ * - No playback position
+ * - No render ownership
+ *
+ * Used by FrameResolver for deterministic frame resolution.
+ */
+export interface ClipMetadata {
+  /** Unique clip identifier */
+  clipId: string;
+
+  /** Normalized source identifier (URL pathname) */
+  sourceId: string;
+
+  /** Raw source URL */
+  sourceUrl: string;
+
+  /** In-point in source media (frame number) - where this clip starts in the source */
+  inFrame: number;
+
+  /** Out-point in source media (frame number) - where this clip ends in the source */
+  outFrame: number;
+
+  /** Timeline start frame - where this clip starts on the timeline */
+  timelineStartFrame: number;
+
+  /** Timeline end frame - where this clip ends on the timeline */
+  timelineEndFrame: number;
+
+  /** Track row index for z-ordering (0 = behind, higher = in front) */
+  trackRowIndex: number;
+
+  /** Layer within the track for additional z-ordering */
+  layer: number;
+}
+
+/**
+ * AudioClipMetadata - Stateless representation of an audio clip.
+ */
+export interface AudioClipMetadata extends ClipMetadata {
+  /** Volume level (0-1) */
+  volume: number;
+
+  /** Whether the clip is muted */
+  muted: boolean;
+}
+
+// =============================================================================
+// VIDEO TRACK - Full Track Model
+// =============================================================================
+//
+// VideoTrack is the complete track model stored in state.
+// It contains all metadata for timeline display and manipulation.
+//
+// IMPORTANT: VideoTrack should NOT contain playback state like:
+// - currentPlaybackTime
+// - isBuffering
+// - decoderReference
+//
+// Playback state is managed by the SourceRegistry and compositor.
+// =============================================================================
+
 export interface VideoTrack {
   id: string;
   type: 'video' | 'audio' | 'image' | 'subtitle' | 'text';
