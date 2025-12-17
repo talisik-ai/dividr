@@ -524,6 +524,7 @@ export const FrameDrivenCompositor = forwardRef<
           height: '100%',
           display: 'block',
           backgroundColor: '#000000',
+          pointerEvents: 'none', // Ensure canvas doesn't capture clicks
         }}
         aria-label="Video preview canvas"
       />

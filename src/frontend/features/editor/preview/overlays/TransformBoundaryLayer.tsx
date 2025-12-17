@@ -3,23 +3,17 @@ import React, { useMemo } from 'react';
 import { VideoTrack } from '../../stores/videoEditor';
 import { ImageTransformBoundary } from '../components/ImageTransformBoundary';
 import { SubtitleTransformBoundary } from '../components/SubtitleTransformBoundary';
-import { TextTransformBoundary } from '../components/TextTransformBoundary';
 import { VideoTransformBoundary } from '../components/VideoTransformBoundary';
 import {
   GLOW_BLUR_MULTIPLIER,
   GLOW_SPREAD_MULTIPLIER,
   SUBTITLE_PADDING_HORIZONTAL,
   SUBTITLE_PADDING_VERTICAL,
-  TEXT_CLIP_PADDING_HORIZONTAL,
-  TEXT_CLIP_PADDING_VERTICAL,
   Z_INDEX_SUBTITLE_CONTENT_BASE,
 } from '../core/constants';
 import { OverlayRenderProps } from '../core/types';
 import { scaleTextShadow } from '../utils/scalingUtils';
-import {
-  getTextStyleForTextClip,
-  hasActualBackground,
-} from '../utils/textStyleUtils';
+import { hasActualBackground } from '../utils/textStyleUtils';
 
 /**
  * Z-index for the transform boundary layer
@@ -150,12 +144,17 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
   onImageTransformUpdate,
   onImageSelect,
 
-  // Text props
-  onTextTransformUpdate,
-  onTextSelect,
-  onTextUpdate,
-  pendingEditTextId,
-  onEditStarted,
+  // Text props - unused since text boundaries are rendered in UnifiedOverlayRenderer
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onTextTransformUpdate: _onTextTransformUpdate,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onTextSelect: _onTextSelect,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onTextUpdate: _onTextUpdate,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  pendingEditTextId: _pendingEditTextId,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onEditStarted: _onEditStarted,
 
   // State callbacks
   onRotationStateChange,
@@ -423,7 +422,10 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
       case 'image':
         return renderImageBoundary(track);
       case 'text':
-        return renderTextBoundary(track);
+        // Skip text boundaries in TransformBoundaryLayer - they are handled by
+        // UnifiedOverlayRenderer's TextTransformBoundary which supports inline editing.
+        // Rendering here would block double-click events from reaching the content layer.
+        return null;
       default:
         return null;
     }
@@ -537,94 +539,6 @@ export const TransformBoundaryLayer: React.FC<TransformBoundaryLayerProps> = ({
             }}
           />
         </ImageTransformBoundary>
-      </div>
-    );
-  };
-
-  // Render text track boundary
-  const renderTextBoundary = (track: VideoTrack) => {
-    const appliedStyle = getTextStyleForTextClip(track);
-    const baseFontSize = parseFloat(appliedStyle.fontSize) || 40;
-    const actualFontSize =
-      baseFontSize * renderScale * (track.textTransform?.scale || 1);
-    const effectiveScale = renderScale * (track.textTransform?.scale || 1);
-    const scaledPaddingVertical = TEXT_CLIP_PADDING_VERTICAL * effectiveScale;
-    const scaledPaddingHorizontal =
-      TEXT_CLIP_PADDING_HORIZONTAL * effectiveScale;
-    const scaledTextShadow = scaleTextShadow(
-      appliedStyle.textShadow,
-      effectiveScale,
-    );
-
-    const baseTextStyle: React.CSSProperties = {
-      fontSize: `${actualFontSize}px`,
-      fontFamily: appliedStyle.fontFamily,
-      fontWeight: appliedStyle.fontWeight,
-      fontStyle: appliedStyle.fontStyle,
-      textTransform: appliedStyle.textTransform as any,
-      textDecoration: appliedStyle.textDecoration,
-      textAlign: appliedStyle.textAlign as any,
-      lineHeight: appliedStyle.lineHeight,
-      letterSpacing: appliedStyle.letterSpacing
-        ? `${parseFloat(String(appliedStyle.letterSpacing)) * previewScale}px`
-        : appliedStyle.letterSpacing,
-      whiteSpace: 'pre-line',
-      wordBreak: 'keep-all',
-      overflowWrap: 'normal',
-      padding: `${scaledPaddingVertical}px ${scaledPaddingHorizontal}px`,
-      // Make content invisible - we only need it for sizing
-      visibility: 'hidden',
-    };
-
-    const completeStyle: React.CSSProperties = {
-      ...baseTextStyle,
-      textShadow: scaledTextShadow,
-      color: appliedStyle.color,
-      backgroundColor: appliedStyle.backgroundColor,
-      opacity: appliedStyle.opacity,
-    };
-
-    return (
-      <div
-        key={`text-boundary-${track.id}`}
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          width: actualWidth,
-          height: actualHeight,
-          left: `calc(50% + ${panX}px)`,
-          top: `calc(50% + ${panY}px)`,
-          transform: 'translate(-50%, -50%)',
-          overflow: 'visible',
-        }}
-      >
-        <TextTransformBoundary
-          track={track}
-          isSelected={true}
-          previewScale={previewScale}
-          videoWidth={baseVideoWidth}
-          videoHeight={baseVideoHeight}
-          renderScale={renderScale}
-          isTextEditMode={isTextEditMode}
-          interactionMode={interactionMode}
-          onTransformUpdate={onTextTransformUpdate}
-          onSelect={onTextSelect}
-          onTextUpdate={onTextUpdate}
-          onRotationStateChange={onRotationStateChange}
-          onDragStateChange={onDragStateChange}
-          onEditModeChange={onEditModeChange}
-          appliedStyle={completeStyle}
-          clipContent={true}
-          clipWidth={actualWidth}
-          clipHeight={actualHeight}
-          disableScaleTransform={true}
-          autoEnterEditMode={pendingEditTextId === track.id}
-          onEditStarted={onEditStarted}
-          boundaryOnly={true} // Only render boundary, not content
-          disableAutoSizeUpdates={true}
-        >
-          {/* Invisible content for boundary sizing */}
-          <div style={completeStyle}>{track.textContent}</div>
-        </TextTransformBoundary>
       </div>
     );
   };

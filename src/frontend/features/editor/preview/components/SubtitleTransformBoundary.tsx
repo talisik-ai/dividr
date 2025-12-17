@@ -236,22 +236,13 @@ export const SubtitleTransformBoundary: React.FC<
       // Don't prevent default - let double-click through
       e.stopPropagation();
 
-      if (!isSelected) {
-        onSelect(track.id);
-        return;
-      }
-
-      // Don't start drag if in edit mode
-      if (isEditing) {
-        return;
-      }
-
-      // Check if this is a double-click (second click within 300ms)
+      // Track click time BEFORE any early returns for accurate double-click detection
       const now = Date.now();
       const timeSinceLastClick = now - lastClickTimeRef.current;
       lastClickTimeRef.current = now;
 
-      // If this is a potential double-click, don't start dragging
+      // Check if this is a double-click (second click within 300ms)
+      // This works even across selection changes
       if (timeSinceLastClick < 300) {
         // This is a double-click, cancel any pending drag
         if (dragDelayTimeoutRef.current) {
@@ -262,8 +253,23 @@ export const SubtitleTransformBoundary: React.FC<
         setIsDragging(false);
         setDragStart(null);
 
+        // If not selected, select first then enter edit mode
+        if (!isSelected) {
+          onSelect(track.id);
+        }
+
         // Enter edit mode directly since we detected double-click
-        enterEditMode();
+        enterEditMode(true); // Select all text for immediate editing
+        return;
+      }
+
+      if (!isSelected) {
+        onSelect(track.id);
+        return;
+      }
+
+      // Don't start drag if in edit mode
+      if (isEditing) {
         return;
       }
 
@@ -292,6 +298,7 @@ export const SubtitleTransformBoundary: React.FC<
       isEditing,
       startDraggingTransform,
       interactionMode,
+      enterEditMode,
     ],
   );
 
@@ -325,8 +332,6 @@ export const SubtitleTransformBoundary: React.FC<
   // Handle double-click for inline editing (works in both Text Tool and Selection Tool modes)
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
-      if (!isSelected) return;
-
       e.stopPropagation();
       e.preventDefault();
 
@@ -339,10 +344,21 @@ export const SubtitleTransformBoundary: React.FC<
       setIsDragging(false);
       setDragStart(null);
 
+      // If not selected, select first then enter edit mode
+      if (!isSelected) {
+        onSelect(track.id);
+        // Enter edit mode after a brief delay to allow selection to process
+        setTimeout(() => {
+          enterEditMode(true); // Select all text for immediate editing
+        }, 50);
+        return;
+      }
+
       // Always enter edit mode on double-click, regardless of mode
-      enterEditMode();
+      // Select all text for immediate typing/replacement
+      enterEditMode(true);
     },
-    [isSelected, enterEditMode],
+    [isSelected, track.id, onSelect, enterEditMode],
   );
 
   // Handle mouse move for dragging

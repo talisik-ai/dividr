@@ -438,9 +438,52 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
   const handleTextUpdate = useCallback(
     (trackId: string, newText: string) => {
+      const trimmedText = newText.trim();
+
+      // Default placeholder texts that indicate no real content was entered
+      const placeholderTexts = ['New Text', 'Body Text', 'Heading Text'];
+
+      const isPlaceholder = placeholderTexts.includes(trimmedText);
+      const isEmpty = !trimmedText;
+
+      // Find the track to check its original content
+      const track = tracks.find((t) => t.id === trackId);
+
+      // If the text is empty or still a placeholder, handle specially
+      if (isEmpty || isPlaceholder) {
+        // If this is a pending empty text (newly created via text tool), remove it
+        if (pendingEmptyTextId === trackId) {
+          removeTrack(trackId);
+          setPendingEmptyTextId(null);
+          setPendingEditTextId(null);
+          return;
+        }
+
+        // If the track's original content was also a placeholder (meaning user never
+        // entered real content), remove the track
+        if (
+          track &&
+          placeholderTexts.includes(track.textContent?.trim() || '')
+        ) {
+          removeTrack(trackId);
+          return;
+        }
+
+        // For existing tracks with real content, don't save empty/placeholder
+        // Keep the original content
+        return;
+      }
+
+      // Valid text - update the track
       updateTrack(trackId, { textContent: newText });
+
+      // Clear pending state if this was a pending track that now has content
+      if (pendingEmptyTextId === trackId) {
+        setPendingEmptyTextId(null);
+        setPendingEditTextId(null);
+      }
     },
-    [updateTrack],
+    [updateTrack, pendingEmptyTextId, removeTrack, tracks],
   );
 
   const handleSubtitleTransformUpdate = useCallback(
@@ -544,10 +587,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           const clickYRelativeToContent =
             clickY - rect.height / 2 - preview.panY;
 
-          const normalizedX =
-            clickXRelativeToContent / (actualWidth / 2) / preview.previewScale;
-          const normalizedY =
-            clickYRelativeToContent / (actualHeight / 2) / preview.previewScale;
+          // Convert screen position to normalized coordinates (-1 to 1)
+          // actualWidth = videoWidth * baseScale, so dividing by (actualWidth/2) gives normalized
+          const normalizedX = clickXRelativeToContent / (actualWidth / 2);
+          const normalizedY = clickYRelativeToContent / (actualHeight / 2);
 
           const trackId = await addTextClip('body', timeline.currentFrame);
 
@@ -740,6 +783,24 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             />
           )}
 
+          {/* Selection Hit Test Layer - z-index aware click detection for video elements */}
+          {/* Rendered early so it's behind other interactive elements in DOM order */}
+          <SelectionHitTestLayer
+            tracks={tracks}
+            currentFrame={timeline.currentFrame}
+            selectedTrackIds={timeline.selectedTrackIds}
+            onSelect={handleUnifiedSelect}
+            actualWidth={actualWidth}
+            actualHeight={actualHeight}
+            baseVideoWidth={baseVideoWidth}
+            baseVideoHeight={baseVideoHeight}
+            panX={preview.panX}
+            panY={preview.panY}
+            renderScale={coordinateSystem.baseScale}
+            interactionMode={preview.interactionMode}
+            disabled={isDraggingText || isRotating}
+          />
+
           <UnifiedOverlayRenderer
             {...overlayProps}
             videoRef={videoRef}
@@ -803,23 +864,6 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
             onRotationStateChange={setIsRotating}
             onDragStateChange={handleDragStateChange}
             onEditModeChange={handleEditModeChange}
-          />
-
-          {/* Selection Hit Test Layer - z-index aware click detection */}
-          <SelectionHitTestLayer
-            tracks={tracks}
-            currentFrame={timeline.currentFrame}
-            selectedTrackIds={timeline.selectedTrackIds}
-            onSelect={handleUnifiedSelect}
-            actualWidth={actualWidth}
-            actualHeight={actualHeight}
-            baseVideoWidth={baseVideoWidth}
-            baseVideoHeight={baseVideoHeight}
-            panX={preview.panX}
-            panY={preview.panY}
-            renderScale={coordinateSystem.baseScale}
-            interactionMode={preview.interactionMode}
-            disabled={isDraggingText || isRotating}
           />
 
           {/* Alignment Guides */}

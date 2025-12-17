@@ -432,24 +432,38 @@ export const createTracksSlice: StateCreator<
       );
       const duration = trackData.endFrame - trackData.startFrame;
 
-      // For consecutive clip placement, find where the last clip of this type ends
-      // If startFrame is 0 (default), place after the last clip of this type
-      const consecutiveStart =
-        trackData.startFrame === 0
-          ? findLastEndFrameForType(state.tracks, trackData.type)
-          : trackData.startFrame;
-
-      const startFrame = findNearestAvailablePosition(
-        consecutiveStart,
-        duration,
-        existingTracks,
-      );
-
       // Determine if this is an extensible track type (text, subtitle, image)
       const isExtensibleTrack =
         trackData.type === 'text' ||
         trackData.type === 'subtitle' ||
         trackData.type === 'image';
+
+      // For text/subtitle clips: ALWAYS use the exact startFrame provided (playhead position)
+      // and always create on a new row. No overlap detection needed.
+      // For other types: use consecutive placement logic
+      let startFrame: number;
+      if (isExtensibleTrack && trackData.startFrame > 0) {
+        // Extensible tracks with explicit position: use exact startFrame
+        startFrame = trackData.startFrame;
+      } else if (trackData.startFrame === 0) {
+        // Default position (0): place after the last clip of this type
+        const consecutiveStart = findLastEndFrameForType(
+          state.tracks,
+          trackData.type,
+        );
+        startFrame = findNearestAvailablePosition(
+          consecutiveStart,
+          duration,
+          existingTracks,
+        );
+      } else {
+        // Explicit position for non-extensible tracks: find nearest available
+        startFrame = findNearestAvailablePosition(
+          trackData.startFrame,
+          duration,
+          existingTracks,
+        );
+      }
 
       // Set initial transform for image tracks using original dimensions
       // Images maintain their intrinsic size - no automatic fit-to-canvas
@@ -483,6 +497,7 @@ export const createTracksSlice: StateCreator<
 
       // Assign trackRowIndex - new tracks go to the TOP (highest row index)
       // If explicitly provided, use that; otherwise calculate the next available (highest + 1)
+      // For text/subtitle: always get a new row to avoid overlapping with existing content
       const rowIndex =
         trackData.trackRowIndex ??
         getNextAvailableRowIndex(state.tracks, trackData.type);

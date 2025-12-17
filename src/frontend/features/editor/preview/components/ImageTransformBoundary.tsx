@@ -679,7 +679,7 @@ export const ImageTransformBoundary: React.FC<ImageTransformBoundaryProps> = ({
       {/* Image Content Container - with optional clipping wrapper */}
       {shouldRenderContent && clipContent && clipWidth && clipHeight ? (
         <div
-          className="absolute pointer-events-none"
+          className="absolute"
           style={{
             left: '50%',
             top: '50%',

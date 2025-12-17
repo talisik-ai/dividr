@@ -232,14 +232,16 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   // Helper to enter edit mode
   const enterEditMode = useCallback(
     (selectAllText = false) => {
+      // boundaryOnly instances cannot enter edit mode - they don't render content
+      if (boundaryOnly) return;
+
       setIsEditing(true);
-      // Notify parent that we're entering edit mode
       onEditModeChange?.(true);
+
       // Focus the editable div after a short delay to ensure it's rendered
       setTimeout(() => {
         if (editableRef.current) {
           editableRef.current.focus();
-          // Only select all text if explicitly requested (e.g., from Text Tool mode single-click)
           if (selectAllText) {
             const range = document.createRange();
             range.selectNodeContents(editableRef.current);
@@ -247,11 +249,10 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
             selection?.removeAllRanges();
             selection?.addRange(range);
           }
-          // Otherwise, let the browser's natural selection happen (word selection on double-click)
         }
-      }, 10); // Reduced delay for snappier response
+      }, 10);
     },
-    [onEditModeChange],
+    [onEditModeChange, boundaryOnly],
   );
 
   // Auto-enter edit mode when requested (for newly created text)
@@ -282,13 +283,17 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setIsDragging(false);
       setDragStart(null);
 
+      // If not selected, select first then enter edit mode
       if (!isSelected) {
         onSelect(track.id);
+        setTimeout(() => {
+          enterEditMode(true);
+        }, 50);
         return;
       }
 
-      // Always enter edit mode on double-click, regardless of mode
-      enterEditMode();
+      // Enter edit mode on double-click, select all text for immediate typing
+      enterEditMode(true);
     },
     [isSelected, track.id, onSelect, enterEditMode],
   );
@@ -323,28 +328,30 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   // Handle blur to exit edit mode
   const handleBlur = useCallback(() => {
     if (editableRef.current && onTextUpdate) {
-      const newText = editableRef.current.innerText;
+      const newText = editableRef.current.innerText.trim();
       onTextUpdate(track.id, newText);
     }
     setIsEditing(false);
-    // Notify parent that we're exiting edit mode
     onEditModeChange?.(false);
   }, [track.id, onTextUpdate, onEditModeChange]);
 
-  // Handle Enter key to save and exit edit mode
+  // Handle Enter key to save and exit edit mode, ESC to cancel
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         editableRef.current?.blur();
       } else if (e.key === 'Escape') {
+        // Escape: cancel and revert to original text
         e.preventDefault();
+        if (editableRef.current && track.textContent) {
+          editableRef.current.innerText = track.textContent;
+        }
         setIsEditing(false);
-        // Notify parent that we're exiting edit mode
         onEditModeChange?.(false);
       }
     },
-    [onEditModeChange],
+    [onEditModeChange, track.textContent],
   );
 
   // Track content size changes to update boundary dimensions
@@ -438,7 +445,35 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         return;
       }
 
-      // Don't prevent default - let double-click through
+      // Track click time BEFORE any early returns for accurate double-click detection
+      const now = Date.now();
+      const timeSinceLastClick = now - lastClickTimeRef.current;
+      lastClickTimeRef.current = now;
+
+      // Check if this is a double-click (second click within 300ms)
+      if (timeSinceLastClick < 300) {
+        // Cancel any pending drag
+        if (dragDelayTimeoutRef.current) {
+          clearTimeout(dragDelayTimeoutRef.current);
+          dragDelayTimeoutRef.current = null;
+        }
+        setIsPendingDrag(false);
+        setIsDragging(false);
+        setDragStart(null);
+
+        if (!isSelected) {
+          onSelect(track.id);
+        }
+
+        // Skip edit mode if boundaryOnly - let the content layer handle it
+        if (boundaryOnly) return;
+
+        e.stopPropagation();
+        enterEditMode(true);
+        return;
+      }
+
+      // For single clicks, stop propagation
       e.stopPropagation();
 
       if (!isSelected) {
@@ -449,27 +484,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       // Don't start drag if clicking on a handle or in edit mode
       const target = e.target as HTMLElement;
       if (target.classList.contains('transform-handle') || isEditing) {
-        return;
-      }
-
-      // Check if this is a double-click (second click within 300ms)
-      const now = Date.now();
-      const timeSinceLastClick = now - lastClickTimeRef.current;
-      lastClickTimeRef.current = now;
-
-      // If this is a potential double-click, don't start dragging
-      if (timeSinceLastClick < 300) {
-        // This is a double-click, cancel any pending drag
-        if (dragDelayTimeoutRef.current) {
-          clearTimeout(dragDelayTimeoutRef.current);
-          dragDelayTimeoutRef.current = null;
-        }
-        setIsPendingDrag(false);
-        setIsDragging(false);
-        setDragStart(null);
-
-        // Enter edit mode directly since we detected double-click
-        enterEditMode();
         return;
       }
 
@@ -490,7 +504,17 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         setIsPendingDrag(false);
       }, 200);
     },
-    [isSelected, track.id, transform, onSelect, isEditing, interactionMode],
+    [
+      isSelected,
+      track.id,
+      transform,
+      onSelect,
+      isEditing,
+      interactionMode,
+      enterEditMode,
+      startDraggingTransform,
+      boundaryOnly,
+    ],
   );
 
   // Handle mouse down on scale handles
@@ -910,9 +934,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
               outline: 'none',
               minWidth: '20px',
               minHeight: '20px',
-              // Preserve all existing text styles during editing
               ...appliedStyle,
-              // Override specific properties for editing
               cursor: 'text',
               userSelect: 'text',
               WebkitUserSelect: 'text',
@@ -980,6 +1002,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
               cursor: getCursorStyle(), // Show appropriate cursor
             }}
             onMouseDown={handleMouseDown}
+            onDoubleClick={boundaryOnly ? undefined : handleDoubleClick}
           >
             {/* Corner Handles */}
             {['tl', 'tr', 'bl', 'br'].map((handle) => {

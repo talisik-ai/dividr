@@ -750,7 +750,7 @@ function renderImageTrack(
   return (
     <div
       key={`img-${track.id}`}
-      className="absolute inset-0 pointer-events-none"
+      className="absolute inset-0"
       style={{
         width: actualWidth,
         height: actualHeight,
@@ -864,7 +864,7 @@ function renderTextTrack(
   return (
     <div
       key={`txt-${track.id}`}
-      className="absolute inset-0 pointer-events-none"
+      className="absolute inset-0"
       style={{
         width: actualWidth,
         height: actualHeight,
