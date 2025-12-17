@@ -445,7 +445,7 @@ export const FrameDrivenCompositor = forwardRef<
       }
     }, [isPlaying, currentFrame, compositeFrame]);
 
-    // Handle scrubbing
+    // Handle scrubbing (frame changes while paused)
     useEffect(() => {
       if (isPlaying) return;
 
@@ -459,6 +459,21 @@ export const FrameDrivenCompositor = forwardRef<
         onFrameRendered?.(currentFrame);
       }
     }, [isPlaying, currentFrame, compositeFrame, onFrameRendered]);
+
+    // Re-render when tracks change while paused (for transform updates)
+    const prevTracksRef = useRef(tracks);
+    useEffect(() => {
+      if (isPlaying) {
+        prevTracksRef.current = tracks;
+        return;
+      }
+
+      // Check if tracks actually changed (not just reference)
+      if (prevTracksRef.current !== tracks) {
+        prevTracksRef.current = tracks;
+        compositeFrame(currentFrame, false);
+      }
+    }, [tracks, isPlaying, currentFrame, compositeFrame]);
 
     // Playback render loop
     useEffect(() => {
