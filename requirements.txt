@@ -22,3 +22,7 @@ requests>=2.31.0
 # - tokenizers>=0.13
 # - onnxruntime>=1.14 (for some model formats)
 
+numpy>=1.26.0
+noisereduce>=2.0.0
+soundfile>=0.12.0
+pyinstaller>=6.0.0

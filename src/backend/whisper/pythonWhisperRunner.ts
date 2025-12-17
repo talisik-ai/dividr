@@ -187,7 +187,7 @@ export const initializePythonWhisper = async (): Promise<void> => {
     if (app.isPackaged) {
       const resourcesPath = process.resourcesPath;
       const possiblePaths = [
-        path.join(resourcesPath, 'backend', 'scripts', 'transcribe.py'),
+        path.join(resourcesPath, 'backend', 'python', 'scripts', 'transcribe.py'),
         path.join(resourcesPath, 'scripts', 'transcribe.py'),
       ];
 
@@ -208,6 +208,7 @@ export const initializePythonWhisper = async (): Promise<void> => {
         process.cwd(),
         'src',
         'backend',
+        'python',
         'scripts',
         'transcribe.py',
       );

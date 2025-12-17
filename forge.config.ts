@@ -16,7 +16,7 @@ const config: ForgeConfig = {
     executableName: 'DiviDr',
     extraResource: [
       './src/frontend/assets/logo',
-      './src/backend/scripts',
+      './src/backend/python/scripts',
       './transcribe-bin',
     ],
     ignore: [

@@ -2151,6 +2151,16 @@ ipcMain.handle('whisper:cancel', async () => {
 ipcMain.handle('whisper:status', async () => {
   console.log('📊 MAIN PROCESS: whisper:status handler called');
 
+  // Try to initialize if not already initialized (but don't fail if it doesn't work)
+  if (!getPythonWhisperStatus().available) {
+    try {
+      await ensurePythonInitialized('ipc:whisper:status');
+    } catch (error) {
+      console.log('⚠️ Python initialization failed during status check:', error);
+      // Continue to return status even if initialization failed
+    }
+  }
+
   const status = getPythonWhisperStatus();
   console.log('   Status:', status);
 
