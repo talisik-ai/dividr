@@ -32,13 +32,18 @@ const resolveSubtitleRowIndex = (
     return providedRowIndex;
   }
 
-  const existingSubtitle = tracks.find((t) => t.type === 'subtitle');
-  if (existingSubtitle?.trackRowIndex !== undefined) {
-    return existingSubtitle.trackRowIndex;
-  }
+  // Always place at the absolute top of ALL non-audio rows (CapCut-style)
+  // This mirrors how new overlay tracks are placed at the highest visual row
+  const safeTracks = Array.isArray(tracks) ? tracks : [];
+  const nonAudioIndices = safeTracks
+    .filter((t) => t && t.type !== 'audio')
+    .map((t) => t.trackRowIndex ?? 0);
 
-  // Default to overlay positioning above video (minimum index 1)
-  return Math.max(1, getNextAvailableRowIndex(tracks, 'subtitle'));
+  const topMostIndex =
+    nonAudioIndices.length > 0 ? Math.max(...nonAudioIndices) + 1 : 1;
+
+  // Keep subtitles above the base video row (row 0)
+  return Math.max(1, Math.ceil(topMostIndex));
 };
 
 /**

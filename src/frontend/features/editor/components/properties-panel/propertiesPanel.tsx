@@ -1,8 +1,10 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useMemo } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditor/index';
+import { ImageProperties } from './image/imageProperties';
 import { SubtitleProperties } from './subtitles/subtitleProperties';
 import { TextProperties } from './text/textProperties';
+import { VideoProperties } from './video/videoProperties';
 
 interface PropertiesPanelProps {
   className?: string;
@@ -34,13 +36,28 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
     [selectedTracks],
   );
 
+  const hasVideoSelection = useMemo(
+    () => selectedTracks.some((track) => track.type === 'video'),
+    [selectedTracks],
+  );
+
+  const hasImageSelection = useMemo(
+    () => selectedTracks.some((track) => track.type === 'image'),
+    [selectedTracks],
+  );
+
   // Early return if no tracks are selected
   if (selectedTracks.length === 0) {
     return null;
   }
 
   // Early return if none of the selected tracks have implemented properties
-  if (!hasSubtitleSelection && !hasTextSelection) {
+  if (
+    !hasSubtitleSelection &&
+    !hasTextSelection &&
+    !hasVideoSelection &&
+    !hasImageSelection
+  ) {
     return null;
   }
 
@@ -60,10 +77,19 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
         <SubtitleProperties selectedTrackIds={selectedTrackIds} />
       )}
 
+      {hasVideoSelection && !hasTextSelection && !hasSubtitleSelection && (
+        <VideoProperties selectedTrackIds={selectedTrackIds} />
+      )}
+
+      {hasImageSelection &&
+        !hasTextSelection &&
+        !hasSubtitleSelection &&
+        !hasVideoSelection && (
+          <ImageProperties selectedTrackIds={selectedTrackIds} />
+        )}
+
       {/* Future: Add more track type properties here */}
-      {/* Example: hasVideoSelection && <VideoProperties ... /> */}
       {/* Example: hasAudioSelection && <AudioProperties ... /> */}
-      {/* Example: hasImageSelection && <ImageProperties ... /> */}
     </div>
   );
 };

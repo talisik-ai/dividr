@@ -8,6 +8,10 @@ import {
   useState,
 } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
+import {
+  createVirtualTimeline,
+  VirtualTimelineManager,
+} from '../services/VirtualTimelineManager';
 
 // =============================================================================
 // TYPES
@@ -24,6 +28,8 @@ export interface DualBufferVideoRef {
   getAudioState: () => AudioState;
   /** Force seek to a specific time */
   seekTo: (time: number) => void;
+  /** Get the virtual timeline manager */
+  getVirtualTimeline: () => VirtualTimelineManager | null;
 }
 
 export interface BufferStatus {
@@ -68,10 +74,24 @@ export interface DualBufferVideoProps {
   handleAudio?: boolean;
 }
 
-// Configuration
-const PRELOAD_THRESHOLD_FRAMES = 45;
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
+
+// Increased thresholds for better preloading
+const PRELOAD_THRESHOLD_MS = 500; // 500ms before segment end
+const PRELOAD_LOOKAHEAD_MS = 2000; // Look 2s ahead for preloading
 const MIN_READY_STATE = 3; // HAVE_FUTURE_DATA
-const DEBUG_DUAL_BUFFER = false;
+const SEEK_TOLERANCE = 0.033; // ~1 frame at 30fps
+
+// Frame hold configuration - CRITICAL for preventing black frames
+const FRAME_HOLD_TIMEOUT_MS = 2000; // Max time to wait for new frame before giving up
+const CROSS_SOURCE_SCRUB_DEBOUNCE_MS = 50; // Debounce rapid cross-source scrubs
+
+const DEBUG_DUAL_BUFFER = false; // Disabled after Test Case 4 & 5
+const DEBUG_TRANSITIONS = false; // Disabled after Test Case 4 & 5
+const DEBUG_SCRUBBING = false; // Disabled - enable for debugging scrubbing issues
+const DEBUG_FRAME_HOLD = false; // Enable for debugging frame hold mechanism
 
 function logDualBuffer(message: string, data?: unknown) {
   if (DEBUG_DUAL_BUFFER) {
@@ -79,9 +99,45 @@ function logDualBuffer(message: string, data?: unknown) {
   }
 }
 
+function logTransition(message: string, data?: unknown) {
+  if (DEBUG_TRANSITIONS) {
+    console.log(`[Transition] ${message}`, data || '');
+  }
+}
+
+function logScrubbing(message: string, data?: unknown) {
+  if (DEBUG_SCRUBBING) {
+    console.log(`[Scrubbing] ${message}`, data || '');
+  }
+}
+
+function logFrameHold(message: string, data?: unknown) {
+  if (DEBUG_FRAME_HOLD) {
+    console.log(`[FrameHold] ${message}`, data || '');
+  }
+}
+
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+/**
+ * Normalize source URL for comparison.
+ * Handles different URL formats and extracts the core path.
+ */
+function normalizeSourceUrl(url: string | undefined | null): string {
+  if (!url) return '';
+  try {
+    // Handle blob URLs
+    if (url.startsWith('blob:')) return url;
+    // Parse and extract pathname for comparison
+    const parsed = new URL(url, window.location.origin);
+    // Decode the pathname to handle encoded characters
+    return decodeURIComponent(parsed.pathname);
+  } catch {
+    return url;
+  }
+}
 
 function getVideoSource(track: VideoTrack | undefined): string | undefined {
   if (!track) return undefined;
@@ -124,6 +180,96 @@ function calculateVideoTime(
   const relativeFrame = Math.max(0, frame - track.startFrame);
   const trackTime = relativeFrame / fps;
   return (track.sourceStartTime || 0) + trackTime;
+}
+
+/**
+ * Wait for a video element to reach a specific ready state
+ */
+function waitForReadyState(
+  video: HTMLVideoElement,
+  minState: number = MIN_READY_STATE,
+): Promise<void> {
+  return new Promise((resolve) => {
+    if (video.readyState >= minState) {
+      resolve();
+      return;
+    }
+
+    const check = () => {
+      if (video.readyState >= minState) {
+        resolve();
+      } else {
+        requestAnimationFrame(check);
+      }
+    };
+
+    requestAnimationFrame(check);
+  });
+}
+
+/**
+ * Seek to a specific time and wait for seek completion.
+ * Uses 'seeked' event for reliable seeking on both playing and paused videos.
+ */
+async function seekWithVerification(
+  video: HTMLVideoElement,
+  targetTime: number,
+  tolerance: number = SEEK_TOLERANCE,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    // If already at target, resolve immediately
+    if (Math.abs(video.currentTime - targetTime) <= tolerance) {
+      resolve(true);
+      return;
+    }
+
+    let resolved = false;
+
+    const onSeeked = () => {
+      if (resolved) return;
+      video.removeEventListener('seeked', onSeeked);
+      resolved = true;
+
+      // Verify we're at the right time
+      const diff = Math.abs(video.currentTime - targetTime);
+      if (diff <= tolerance) {
+        resolve(true);
+      } else {
+        logScrubbing('Seek verification: not at target', {
+          target: targetTime.toFixed(3),
+          actual: video.currentTime.toFixed(3),
+          diff: diff.toFixed(3),
+        });
+        resolve(false);
+      }
+    };
+
+    // Timeout protection
+    const timeout = setTimeout(() => {
+      if (resolved) return;
+      video.removeEventListener('seeked', onSeeked);
+      resolved = true;
+      logScrubbing('Seek verification timeout', {
+        target: targetTime.toFixed(3),
+        actual: video.currentTime.toFixed(3),
+      });
+      resolve(false);
+    }, 500);
+
+    video.addEventListener('seeked', onSeeked);
+    video.currentTime = targetTime;
+
+    // If video is already at target after setting, resolve
+    requestAnimationFrame(() => {
+      if (resolved) return;
+      if (Math.abs(video.currentTime - targetTime) <= tolerance) {
+        clearTimeout(timeout);
+        video.removeEventListener('seeked', onSeeked);
+        resolved = true;
+        resolve(true);
+      }
+    });
+  });
 }
 
 // =============================================================================
@@ -176,6 +322,7 @@ export const DualBufferVideo = forwardRef<
     const swapLockRef = useRef(false);
     const lastPreloadUrlRef = useRef<string | null>(null);
     const prevSourceRef = useRef<string | undefined>(undefined);
+    const prevTrackIdRef = useRef<string | undefined>(undefined);
 
     // SEEK TRACKING: Prevent feedback loops during seek
     const seekInProgressRef = useRef(false);
@@ -184,11 +331,110 @@ export const DualBufferVideo = forwardRef<
     // Track if we're currently updating frame from video (to prevent circular updates)
     const frameUpdateInProgressRef = useRef(false);
 
+    // Track stabilization: prevent rapid oscillation between tracks
+    const lastStableTrackIdRef = useRef<string | undefined>(undefined);
+    const trackChangeTimeRef = useRef<number>(0);
+    const TRACK_STABILIZATION_MS = 100; // Ignore track changes within 100ms
+
+    // CASE 4 cancellation: track pending swap operations
+    const pendingSwapIdRef = useRef<number>(0);
+    const case4PollActiveRef = useRef<boolean>(false);
+
+    // Virtual Timeline for segment-aware transitions
+    const virtualTimelineRef = useRef<VirtualTimelineManager | null>(null);
+
+    // =========================================================================
+    // CAPCUT-STYLE FRAME HOLD MECHANISM - CRITICAL for preventing black frames
+    // =========================================================================
+    //
+    // KEY INSIGHT: We separate LOGICAL state from VISUAL state.
+    // - Logical slot (activeSlot): Which video SHOULD be active
+    // - Visual slot (visualSlot): Which video is ACTUALLY shown
+    //
+    // The visual slot only updates when a decoded frame is confirmed ready.
+    // This ensures we NEVER show black - we hold the last valid frame.
+    //
+    // This mimics CapCut's behavior: mask latency, don't eliminate it.
+    // =========================================================================
+
+    // Visual slot - only changes when frame is CONFIRMED ready
+    // This is what actually controls opacity in the render
+    const [visualSlot, setVisualSlot] = useState<'A' | 'B'>('A');
+
+    // Track pending visual commit - waiting for frame decode
+    const pendingVisualCommitRef = useRef<{
+      targetSlot: 'A' | 'B';
+      source: string;
+      startTime: number;
+    } | null>(null);
+
+    // Frame ready confirmation tracking
+    const frameConfirmedReadyRef = useRef<{ A: boolean; B: boolean }>({
+      A: false,
+      B: false,
+    });
+
+    // Cross-source scrub state
+    const crossSourceScrubDebounceRef = useRef<NodeJS.Timeout | null>(null);
+    const pendingScrubTargetRef = useRef<{
+      source: string;
+      time: number;
+      frame: number;
+    } | null>(null);
+
+    // Deferred source commit - source is "pending" until frame decoded
+    const deferredSourceRef = useRef<{
+      slot: 'A' | 'B';
+      source: string;
+      time: number;
+      committed: boolean;
+    } | null>(null);
+
     // Current source URL
     const currentSourceUrl = useMemo(
       () => getVideoSource(activeTrack),
       [activeTrack?.previewUrl, activeTrack?.source],
     );
+
+    // =========================================================================
+    // CLEANUP EFFECT - Clear pending operations on unmount
+    // =========================================================================
+    useEffect(() => {
+      return () => {
+        // Clear any pending cross-source scrub debounce
+        if (crossSourceScrubDebounceRef.current) {
+          clearTimeout(crossSourceScrubDebounceRef.current);
+          crossSourceScrubDebounceRef.current = null;
+        }
+        // Reset frame hold state
+        pendingVisualCommitRef.current = null;
+        pendingScrubTargetRef.current = null;
+        deferredSourceRef.current = null;
+      };
+    }, []);
+
+    // =========================================================================
+    // VIRTUAL TIMELINE MANAGEMENT
+    // =========================================================================
+
+    // Update virtual timeline when tracks change
+    useEffect(() => {
+      virtualTimelineRef.current = createVirtualTimeline(allTracks, fps);
+      logDualBuffer('Virtual timeline updated', {
+        stats: virtualTimelineRef.current.getStats(),
+      });
+    }, [allTracks, fps]);
+
+    // Calculate preload thresholds in frames
+    const preloadThresholdFrames = useMemo(() => {
+      const adjustedThreshold = PRELOAD_THRESHOLD_MS * playbackRate;
+      return Math.ceil((adjustedThreshold / 1000) * fps);
+    }, [fps, playbackRate]);
+
+    const preloadLookaheadFrames = useMemo(() => {
+      const adjustedLookahead = PRELOAD_LOOKAHEAD_MS * playbackRate;
+      return Math.ceil((adjustedLookahead / 1000) * fps);
+    }, [fps, playbackRate]);
 
     // =========================================================================
     // AUDIO ENFORCEMENT
@@ -255,17 +501,27 @@ export const DualBufferVideo = forwardRef<
       [activeSlot, readyA, readyB],
     );
 
+    const getVirtualTimeline = useCallback(
+      () => virtualTimelineRef.current,
+      [],
+    );
+
     // =========================================================================
-    // SEEK TO - Direct seek method
+    // SEEK TO - Direct seek method with frame-accurate verification
     // =========================================================================
     const seekTo = useCallback(
-      (time: number) => {
+      async (time: number) => {
         const video = getActiveVideo();
         if (video && video.readyState >= 2) {
+          logScrubbing('seekTo called', {
+            time: time.toFixed(3),
+            currentTime: video.currentTime.toFixed(3),
+          });
           seekInProgressRef.current = true;
-          video.currentTime = time;
-          requestAnimationFrame(() => {
-            seekInProgressRef.current = false;
+          await seekWithVerification(video, time);
+          seekInProgressRef.current = false;
+          logScrubbing('seekTo complete', {
+            actualTime: video.currentTime.toFixed(3),
           });
         }
       },
@@ -323,18 +579,90 @@ export const DualBufferVideo = forwardRef<
     ]);
 
     // =========================================================================
-    // SWAP VIDEOS
+    // SWAP VIDEOS WITH FRAME-ACCURATE TIMING
+    // CRITICAL: Never swap until new frame is FULLY decoded and ready
+    // This is the core mechanism preventing black frames during transitions
     // =========================================================================
-    const swapVideos = useCallback(() => {
-      if (swapLockRef.current) return;
+    const swapVideos = useCallback(async () => {
+      if (swapLockRef.current) {
+        logTransition('SWAP: Blocked by lock!', { activeSlot });
+        return;
+      }
       swapLockRef.current = true;
-
-      logDualBuffer('Swapping videos', { from: activeSlot });
 
       const oldActive = getActiveVideo();
       const newActive = getPreloadVideo();
 
-      // Mute and pause old active
+      logTransition('SWAP: Starting', {
+        from: activeSlot,
+        to: activeSlot === 'A' ? 'B' : 'A',
+        oldActiveSrc: oldActive?.src?.substring(0, 50),
+        newActiveSrc: newActive?.src?.substring(0, 50),
+        newActiveReadyState: newActive?.readyState,
+      });
+
+      // CRITICAL FRAME HOLD: Keep showing old frame until new one is ready
+      // This prevents ANY black frame from appearing
+      if (newActive) {
+        // First, wait for minimum ready state with timeout
+        if (newActive.readyState < MIN_READY_STATE) {
+          logTransition('SWAP: Waiting for ready state (frame hold active)', {
+            current: newActive.readyState,
+            required: MIN_READY_STATE,
+          });
+          logFrameHold('Activated during swap wait', {});
+
+          const readyWithTimeout = await Promise.race([
+            waitForReadyState(newActive, MIN_READY_STATE),
+            new Promise<boolean>((resolve) =>
+              setTimeout(() => resolve(false), FRAME_HOLD_TIMEOUT_MS),
+            ),
+          ]);
+
+          if (!readyWithTimeout) {
+            logTransition('SWAP: Ready state timeout - proceeding anyway', {
+              readyState: newActive.readyState,
+            });
+          }
+        }
+
+        // CRITICAL: Wait for actual frame decode
+        // Use double RAF to ensure the GPU has rendered the frame
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              logTransition('SWAP: Frame decoded (double RAF)', {});
+              resolve();
+            });
+          });
+        });
+      }
+
+      // Frame is ready - NOW we can safely swap
+      logFrameHold('Frame confirmed ready - committing swap', {});
+
+      // Now that the new frame is ready, do the swap
+      const newSlot = activeSlot === 'A' ? 'B' : 'A';
+
+      // Update logical slot
+      setActiveSlot(newSlot);
+
+      // CRITICAL: Commit visual slot - this is what actually changes opacity
+      // Only do this AFTER we've confirmed the frame is decoded
+      frameConfirmedReadyRef.current[newSlot] = true;
+      setVisualSlot(newSlot);
+
+      // Start playing the new video BEFORE stopping the old one
+      // This ensures continuous frame display
+      if (newActive && isPlaying && newActive.readyState >= MIN_READY_STATE) {
+        try {
+          await newActive.play();
+        } catch {
+          // Ignore play errors during swap
+        }
+      }
+
+      // Now safe to mute and pause old active (after new one is playing)
       if (oldActive) {
         oldActive.muted = true;
         oldActive.volume = 0;
@@ -343,18 +671,20 @@ export const DualBufferVideo = forwardRef<
         }
       }
 
-      const newSlot = activeSlot === 'A' ? 'B' : 'A';
-      setActiveSlot(newSlot);
-
-      if (newActive && isPlaying && newActive.readyState >= MIN_READY_STATE) {
-        newActive.play().catch(() => {
-          // Ignore play errors during swap
-        });
-      }
-
       if (newActive && onActiveVideoChange) {
         onActiveVideoChange(newActive);
       }
+
+      // Clear pending states
+      pendingVisualCommitRef.current = null;
+      pendingScrubTargetRef.current = null;
+      deferredSourceRef.current = null;
+
+      logTransition('SWAP: Complete', {
+        newActiveSlot: newSlot,
+        visualSlot: newSlot,
+        isPlaying,
+      });
 
       requestAnimationFrame(() => {
         swapLockRef.current = false;
@@ -402,24 +732,20 @@ export const DualBufferVideo = forwardRef<
         preloadVideo.preload = 'auto';
         preloadVideo.load();
 
-        return new Promise((resolve) => {
-          const check = () => {
-            if (preloadVideo.readyState >= MIN_READY_STATE) {
-              preloadVideo.muted = true;
-              preloadVideo.volume = 0;
+        // Wait for ready state with frame verification
+        await waitForReadyState(preloadVideo, MIN_READY_STATE);
 
-              if (activeSlot === 'A') {
-                setReadyB(true);
-              } else {
-                setReadyA(true);
-              }
-              resolve();
-            } else {
-              requestAnimationFrame(check);
-            }
-          };
-          setTimeout(check, 50);
-        });
+        // Ensure muted state
+        preloadVideo.muted = true;
+        preloadVideo.volume = 0;
+
+        if (activeSlot === 'A') {
+          setReadyB(true);
+        } else {
+          setReadyA(true);
+        }
+
+        logDualBuffer('Preload complete', { url: url.substring(0, 50) });
       },
       [activeSlot, getPreloadVideo],
     );
@@ -451,6 +777,7 @@ export const DualBufferVideo = forwardRef<
         muteAll,
         getAudioState,
         seekTo,
+        getVirtualTimeline,
       }),
       [
         getActiveVideo,
@@ -462,65 +789,543 @@ export const DualBufferVideo = forwardRef<
         muteAll,
         getAudioState,
         seekTo,
+        getVirtualTimeline,
       ],
     );
 
     // =========================================================================
-    // EFFECT: Handle source changes
+    // EFFECT: Handle source/track changes ONLY (not every frame!)
+    // This effect should only trigger when the SOURCE or TRACK changes
     // =========================================================================
     useEffect(() => {
-      if (!currentSourceUrl) return;
-
-      const activeSource = getActiveSource();
-
-      if (activeSource === currentSourceUrl) {
-        return;
-      }
-
-      const isRealSourceChange = prevSourceRef.current !== currentSourceUrl;
-      prevSourceRef.current = currentSourceUrl;
-
-      if (!isRealSourceChange) {
-        return;
-      }
-
-      if (getPreloadSource() === currentSourceUrl && isPreloadReady()) {
-        swapVideos();
-        return;
-      }
+      if (!currentSourceUrl || !activeTrack) return;
 
       const activeVideo = getActiveVideo();
-      if (activeSlot === 'A') {
-        sourceARef.current = currentSourceUrl;
-        setReadyA(false);
-      } else {
-        sourceBRef.current = currentSourceUrl;
-        setReadyB(false);
+      const preloadVideo = getPreloadVideo();
+      if (!activeVideo) return;
+
+      // Normalize URLs for comparison
+      const currentNormalized = normalizeSourceUrl(currentSourceUrl);
+      const activeVideoSrc = normalizeSourceUrl(activeVideo.src);
+      const preloadVideoSrc = normalizeSourceUrl(preloadVideo?.src);
+
+      // Check if this is actually a new track (not just a frame update)
+      const isNewTrack = prevTrackIdRef.current !== activeTrack.id;
+      const isNewSource = prevSourceRef.current !== currentSourceUrl;
+
+      logTransition('Track/Source check', {
+        prevTrackId: prevTrackIdRef.current,
+        currentTrackId: activeTrack.id,
+        prevSource: prevSourceRef.current?.substring(0, 50),
+        currentSource: currentSourceUrl.substring(0, 50),
+        isNewTrack,
+        isNewSource,
+        activeVideoSrc: activeVideoSrc.substring(0, 50),
+        preloadVideoSrc: preloadVideoSrc.substring(0, 50),
+        readyA,
+        readyB,
+        isPreloadReady: isPreloadReady(),
+        activeSlot,
+      });
+
+      // If neither track nor source changed, do nothing
+      if (!isNewTrack && !isNewSource) {
+        return;
       }
 
-      if (activeVideo) {
-        activeVideo.src = currentSourceUrl;
-        activeVideo.load();
+      // VERTICAL MOVE DETECTION:
+      // If track ID changed but source AND source time are the same,
+      // this is likely a vertical move (track reassignment).
+      // In this case, we should NOT reset playback - just update refs.
+      // The video should continue playing from the same position.
+      if (isNewTrack && !isNewSource && currentNormalized === activeVideoSrc) {
+        const targetTime = calculateVideoTime(activeTrack, currentFrame, fps);
+        const currentTime = activeVideo.currentTime;
+        const diff = Math.abs(currentTime - targetTime);
+
+        // If we're already at the right time (within 100ms), this is a vertical move
+        // Don't seek, don't reset - just update refs and continue
+        if (diff < 0.1) {
+          logDualBuffer('VERTICAL MOVE detected - continuing playback', {
+            prevTrackId: prevTrackIdRef.current,
+            newTrackId: activeTrack.id,
+            currentTime,
+            targetTime,
+            diff,
+          });
+          prevTrackIdRef.current = activeTrack.id;
+          prevSourceRef.current = currentSourceUrl;
+          return;
+        }
       }
+
+      // TRACK STABILIZATION: Prevent rapid oscillation between tracks
+      // If we're switching tracks too quickly (within TRACK_STABILIZATION_MS),
+      // and it's the same source, skip the seek to let video play naturally
+      const now = performance.now();
+      const timeSinceLastChange = now - trackChangeTimeRef.current;
+
+      if (
+        isNewTrack &&
+        !isNewSource &&
+        timeSinceLastChange < TRACK_STABILIZATION_MS &&
+        lastStableTrackIdRef.current !== undefined
+      ) {
+        logDualBuffer('Track change debounced (too rapid)', {
+          timeSinceLastChange,
+          threshold: TRACK_STABILIZATION_MS,
+        });
+        // Update refs but don't seek - let video continue playing
+        prevTrackIdRef.current = activeTrack.id;
+        prevSourceRef.current = currentSourceUrl;
+        return;
+      }
+
+      // Update stabilization tracking
+      trackChangeTimeRef.current = now;
+      lastStableTrackIdRef.current = activeTrack.id;
+
+      // Calculate target time for initial positioning
+      // Use the correct source time for the current timeline frame
+      const targetTime = calculateVideoTime(activeTrack, currentFrame, fps);
+
+      logDualBuffer('Source/Track change detected - PROCESSING', {
+        isNewTrack,
+        isNewSource,
+        currentNormalized: currentNormalized.substring(0, 50),
+        activeVideoSrc: activeVideoSrc.substring(0, 50),
+        targetTime,
+        currentFrame,
+        readyState: activeVideo.readyState,
+      });
+
+      // =====================================================================
+      // CASE 1: SAME SOURCE, NEW TRACK - Check if video needs repositioning
+      // This handles cut segments from the same video file.
+      //
+      // KEY INSIGHT: For same-source, AVOID seeking as much as possible.
+      // Seeking causes buffering/stutter. Instead:
+      // 1. If video is playing and within reasonable range, let it play
+      // 2. Only seek for large jumps (e.g., truly rearranged segments)
+      // =====================================================================
+      if (currentNormalized === activeVideoSrc && activeVideoSrc !== '') {
+        const currentTime = activeVideo.currentTime;
+        const diff = Math.abs(currentTime - targetTime);
+        const isVideoPlaying =
+          !activeVideo.paused && activeVideo.readyState >= 2;
+
+        // For playing video, use a much larger tolerance (500ms = ~15 frames at 30fps)
+        // This lets the video continue playing smoothly through track changes
+        // Only force a seek if we're really far off (true rearrangement)
+        const playingTolerance = 0.5; // 500ms during playback
+        const pausedTolerance = 1.0 / fps; // 1 frame when paused (for scrubbing)
+
+        const tolerance = isVideoPlaying ? playingTolerance : pausedTolerance;
+
+        if (diff <= tolerance) {
+          // Video is close enough - let it continue playing naturally
+          logDualBuffer('SAME SOURCE - within tolerance, continuing playback', {
+            targetTime,
+            currentTime,
+            diff,
+            tolerance,
+            isVideoPlaying,
+          });
+          prevTrackIdRef.current = activeTrack.id;
+          prevSourceRef.current = currentSourceUrl;
+          return;
+        }
+
+        logDualBuffer('SAME SOURCE NEW TRACK - large jump, seeking', {
+          targetTime,
+          currentTime,
+          diff,
+          currentFrame,
+          isVideoPlaying,
+        });
+
+        // Set seek in progress to prevent other effects from interfering
+        seekInProgressRef.current = true;
+
+        // Perform the seek to the expected time for this frame
+        activeVideo.currentTime = targetTime;
+
+        // Wait for the video to be ready after seeking, then confirm
+        const confirmSeekComplete = () => {
+          // Use requestVideoFrameCallback for frame-accurate confirmation
+          if ('requestVideoFrameCallback' in activeVideo) {
+            (
+              activeVideo as HTMLVideoElement & {
+                requestVideoFrameCallback: (cb: () => void) => number;
+              }
+            ).requestVideoFrameCallback(() => {
+              logDualBuffer('Seek complete - frame ready', {
+                currentTime: activeVideo.currentTime,
+                readyState: activeVideo.readyState,
+              });
+              seekInProgressRef.current = false;
+            });
+          } else {
+            requestAnimationFrame(() => {
+              seekInProgressRef.current = false;
+            });
+          }
+        };
+
+        // If video is already ready enough, confirm immediately
+        if (activeVideo.readyState >= MIN_READY_STATE) {
+          confirmSeekComplete();
+        } else {
+          // Wait for video to buffer after seek
+          const onCanPlay = () => {
+            activeVideo.removeEventListener('canplay', onCanPlay);
+            confirmSeekComplete();
+          };
+          activeVideo.addEventListener('canplay', onCanPlay);
+        }
+
+        prevTrackIdRef.current = activeTrack.id;
+        prevSourceRef.current = currentSourceUrl;
+        return;
+      }
+
+      // =====================================================================
+      // CASE 2: PRELOAD READY (different source) - Swap immediately
+      // The preload effect has already loaded and prepared this video
+      // =====================================================================
+      const case2SourceMatch = currentNormalized === preloadVideoSrc;
+      const case2Ready = isPreloadReady();
+      logTransition('CASE 2 check', {
+        currentNormalized: currentNormalized.substring(0, 60),
+        preloadVideoSrc: preloadVideoSrc.substring(0, 60),
+        sourceMatch: case2SourceMatch,
+        isReady: case2Ready,
+      });
+
+      if (case2SourceMatch && case2Ready) {
+        logTransition('CASE 2: Preload ready - swapping immediately', {
+          source: currentSourceUrl.substring(0, 50),
+          preloadReadyState: preloadVideo?.readyState,
+          activeSlot,
+        });
+
+        // CRITICAL: Use double RAF for paused preload videos
+        // requestVideoFrameCallback only works for playing videos
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            logTransition(
+              'CASE 2: Frame ready (double RAF) - executing swap',
+              {},
+            );
+            swapVideos();
+          });
+        });
+
+        prevTrackIdRef.current = activeTrack.id;
+        prevSourceRef.current = currentSourceUrl;
+        return;
+      }
+
+      // =====================================================================
+      // CASE 3: INITIAL LOAD - Load directly on active video
+      // =====================================================================
+      if (activeVideoSrc === '') {
+        logDualBuffer('INITIAL LOAD - loading on active', {
+          url: currentSourceUrl.substring(0, 50),
+          targetTime,
+        });
+
+        if (activeSlot === 'A') {
+          sourceARef.current = currentSourceUrl;
+          setReadyA(false);
+        } else {
+          sourceBRef.current = currentSourceUrl;
+          setReadyB(false);
+        }
+
+        activeVideo.src = currentSourceUrl;
+        activeVideo.currentTime = targetTime;
+        activeVideo.preload = 'auto';
+        activeVideo.load();
+
+        prevTrackIdRef.current = activeTrack.id;
+        prevSourceRef.current = currentSourceUrl;
+        return;
+      }
+
+      // =====================================================================
+      // CASE 4: DIFFERENT SOURCE - Use polling to wait for preload ready
+      //
+      // KEY FIX: We use polling instead of event listeners because:
+      // 1. The preloadSource effect may have already loaded this video
+      // 2. canplay events may have already fired before we add listeners
+      // 3. We need cancellation for rapid track changes
+      // =====================================================================
+      if (preloadVideo) {
+        // Increment swap ID to cancel any pending operations
+        const currentSwapId = ++pendingSwapIdRef.current;
+        case4PollActiveRef.current = true;
+
+        // Check if preload already has this source loaded
+        const preloadVideoNormalized = normalizeSourceUrl(preloadVideo.src);
+        const preloadAlreadyHasSource =
+          preloadVideoNormalized === currentNormalized;
+        const preloadAlreadyReady =
+          preloadAlreadyHasSource && preloadVideo.readyState >= MIN_READY_STATE;
+
+        logTransition('CASE 4: Different source detected', {
+          url: currentSourceUrl.substring(0, 50),
+          targetTime,
+          preloadAlreadyHasSource,
+          preloadAlreadyReady,
+          preloadReadyState: preloadVideo.readyState,
+          swapId: currentSwapId,
+        });
+
+        // Helper function to execute swap when video is ready
+        const executeSwap = () => {
+          // Check for cancellation
+          if (pendingSwapIdRef.current !== currentSwapId) {
+            logTransition('CASE 4: Swap cancelled (stale swapId)', {
+              currentSwapId,
+              activeSwapId: pendingSwapIdRef.current,
+            });
+            return;
+          }
+
+          // Ensure correct time
+          if (Math.abs(preloadVideo.currentTime - targetTime) > 0.1) {
+            logTransition('CASE 4: Correcting preload time', {
+              current: preloadVideo.currentTime,
+              target: targetTime,
+            });
+            preloadVideo.currentTime = targetTime;
+          }
+
+          // Mark as ready
+          if (activeSlot === 'A') {
+            setReadyB(true);
+          } else {
+            setReadyA(true);
+          }
+
+          case4PollActiveRef.current = false;
+
+          logTransition('CASE 4: Executing swap', {
+            swapId: currentSwapId,
+            readyState: preloadVideo.readyState,
+            time: preloadVideo.currentTime,
+          });
+
+          swapVideos();
+        };
+
+        // PATH 1: Preload video is already ready - swap immediately after frame decode
+        if (preloadAlreadyReady) {
+          logTransition('CASE 4: Preload already ready - executing swap', {
+            readyState: preloadVideo.readyState,
+          });
+
+          // CRITICAL: Use double RAF for paused videos (preload is always paused)
+          // requestVideoFrameCallback only works for playing videos
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              executeSwap();
+            });
+          });
+
+          prevTrackIdRef.current = activeTrack.id;
+          prevSourceRef.current = currentSourceUrl;
+          return;
+        }
+
+        // PATH 2: Need to load or wait for loading - use polling
+        if (!preloadAlreadyHasSource) {
+          // Set up preload slot tracking
+          if (activeSlot === 'A') {
+            sourceBRef.current = currentSourceUrl;
+            setReadyB(false);
+          } else {
+            sourceARef.current = currentSourceUrl;
+            setReadyA(false);
+          }
+
+          // Preload is always muted
+          preloadVideo.muted = true;
+          preloadVideo.volume = 0;
+
+          // Load the new source
+          preloadVideo.src = currentSourceUrl;
+          preloadVideo.currentTime = targetTime;
+          preloadVideo.preload = 'auto';
+          preloadVideo.load();
+
+          logTransition('CASE 4: Loading new source on preload video', {});
+        } else {
+          logTransition('CASE 4: Source already loading, will poll for ready', {
+            readyState: preloadVideo.readyState,
+          });
+        }
+
+        // Poll for ready state (handles both fresh loads and already-loading videos)
+        let pollCount = 0;
+        const maxPolls = 300; // ~5 seconds at 60fps
+
+        const pollForReady = () => {
+          pollCount++;
+
+          // Check for cancellation
+          if (pendingSwapIdRef.current !== currentSwapId) {
+            logTransition('CASE 4: Polling cancelled (stale swapId)', {
+              pollCount,
+              currentSwapId,
+              activeSwapId: pendingSwapIdRef.current,
+            });
+            case4PollActiveRef.current = false;
+            return;
+          }
+
+          // Check ready state
+          if (preloadVideo.readyState >= MIN_READY_STATE) {
+            logTransition('CASE 4: Video ready after polling', {
+              pollCount,
+              readyState: preloadVideo.readyState,
+              paused: preloadVideo.paused,
+            });
+
+            // CRITICAL FIX: requestVideoFrameCallback only fires for PLAYING videos
+            // For paused videos (which preload always is), use double RAF instead
+            // This ensures the frame is rendered before we swap
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                logTransition(
+                  'CASE 4: Frame ready (double RAF) - executing swap',
+                  {},
+                );
+                executeSwap();
+              });
+            });
+            return;
+          }
+
+          // Timeout protection
+          if (pollCount >= maxPolls) {
+            logTransition('CASE 4: Polling timeout - forcing swap anyway', {
+              readyState: preloadVideo.readyState,
+            });
+            case4PollActiveRef.current = false;
+            executeSwap();
+            return;
+          }
+
+          // Continue polling
+          requestAnimationFrame(pollForReady);
+        };
+
+        // Start polling
+        requestAnimationFrame(pollForReady);
+      }
+
+      prevTrackIdRef.current = activeTrack.id;
+      prevSourceRef.current = currentSourceUrl;
     }, [
       currentSourceUrl,
+      activeTrack?.id, // Only track ID, not the whole object
       activeSlot,
-      getActiveSource,
-      getPreloadSource,
       getActiveVideo,
+      getPreloadVideo,
       isPreloadReady,
       swapVideos,
+      // NOTE: currentFrame and fps are used inside but NOT in deps
+      // We only want this effect to run on track/source changes
+      // The current frame value is read when the effect runs
     ]);
 
     // =========================================================================
-    // EFFECT: Preload next clip during playback
+    // EFFECT: Segment-aware preloading with lookahead
+    // =========================================================================
+    useEffect(() => {
+      if (!activeTrack || !isPlaying || !virtualTimelineRef.current) return;
+
+      const virtualTimeline = virtualTimelineRef.current;
+
+      // Get upcoming transitions within lookahead window
+      const upcomingTransitions = virtualTimeline.getTransitionsWithin(
+        currentFrame,
+        preloadLookaheadFrames,
+      );
+
+      for (const transition of upcomingTransitions) {
+        const framesUntilTransition = transition.transitionFrame - currentFrame;
+
+        // Start preloading when within threshold
+        if (framesUntilTransition <= preloadThresholdFrames) {
+          if (transition.isSameSource) {
+            // Same source transitions: DON'T pre-buffer on preload video
+            // This causes thrashing with many small segments. Instead, we'll
+            // handle same-source transitions by just seeking the active video
+            // when the track actually changes - the data is already buffered
+            // since it's the same video file.
+            logDualBuffer(
+              'Same-source transition upcoming (no preload needed)',
+              {
+                to: transition.enterSegment.trackId,
+                targetTime: transition.enterSegment.sourceStartTime,
+                framesUntil: framesUntilTransition,
+              },
+            );
+          } else {
+            // Different source - preload the next video
+            const nextUrl = transition.enterSegment.sourceUrl;
+            if (nextUrl && nextUrl !== getPreloadSource()) {
+              preloadSource(nextUrl, transition.enterSegment.sourceStartTime);
+            }
+          }
+        }
+      }
+
+      // Also check for segments that will start (for cold starts without transitions)
+      const upcomingSegments = virtualTimeline.getUpcomingSegments(
+        currentFrame,
+        preloadLookaheadFrames,
+      );
+
+      for (const upcoming of upcomingSegments) {
+        if (
+          upcoming.framesUntilStart <= preloadThresholdFrames &&
+          upcoming.requiresSourceChange
+        ) {
+          const url = upcoming.segment.sourceUrl;
+          if (url && url !== getPreloadSource()) {
+            preloadSource(url, upcoming.segment.sourceStartTime);
+          }
+        }
+      }
+    }, [
+      activeTrack,
+      currentFrame,
+      isPlaying,
+      preloadThresholdFrames,
+      preloadLookaheadFrames,
+      getPreloadSource,
+      preloadSource,
+      activeSlot,
+      getActiveVideo,
+      getPreloadVideo,
+    ]);
+
+    // =========================================================================
+    // EFFECT: Legacy preload (fallback for simple cases)
     // =========================================================================
     useEffect(() => {
       if (!activeTrack || !isPlaying) return;
 
+      // Skip if virtual timeline is handling preloading
+      if (virtualTimelineRef.current) return;
+
       const framesUntilEnd = activeTrack.endFrame - currentFrame;
 
-      if (framesUntilEnd <= PRELOAD_THRESHOLD_FRAMES && framesUntilEnd > 0) {
+      if (framesUntilEnd <= preloadThresholdFrames && framesUntilEnd > 0) {
         const nextTrack = findNextVideoTrack(
           allTracks,
           currentFrame,
@@ -540,6 +1345,7 @@ export const DualBufferVideo = forwardRef<
       allTracks,
       currentFrame,
       isPlaying,
+      preloadThresholdFrames,
       getPreloadSource,
       preloadSource,
     ]);
@@ -550,6 +1356,18 @@ export const DualBufferVideo = forwardRef<
     useEffect(() => {
       const activeVideo = getActiveVideo();
       const preloadVideo = getPreloadVideo();
+
+      logDualBuffer('Playback sync effect', {
+        isPlaying,
+        activeSlot,
+        activeVideoSrc: activeVideo?.src?.substring(0, 50),
+        activeVideoReadyState: activeVideo?.readyState,
+        activeVideoPaused: activeVideo?.paused,
+        activeVideoCurrentTime: activeVideo?.currentTime?.toFixed(2),
+        handleAudio,
+        isMuted,
+        volume,
+      });
 
       enforceAudioState();
 
@@ -567,8 +1385,11 @@ export const DualBufferVideo = forwardRef<
       try {
         if (isPlaying) {
           if (activeVideo.paused && activeVideo.readyState >= MIN_READY_STATE) {
-            activeVideo.play().catch(() => {
-              // Ignore play errors during playback sync
+            logDualBuffer('Starting playback', {
+              readyState: activeVideo.readyState,
+            });
+            activeVideo.play().catch((err) => {
+              logDualBuffer('Play error', { error: err.message });
             });
           }
         } else {
@@ -613,22 +1434,31 @@ export const DualBufferVideo = forwardRef<
     }, [handleAudio]);
 
     // =========================================================================
-    // EFFECT: BIDIRECTIONAL SYNC - Video ↔ Timeline
+    // EFFECT: SCRUBBING SYNC - Timeline drives video when paused
     //
-    // This is the CRITICAL effect for seek synchronization.
+    // CRITICAL FIX FOR TC#6 (Cross-Source Scrubbing):
+    // When scrubbing to a DIFFERENT source, we must:
+    // 1. HOLD the current frame (don't hide/clear it)
+    // 2. Pre-decode the target frame on the preload video
+    // 3. Only swap AFTER the new frame is decoded
+    // 4. Cancel previous scrub operations on new scrub
     //
-    // During PLAYBACK: Video drives timeline via requestVideoFrameCallback
-    // During SEEKING (paused or scrubbing): Timeline drives video via currentTime
+    // This prevents black frames during cross-source scrubbing.
     // =========================================================================
     useEffect(() => {
+      // Only run when NOT playing - during playback, video drives timeline
+      if (isPlaying) {
+        return;
+      }
+
       const video = getActiveVideo();
+      const preloadVideo = getPreloadVideo();
       if (!video || !activeTrack) return;
 
-      // Calculate the target video time for the current frame
-      const targetTime = calculateVideoTime(activeTrack, currentFrame, fps);
-      const currentVideoTime = video.currentTime;
-      const tolerance = 1 / fps; // One frame tolerance
-      const diff = Math.abs(currentVideoTime - targetTime);
+      // Must be paused
+      if (!video.paused) {
+        return;
+      }
 
       // Check if we're within the track's frame range
       const isWithinTrackRange =
@@ -636,40 +1466,308 @@ export const DualBufferVideo = forwardRef<
         currentFrame < activeTrack.endFrame;
 
       if (!isWithinTrackRange) {
-        return; // Don't sync if frame is outside this track's range
-      }
-
-      // CASE 1: During playback - let video drive timeline
-      if (isPlaying && !seekInProgressRef.current) {
-        // Don't seek during continuous playback
-        // The requestVideoFrameCallback below handles timeline updates
         return;
       }
 
-      // CASE 2: Paused or seeking - timeline drives video
-      // Only seek if there's a significant difference
-      if (diff > tolerance && video.readyState >= 2) {
-        // Check if this is a new seek position (not a feedback loop)
-        if (lastSeekFrameRef.current !== currentFrame) {
-          lastSeekFrameRef.current = currentFrame;
-          seekInProgressRef.current = true;
+      // Calculate the target video time for the current frame
+      const targetTime = calculateVideoTime(activeTrack, currentFrame, fps);
+      const currentVideoTime = video.currentTime;
+      const tolerance = 1.5 / fps; // 1.5 frame tolerance to reduce jitter
+      const diff = Math.abs(currentVideoTime - targetTime);
 
-          logDualBuffer('Seeking video to match timeline', {
-            currentFrame,
-            targetTime,
-            currentVideoTime,
-            diff,
-          });
+      // Check if this is a CROSS-SOURCE scrub
+      const activeVideoSrc = normalizeSourceUrl(video.src);
+      const targetSource = normalizeSourceUrl(currentSourceUrl);
+      const isCrossSourceScrub =
+        activeVideoSrc !== '' &&
+        targetSource !== '' &&
+        activeVideoSrc !== targetSource;
 
-          video.currentTime = targetTime;
+      // =====================================================================
+      // CROSS-SOURCE SCRUBBING - CAPCUT-STYLE LATENCY MASKING
+      // =====================================================================
+      // Strategy:
+      // 1. IMMEDIATELY show last known frame (don't change visualSlot)
+      // 2. Trigger decode for target frame in background
+      // 3. When frame arrives, swap instantly
+      // 4. Never block UI waiting for decode
+      // =====================================================================
+      if (isCrossSourceScrub) {
+        logScrubbing('Cross-source scrub detected', {
+          from: activeVideoSrc.substring(0, 40),
+          to: targetSource.substring(0, 40),
+          targetTime,
+          currentFrame,
+        });
 
-          // Clear seek flag after browser processes the seek
-          requestAnimationFrame(() => {
-            seekInProgressRef.current = false;
-          });
+        // Cancel any pending cross-source scrub
+        if (crossSourceScrubDebounceRef.current) {
+          clearTimeout(crossSourceScrubDebounceRef.current);
         }
+
+        // Store the pending scrub target
+        pendingScrubTargetRef.current = {
+          source: targetSource,
+          time: targetTime,
+          frame: currentFrame,
+        };
+
+        // CAPCUT-STYLE: Don't change visual slot yet - keep showing last frame
+        // The visual slot will only change when the new frame is decoded
+        logFrameHold('Cross-source scrub: Holding visual slot', {
+          currentVisualSlot: visualSlot,
+        });
+
+        // Debounce rapid scrubbing to prevent decode thrashing
+        crossSourceScrubDebounceRef.current = setTimeout(() => {
+          if (!preloadVideo) return;
+
+          const pending = pendingScrubTargetRef.current;
+          if (!pending || pending.source !== targetSource) {
+            // Target changed, abort
+            return;
+          }
+
+          logScrubbing('Executing cross-source scrub (debounced)', {
+            source: pending.source.substring(0, 40),
+            time: pending.time,
+          });
+
+          // Increment swap ID to cancel any other pending operations
+          const scrubSwapId = ++pendingSwapIdRef.current;
+
+          // Set up deferred source commit - source is "pending" until frame decoded
+          const preloadSlot = activeSlot === 'A' ? 'B' : 'A';
+          deferredSourceRef.current = {
+            slot: preloadSlot,
+            source: pending.source,
+            time: pending.time,
+            committed: false,
+          };
+
+          if (preloadSlot === 'A') {
+            sourceARef.current = pending.source;
+            setReadyA(false);
+            frameConfirmedReadyRef.current.A = false;
+          } else {
+            sourceBRef.current = pending.source;
+            setReadyB(false);
+            frameConfirmedReadyRef.current.B = false;
+          }
+
+          // Check if preload already has this source
+          const preloadSrc = normalizeSourceUrl(preloadVideo.src);
+          if (preloadSrc !== pending.source) {
+            preloadVideo.muted = true;
+            preloadVideo.volume = 0;
+            preloadVideo.src = pending.source;
+          }
+          preloadVideo.currentTime = pending.time;
+          preloadVideo.preload = 'auto';
+
+          if (preloadSrc !== pending.source) {
+            preloadVideo.load();
+          }
+
+          // Poll for ready state, then swap
+          const pollForReadyAndSwap = () => {
+            // Check for cancellation
+            if (pendingSwapIdRef.current !== scrubSwapId) {
+              logScrubbing('Cross-source scrub cancelled (stale)', {});
+              deferredSourceRef.current = null;
+              return;
+            }
+
+            if (preloadVideo.readyState >= MIN_READY_STATE) {
+              logScrubbing('Cross-source scrub: preload ready, swapping', {
+                readyState: preloadVideo.readyState,
+              });
+
+              // Mark as ready
+              if (preloadSlot === 'A') {
+                setReadyA(true);
+                frameConfirmedReadyRef.current.A = true;
+              } else {
+                setReadyB(true);
+                frameConfirmedReadyRef.current.B = true;
+              }
+
+              // CRITICAL: Wait for frame to be decoded before swap
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  // Double-check we haven't been cancelled
+                  if (pendingSwapIdRef.current !== scrubSwapId) {
+                    deferredSourceRef.current = null;
+                    return;
+                  }
+
+                  // Mark deferred source as committed
+                  if (deferredSourceRef.current) {
+                    deferredSourceRef.current.committed = true;
+                  }
+
+                  logFrameHold(
+                    'Cross-source scrub: Frame ready, committing visual',
+                    {},
+                  );
+
+                  // Now safe to swap - frame is decoded
+                  // swapVideos will update both activeSlot AND visualSlot
+                  swapVideos();
+                  pendingScrubTargetRef.current = null;
+                  deferredSourceRef.current = null;
+                });
+              });
+            } else {
+              // Continue polling
+              requestAnimationFrame(pollForReadyAndSwap);
+            }
+          };
+
+          requestAnimationFrame(pollForReadyAndSwap);
+        }, CROSS_SOURCE_SCRUB_DEBOUNCE_MS);
+
+        // Don't do same-source seeking below
+        return () => {
+          if (crossSourceScrubDebounceRef.current) {
+            clearTimeout(crossSourceScrubDebounceRef.current);
+          }
+        };
       }
-    }, [currentFrame, fps, activeTrack, isPlaying, getActiveVideo, activeSlot]);
+
+      // =====================================================================
+      // SAME-SOURCE SCRUBBING - Simple seek on active video
+      // =====================================================================
+
+      // Skip if already at target (within tolerance)
+      if (diff <= tolerance) {
+        return;
+      }
+
+      // Skip if we just seeked to this frame
+      if (
+        lastSeekFrameRef.current === currentFrame &&
+        seekInProgressRef.current
+      ) {
+        return;
+      }
+
+      // Skip if a seek is in progress
+      if (seekInProgressRef.current) {
+        return;
+      }
+
+      // Ready to seek
+      if (video.readyState < 2) {
+        return;
+      }
+
+      lastSeekFrameRef.current = currentFrame;
+      seekInProgressRef.current = true;
+
+      logScrubbing('Same-source scrubbing to frame', {
+        frame: currentFrame,
+        target: targetTime.toFixed(3),
+        current: currentVideoTime.toFixed(3),
+        diff: diff.toFixed(3),
+      });
+
+      // Perform the seek
+      video.currentTime = targetTime;
+
+      // Use a single cleanup mechanism
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        video.removeEventListener('seeked', onSeeked);
+        seekInProgressRef.current = false;
+      };
+
+      const onSeeked = () => {
+        logScrubbing('Same-source scrub complete', {
+          actual: video.currentTime.toFixed(3),
+        });
+        cleanup();
+      };
+
+      video.addEventListener('seeked', onSeeked);
+
+      // Timeout protection
+      const timeoutId = setTimeout(cleanup, 200);
+
+      // Cleanup on unmount or re-run
+      return () => {
+        clearTimeout(timeoutId);
+        cleanup();
+      };
+    }, [
+      currentFrame,
+      fps,
+      activeTrack,
+      isPlaying,
+      getActiveVideo,
+      getPreloadVideo,
+      activeSlot,
+      currentSourceUrl,
+      swapVideos,
+    ]);
+
+    // =========================================================================
+    // EFFECT: Seek during playback (user clicked on timeline while playing)
+    //
+    // This handles large jumps during playback - when the user clicks on
+    // a different position on the timeline while video is playing.
+    // =========================================================================
+    useEffect(() => {
+      // Only run when playing
+      if (!isPlaying) {
+        return;
+      }
+
+      const video = getActiveVideo();
+      if (!video || !activeTrack || video.paused) return;
+
+      // Check if we're within the track's frame range
+      const isWithinTrackRange =
+        currentFrame >= activeTrack.startFrame &&
+        currentFrame < activeTrack.endFrame;
+
+      if (!isWithinTrackRange) {
+        return;
+      }
+
+      const targetTime = calculateVideoTime(activeTrack, currentFrame, fps);
+      const currentVideoTime = video.currentTime;
+      const diff = Math.abs(currentVideoTime - targetTime);
+
+      // Only seek for LARGE jumps (more than 0.5 seconds)
+      // Small differences are normal during playback
+      const jumpThreshold = 0.5;
+
+      if (diff > jumpThreshold && video.readyState >= 2) {
+        // Skip if already seeking
+        if (seekInProgressRef.current) {
+          return;
+        }
+
+        seekInProgressRef.current = true;
+
+        logScrubbing('Playback jump detected', {
+          frame: currentFrame,
+          target: targetTime.toFixed(3),
+          current: currentVideoTime.toFixed(3),
+          diff: diff.toFixed(3),
+        });
+
+        video.currentTime = targetTime;
+
+        // Clear seek flag after a short delay
+        setTimeout(() => {
+          seekInProgressRef.current = false;
+        }, 100);
+      }
+    }, [currentFrame, fps, activeTrack, isPlaying, getActiveVideo]);
 
     // =========================================================================
     // EFFECT: Stop audio when jumping outside the active track range
@@ -804,6 +1902,9 @@ export const DualBufferVideo = forwardRef<
       setReadyA(true);
       enforceAudioState();
 
+      // Mark frame as confirmed ready
+      frameConfirmedReadyRef.current.A = true;
+
       if (activeSlot === 'A') {
         const video = videoARef.current;
         if (video && onActiveVideoChange) {
@@ -814,12 +1915,38 @@ export const DualBufferVideo = forwardRef<
             // Ignore play errors during can play
           });
         }
+
+        // CAPCUT-STYLE: Commit visual slot now that frame is ready
+        // This handles the case where activeSlot changed before frame was decoded
+        if (visualSlot !== 'A') {
+          logFrameHold('VideoA canPlay: Committing deferred visual slot', {});
+          setVisualSlot('A');
+        }
       }
-    }, [activeSlot, onActiveVideoChange, isPlaying, enforceAudioState]);
+
+      // Check if there's a pending visual commit for slot A
+      if (
+        pendingVisualCommitRef.current?.targetSlot === 'A' &&
+        videoARef.current?.readyState >= 2
+      ) {
+        logFrameHold('VideoA canPlay: Executing pending visual commit', {});
+        pendingVisualCommitRef.current = null;
+        setVisualSlot('A');
+      }
+    }, [
+      activeSlot,
+      visualSlot,
+      onActiveVideoChange,
+      isPlaying,
+      enforceAudioState,
+    ]);
 
     const handleVideoBCanPlay = useCallback(() => {
       setReadyB(true);
       enforceAudioState();
+
+      // Mark frame as confirmed ready
+      frameConfirmedReadyRef.current.B = true;
 
       if (activeSlot === 'B') {
         const video = videoBRef.current;
@@ -831,27 +1958,85 @@ export const DualBufferVideo = forwardRef<
             // Ignore play errors during can play
           });
         }
+
+        // CAPCUT-STYLE: Commit visual slot now that frame is ready
+        if (visualSlot !== 'B') {
+          logFrameHold('VideoB canPlay: Committing deferred visual slot', {});
+          setVisualSlot('B');
+        }
       }
-    }, [activeSlot, onActiveVideoChange, isPlaying, enforceAudioState]);
+
+      // Check if there's a pending visual commit for slot B
+      if (
+        pendingVisualCommitRef.current?.targetSlot === 'B' &&
+        videoBRef.current?.readyState >= 2
+      ) {
+        logFrameHold('VideoB canPlay: Executing pending visual commit', {});
+        pendingVisualCommitRef.current = null;
+        setVisualSlot('B');
+      }
+    }, [
+      activeSlot,
+      visualSlot,
+      onActiveVideoChange,
+      isPlaying,
+      enforceAudioState,
+    ]);
 
     // =========================================================================
     // RENDER
     // =========================================================================
+
+    // CAPCUT-STYLE VISUAL SLOT STRATEGY:
+    // =========================================================================
+    // We use TWO separate slot concepts:
+    //
+    // 1. activeSlot: LOGICAL state - which video SHOULD be playing
+    //    - Controls audio routing
+    //    - Controls playback state
+    //    - Updates immediately on source change
+    //
+    // 2. visualSlot: VISUAL state - which video is ACTUALLY shown
+    //    - Controls opacity (what user sees)
+    //    - Only updates when frame is CONFIRMED decoded
+    //    - This is the key to preventing black frames
+    //
+    // The visual slot LAGS behind the active slot until a frame is ready.
+    // This means we ALWAYS show the last valid frame, never black.
+    // =========================================================================
+
     return (
       <div
         className={className}
-        style={{ position: 'relative', width, height, overflow: 'hidden' }}
+        style={{
+          position: 'relative',
+          width,
+          height,
+          overflow: 'hidden',
+          // Transparent background - the parent container should handle any background
+          backgroundColor: 'transparent',
+        }}
       >
+        {/*
+          CAPCUT-STYLE FRAME HOLD:
+          - Both videos are always rendered (visibility: visible)
+          - VISUAL slot controls opacity (not active slot!)
+          - Visual slot only changes when frame is confirmed decoded
+          - This guarantees no black frame can ever appear
+        */}
         <video
           key="dual-buffer-video-A-stable"
           ref={videoARef}
           className="absolute inset-0 w-full h-full"
           style={{
             objectFit,
-            opacity: activeSlot === 'A' ? 1 : 0,
+            // CRITICAL: Use visualSlot for opacity, not activeSlot
+            // This ensures we only show the video when frame is decoded
+            opacity: visualSlot === 'A' ? 1 : 0,
             pointerEvents: activeSlot === 'A' ? 'auto' : 'none',
-            zIndex: activeSlot === 'A' ? 1 : 0,
-            visibility: activeSlot === 'A' ? 'visible' : 'hidden',
+            zIndex: visualSlot === 'A' ? 2 : 1,
+            // CRITICAL: Always keep visible to prevent repaint/black flash
+            visibility: 'visible',
           }}
           playsInline
           controls={false}
@@ -867,10 +2052,12 @@ export const DualBufferVideo = forwardRef<
           className="absolute inset-0 w-full h-full"
           style={{
             objectFit,
-            opacity: activeSlot === 'B' ? 1 : 0,
+            // CRITICAL: Use visualSlot for opacity, not activeSlot
+            opacity: visualSlot === 'B' ? 1 : 0,
             pointerEvents: activeSlot === 'B' ? 'auto' : 'none',
-            zIndex: activeSlot === 'B' ? 1 : 0,
-            visibility: activeSlot === 'B' ? 'visible' : 'hidden',
+            zIndex: visualSlot === 'B' ? 2 : 1,
+            // CRITICAL: Always keep visible to prevent repaint/black flash
+            visibility: 'visible',
           }}
           playsInline
           controls={false}

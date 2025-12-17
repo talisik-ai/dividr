@@ -62,14 +62,25 @@ export function generateTextLayerSegments(
           );
 
           // Convert track textStyle to text layer style format
+          // CRITICAL: Must handle explicit false values to allow per-clip overrides
           const style = {
             fontFamily: track.textStyle?.fontFamily,
-            fontWeight: track.textStyle?.isBold
-              ? '700'
-              : track.textStyle?.fontWeight || '400',
-            fontStyle: track.textStyle?.isItalic
-              ? 'italic'
-              : track.textStyle?.fontStyle || 'normal',
+            fontWeight:
+              track.textStyle?.fontWeight !== undefined
+                ? String(track.textStyle.fontWeight)
+                : track.textStyle?.isBold !== undefined
+                  ? track.textStyle.isBold
+                    ? '700'
+                    : '400'
+                  : undefined,
+            fontStyle:
+              track.textStyle?.fontStyle !== undefined
+                ? String(track.textStyle.fontStyle)
+                : track.textStyle?.isItalic !== undefined
+                  ? track.textStyle.isItalic
+                    ? 'italic'
+                    : 'normal'
+                  : undefined,
             isUnderline: track.textStyle?.isUnderline,
             textTransform: track.textStyle?.textTransform,
             fontSize: track.textStyle?.fontSize
@@ -81,9 +92,10 @@ export function generateTextLayerSegments(
             hasShadow: track.textStyle?.hasShadow,
             hasGlow: track.textStyle?.hasGlow,
             opacity: track.textStyle?.opacity,
-            letterSpacing: track.textStyle?.letterSpacing
-              ? `${track.textStyle.letterSpacing}px`
-              : undefined,
+            letterSpacing:
+              track.textStyle?.letterSpacing !== undefined
+                ? `${track.textStyle.letterSpacing}px`
+                : undefined,
             lineHeight: track.textStyle?.lineSpacing,
             textAlign: track.textStyle?.textAlign,
           };
@@ -107,7 +119,7 @@ export function generateTextLayerSegments(
           // Fallback to layerIndex or old layer field for backward compatibility
           // This matches how video/image tracks determine their layer
           const layer = track.trackRowIndex ?? 0;
-          
+
           return {
             startTime,
             endTime,
@@ -147,7 +159,9 @@ export function generateTextLayerSegments(
     segment.index = index + 1;
   });
 
-  console.log(`📝 [TextLayers] Final text segment count: ${validSegments.length} segments`);
+  console.log(
+    `📝 [TextLayers] Final text segment count: ${validSegments.length} segments`,
+  );
 
   // Get current text style
   const currentTextStyle = getTextStyleForSubtitle(textStyle.activeStyle);

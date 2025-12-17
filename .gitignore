@@ -166,3 +166,4 @@ src/backend/scripts/dist/
 
 # FFmpeg binaries (bundled via npm packages)
 ffmpeg-bin/
+transcribe-bin/

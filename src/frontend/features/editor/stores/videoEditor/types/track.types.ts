@@ -48,6 +48,10 @@ export interface VideoTrack {
   // Precise subtitle timing from original SRT file (in seconds with millisecond precision)
   subtitleStartTime?: number; // Original start time from SRT (seconds)
   subtitleEndTime?: number; // Original end time from SRT (seconds)
+  // Normalized subtitle timing used for rendering/export (no overlaps)
+  normalizedSubtitleStartTime?: number;
+  normalizedSubtitleEndTime?: number;
+  subtitleSafeGapSeconds?: number;
   // Global subtitle transform (position only - applies to ALL subtitle tracks)
   subtitleTransform?: {
     x: number; // X position normalized (-1 to 1, relative to video center, 0 = center)

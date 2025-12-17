@@ -63,6 +63,15 @@ export function generateSubtitleContent(
             `[Subtitle] "${track.subtitleText?.substring(0, 30)}" - frames ${track.startFrame}-${track.endFrame} -> relative ${relativeStartFrame}-${relativeEndFrame} -> ${startTime.toFixed(3)}s-${endTime.toFixed(3)}s`,
           );
 
+          // Log raw track style for debugging export payload
+          if (track.subtitleStyle || track.textStyle) {
+            console.log(`📦 [Export Payload] Track ${index + 1} raw style:`, {
+              trackId: track.id,
+              subtitleStyle: track.subtitleStyle,
+              textStyle: track.textStyle,
+            });
+          }
+
           // Extract per-segment styling if available (prioritize subtitleStyle over textStyle)
           const trackStyle = track.subtitleStyle || track.textStyle;
           const style = trackStyle
@@ -70,21 +79,32 @@ export function generateSubtitleContent(
                 fontFamily: trackStyle.fontFamily,
                 // For subtitleStyle (no fontWeight/fontStyle), use isBold/isItalic
                 // For textStyle (has fontWeight/fontStyle), use those if available
-                fontWeight: trackStyle.isBold
-                  ? '700'
-                  : 'fontWeight' in trackStyle
+                // CRITICAL: Must handle explicit false values to allow per-clip overrides
+                fontWeight:
+                  'fontWeight' in trackStyle &&
+                  trackStyle.fontWeight !== undefined
                     ? String(trackStyle.fontWeight)
-                    : '400',
-                fontStyle: trackStyle.isItalic
-                  ? 'italic'
-                  : 'fontStyle' in trackStyle
+                    : trackStyle.isBold !== undefined
+                      ? trackStyle.isBold
+                        ? '700'
+                        : '400'
+                      : undefined,
+                fontStyle:
+                  'fontStyle' in trackStyle &&
+                  trackStyle.fontStyle !== undefined
                     ? String(trackStyle.fontStyle)
-                    : 'normal',
+                    : trackStyle.isItalic !== undefined
+                      ? trackStyle.isItalic
+                        ? 'italic'
+                        : 'normal'
+                      : undefined,
                 isUnderline: trackStyle.isUnderline,
                 textTransform: trackStyle.textTransform,
                 textDecoration: trackStyle.isUnderline
                   ? 'underline'
-                  : undefined,
+                  : trackStyle.isUnderline === false
+                    ? 'none'
+                    : undefined,
                 fontSize: trackStyle.fontSize
                   ? `${trackStyle.fontSize}px`
                   : undefined,
@@ -94,18 +114,35 @@ export function generateSubtitleContent(
                 hasShadow: trackStyle.hasShadow,
                 hasGlow: trackStyle.hasGlow,
                 opacity: trackStyle.opacity,
-                letterSpacing: trackStyle.letterSpacing
-                  ? `${trackStyle.letterSpacing}px`
-                  : undefined,
+                letterSpacing:
+                  trackStyle.letterSpacing !== undefined
+                    ? `${trackStyle.letterSpacing}px`
+                    : undefined,
                 lineHeight: trackStyle.lineSpacing,
                 textAlign: trackStyle.textAlign,
               }
             : undefined;
 
-          // Clean up text: remove trailing newlines and extra whitespace
+          // Log converted style for debugging
+          if (style) {
+            console.log(
+              `📦 [Export Payload] Track ${index + 1} converted style:`,
+              {
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                fontStyle: style.fontStyle,
+                strokeColor: style.strokeColor,
+                color: style.color,
+                opacity: style.opacity,
+              },
+            );
+          }
+
+          // Preserve true line breaks; only normalize CRLF to \n
           const cleanText = (track.subtitleText || '')
-            .replace(/\n\s*$/, '')
-            .trim();
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n');
 
           return {
             startTime,
@@ -120,7 +157,7 @@ export function generateSubtitleContent(
 
   // NOTE: Text clips are no longer processed here - they are handled separately by textLayerUtils.ts
   // This ensures proper multi-track rendering with text layers as separate overlays
-  
+
   // Only use subtitle segments
   const allSegments = [...subtitleSegments];
 

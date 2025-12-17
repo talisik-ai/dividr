@@ -151,6 +151,17 @@ export function generateDynamicRows(
     nonAudioRowMap.set('video-0', []);
   }
 
+  // Inject transient subtitle row for in-progress generation directly into the map
+  // so it participates in the same sorted ordering as real rows
+  const transcribingSubtitleRowIndex =
+    options?.transcribingSubtitleRowIndex ?? null;
+  if (transcribingSubtitleRowIndex !== null) {
+    const transientRowId = `subtitle-${transcribingSubtitleRowIndex}`;
+    if (!nonAudioRowMap.has(transientRowId)) {
+      nonAudioRowMap.set(transientRowId, []);
+    }
+  }
+
   // Convert to array and sort by rowIndex (descending - higher rows first)
   const nonAudioRowEntries = Array.from(nonAudioRowMap.entries()).sort(
     (a, b) => {
@@ -232,48 +243,6 @@ export function generateDynamicRows(
       icon: baseDefinition.icon,
     });
   });
-
-  // Inject transient subtitle row for in-progress generation to predict placement
-  const transcribingSubtitleRowIndex =
-    options?.transcribingSubtitleRowIndex ?? null;
-  if (transcribingSubtitleRowIndex !== null) {
-    const hasTargetRow = rows.some((row) => {
-      const parsed = parseRowId(row.id);
-      return (
-        row.trackTypes.includes('subtitle') &&
-        parsed?.rowIndex === transcribingSubtitleRowIndex
-      );
-    });
-
-    if (!hasTargetRow) {
-      const subtitleBase = BASE_ROW_DEFINITIONS.subtitle;
-      const transientRow: TrackRowDefinition = {
-        id: `subtitle-${transcribingSubtitleRowIndex}`,
-        name: getRowDisplayLabel('subtitle', transcribingSubtitleRowIndex),
-        trackTypes: ['subtitle'],
-        color: subtitleBase.color,
-        icon: subtitleBase.icon,
-      };
-
-      // Insert the transient subtitle row adjacent to existing subtitle rows to avoid layout jumps
-      const subtitleIndex = rows.findIndex((row) =>
-        row.trackTypes.includes('subtitle'),
-      );
-      if (subtitleIndex >= 0) {
-        rows.splice(subtitleIndex, 0, transientRow);
-      } else {
-        // If no subtitle rows exist, place just above audio group (or at end if no audio)
-        const firstAudioIndex = rows.findIndex((row) =>
-          row.trackTypes.includes('audio'),
-        );
-        if (firstAudioIndex >= 0) {
-          rows.splice(firstAudioIndex, 0, transientRow);
-        } else {
-          rows.push(transientRow);
-        }
-      }
-    }
-  }
 
   return rows;
 }

@@ -10,9 +10,10 @@ import {
 import { Separator } from '@/frontend/components/ui/separator';
 import { cn } from '@/frontend/utils/utils';
 import { RotateCcw } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BasePanel } from '../../../components/panels/basePanel';
 import { CustomPanelProps } from '../../../components/panels/panelRegistry';
+import { calculateVideoFitTransform } from '../../../preview/utils/scalingUtils';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import {
   ASPECT_RATIO_PRESETS,
@@ -282,6 +283,109 @@ export const SettingsPanel: React.FC<CustomPanelProps> = ({ className }) => {
     }
     setShowFpsWarning(open);
   };
+
+  // Track previous canvas dimensions to detect aspect ratio changes
+  const prevCanvasDimensionsRef = useRef<{
+    width: number;
+    height: number;
+    aspectRatio: number;
+  } | null>(null);
+
+  // Recalculate video transforms when canvas aspect ratio changes
+  // This ensures videos always fit based on their original resolution (contain behavior)
+  useEffect(() => {
+    if (
+      !preview.canvasWidth ||
+      !preview.canvasHeight ||
+      preview.canvasWidth <= 0 ||
+      preview.canvasHeight <= 0
+    ) {
+      return;
+    }
+
+    const currentAspectRatio = preview.canvasWidth / preview.canvasHeight;
+    const prevDimensions = prevCanvasDimensionsRef.current;
+
+    // Check if aspect ratio has changed (not just dimensions)
+    const hasAspectRatioChange =
+      prevDimensions &&
+      Math.abs(prevDimensions.aspectRatio - currentAspectRatio) > 0.001;
+
+    // Update ref for next comparison
+    prevCanvasDimensionsRef.current = {
+      width: preview.canvasWidth,
+      height: preview.canvasHeight,
+      aspectRatio: currentAspectRatio,
+    };
+
+    // Only recalculate if aspect ratio actually changed (not just initial load)
+    if (!hasAspectRatioChange || !prevDimensions) {
+      return;
+    }
+
+    // Get all video tracks
+    const videoTracks = tracks.filter(
+      (track) =>
+        track.type === 'video' && track.visible && track.width && track.height,
+    );
+
+    if (videoTracks.length === 0) {
+      return;
+    }
+
+    // Recalculate transform for each video track to maintain contain behavior
+    videoTracks.forEach((track) => {
+      // Type guard: track.width and track.height are guaranteed by filter above
+      if (!track.width || !track.height) return;
+
+      const originalWidth = track.width;
+      const originalHeight = track.height;
+
+      // Get current transform (if any)
+      const currentTransform = track.textTransform || {
+        x: 0,
+        y: 0,
+        scale: 1,
+        rotation: 0,
+        width: originalWidth,
+        height: originalHeight,
+      };
+
+      // Calculate new fit transform based on original resolution
+      const newTransform = calculateVideoFitTransform(
+        originalWidth,
+        originalHeight,
+        preview.canvasWidth,
+        preview.canvasHeight,
+        currentTransform,
+      );
+
+      // Only update if dimensions or scale changed significantly
+      const widthChanged =
+        Math.abs(
+          (currentTransform.width || originalWidth) - newTransform.width,
+        ) > 0.5;
+      const heightChanged =
+        Math.abs(
+          (currentTransform.height || originalHeight) - newTransform.height,
+        ) > 0.5;
+      const scaleChanged =
+        Math.abs((currentTransform.scale || 1) - newTransform.scale) > 0.001;
+
+      if (widthChanged || heightChanged || scaleChanged) {
+        updateTrack(track.id, {
+          textTransform: {
+            x: newTransform.x,
+            y: newTransform.y,
+            scale: newTransform.scale,
+            rotation: newTransform.rotation,
+            width: newTransform.width,
+            height: newTransform.height,
+          },
+        });
+      }
+    });
+  }, [preview.canvasWidth, preview.canvasHeight, tracks, updateTrack]);
 
   return (
     <BasePanel

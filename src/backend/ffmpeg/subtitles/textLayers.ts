@@ -6,7 +6,7 @@ import { getFontPath } from './fontMapper';
 
 /**
  * Text Layer Processing Module
- * 
+ *
  * This module handles non-subtitle text segments (text clips) separately from subtitles.
  * Text segments are processed using FFmpeg drawtext filters and overlayed on the video during export.
  * All text processed here will be part of the multi-track rendering and added to the
@@ -56,16 +56,38 @@ export interface TextStyleOptions {
 
 /**
  * Converts VideoTrack textStyle to TextStyleOptions format
+ * CRITICAL: Must respect ALL explicitly set values, including false/0
+ * to ensure per-clip styling overrides work correctly during export
  */
-function convertTrackStyleToTextStyle(trackStyle?: VideoTrack['textStyle']): TextStyleOptions | undefined {
+function convertTrackStyleToTextStyle(
+  trackStyle?: VideoTrack['textStyle'],
+): TextStyleOptions | undefined {
   if (!trackStyle) {
     return undefined;
   }
 
   return {
     fontFamily: trackStyle.fontFamily,
-    fontWeight: trackStyle.fontWeight || (trackStyle.isBold ? '700' : undefined),
-    fontStyle: trackStyle.fontStyle || (trackStyle.isItalic ? 'italic' : undefined),
+    // Font Weight / Bold - handle both fontWeight property and isBold flag
+    // CRITICAL: Must handle false values to allow disabling bold on per-clip basis
+    fontWeight:
+      trackStyle.fontWeight !== undefined
+        ? trackStyle.fontWeight
+        : trackStyle.isBold !== undefined
+          ? trackStyle.isBold
+            ? '700'
+            : '400'
+          : undefined,
+    // Font Style / Italic - handle both fontStyle property and isItalic flag
+    // CRITICAL: Must handle false values to allow disabling italic on per-clip basis
+    fontStyle:
+      trackStyle.fontStyle !== undefined
+        ? trackStyle.fontStyle
+        : trackStyle.isItalic !== undefined
+          ? trackStyle.isItalic
+            ? 'italic'
+            : 'normal'
+          : undefined,
     isUnderline: trackStyle.isUnderline,
     textTransform: trackStyle.textTransform,
     fontSize: trackStyle.fontSize ? `${trackStyle.fontSize}px` : undefined,
@@ -74,8 +96,13 @@ function convertTrackStyleToTextStyle(trackStyle?: VideoTrack['textStyle']): Tex
     backgroundColor: trackStyle.backgroundColor,
     hasShadow: trackStyle.hasShadow,
     hasGlow: trackStyle.hasGlow,
-    opacity: trackStyle.opacity,
-    letterSpacing: trackStyle.letterSpacing ? `${trackStyle.letterSpacing}px` : undefined,
+    // Opacity - convert from 0-100 range to 0-1 range for CSS compatibility
+    opacity:
+      trackStyle.opacity !== undefined ? trackStyle.opacity / 100 : undefined,
+    letterSpacing:
+      trackStyle.letterSpacing !== undefined
+        ? `${trackStyle.letterSpacing}px`
+        : undefined,
     lineHeight: trackStyle.lineSpacing,
     textAlign: trackStyle.textAlign,
   };
@@ -97,7 +124,9 @@ export function extractTextSegments(
     return [];
   }
 
-  console.log(`📝 [TextLayers] Extracting ${textTracks.length} text segments from text tracks`);
+  console.log(
+    `📝 [TextLayers] Extracting ${textTracks.length} text segments from text tracks`,
+  );
 
   // Convert tracks to text segments
   const segments: TextSegment[] = textTracks.map((track, index) => {
@@ -114,12 +143,14 @@ export function extractTextSegments(
 
     // Extract transform/position data - use coordinates directly from frontend
     // Frontend coordinates are in [-1, 1] range where 0 = center
-    const position = track.textTransform ? {
-      x: track.textTransform.x, // Direct from frontend: -1 = left, 0 = center, 1 = right
-      y: track.textTransform.y, // Direct from frontend: -1 = top, 0 = center, 1 = bottom
-      scale: track.textTransform.scale || 1,
-      rotation: track.textTransform.rotation || 0,
-    } : undefined;
+    const position = track.textTransform
+      ? {
+          x: track.textTransform.x, // Direct from frontend: -1 = left, 0 = center, 1 = right
+          y: track.textTransform.y, // Direct from frontend: -1 = top, 0 = center, 1 = bottom
+          scale: track.textTransform.scale || 1,
+          rotation: track.textTransform.rotation || 0,
+        }
+      : undefined;
 
     if (position) {
       console.log(
@@ -145,7 +176,9 @@ export function extractTextSegments(
     segment.index = index + 1;
   });
 
-  console.log(`✅ [TextLayers] Extracted ${segments.length} text segments, sorted by start time`);
+  console.log(
+    `✅ [TextLayers] Extracted ${segments.length} text segments, sorted by start time`,
+  );
 
   return segments;
 }
@@ -156,18 +189,21 @@ export function extractTextSegments(
  */
 function convertColorToFFmpeg(color: string): string {
   if (!color) return '0xFFFFFF'; // Default white
-  
+
   // Handle hex colors
   if (color.startsWith('#')) {
     let hex = color.substring(1);
     if (hex.length === 3) {
-      hex = hex.split('').map((c) => c + c).join('');
+      hex = hex
+        .split('')
+        .map((c) => c + c)
+        .join('');
     }
     if (hex.length >= 6) {
       return `0x${hex.substring(0, 6)}`;
     }
   }
-  
+
   // Handle rgba/rgb colors
   const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (rgbaMatch) {
@@ -176,7 +212,7 @@ function convertColorToFFmpeg(color: string): string {
     const b = parseInt(rgbaMatch[3]).toString(16).padStart(2, '0');
     return `0x${r}${g}${b}`;
   }
-  
+
   return '0xFFFFFF'; // Default white
 }
 
@@ -221,7 +257,7 @@ function escapePathForFilter(filePath: string): string {
  */
 function applyTextTransform(text: string, transform?: string): string {
   if (!transform) return text;
-  
+
   switch (transform) {
     case 'uppercase':
       return text.toUpperCase();
@@ -237,7 +273,10 @@ function applyTextTransform(text: string, transform?: string): string {
 /**
  * Merges global text style with segment-specific style
  */
-function mergeTextStyles(globalStyle?: TextStyleOptions, segmentStyle?: TextStyleOptions): TextStyleOptions {
+function mergeTextStyles(
+  globalStyle?: TextStyleOptions,
+  segmentStyle?: TextStyleOptions,
+): TextStyleOptions {
   if (!globalStyle && !segmentStyle) {
     return {};
   }
@@ -247,7 +286,7 @@ function mergeTextStyles(globalStyle?: TextStyleOptions, segmentStyle?: TextStyl
   if (!segmentStyle) {
     return globalStyle;
   }
-  
+
   return {
     ...globalStyle,
     ...segmentStyle,
@@ -272,20 +311,24 @@ export function generateDrawtextFilter(
 
   // Build drawtext parameters
   const params: string[] = [];
-  
+
   // Text content
   params.push(`text='${text}'`);
-  
+
   // Font family - resolve actual font path
-  const fontFamily = mergedStyle.fontFamily?.split(',')[0].replace(/['"]/g, '').trim() || 'Inter';
-  const fontWeight = mergedStyle.fontWeight 
-    ? (typeof mergedStyle.fontWeight === 'string' ? mergedStyle.fontWeight : String(mergedStyle.fontWeight))
+  const fontFamily =
+    mergedStyle.fontFamily?.split(',')[0].replace(/['"]/g, '').trim() ||
+    'Inter';
+  const fontWeight = mergedStyle.fontWeight
+    ? typeof mergedStyle.fontWeight === 'string'
+      ? mergedStyle.fontWeight
+      : String(mergedStyle.fontWeight)
     : '400';
   const isItalic = mergedStyle.fontStyle === 'italic';
-  
+
   // Get the actual font file path or font name
   const fontPath = getFontPath(fontFamily, fontWeight, isItalic);
-  
+
   // Check if it's a system font (no .ttf extension) or a file path
   if (fontPath.includes('.ttf')) {
     // TTF file path - use fontfile parameter
@@ -295,13 +338,15 @@ export function generateDrawtextFilter(
     // System font name - use font parameter
     params.push(`font=${fontPath}`);
   }
-  
-  params.push(`fontsize=${mergedStyle.fontSize ? parseInt(mergedStyle.fontSize) : 40}`);
-  
+
+  params.push(
+    `fontsize=${mergedStyle.fontSize ? parseInt(mergedStyle.fontSize) : 40}`,
+  );
+
   // Font color
   const fontColor = convertColorToFFmpeg(mergedStyle.color || '#FFFFFF');
   params.push(`fontcolor=${fontColor}`);
-  
+
   // Position
   // FFmpeg drawtext x/y coordinates:
   // - x: left edge of text by default
@@ -310,15 +355,15 @@ export function generateDrawtextFilter(
     const coordX = segment.position.x; // Percentage from frontend: 0 = left, 1 = right
     const coordY = segment.position.y; // Percentage from frontend: 0 = top, 1 = bottom
     const textAlign = mergedStyle.textAlign || 'center';
-    
+
     // Calculate pixel positions by multiplying percentages with resolution
     const pixelX = coordX * playResX;
     const pixelY = coordY * playResY;
-    
+
     console.log(
       `[TextLayers] Position (from frontend): x=${coordX.toFixed(3)} (${Math.round(pixelX)}px), y=${coordY.toFixed(3)} (${Math.round(pixelY)}px), scale=${segment.position.scale}, rotation=${segment.position.rotation}°, align=${textAlign}`,
     );
-    
+
     // Calculate X position based on text alignment
     // The coordinate represents the anchor point (left/center/right) of the text
     if (textAlign === 'center') {
@@ -331,7 +376,7 @@ export function generateDrawtextFilter(
       // Left alignment: coordinate is left edge of text
       params.push(`x=${Math.round(pixelX)}`);
     }
-    
+
     // Calculate Y position
     // For Y, we typically center vertically, so subtract half text height
     params.push(`y=${Math.round(pixelY)}-text_h/2`);
@@ -340,32 +385,37 @@ export function generateDrawtextFilter(
     params.push(`x=(w-text_w)/2`);
     params.push(`y=(h-text_h)/2`);
   }
-  
+
   // Border/stroke (if strokeColor is set)
   if (mergedStyle.strokeColor) {
     const borderColor = convertColorToFFmpeg(mergedStyle.strokeColor);
     params.push(`borderw=2`);
     params.push(`bordercolor=${borderColor}`);
   }
-  
+
   // Shadow (if hasShadow is true)
   if (mergedStyle.hasShadow) {
     params.push(`shadowx=2`);
     params.push(`shadowy=2`);
     params.push(`shadowcolor=0x000000`);
   }
-  
+
   // Box/background (if backgroundColor is set)
-  if (mergedStyle.backgroundColor && mergedStyle.backgroundColor !== 'transparent') {
+  if (
+    mergedStyle.backgroundColor &&
+    mergedStyle.backgroundColor !== 'transparent'
+  ) {
     const boxColor = convertColorToFFmpeg(mergedStyle.backgroundColor);
     params.push(`box=1`);
     params.push(`boxcolor=${boxColor}`);
     params.push(`boxborderw=5`);
   }
-  
+
   // Enable expression for time-based visibility
-  params.push(`enable='between(t,${segment.startTime.toFixed(3)},${segment.endTime.toFixed(3)})'`);
-  
+  params.push(
+    `enable='between(t,${segment.startTime.toFixed(3)},${segment.endTime.toFixed(3)})'`,
+  );
+
   return `drawtext=${params.join(':')}`;
 }
 
@@ -383,13 +433,15 @@ export function generateTextLayerFilters(
     return [];
   }
 
-  console.log(`📝 [TextLayers] Generating drawtext filters for ${segments.length} text segments`);
+  console.log(
+    `📝 [TextLayers] Generating drawtext filters for ${segments.length} text segments`,
+  );
 
   const filters = segments.map((segment, index) => {
     console.log(
       `📝 [TextLayers] Processing segment ${index + 1}: "${segment.text.substring(0, 30)}..." [${segment.startTime.toFixed(3)}s-${segment.endTime.toFixed(3)}s]`,
     );
-    
+
     return generateDrawtextFilter(segment, globalStyle, videoDimensions);
   });
 

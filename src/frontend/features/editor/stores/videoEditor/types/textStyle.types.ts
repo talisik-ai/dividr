@@ -71,6 +71,9 @@ export interface TextStyleSlice {
   // Global subtitle position
   setGlobalSubtitlePosition: (position: { x: number; y: number }) => void;
 
+  // Snapshot global styles to selected tracks (used when selecting tracks in 'selected' mode)
+  snapshotStylesToSelectedTracks: () => void;
+
   // Cross-slice helpers (accessed by projectSlice for auto-save)
   markUnsavedChanges?: () => void;
 }

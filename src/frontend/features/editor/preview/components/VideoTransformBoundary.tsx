@@ -238,6 +238,7 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
 
   // Update dimensions in the store when content size changes
   // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
+  // CRITICAL: Respect explicit transform dimensions set by aspect ratio changes - don't auto-update if dimensions are already set
   useEffect(() => {
     if (disableAutoSizeUpdates) return;
 
@@ -248,6 +249,21 @@ export const VideoTransformBoundary: React.FC<VideoTransformBoundaryProps> = ({
 
     // Skip dimension updates when renderScale changes - this prevents auto-scaling on fullscreen toggle
     if (renderScaleChanged) {
+      return;
+    }
+
+    // CRITICAL: If transform already has explicit width/height set (from aspect ratio change),
+    // don't auto-update dimensions. This prevents overriding the fit calculation.
+    // Only auto-update if dimensions are missing or zero (initial sizing).
+    const hasExplicitDimensions =
+      normalizedTransform.width &&
+      normalizedTransform.height &&
+      normalizedTransform.width > 0 &&
+      normalizedTransform.height > 0;
+
+    if (hasExplicitDimensions) {
+      // Transform dimensions are explicitly set (likely from aspect ratio change)
+      // Don't auto-update - respect the explicit dimensions
       return;
     }
 

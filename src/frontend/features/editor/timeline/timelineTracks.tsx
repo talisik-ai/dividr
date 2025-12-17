@@ -862,6 +862,7 @@ interface TrackRowProps {
   onPlaceholderClick?: () => void;
   isSplitModeActive: boolean;
   isEmptyTimeline: boolean;
+  hasVideoTracks: boolean;
   isPlaceholder?: boolean;
 }
 
@@ -882,6 +883,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     onPlaceholderClick,
     isSplitModeActive,
     isEmptyTimeline,
+    hasVideoTracks,
     isPlaceholder = false,
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
@@ -1089,20 +1091,27 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           )}
         </div>
 
-        {isEmptyTimeline && isBaseVideoRow && (
+        {isBaseVideoRow && !hasVideoTracks && (
           <div
-            className={`absolute inset-0 flex items-center justify-center px-8 cursor-pointer transition-all duration-200 rounded-lg border-2 border-dashed
-            ${
+            className={cn(
+              'absolute inset-0 flex px-4 cursor-pointer transition-all duration-200 rounded-lg border-2 border-dashed',
               isDragOver
                 ? 'border-secondary bg-secondary/10 text-secondary'
-                : 'border-accent hover:border-secondary hover:bg-secondary/10 bg-accent text-muted-foreground hover:text-foreground'
-            }`}
+                : 'border-accent hover:border-secondary hover:bg-secondary/10 bg-accent text-muted-foreground hover:text-foreground',
+              hasVideoTracks && 'items-center justify-center',
+            )}
             onClick={onPlaceholderClick}
           >
-            <div className="flex items-center gap-2 text-xs">
-              <Film className="h-4 w-4" />
-              <span>Drag and drop your media here</span>
-            </div>
+            {isEmptyTimeline ? (
+              <div className="flex items-center gap-2 text-xs">
+                <Film className="h-4 w-4" />
+                <span>Drag and drop your media here</span>
+              </div>
+            ) : (
+              <div className="flex items-center">
+                <Film className="h-4 w-4" />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1140,6 +1149,7 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       prevProps.allTracksCount === nextProps.allTracksCount &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive &&
       prevProps.isEmptyTimeline === nextProps.isEmptyTimeline &&
+      prevProps.hasVideoTracks === nextProps.hasVideoTracks &&
       prevProps.isPlaceholder === nextProps.isPlaceholder
     );
   },
@@ -1186,6 +1196,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
     );
 
     const isEmptyTimeline = tracks.length === 0;
+    const hasVideoTracks = tracks.some((track) => track.type === 'video');
 
     const migratedTracks = useMemo(
       () => migrateTracksWithRowIndex(tracks),
@@ -1707,6 +1718,7 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
                   onPlaceholderClick={memoizedHandlers.onPlaceholderClick}
                   isSplitModeActive={isSplitModeActive}
                   isEmptyTimeline={isEmptyTimeline}
+                  hasVideoTracks={hasVideoTracks}
                 />
               </div>
             );

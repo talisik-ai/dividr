@@ -183,19 +183,30 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
       const trackTime = relativeFrame / fps;
       const targetTime = (track.sourceStartTime || 0) + trackTime;
 
-      // If the controlling track for this URL changed, force a retime and pause
+      // If the controlling track for this URL changed, check if we need to retime
+      // KEY: Don't pause/seek if audio is already playing at roughly the right time
       const previousController = activeUrlTrackRef.current.get(
         track.previewUrl,
       );
       const controllerChanged = previousController !== track.id;
       if (controllerChanged) {
         activeUrlTrackRef.current.set(track.previewUrl, track.id);
-        audio.pause();
-        const state = audioElementsRef.current.get(track.previewUrl);
-        if (state) state.isPlaying = false;
-        if (audio.readyState >= 1) {
-          audio.currentTime = targetTime;
+
+        // Only pause and seek if audio is significantly out of sync
+        // Use large tolerance (500ms) during playback to avoid stuttering
+        const audioIsPlaying = !audio.paused && audio.readyState >= 2;
+        const diff = Math.abs(audio.currentTime - targetTime);
+        const playbackTolerance = 0.5; // 500ms during playback
+
+        if (!audioIsPlaying || diff > playbackTolerance) {
+          audio.pause();
+          const state = audioElementsRef.current.get(track.previewUrl);
+          if (state) state.isPlaying = false;
+          if (audio.readyState >= 1) {
+            audio.currentTime = targetTime;
+          }
         }
+        // If audio is playing and within tolerance, let it continue
       }
 
       // Set volume and playback rate
@@ -215,24 +226,30 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
       }
 
       // Handle seeking / retime
-      const needsRetime =
-        isSeek || playStateChanged || controllerChanged || !isWithinRange;
-      if (needsRetime) {
-        const tolerance = 0.12; // relaxed tolerance to avoid thrash
-        const diff = Math.abs(audio.currentTime - targetTime);
+      // KEY: During continuous playback, use large tolerance to avoid stuttering
+      const audioIsPlaying = !audio.paused && audio.readyState >= 2;
+      const diff = Math.abs(audio.currentTime - targetTime);
 
-        if (diff > tolerance || controllerChanged) {
-          // For small retimes, avoid pausing to reduce audible glitches
-          if (diff > tolerance * 2 || controllerChanged) {
-            audio.pause();
-            const state = audioElementsRef.current.get(track.previewUrl);
-            if (state) state.isPlaying = false;
-          }
-          if (audio.readyState >= 1) {
-            audio.currentTime = targetTime;
-          }
+      // Use 500ms tolerance during playback, tighter when paused/seeking
+      const playbackTolerance = 0.5;
+      const seekTolerance = 0.12;
+      const tolerance = audioIsPlaying && isPlaying ? playbackTolerance : seekTolerance;
+
+      // Only retime if truly needed (large jump or explicit seek)
+      const needsRetime = isSeek || playStateChanged;
+
+      if (needsRetime && diff > tolerance) {
+        // For large differences, pause and seek
+        if (diff > tolerance * 2) {
+          audio.pause();
+          const state = audioElementsRef.current.get(track.previewUrl);
+          if (state) state.isPlaying = false;
+        }
+        if (audio.readyState >= 1) {
+          audio.currentTime = targetTime;
         }
       }
+      // During normal playback with small drift, let audio continue naturally
 
       // Handle play/pause
       if (isPlaying) {
