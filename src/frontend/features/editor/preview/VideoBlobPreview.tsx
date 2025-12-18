@@ -652,13 +652,12 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       if (preview.interactionMode === 'pan') return;
 
       if (preview.interactionMode === 'text-edit') {
-        const isTextElement =
-          target.closest('[data-text-element]') !== null ||
+        // Check if clicking on a contenteditable element that's currently being edited
+        const isActivelyEditing =
           target.closest('[contenteditable="true"]') !== null ||
-          target.classList.contains('text-content') ||
           (target.tagName === 'DIV' && target.contentEditable === 'true');
 
-        if (isTextElement) return;
+        if (isActivelyEditing) return;
 
         const isUIControl =
           target.classList.contains('transform-handle') ||
@@ -668,6 +667,26 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
 
         if (isUIControl) return;
 
+        // CRITICAL: Use spatial hit-testing to find text/subtitle elements under cursor
+        // This prevents the topmost-layer bug where DOM z-index stacking selects wrong element
+        const topElementId = getTopElementAtPoint(e.clientX, e.clientY);
+        const topElement = topElementId
+          ? tracks.find((t) => t.id === topElementId)
+          : null;
+
+        // If clicked on a text or subtitle element, select it and enter edit mode
+        if (
+          topElement &&
+          (topElement.type === 'text' || topElement.type === 'subtitle')
+        ) {
+          e.stopPropagation();
+          e.preventDefault();
+          setSelectedTracks([topElementId]);
+          setPendingEditTextId(topElementId);
+          return;
+        }
+
+        // Clicking on empty space - create new text clip
         if (activeVideoTrack || activeAudioTrack) {
           const rect = containerRef.current?.getBoundingClientRect();
           if (!rect) return;
@@ -748,6 +767,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       addTextClip,
       updateTrack,
       setPreviewInteractionMode,
+      getTopElementAtPoint,
     ],
   );
 
