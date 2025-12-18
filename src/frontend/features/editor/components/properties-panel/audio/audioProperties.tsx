@@ -9,31 +9,50 @@ import {
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
 import { RotateCcw, VolumeX } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
+import { DEFAULT_AUDIO_METADATA } from '../../../stores/videoEditor/types/track.types';
 
 interface AudioPropertiesProps {
   selectedTrackIds: string[];
+  forceTrackId?: string; // Optional: force a specific track ID (allows video tracks with audio)
 }
 
+// Default audio properties for UI (concrete number type for slider compatibility)
 const DEFAULT_AUDIO_PROPERTIES = {
-  volumeDb: 0, // 0 dB = unity gain
-  noiseReductionEnabled: false,
+  volumeDb: DEFAULT_AUDIO_METADATA.volumeDb as number,
+  noiseReductionEnabled: DEFAULT_AUDIO_METADATA.noiseReductionEnabled,
 };
 
 const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   selectedTrackIds,
+  forceTrackId,
 }) => {
   // Selective subscriptions to avoid re-renders during playback
   const tracks = useVideoEditorStore((state) => state.tracks);
 
   // Action subscriptions (these don't cause re-renders)
-  const updateTrack = useVideoEditorStore((state) => state.updateTrack);
-
-  // Get selected audio tracks
-  const selectedAudioTracks = tracks.filter(
-    (track) => track.type === 'audio' && selectedTrackIds.includes(track.id),
+  const updateTrackAudio = useVideoEditorStore(
+    (state) => state.updateTrackAudio,
   );
+  const beginAudioUpdate = useVideoEditorStore(
+    (state) => state.beginAudioUpdate,
+  );
+  const endAudioUpdate = useVideoEditorStore((state) => state.endAudioUpdate);
+
+  // Track if we're in a slider drag to avoid multiple beginGroup calls
+  const isDraggingRef = useRef(false);
+
+  // Get selected audio tracks (or forced track)
+  const selectedAudioTracks = useMemo(() => {
+    if (forceTrackId) {
+      const forcedTrack = tracks.find((track) => track.id === forceTrackId);
+      return forcedTrack ? [forcedTrack] : [];
+    }
+    return tracks.filter(
+      (track) => track.type === 'audio' && selectedTrackIds.includes(track.id),
+    );
+  }, [tracks, selectedTrackIds, forceTrackId]);
 
   // Don't render if no audio tracks are selected
   if (selectedAudioTracks.length === 0) {
@@ -65,23 +84,14 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     setLocalInputValue(formatDbValue(currentAudioProperties.volumeDb));
   }, [currentAudioProperties.volumeDb]);
 
-  // Helper function to update audio properties for selected tracks
+  // Helper function to update audio properties for selected tracks (batch-safe)
   const updateAudioProperties = useCallback(
     (propertyUpdates: Partial<typeof DEFAULT_AUDIO_PROPERTIES>) => {
       selectedAudioTracks.forEach((track) => {
-        const currentTrackProperties = {
-          volumeDb: track.volumeDb ?? DEFAULT_AUDIO_PROPERTIES.volumeDb,
-          noiseReductionEnabled:
-            track.noiseReductionEnabled ??
-            DEFAULT_AUDIO_PROPERTIES.noiseReductionEnabled,
-        };
-        updateTrack(track.id, {
-          ...currentTrackProperties,
-          ...propertyUpdates,
-        });
+        updateTrackAudio(track.id, propertyUpdates);
       });
     },
-    [selectedAudioTracks, updateTrack],
+    [selectedAudioTracks, updateTrackAudio],
   );
 
   // Check if properties have changed from default
@@ -93,7 +103,23 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     );
   }, [currentAudioProperties]);
 
-  // Handle volume slider change (dB scale)
+  // Handle volume slider drag start (begin batch transaction)
+  const handleVolumeSliderDragStart = useCallback(() => {
+    if (!isDraggingRef.current) {
+      isDraggingRef.current = true;
+      beginAudioUpdate();
+    }
+  }, [beginAudioUpdate]);
+
+  // Handle volume slider drag end (end batch transaction)
+  const handleVolumeSliderDragEnd = useCallback(() => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      endAudioUpdate();
+    }
+  }, [endAudioUpdate]);
+
+  // Handle volume slider change (dB scale) - called during drag
   const handleVolumeSliderChange = useCallback(
     (values: number[]) => {
       const dbValue = values[0];
@@ -112,7 +138,7 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     [],
   );
 
-  // Commit volume input value
+  // Commit volume input value (single action - creates undo entry)
   const commitVolumeInput = useCallback(() => {
     const inputValue = localInputValue.toLowerCase().trim();
 
@@ -131,9 +157,18 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
       dbValue = Math.max(-60, Math.min(12, parsed));
     }
 
+    // Wrap in begin/end to create a single undo entry
+    beginAudioUpdate();
     updateAudioProperties({ volumeDb: dbValue });
+    endAudioUpdate();
     setLocalInputValue(formatDbValue(dbValue));
-  }, [localInputValue, currentAudioProperties.volumeDb, updateAudioProperties]);
+  }, [
+    localInputValue,
+    currentAudioProperties.volumeDb,
+    updateAudioProperties,
+    beginAudioUpdate,
+    endAudioUpdate,
+  ]);
 
   // Handle input key down for Enter/Escape
   const handleVolumeInputKeyDown = useCallback(
@@ -154,18 +189,22 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     return db === -Infinity ? -60 : Math.max(-60, Math.min(12, db));
   }, []);
 
-  // Handle noise reduction toggle
+  // Handle noise reduction toggle (single action - creates undo entry)
   const handleNoiseReductionToggle = useCallback(
     (enabled: boolean) => {
+      beginAudioUpdate();
       updateAudioProperties({ noiseReductionEnabled: enabled });
+      endAudioUpdate();
     },
-    [updateAudioProperties],
+    [updateAudioProperties, beginAudioUpdate, endAudioUpdate],
   );
 
-  // Handle reset to defaults
+  // Handle reset to defaults (single action - creates undo entry)
   const handleReset = useCallback(() => {
+    beginAudioUpdate();
     updateAudioProperties(DEFAULT_AUDIO_PROPERTIES);
-  }, [updateAudioProperties]);
+    endAudioUpdate();
+  }, [updateAudioProperties, beginAudioUpdate, endAudioUpdate]);
 
   return (
     <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
@@ -214,6 +253,8 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
             <Slider
               value={[getSliderValue(currentAudioProperties.volumeDb)]}
               onValueChange={handleVolumeSliderChange}
+              onPointerDown={handleVolumeSliderDragStart}
+              onValueCommit={handleVolumeSliderDragEnd}
               min={-60}
               max={12}
               step={0.1}

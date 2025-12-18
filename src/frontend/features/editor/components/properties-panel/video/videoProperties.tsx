@@ -16,6 +16,7 @@ import {
 import { RotateCcw } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
+import { AudioProperties } from '../audio/audioProperties';
 
 interface VideoPropertiesProps {
   selectedTrackIds: string[];
@@ -54,6 +55,55 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
   const isMultipleSelected = selectedVideoTracks.length > 1;
   const selectedTrack = selectedVideoTracks[0];
   const currentTransform = selectedTrack.textTransform || DEFAULT_TRANSFORM;
+
+  // Check if video has audio (embedded or linked)
+  const hasAudio = useMemo(() => {
+    if (isMultipleSelected) return false;
+
+    // Check for embedded audio (video track has volume properties)
+    const hasEmbeddedAudio =
+      selectedTrack.volume !== undefined ||
+      selectedTrack.volumeDb !== undefined ||
+      selectedTrack.muted !== undefined;
+
+    // Check for linked audio
+    const hasLinkedAudio =
+      selectedTrack.isLinked && selectedTrack.linkedTrackId;
+
+    return hasEmbeddedAudio || hasLinkedAudio;
+  }, [selectedTrack, isMultipleSelected]);
+
+  // Get linked audio track if present
+  const linkedAudioTrack = useMemo(() => {
+    if (!selectedTrack.isLinked || !selectedTrack.linkedTrackId) return null;
+    return (
+      tracks.find(
+        (track) =>
+          track.id === selectedTrack.linkedTrackId && track.type === 'audio',
+      ) || null
+    );
+  }, [tracks, selectedTrack]);
+
+  // Tab state management - persist while same track is selected
+  const [activeTab, setActiveTab] = React.useState(
+    hasAudio ? 'video' : 'basic',
+  );
+  const [videoSubTab, setVideoSubTab] = React.useState('basic');
+
+  // Reset to appropriate default tab when selected track changes
+  React.useEffect(() => {
+    setActiveTab(hasAudio ? 'video' : 'basic');
+    setVideoSubTab('basic');
+  }, [selectedTrack.id, hasAudio]);
+
+  // Determine which track ID to use for audio tab
+  const audioTrackId = useMemo(() => {
+    if (linkedAudioTrack) {
+      return linkedAudioTrack.id;
+    }
+    // For embedded audio, use video track ID
+    return selectedTrack.id;
+  }, [linkedAudioTrack, selectedTrack.id]);
 
   // Helper function to update transform for selected tracks
   const updateTransform = useCallback(
@@ -247,222 +297,490 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <Tabs
-        defaultValue="basic"
+        value={activeTab}
+        onValueChange={setActiveTab}
         className="flex-1 flex flex-col overflow-hidden"
       >
         <div className="px-4">
-          <TabsList variant="underline">
-            <TabsTrigger value="basic" variant="underline">
-              Basic
-            </TabsTrigger>
-            <TabsTrigger value="advanced" disabled variant="underline">
-              Advanced
-            </TabsTrigger>
+          <TabsList className="w-full">
+            {hasAudio ? (
+              <>
+                <TabsTrigger value="video">Video</TabsTrigger>
+                <TabsTrigger value="audio">Audio</TabsTrigger>
+              </>
+            ) : (
+              <>
+                <TabsTrigger value="basic" variant="underline">
+                  Basic
+                </TabsTrigger>
+                <TabsTrigger value="advanced" disabled variant="underline">
+                  Advanced
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
         </div>
 
-        <TabsContent
-          value="basic"
-          className="flex-1 overflow-y-auto px-4 pb-4 space-y-4"
-        >
-          {/* Transform Section */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold text-foreground">
-                Transform
-              </h4>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleResetTransform}
-                    className="h-7 w-7 p-0"
-                    disabled={!hasTransformChanged || isMultipleSelected}
-                  >
-                    <RotateCcw className="size-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {hasTransformChanged
-                      ? 'Reset all transforms'
-                      : 'No changes to reset'}
+        {/* Video Tab with nested Basic/Advanced tabs */}
+        {hasAudio ? (
+          <TabsContent value="video" className="flex-1 overflow-hidden">
+            <Tabs
+              value={videoSubTab}
+              onValueChange={setVideoSubTab}
+              className="flex-1 flex flex-col overflow-hidden"
+            >
+              <div className="px-4">
+                <TabsList variant="underline">
+                  <TabsTrigger value="basic" variant="underline">
+                    Basic
+                  </TabsTrigger>
+                  <TabsTrigger value="advanced" disabled variant="underline">
+                    Advanced
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent
+                value="basic"
+                className="flex-1 overflow-y-auto px-4 pb-4 space-y-4"
+              >
+                {/* Transform Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-foreground">
+                      Transform
+                    </h4>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleResetTransform}
+                          className="h-7 w-7 p-0"
+                          disabled={!hasTransformChanged || isMultipleSelected}
+                        >
+                          <RotateCcw className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {hasTransformChanged
+                            ? 'Reset all transforms'
+                            : 'No changes to reset'}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+
+                  {/* Scale */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted-foreground">
+                        Scale
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Slider
+                        value={[currentTransform.scale * 100]}
+                        onValueChange={handleScaleSliderChange}
+                        min={0}
+                        max={200}
+                        step={1}
+                        className="flex-1"
+                        disabled={isMultipleSelected}
+                      />
+                      <Input
+                        type="number"
+                        value={Math.round(currentTransform.scale * 100)}
+                        onChange={handleScaleInputChange}
+                        min={0}
+                        max={200}
+                        className="w-16 h-8 text-xs text-center"
+                        disabled={isMultipleSelected}
+                      />
+                      <span className="text-xs text-muted-foreground w-4">
+                        %
+                      </span>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Opacity */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted-foreground">
+                        Opacity
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Slider
+                        value={[100]}
+                        onValueChange={() => {
+                          // Disabled - no-op
+                        }}
+                        min={0}
+                        max={100}
+                        step={1}
+                        className="flex-1"
+                        disabled
+                      />
+                      <Input
+                        type="number"
+                        value={100}
+                        onChange={() => {
+                          // Disabled - no-op
+                        }}
+                        min={0}
+                        max={100}
+                        className="w-16 h-8 text-xs text-center"
+                        disabled
+                      />
+                      <span className="text-xs text-muted-foreground w-4">
+                        %
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Opacity controls coming soon
+                    </p>
+                  </div>
+
+                  <Separator />
+
+                  {/* Position */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted-foreground">
+                        Position
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">
+                          X
+                        </label>
+                        <Input
+                          type="number"
+                          value={localX}
+                          onChange={handlePositionXChange}
+                          step={0.01}
+                          className="h-8 text-xs"
+                          disabled={isMultipleSelected}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">
+                          Y
+                        </label>
+                        <Input
+                          type="number"
+                          value={localY}
+                          onChange={handlePositionYChange}
+                          step={0.01}
+                          className="h-8 text-xs"
+                          disabled={isMultipleSelected}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Normalized coordinates (-1 to 1, 0 = center)
+                    </p>
+                  </div>
+
+                  <Separator />
+
+                  {/* Rotation */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted-foreground">
+                        Rotation
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 items-center gap-3">
+                      <Input
+                        type="number"
+                        value={localRotation}
+                        onChange={handleRotationInputChange}
+                        step={1}
+                        className="h-8 text-xs"
+                        disabled={isMultipleSelected}
+                      />
+
+                      {/* Rotation Knob */}
+                      <div
+                        ref={knobRef}
+                        className="relative flex items-center justify-center size-10 rounded-full border-2 border-border bg-muted/50 cursor-grab active:cursor-grabbing hover:border-primary transition-colors select-none"
+                        onMouseDown={handleKnobMouseDown}
+                        style={{
+                          opacity: isMultipleSelected ? 0.5 : 1,
+                          pointerEvents: isMultipleSelected ? 'none' : 'auto',
+                        }}
+                      >
+                        {/* Rotation indicator line */}
+                        <div
+                          className="absolute w-0.5 h-4 bg-primary rounded-full"
+                          style={{
+                            transform: `rotate(${displayRotation}deg)`,
+                            transformOrigin: 'center bottom',
+                            bottom: '50%',
+                          }}
+                        />
+                        {/* Center dot */}
+                        <div className="absolute w-1.5 h-1.5 bg-primary rounded-full" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {isMultipleSelected && (
+                  <div className="pt-4">
+                    <p className="text-xs text-muted-foreground text-center">
+                      Multiple tracks selected. Select a single track to edit
+                      properties.
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent
+                value="advanced"
+                className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4"
+              >
+                <div className="space-y-4">
+                  <h4 className="text-sm font-semibold text-foreground">
+                    Advanced
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Advanced video controls coming soon. This section will
+                    include effects, filters, and more transform options.
                   </p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-
-            {/* Scale */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-muted-foreground">Scale</label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Slider
-                  value={[currentTransform.scale * 100]}
-                  onValueChange={handleScaleSliderChange}
-                  min={0}
-                  max={200}
-                  step={1}
-                  className="flex-1"
-                  disabled={isMultipleSelected}
-                />
-                <Input
-                  type="number"
-                  value={Math.round(currentTransform.scale * 100)}
-                  onChange={handleScaleInputChange}
-                  min={0}
-                  max={200}
-                  className="w-16 h-8 text-xs text-center"
-                  disabled={isMultipleSelected}
-                />
-                <span className="text-xs text-muted-foreground w-4">%</span>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Opacity */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-muted-foreground">Opacity</label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Slider
-                  value={[100]}
-                  onValueChange={() => {
-                    // Disabled - no-op
-                  }}
-                  min={0}
-                  max={100}
-                  step={1}
-                  className="flex-1"
-                  disabled
-                />
-                <Input
-                  type="number"
-                  value={100}
-                  onChange={() => {
-                    // Disabled - no-op
-                  }}
-                  min={0}
-                  max={100}
-                  className="w-16 h-8 text-xs text-center"
-                  disabled
-                />
-                <span className="text-xs text-muted-foreground w-4">%</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Opacity controls coming soon
-              </p>
-            </div>
-
-            <Separator />
-
-            {/* Position */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-muted-foreground">
-                  Position
-                </label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">X</label>
-                  <Input
-                    type="number"
-                    value={localX}
-                    onChange={handlePositionXChange}
-                    step={0.01}
-                    className="h-8 text-xs"
-                    disabled={isMultipleSelected}
-                  />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Y</label>
-                  <Input
-                    type="number"
-                    value={localY}
-                    onChange={handlePositionYChange}
-                    step={0.01}
-                    className="h-8 text-xs"
-                    disabled={isMultipleSelected}
-                  />
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+        ) : (
+          <>
+            {/* No audio - show Basic/Advanced directly */}
+            <TabsContent
+              value="basic"
+              className="flex-1 overflow-y-auto px-4 pb-4 space-y-4"
+            >
+              {/* Transform Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-foreground">
+                    Transform
+                  </h4>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleResetTransform}
+                        className="h-7 w-7 p-0"
+                        disabled={!hasTransformChanged || isMultipleSelected}
+                      >
+                        <RotateCcw className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {hasTransformChanged
+                          ? 'Reset all transforms'
+                          : 'No changes to reset'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+
+                {/* Scale */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground">
+                      Scale
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Slider
+                      value={[currentTransform.scale * 100]}
+                      onValueChange={handleScaleSliderChange}
+                      min={0}
+                      max={200}
+                      step={1}
+                      className="flex-1"
+                      disabled={isMultipleSelected}
+                    />
+                    <Input
+                      type="number"
+                      value={Math.round(currentTransform.scale * 100)}
+                      onChange={handleScaleInputChange}
+                      min={0}
+                      max={200}
+                      className="w-16 h-8 text-xs text-center"
+                      disabled={isMultipleSelected}
+                    />
+                    <span className="text-xs text-muted-foreground w-4">%</span>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Opacity */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground">
+                      Opacity
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Slider
+                      value={[100]}
+                      onValueChange={() => {
+                        // Disabled - no-op
+                      }}
+                      min={0}
+                      max={100}
+                      step={1}
+                      className="flex-1"
+                      disabled
+                    />
+                    <Input
+                      type="number"
+                      value={100}
+                      onChange={() => {
+                        // Disabled - no-op
+                      }}
+                      min={0}
+                      max={100}
+                      className="w-16 h-8 text-xs text-center"
+                      disabled
+                    />
+                    <span className="text-xs text-muted-foreground w-4">%</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Opacity controls coming soon
+                  </p>
+                </div>
+
+                <Separator />
+
+                {/* Position */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground">
+                      Position
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">X</label>
+                      <Input
+                        type="number"
+                        value={localX}
+                        onChange={handlePositionXChange}
+                        step={0.01}
+                        className="h-8 text-xs"
+                        disabled={isMultipleSelected}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Y</label>
+                      <Input
+                        type="number"
+                        value={localY}
+                        onChange={handlePositionYChange}
+                        step={0.01}
+                        className="h-8 text-xs"
+                        disabled={isMultipleSelected}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Normalized coordinates (-1 to 1, 0 = center)
+                  </p>
+                </div>
+
+                <Separator />
+
+                {/* Rotation */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground">
+                      Rotation
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 items-center gap-3">
+                    <Input
+                      type="number"
+                      value={localRotation}
+                      onChange={handleRotationInputChange}
+                      step={1}
+                      className="h-8 text-xs"
+                      disabled={isMultipleSelected}
+                    />
+
+                    {/* Rotation Knob */}
+                    <div
+                      ref={knobRef}
+                      className="relative flex items-center justify-center size-10 rounded-full border-2 border-border bg-muted/50 cursor-grab active:cursor-grabbing hover:border-primary transition-colors select-none"
+                      onMouseDown={handleKnobMouseDown}
+                      style={{
+                        opacity: isMultipleSelected ? 0.5 : 1,
+                        pointerEvents: isMultipleSelected ? 'none' : 'auto',
+                      }}
+                    >
+                      {/* Rotation indicator line */}
+                      <div
+                        className="absolute w-0.5 h-4 bg-primary rounded-full"
+                        style={{
+                          transform: `rotate(${displayRotation}deg)`,
+                          transformOrigin: 'center bottom',
+                          bottom: '50%',
+                        }}
+                      />
+                      {/* Center dot */}
+                      <div className="absolute w-1.5 h-1.5 bg-primary rounded-full" />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Normalized coordinates (-1 to 1, 0 = center)
-              </p>
-            </div>
 
-            <Separator />
-
-            {/* Rotation */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-muted-foreground">
-                  Rotation
-                </label>
-              </div>
-              <div className="grid grid-cols-2 items-center gap-3">
-                <Input
-                  type="number"
-                  value={localRotation}
-                  onChange={handleRotationInputChange}
-                  step={1}
-                  className="h-8 text-xs"
-                  disabled={isMultipleSelected}
-                />
-
-                {/* Rotation Knob */}
-                <div
-                  ref={knobRef}
-                  className="relative flex items-center justify-center size-10 rounded-full border-2 border-border bg-muted/50 cursor-grab active:cursor-grabbing hover:border-primary transition-colors select-none"
-                  onMouseDown={handleKnobMouseDown}
-                  style={{
-                    opacity: isMultipleSelected ? 0.5 : 1,
-                    pointerEvents: isMultipleSelected ? 'none' : 'auto',
-                  }}
-                >
-                  {/* Rotation indicator line */}
-                  <div
-                    className="absolute w-0.5 h-4 bg-primary rounded-full"
-                    style={{
-                      transform: `rotate(${displayRotation}deg)`,
-                      transformOrigin: 'center bottom',
-                      bottom: '50%',
-                    }}
-                  />
-                  {/* Center dot */}
-                  <div className="absolute w-1.5 h-1.5 bg-primary rounded-full" />
+              {isMultipleSelected && (
+                <div className="pt-4">
+                  <p className="text-xs text-muted-foreground text-center">
+                    Multiple tracks selected. Select a single track to edit
+                    properties.
+                  </p>
                 </div>
+              )}
+            </TabsContent>
+
+            <TabsContent
+              value="advanced"
+              className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4"
+            >
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-foreground">
+                  Advanced
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Advanced video controls coming soon. This section will include
+                  effects, filters, and more transform options.
+                </p>
               </div>
-            </div>
-          </div>
+            </TabsContent>
+          </>
+        )}
 
-          {isMultipleSelected && (
-            <div className="pt-4">
-              <p className="text-xs text-muted-foreground text-center">
-                Multiple tracks selected. Select a single track to edit
-                properties.
-              </p>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent
-          value="advanced"
-          className="flex-1 overflow-y-auto px-4 pb-4 space-y-4 mt-4"
-        >
-          <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-foreground">Advanced</h4>
-            <p className="text-xs text-muted-foreground">
-              Advanced video controls coming soon. This section will include
-              effects, filters, and more transform options.
-            </p>
-          </div>
-        </TabsContent>
+        {/* Audio Tab */}
+        {hasAudio && (
+          <TabsContent value="audio" className="flex-1 overflow-hidden">
+            <AudioProperties
+              selectedTrackIds={[audioTrackId]}
+              forceTrackId={audioTrackId}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

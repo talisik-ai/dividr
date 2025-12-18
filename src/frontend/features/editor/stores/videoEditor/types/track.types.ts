@@ -16,6 +16,107 @@
 //
 // =============================================================================
 
+// =============================================================================
+// AUDIO METADATA - Audio Processing Intent Model
+// =============================================================================
+//
+// AudioMetadata represents the audio processing intent for a clip.
+// This is a DATA-ONLY model - no processing logic is executed here.
+//
+// Used by:
+// - Audio clips (standalone)
+// - Video clips with embedded/linked audio
+//
+// The data is passed forward to mediaToolsRunner for processing.
+// =============================================================================
+
+/**
+ * Volume value in decibels.
+ * - Numeric values: -60 to +12 dB
+ * - '-inf': Represents complete silence (mute)
+ */
+export type VolumeDb = number | '-inf';
+
+/**
+ * AudioMetadata - Audio processing settings for a clip.
+ *
+ * This interface represents the user's INTENT for audio processing.
+ * No actual processing occurs - data is forwarded to mediaToolsRunner.
+ *
+ * Default values:
+ * - volumeDb: 0 (unity gain)
+ * - noiseReductionEnabled: false
+ */
+export interface AudioMetadata {
+  /**
+   * Volume in decibels.
+   * - Range: -60 to +12 dB
+   * - Use '-inf' for complete mute
+   * - 0 dB = unity gain (no change)
+   */
+  volumeDb: VolumeDb;
+
+  /**
+   * Whether noise reduction processing is enabled.
+   * This is a boolean flag only - no parameters or model selection.
+   * When true, signals intent to apply noise reduction during export.
+   */
+  noiseReductionEnabled: boolean;
+}
+
+/**
+ * Default audio metadata values.
+ * Used when initializing new audio-capable clips.
+ */
+export const DEFAULT_AUDIO_METADATA: AudioMetadata = {
+  volumeDb: 0,
+  noiseReductionEnabled: false,
+};
+
+/**
+ * MediaToolsAudioPayload - Payload structure for mediaToolsRunner.
+ *
+ * This is the data format sent to mediaToolsRunner for audio processing.
+ * Intent-only: no processing is executed, just data forwarding.
+ */
+export interface MediaToolsAudioPayload {
+  /** Volume in decibels (-60 to +12, or '-inf' for mute) */
+  volumeDb: VolumeDb;
+  /** Whether to apply noise reduction */
+  noiseReduction: boolean;
+}
+
+/**
+ * Extracts audio metadata from a track as a structured object.
+ * Returns default values for any missing properties.
+ */
+export const getAudioMetadata = (track: {
+  volumeDb?: number;
+  noiseReductionEnabled?: boolean;
+}): AudioMetadata => {
+  return {
+    volumeDb: track.volumeDb ?? DEFAULT_AUDIO_METADATA.volumeDb,
+    noiseReductionEnabled:
+      track.noiseReductionEnabled ??
+      DEFAULT_AUDIO_METADATA.noiseReductionEnabled,
+  };
+};
+
+/**
+ * Creates a mediaToolsRunner payload from track audio properties.
+ * This is DATA-ONLY - no processing is executed.
+ */
+export const createMediaToolsAudioPayload = (track: {
+  volumeDb?: number;
+  noiseReductionEnabled?: boolean;
+}): MediaToolsAudioPayload => {
+  const audio = getAudioMetadata(track);
+  return {
+    volumeDb: audio.volumeDb,
+    noiseReduction: audio.noiseReductionEnabled,
+  };
+};
+
 /**
  * ClipMetadata - Stateless representation of a media clip.
  *
@@ -116,12 +217,36 @@ export interface VideoTrack {
    * Defaults to sourceFps when track is created.
    */
   effectiveFps?: number;
-  volume?: number; // Legacy 0-1 volume for backward compatibility
-  volumeDb?: number; // Decibel-based volume control (-∞ to +12 dB)
+  // ==========================================================================
+  // Audio Properties (for audio/video tracks)
+  // ==========================================================================
+  /**
+   * Legacy volume (0-1) for backward compatibility.
+   * @deprecated Use volumeDb instead
+   */
+  volume?: number;
+  /**
+   * Volume in decibels (-60 to +12 dB).
+   * Use -Infinity for complete silence (mute).
+   * 0 dB = unity gain (no change).
+   * @see AudioMetadata
+   */
+  volumeDb?: number;
+  /**
+   * Whether the track's audio is muted.
+   * Separate from volumeDb - allows muting without losing volume setting.
+   */
+  muted?: boolean;
+  /**
+   * Whether noise reduction is enabled for this track.
+   * Boolean flag only - signals processing intent for export.
+   * No parameters or model selection.
+   * @see AudioMetadata
+   */
+  noiseReductionEnabled?: boolean;
+  // ==========================================================================
   visible: boolean;
   locked: boolean;
-  muted?: boolean;
-  noiseReductionEnabled?: boolean; // Audio noise reduction toggle
   color: string;
   subtitleText?: string;
   subtitleType?: 'karaoke' | 'regular'; // Distinguish between karaoke (generated) and regular (imported) subtitles
