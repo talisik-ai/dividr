@@ -14,6 +14,17 @@ import sys
 from pathlib import Path
 
 # ==============================================================================
+# Ensure build directories exist
+# ==============================================================================
+
+# PyInstaller needs the workpath directory to exist before writing files
+# Default workpath is 'build/main' (based on spec filename 'main.spec')
+build_dir = Path('build')
+workpath_dir = build_dir / 'main'
+workpath_dir.mkdir(parents=True, exist_ok=True)
+print(f"📁 Ensuring build directory exists: {workpath_dir}")
+
+# ==============================================================================
 # Collect data files from dependencies
 # ==============================================================================
 

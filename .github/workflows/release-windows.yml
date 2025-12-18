@@ -1,0 +1,114 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*-windows'
+      - 'v*-win'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub Release'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      # Pre-download NSIS to avoid rate limiting issues during build
+      - name: Cache NSIS
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron-builder\Cache\nsis
+          key: nsis-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            nsis-${{ runner.os }}-
+
+      - name: Build Windows app
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: yarn make --platform win32
+        env:
+          CI: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_BUILDER_DOWNLOAD_TIMEOUT: 120000
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dividr-windows
+          path: |
+            out/make/**/*.exe
+            out/make/**/*.zip
+
+  create-release:
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display artifact structure
+        run: ls -R artifacts
+
+      - name: Flatten artifacts for release
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.exe" -o -name "*.zip" \) -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            # Remove -windows or -win suffix for release name
+            TAG="${GITHUB_REF#refs/tags/}"
+            BASE_TAG="${TAG%-windows}"
+            BASE_TAG="${BASE_TAG%-win}"
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            echo "base_tag=$BASE_TAG" >> $GITHUB_OUTPUT
+          else
+            # For manual runs, use timestamp
+            echo "tag=windows-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+            echo "base_tag=windows-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Windows Release ${{ steps.tag.outputs.base_tag }}"
+          files: release-assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

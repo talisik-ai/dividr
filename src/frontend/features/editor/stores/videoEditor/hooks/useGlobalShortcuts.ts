@@ -3,8 +3,8 @@ import { useMemo } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useVideoEditorStore } from '../index';
 import { createGlobalShortcuts } from '../shortcuts/globalShortcuts';
-import { useProjectShortcutHandlers } from '../shortcuts/hooks/useProjectShortcutHandlers';
 import { useProjectShortcutDialog } from '../shortcuts/hooks/useProjectShortcutDialog';
+import { useProjectShortcutHandlers } from '../shortcuts/hooks/useProjectShortcutHandlers';
 
 /**
  * Hook for global keyboard shortcuts

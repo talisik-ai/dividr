@@ -142,24 +142,25 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
             {/* Dark Mode/Light Mode Toggle */}
             <div className="flex items-center gap-7">
-              {process.env.NODE_ENV === 'development' && (
-                <Link to="/dev-tools">
-                  <Button variant="ghost" size="sm" title="Test Tools">
-                    Test Tools
-                  </Button>
-                </Link>
-              )}
+              {/* {process.env.NODE_ENV === 'development' && ( */}
+              <Link to="/dev-tools">
+                <Button variant="ghost" size="sm" title="Test Tools">
+                  Test Tools
+                </Button>
+              </Link>
+              {/* )} */}
               <ModeToggle />
             </div>
 
             {/* Window Controls */}
-            <div className="flex items-center gap-7">
+            <div className="flex items-center gap-4">
               {/* Minimize Button */}
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => window.appControl.minimizeApp()}
                 title="Minimize"
+                className="rounded-md hover:bg-gray-100 dark:hover:bg-zinc-700 hover:opacity-100 !p-1 size-fit"
               >
                 <Minus size={16} />
               </Button>
@@ -170,6 +171,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
                 size="icon"
                 onClick={handleMaximizeRestore}
                 title={isMaximized ? 'Restore' : 'Maximize'}
+                className="rounded-md hover:bg-gray-100 dark:hover:bg-zinc-700 hover:opacity-100 !p-1 size-fit"
               >
                 {isMaximized ? (
                   <Copy size={16} className="scale-x-[-1] transform" />
@@ -182,9 +184,9 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
               <Button
                 variant="ghost"
                 size="icon"
-                className="!p-1.5 !size-5 hover:bg-red-600 dark:hover:bg-red-600 hover:text-zinc-100"
                 onClick={handleCloseClick}
                 title="Close"
+                className="rounded-md hover:bg-red-600 dark:hover:bg-red-600 hover:text-zinc-100 !p-1 size-fit"
               >
                 <X size={16} />
               </Button>

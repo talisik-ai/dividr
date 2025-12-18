@@ -1,0 +1,172 @@
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - 'v*-macos'
+      - 'v*-mac'
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Architecture to build'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - arm64
+          - x64
+      create_release:
+        description: 'Create GitHub Release'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: ${{ github.event_name == 'workflow_dispatch' && (inputs.arch == 'both' && fromJSON('["arm64", "x64"]') || fromJSON(format('["{0}"]', inputs.arch))) || fromJSON('["arm64", "x64"]') }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      # Import Apple certificate for code signing
+      - name: Import Apple Certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          # Decode the certificate from base64
+          echo -n "$MACOS_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
+
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$MACOS_CERTIFICATE_PWD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          # Verify certificate import
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
+
+      - name: Build macOS app (${{ matrix.arch }})
+        run: yarn make --platform darwin --arch ${{ matrix.arch }}
+        env:
+          CI: true
+          APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+
+      # Notarize the app
+      - name: Notarize macOS app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Find the built app or zip
+          APP_PATH=$(find out/make -name "*.zip" -type f | head -1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "No zip file found to notarize"
+            exit 1
+          fi
+
+          echo "Submitting $APP_PATH for notarization..."
+
+          # Submit for notarization
+          xcrun notarytool submit "$APP_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          echo "Notarization complete!"
+
+      # Cleanup keychain
+      - name: Cleanup Keychain
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dividr-macos-${{ matrix.arch }}
+          path: |
+            out/make/**/*.zip
+            out/make/**/*.dmg
+            out/make/**/*.pkg
+
+  create-release:
+    needs: [build-macos]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display artifact structure
+        run: ls -R artifacts
+
+      - name: Flatten artifacts for release
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.zip" -o -name "*.dmg" -o -name "*.pkg" \) -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            # Remove -macos or -mac suffix for release name
+            TAG="${GITHUB_REF#refs/tags/}"
+            BASE_TAG="${TAG%-macos}"
+            BASE_TAG="${BASE_TAG%-mac}"
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            echo "base_tag=$BASE_TAG" >> $GITHUB_OUTPUT
+          else
+            # For manual runs, use timestamp
+            echo "tag=macos-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+            echo "base_tag=macos-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "macOS Release ${{ steps.tag.outputs.base_tag }}"
+          files: release-assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

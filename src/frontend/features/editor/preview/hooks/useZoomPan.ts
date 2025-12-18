@@ -14,9 +14,7 @@ export interface UseZoomPanProps {
   interactionMode: 'select' | 'pan' | 'text-edit';
   setPreviewScale: (scale: number) => void;
   setPreviewPan: (x: number, y: number) => void;
-  setPreviewInteractionMode: (
-    mode: 'select' | 'pan' | 'text-edit',
-  ) => void;
+  setPreviewInteractionMode: (mode: 'select' | 'pan' | 'text-edit') => void;
   hasContent: boolean;
 }
 

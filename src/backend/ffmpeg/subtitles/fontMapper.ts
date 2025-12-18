@@ -258,19 +258,20 @@ export function isFontAvailable(fontFamily: string): boolean {
 export function getFontFamilyDirectory(fontFamily: string): string | null {
   const cleanFamily = fontFamily.replace(/['"]/g, '').trim();
   const mapping = FONT_MAPPINGS[cleanFamily];
-  
+
   if (!mapping) {
     return null;
   }
-  
+
   // Get any variant to check if it's a system font
-  const variantPath = mapping.variants.regular || Object.values(mapping.variants)[0];
-  
+  const variantPath =
+    mapping.variants.regular || Object.values(mapping.variants)[0];
+
   if (!variantPath || !variantPath.includes('.ttf')) {
     // System font, no directory
     return null;
   }
-  
+
   // All fonts are now in the root fonts directory
   return getFontsDirectory();
 }
@@ -281,16 +282,18 @@ export function getFontFamilyDirectory(fontFamily: string): string | null {
  * @param fontFamilies - Array of font family names
  * @returns Array containing the fonts directory path (all fonts are in root now)
  */
-export function getFontDirectoriesForFamilies(fontFamilies: string[]): string[] {
+export function getFontDirectoriesForFamilies(
+  fontFamilies: string[],
+): string[] {
   const directories = new Set<string>();
-  
+
   for (const family of fontFamilies) {
     const dir = getFontFamilyDirectory(family);
     if (dir) {
       directories.add(dir);
     }
   }
-  
+
   return Array.from(directories);
 }
 
@@ -303,16 +306,16 @@ export function getFontDirectoriesForFamilies(fontFamilies: string[]): string[] 
 export function getFontPathsForFamilies(fontFamilies: string[]): string[] {
   const fontPaths = new Set<string>();
   const fontsDir = getFontsDirectory();
-  
+
   for (const family of fontFamilies) {
     const cleanFamily = family.replace(/['"]/g, '').trim();
     const mapping = FONT_MAPPINGS[cleanFamily];
-    
+
     if (!mapping) {
       console.warn(`⚠️  Font family not found in mappings: ${cleanFamily}`);
       continue;
     }
-    
+
     // Get all variants for this font family
     for (const variant of Object.values(mapping.variants)) {
       if (variant && variant.includes('.ttf')) {
@@ -322,6 +325,6 @@ export function getFontPathsForFamilies(fontFamilies: string[]): string[] {
       }
     }
   }
-  
+
   return Array.from(fontPaths);
 }

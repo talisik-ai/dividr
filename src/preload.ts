@@ -143,23 +143,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // Set up new listeners
       if (handlers.onProgress) {
         ipcRenderer.on('ffmpeg-progress', (_, progress) =>
-          handlers.onProgress!(progress),
+          handlers.onProgress?.(progress),
         );
       }
 
       if (handlers.onStatus) {
         ipcRenderer.on('ffmpeg-status', (_, status) =>
-          handlers.onStatus!(status),
+          handlers.onStatus?.(status),
         );
       }
 
       if (handlers.onLog) {
-        ipcRenderer.on('ffmpeg-log', (_, logData) => handlers.onLog!(logData));
+        ipcRenderer.on('ffmpeg-log', (_, logData) => handlers.onLog?.(logData));
       }
 
       if (handlers.onComplete) {
         ipcRenderer.on('ffmpeg-complete', (_, result) => {
-          handlers.onComplete!(result);
+          handlers.onComplete?.(result);
           removeListeners(); // Clean up after completion
         });
       }

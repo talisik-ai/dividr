@@ -1,11 +1,9 @@
-
-
 import {
+  AudioTrimResult,
   CategorizedInputs,
   ProcessedTimeline,
   ProcessedTimelineSegment,
   TrackInfo,
-  AudioTrimResult,
 } from '../schema/ffmpegConfig';
 
 const GAP_MARKER = '__GAP__' as const;
@@ -128,7 +126,7 @@ export interface ProcessAudioTimelineResult {
  * @param volumeDb - Volume adjustment in decibels as a float (e.g., 3.5 for +3.5dB, -6.2 for -6.2dB)
  *                    Defaults to 0dB if not specified (no volume change)
  * @returns FFmpeg volume filter string
- * 
+ *
  * @example
  * applyVolumeFilter("[a0_delayed]", "[a0_volume]", 3.5)
  * // Returns: "[a0_delayed]volume=3.50dB[a0_volume]"
@@ -136,7 +134,7 @@ export interface ProcessAudioTimelineResult {
 export function applyVolumeFilter(
   inputRef: string,
   outputRef: string,
-  volumeDb: number = 0.0,
+  volumeDb = 0.0,
 ): string {
   // FFmpeg volume filter accepts decibel values directly as floats
   // Positive values increase volume, negative values decrease volume
@@ -190,6 +188,7 @@ export function processAudioTimeline(
   categorizedInputs: CategorizedInputs,
   hasVideoInputs: boolean,
   totalVideoDuration: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createAudioTrimFilters: (context: any) => AudioTrimResult,
   getVolumeDb?: GetVolumeDbCallback,
 ): ProcessAudioTimelineResult {
@@ -197,7 +196,9 @@ export function processAudioTimeline(
   const audioConcatInputs: string[] = [];
 
   if (!hasVideoInputs) {
-    console.log('ℹ️ Skipping audio processing - only image inputs detected (no video inputs)');
+    console.log(
+      'ℹ️ Skipping audio processing - only image inputs detected (no video inputs)',
+    );
     return { audioFilters, audioConcatInputs };
   }
 
@@ -246,11 +247,13 @@ export function processAudioTimeline(
         // Defaults to 0dB if callback not provided or returns undefined
         let currentAudioRef = trimResult.filterRef;
         const volumeDb: number = getVolumeDb?.(segment) ?? 0.0;
-        
+
         // Only apply volume filter if adjustment is non-zero (0dB means no change)
         if (volumeDb !== 0.0) {
           const volumeRef = `[a${segmentIndex}_volume]`;
-          audioFilters.push(applyVolumeFilter(currentAudioRef, volumeRef, volumeDb));
+          audioFilters.push(
+            applyVolumeFilter(currentAudioRef, volumeRef, volumeDb),
+          );
           currentAudioRef = volumeRef;
         }
 
@@ -259,8 +262,12 @@ export function processAudioTimeline(
         const delayedRef = `[a${segmentIndex}_delayed]`;
 
         if (delayMs > 0) {
-          audioFilters.push(`${currentAudioRef}adelay=${delayMs}|${delayMs}${delayedRef}`);
-          console.log(`🎵 Added ${delayMs}ms delay to position audio at ${segment.startTime.toFixed(2)}s`);
+          audioFilters.push(
+            `${currentAudioRef}adelay=${delayMs}|${delayMs}${delayedRef}`,
+          );
+          console.log(
+            `🎵 Added ${delayMs}ms delay to position audio at ${segment.startTime.toFixed(2)}s`,
+          );
         } else {
           // No delay needed - use acopy for audio
           audioFilters.push(`${currentAudioRef}acopy${delayedRef}`);
@@ -271,9 +278,15 @@ export function processAudioTimeline(
         // We pad first to ensure streams are at least totalVideoDuration, then trim to exact duration
         const paddedRef = `[a${segmentIndex}_padded]`;
         const finalRef = `[a${segmentIndex}_final]`;
-        audioFilters.push(`${delayedRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedRef}`);
-        audioFilters.push(`${paddedRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalRef}`);
-        
+        audioFilters.push(
+          `${delayedRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedRef}`,
+        );
+        audioFilters.push(
+          `${paddedRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalRef}`,
+        );
+        console.log(
+          `🎵 Padded and trimmed audio stream ${segmentIndex} to exact ${totalVideoDuration.toFixed(3)}s to match video duration`,
+        );
 
         audioSegmentsWithTiming.push({
           segment,
@@ -290,7 +303,9 @@ export function processAudioTimeline(
 
   // Mix overlapping audio streams using amix
   if (audioSegmentsWithTiming.length > 0) {
-    console.log(`🎵 Mixing ${audioSegmentsWithTiming.length} audio streams (supports overlapping)`);
+    console.log(
+      `🎵 Mixing ${audioSegmentsWithTiming.length} audio streams (supports overlapping)`,
+    );
 
     if (audioSegmentsWithTiming.length === 1) {
       // Single audio stream - trim to exact totalVideoDuration to match video
@@ -300,10 +315,14 @@ export function processAudioTimeline(
         `${inputRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalAudioRef}`,
       );
       audioConcatInputs.push(finalAudioRef);
-      console.log(`✅ Trimmed single audio stream to exact ${totalVideoDuration.toFixed(3)}s`);
+      console.log(
+        `✅ Trimmed single audio stream to exact ${totalVideoDuration.toFixed(3)}s`,
+      );
     } else {
       // Multiple audio streams - use amix for overlapping support
-      const mixInputs = audioSegmentsWithTiming.map(a => a.filterRef).join('');
+      const mixInputs = audioSegmentsWithTiming
+        .map((a) => a.filterRef)
+        .join('');
       const mixRef = '[audio_mixed]';
 
       // amix filter: inputs=N:duration=longest:dropout_transition=0
@@ -321,10 +340,11 @@ export function processAudioTimeline(
         `${mixRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalAudioRef}`,
       );
       audioConcatInputs.push(finalAudioRef);
-      console.log(`✅ Created audio mix with ${audioSegmentsWithTiming.length} overlapping streams, trimmed to exact ${totalVideoDuration.toFixed(3)}s`);
+      console.log(
+        `✅ Created audio mix with ${audioSegmentsWithTiming.length} overlapping streams, trimmed to exact ${totalVideoDuration.toFixed(3)}s`,
+      );
     }
   }
 
   return { audioFilters, audioConcatInputs };
 }
-

@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-var-requires */
 import { spawn } from 'child_process';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import started from 'electron-squirrel-startup';
@@ -59,7 +62,7 @@ interface SpriteSheetJob {
 }
 
 const activeSpriteSheetJobs = new Map<string, SpriteSheetJob>();
-let spriteSheetJobCounter = 0;
+const spriteSheetJobCounter = 0;
 
 // Initialize ffmpeg paths dynamically with fallbacks
 async function initializeFfmpegPaths() {
@@ -1230,18 +1233,17 @@ async function processSpriteSheetsInBackground(
       // Execute FFmpeg command with improved error handling and timeout
       const result = await new Promise<{ success: boolean; error?: string }>(
         (resolve) => {
-          const ffmpeg = spawn(ffmpegPath!, adjustedCommand, {
+          const ffmpeg = spawn(ffmpegPath as string, adjustedCommand, {
             stdio: ['ignore', 'pipe', 'pipe'],
             windowsHide: true, // Hide console window on Windows
           });
 
           let stderr = '';
           let stdout = '';
-          let processTimeout: NodeJS.Timeout;
 
           // Set adaptive timeout based on video complexity
           const timeoutMs = Math.min(300000, 60000 + i * 60000); // Max 5 minutes, min 1 minute + 1 minute per sheet
-          processTimeout = setTimeout(() => {
+          const processTimeout: NodeJS.Timeout = setTimeout(() => {
             ffmpeg.kill('SIGKILL');
             resolve({
               success: false,
@@ -2358,18 +2360,27 @@ const createWindow = () => {
 
     mainWindow.webContents.once('dom-ready', () => {
       logStartupPerf();
+      // DOM is ready, loader HTML is already visible from index.html
+      // Show window immediately since loader is in HTML
+      if (mainWindow && !mainWindow.isVisible()) {
+        clearTimeout(fallbackShow);
+        mainWindow.show();
+        kickoffDeferredInitialization();
+      }
     });
 
     mainWindow.webContents.once('did-finish-load', () => {
       logStartupPerf();
     });
 
-    // Show window only when ready to prevent white flash
+    // Show window when ready (fallback)
     mainWindow.once('ready-to-show', () => {
       clearTimeout(fallbackShow);
       logStartupPerf();
-      mainWindow?.show();
-      kickoffDeferredInitialization();
+      if (!mainWindow?.isVisible()) {
+        mainWindow?.show();
+        kickoffDeferredInitialization();
+      }
     });
 
     if (

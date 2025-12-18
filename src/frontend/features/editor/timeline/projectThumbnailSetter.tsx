@@ -5,11 +5,11 @@ import { ImageUp, PenLine } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ThumbnailChangerDialog } from '../components/thumbnailChangerDialog';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
-import { TRACK_ROWS } from './timelineTracks';
 import {
   getRowHeight,
   getRowHeightClasses,
   TIMELINE_HEADER_HEIGHT_CLASSES,
+  TRACK_ROWS,
 } from './utils/timelineConstants';
 
 interface ProjectThumbnailSetterProps {

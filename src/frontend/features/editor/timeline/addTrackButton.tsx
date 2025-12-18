@@ -14,7 +14,7 @@ import { cn } from '@/frontend/utils/utils';
 import { Film, Image, Music, Plus, Type } from 'lucide-react';
 import React, { useCallback } from 'react';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
-import { TRACK_ROWS } from './timelineTracks';
+import { TRACK_ROWS } from './utils/timelineConstants';
 
 interface AddTrackButtonProps {
   className?: string;

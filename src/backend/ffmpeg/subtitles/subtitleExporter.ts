@@ -41,6 +41,8 @@ export interface SubtitleSegment {
     rotation?: number; // Rotation angle in degrees (UI convention: clockwise)
     // Positive = clockwise, negative = counter-clockwise
     // Note: Negated when converted to ASS \frz tag (which uses counter-clockwise)
+    // Positive = clockwise, negative = counter-clockwise
+    // Note: Negated when converted to ASS \frz tag (which uses counter-clockwise)
   };
 }
 
@@ -190,7 +192,9 @@ function convertTrackStyleToTextStyle(
  * Converts VideoTrack subtitleStyle to TextStyleOptions format
  * subtitleStyle has a slightly different structure than textStyle
  */
-function convertSubtitleStyleToTextStyle(subtitleStyle?: VideoTrack['subtitleStyle']): TextStyleOptions | undefined {
+function convertSubtitleStyleToTextStyle(
+  subtitleStyle?: VideoTrack['subtitleStyle'],
+): TextStyleOptions | undefined {
   if (!subtitleStyle) {
     return undefined;
   }
@@ -202,14 +206,18 @@ function convertSubtitleStyleToTextStyle(subtitleStyle?: VideoTrack['subtitleSty
     isUnderline: subtitleStyle.isUnderline,
     textTransform: subtitleStyle.textTransform,
     textDecoration: subtitleStyle.isUnderline ? 'underline' : undefined,
-    fontSize: subtitleStyle.fontSize ? `${subtitleStyle.fontSize}px` : undefined,
+    fontSize: subtitleStyle.fontSize
+      ? `${subtitleStyle.fontSize}px`
+      : undefined,
     color: subtitleStyle.fillColor,
     strokeColor: subtitleStyle.strokeColor, // Outline/stroke color
     backgroundColor: subtitleStyle.backgroundColor,
     hasShadow: subtitleStyle.hasShadow,
     hasGlow: subtitleStyle.hasGlow,
     opacity: subtitleStyle.opacity,
-    letterSpacing: subtitleStyle.letterSpacing ? `${subtitleStyle.letterSpacing}px` : undefined,
+    letterSpacing: subtitleStyle.letterSpacing
+      ? `${subtitleStyle.letterSpacing}px`
+      : undefined,
     lineHeight: subtitleStyle.lineSpacing,
     textAlign: subtitleStyle.textAlign,
   };
@@ -293,13 +301,15 @@ export function extractSubtitleSegments(
 }
 
 export function convertTextClipsToSubtitleSegments(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
   textClips: any[], // TextClipData[] from backend schema
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   fps: number,
 ): SubtitleSegment[] {
-  console.warn('⚠️ convertTextClipsToSubtitleSegments is deprecated and should not be used. Text clips are handled by textLayers.ts using extractTextSegments().');
-  
+  console.warn(
+    '⚠️ convertTextClipsToSubtitleSegments is deprecated and should not be used. Text clips are handled by textLayers.ts using extractTextSegments().',
+  );
+
   // This function should never be called - text clips are handled separately
   return [];
 }
@@ -395,6 +405,7 @@ function convertColorToASS(color: string, opacity?: number): string {
   let r = 0,
     g = 0,
     b = 0;
+
   let cssAlpha = 1.0; // CSS alpha (0=transparent, 1=opaque)
 
   // Handle hex colors (#RRGGBB, #RRGGBBAA, or #RGB)
@@ -428,6 +439,7 @@ function convertColorToASS(color: string, opacity?: number): string {
   const rgbaMatch = color.match(
     /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/,
   );
+
   if (rgbaMatch) {
     r = parseInt(rgbaMatch[1]);
     g = parseInt(rgbaMatch[2]);
@@ -640,7 +652,7 @@ function computeASSStyleParams(
   let fontSize = style?.fontSize
     ? parseInt(style.fontSize.replace('px', ''))
     : 40;
-  
+
   // Apply scale factor to font size
   const effectiveScale = scale || 1;
   if (effectiveScale !== 1) {
@@ -985,16 +997,19 @@ function convertToASSCoordinate(value: number, resolution: number): number {
  * @param videoDimensions - Video dimensions for coordinate conversion
  * @returns ASS override tags string (empty if no position specified)
  *
+ *
  * Transform handling:
  * - Position: Converts normalized coordinates (0-1) to pixel coordinates
  * - Rotation: Converts from UI clockwise to ASS counter-clockwise (negated)
  * - Alignment: Sets center alignment (5) when using custom position for proper rotation pivot
  * - Scale: Applied directly to font size, not via ASS tags
  *
+ *
  * ASS rotation convention:
  * - ASS uses counter-clockwise rotation (mathematical convention)
  * - Our UI uses clockwise rotation (CSS convention)
  * - We negate the rotation value to convert between conventions
+ *
  *
  * ASS rotation tags:
  * - \frz<angle>: Rotation around Z axis (2D rotation, counter-clockwise in ASS)
