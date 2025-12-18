@@ -2,6 +2,14 @@
 Faster-Whisper Transcription Script for Dividr
 Provides word-level transcription with real-time progress updates
 Outputs structured JSON for Electron integration
+
+Can be used as a callable function or CLI script:
+    # As a library function:
+    from transcribe import transcribe_audio
+    result = transcribe_audio("audio.mp3", model_size="large-v3")
+    
+    # As a CLI script:
+    python transcribe.py audio.mp3 --model large-v3
 """
 
 import argparse
@@ -9,17 +17,37 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Callable
 
 try:
     from faster_whisper import WhisperModel
 except ImportError:
-    print(json.dumps({
-        "error": "faster-whisper not installed",
-        "message": "Please install: pip install faster-whisper",
-        "type": "dependency_error"
-    }), flush=True)
-    sys.exit(1)
+    # Only exit if running as CLI, otherwise raise exception for library use
+    if __name__ == "__main__":
+        print(json.dumps({
+            "error": "faster-whisper not installed",
+            "message": "Please install: pip install faster-whisper",
+            "type": "dependency_error"
+        }), flush=True)
+        sys.exit(1)
+    else:
+        WhisperModel = None  # Will raise ImportError when used
+
+
+# Custom exceptions for better error handling
+class TranscriptionError(Exception):
+    """Base exception for transcription errors"""
+    pass
+
+
+class FileNotFoundError(TranscriptionError):
+    """Raised when audio file is not found"""
+    pass
+
+
+class ModelLoadError(TranscriptionError):
+    """Raised when model fails to load"""
+    pass
 
 
 def log_progress(stage: str, progress: float, message: str = ""):
@@ -49,15 +77,19 @@ def log_error(error_type: str, message: str, details: str = ""):
 def transcribe_audio(
     audio_path: str,
     model_size: str = "large-v3",
-    language: str = None,
+    language: Optional[str] = None,
     translate: bool = False,
     device: str = "cpu",
     compute_type: str = "int8",
     beam_size: int = 5,
     vad_filter: bool = True,
+    on_progress: Optional[Callable[[str, float, str], None]] = None,
 ) -> Dict[str, Any]:
     """
     Transcribe audio file using Faster-Whisper
+    
+    This function can be called programmatically or used via CLI.
+    It raises exceptions instead of calling sys.exit() for better library usage.
     
     Args:
         audio_path: Path to audio file
@@ -68,23 +100,61 @@ def transcribe_audio(
         compute_type: int8, int16, float16, float32
         beam_size: Beam search size (higher = more accurate but slower)
         vad_filter: Use Voice Activity Detection to filter silence
+        on_progress: Optional callback function(stage, progress, message) for progress updates.
+                     If None, uses default stdout logging for CLI compatibility.
     
     Returns:
-        Dictionary with transcription results
+        Dictionary with transcription results containing:
+        - success: bool
+        - segments: List of segment dicts with start, end, text, words
+        - language: Detected language code
+        - language_probability: Confidence score
+        - duration: Audio duration in seconds
+        - text: Full transcription text
+        - processing_time: Time taken in seconds
+        - model: Model size used
+        - device: Device used
+        - segment_count: Number of segments
+        - real_time_factor: Processing speed ratio
+        - faster_than_realtime: bool
+    
+    Raises:
+        FileNotFoundError: If audio file doesn't exist
+        ModelLoadError: If model fails to load
+        TranscriptionError: If transcription fails
+        ImportError: If faster-whisper is not installed
+    
+    Example:
+        >>> from transcribe import transcribe_audio
+        >>> result = transcribe_audio("audio.mp3", model_size="large-v3")
+        >>> print(result["text"])
     """
+    
+    # Check if faster-whisper is available
+    if WhisperModel is None:
+        raise ImportError(
+            "faster-whisper not installed. Please install: pip install faster-whisper"
+        )
+    
+    # Use default progress logging if no callback provided (CLI mode)
+    progress_callback = on_progress if on_progress is not None else log_progress
     
     # Validate audio file
     audio_file = Path(audio_path)
     if not audio_file.exists():
-        log_error("file_not_found", f"Audio file not found: {audio_path}")
-        sys.exit(1)
+        error_msg = f"Audio file not found: {audio_path}"
+        if on_progress is None:
+            log_error("file_not_found", error_msg)
+        raise FileNotFoundError(error_msg)
     
     if not audio_file.is_file():
-        log_error("invalid_path", f"Path is not a file: {audio_path}")
-        sys.exit(1)
+        error_msg = f"Path is not a file: {audio_path}"
+        if on_progress is None:
+            log_error("invalid_path", error_msg)
+        raise FileNotFoundError(error_msg)
     
     # Log initial progress
-    log_progress("loading", 0, f"Loading {model_size} model...")
+    progress_callback("loading", 0, f"Loading {model_size} model...")
     
     try:
         # Load model
@@ -97,14 +167,16 @@ def transcribe_audio(
         )
         load_time = time.time() - load_start
         
-        log_progress("loading", 10, f"Model loaded in {load_time:.1f}s")
+        progress_callback("loading", 10, f"Model loaded in {load_time:.1f}s")
         
     except Exception as e:
-        log_error("model_load_error", f"Failed to load model: {str(e)}", str(e))
-        sys.exit(1)
+        error_msg = f"Failed to load model: {str(e)}"
+        if on_progress is None:
+            log_error("model_load_error", error_msg, str(e))
+        raise ModelLoadError(error_msg) from e
     
     # Start transcription
-    log_progress("processing", 15, "Starting transcription...")
+    progress_callback("processing", 15, "Starting transcription...")
     
     try:
         start_time = time.time()
@@ -121,7 +193,7 @@ def transcribe_audio(
         )
         
         # Log detected language
-        log_progress(
+        progress_callback(
             "processing",
             20,
             f"Language: {info.language} ({info.language_probability:.1%} confidence)"
@@ -158,7 +230,7 @@ def transcribe_audio(
             # Calculate progress based on segment end time
             if total_duration > 0:
                 progress = 20 + (segment.end / total_duration) * 70
-                log_progress(
+                progress_callback(
                     "processing",
                     progress,
                     f"Processed {segment_count} segments..."
@@ -192,13 +264,44 @@ def transcribe_audio(
             result["real_time_factor"] = round(rtf, 3)
             result["faster_than_realtime"] = bool(rtf < 1.0)
         
-        log_progress("complete", 100, f"Transcription complete! {segment_count} segments")
+        progress_callback("complete", 100, f"Transcription complete! {segment_count} segments")
         
         return result
         
+    except (FileNotFoundError, ModelLoadError):
+        # Re-raise our custom exceptions
+        raise
     except Exception as e:
-        log_error("transcription_error", f"Transcription failed: {str(e)}", str(e))
-        sys.exit(1)
+        error_msg = f"Transcription failed: {str(e)}"
+        if on_progress is None:
+            log_error("transcription_error", error_msg, str(e))
+        raise TranscriptionError(error_msg) from e
+
+
+def run(input_path: str, output_path: str, **kwargs) -> None:
+   
+    # Extract transcription parameters from kwargs, with defaults
+    transcribe_kwargs = {
+        "model_size": kwargs.get("model_size", "large-v3"),
+        "language": kwargs.get("language", None),
+        "translate": kwargs.get("translate", False),
+        "device": kwargs.get("device", "cpu"),
+        "compute_type": kwargs.get("compute_type", "int8"),
+        "beam_size": kwargs.get("beam_size", 5),
+        "vad_filter": kwargs.get("vad_filter", True),
+        "on_progress": kwargs.get("on_progress", None),
+    }
+    
+    # Run transcription
+    result = transcribe_audio(input_path, **transcribe_kwargs)
+    
+    # Save result to output file
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)  # Create parent directories if needed
+    output_file.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    
+    # Print success message (for compatibility with main.py output expectations)
+    print(f"RESULT_SAVED|{output_path}", flush=True)
 
 
 def main():
@@ -305,6 +408,15 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         log_error("cancelled", "Transcription cancelled by user")
         sys.exit(130)
+    except FileNotFoundError as e:
+        log_error("file_not_found", str(e))
+        sys.exit(1)
+    except ModelLoadError as e:
+        log_error("model_load_error", str(e))
+        sys.exit(1)
+    except TranscriptionError as e:
+        log_error("transcription_error", str(e))
+        sys.exit(1)
     except Exception as e:
         log_error("unknown_error", f"Unexpected error: {str(e)}", str(e))
         sys.exit(1)

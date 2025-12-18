@@ -42,7 +42,6 @@ export interface SubtitleSegment {
     // Positive = clockwise, negative = counter-clockwise
     // Note: Negated when converted to ASS \frz tag (which uses counter-clockwise)
   };
-  isTextClip?: boolean; // Flag to identify text clips vs subtitles
 }
 
 export interface TextStyleOptions {
@@ -188,6 +187,35 @@ function convertTrackStyleToTextStyle(
 }
 
 /**
+ * Converts VideoTrack subtitleStyle to TextStyleOptions format
+ * subtitleStyle has a slightly different structure than textStyle
+ */
+function convertSubtitleStyleToTextStyle(subtitleStyle?: VideoTrack['subtitleStyle']): TextStyleOptions | undefined {
+  if (!subtitleStyle) {
+    return undefined;
+  }
+
+  return {
+    fontFamily: subtitleStyle.fontFamily,
+    fontWeight: subtitleStyle.isBold ? '700' : undefined,
+    fontStyle: subtitleStyle.isItalic ? 'italic' : undefined,
+    isUnderline: subtitleStyle.isUnderline,
+    textTransform: subtitleStyle.textTransform,
+    textDecoration: subtitleStyle.isUnderline ? 'underline' : undefined,
+    fontSize: subtitleStyle.fontSize ? `${subtitleStyle.fontSize}px` : undefined,
+    color: subtitleStyle.fillColor,
+    strokeColor: subtitleStyle.strokeColor, // Outline/stroke color
+    backgroundColor: subtitleStyle.backgroundColor,
+    hasShadow: subtitleStyle.hasShadow,
+    hasGlow: subtitleStyle.hasGlow,
+    opacity: subtitleStyle.opacity,
+    letterSpacing: subtitleStyle.letterSpacing ? `${subtitleStyle.letterSpacing}px` : undefined,
+    lineHeight: subtitleStyle.lineSpacing,
+    textAlign: subtitleStyle.textAlign,
+  };
+}
+
+/**
  * Extracts subtitle segments from timeline tracks
  * NOTE: This function now ONLY extracts subtitle tracks (type === 'subtitle')
  * Text tracks (type === 'text') are now handled separately by textLayers.ts
@@ -236,39 +264,18 @@ export function extractSubtitleSegments(
       );
     }
 
-    // Extract per-track styling if available (prioritize subtitleStyle over textStyle)
-    const trackStyle = track.subtitleStyle || track.textStyle;
-    const segmentStyle = convertTrackStyleToTextStyle(trackStyle);
-
-    // Log per-clip styling for debugging export issues
-    if (trackStyle) {
-      console.log(`📝 [Subtitle ${index + 1}] Track has per-clip styling:`, {
-        trackId: track.id,
-        text: track.subtitleText?.substring(0, 30) + '...',
-        rawTrackStyle: {
-          fontFamily: trackStyle.fontFamily,
-          fontSize: trackStyle.fontSize,
-          isBold: trackStyle.isBold,
-          isItalic: trackStyle.isItalic,
-          strokeColor: trackStyle.strokeColor,
-          fillColor: trackStyle.fillColor,
-          opacity: trackStyle.opacity,
-        },
-        convertedStyle: segmentStyle,
-      });
-    } else {
-      console.log(
-        `📝 [Subtitle ${index + 1}] Track uses global styling (no per-clip style)`,
-      );
-    }
-
+    // Extract per-track styling if available
+    // Prefer subtitleStyle over textStyle (subtitleStyle takes precedence for subtitle tracks)
+    // This ensures outline (strokeColor) from subtitleStyle is properly parsed and applied
+    const segmentStyle = track.subtitleStyle
+      ? convertSubtitleStyleToTextStyle(track.subtitleStyle)
+      : convertTrackStyleToTextStyle(track.textStyle);
     return {
       startTime,
       endTime,
       text: track.subtitleText || '',
       index: index + 1,
       style: segmentStyle,
-      isTextClip: false,
     };
   });
 
@@ -285,27 +292,15 @@ export function extractSubtitleSegments(
   return segments;
 }
 
-/**
- * DEPRECATED: Text clips are now handled separately by textLayers.ts
- * This function is kept for backward compatibility but should not be used.
- *
- * @deprecated Use extractTextSegments from textLayers.ts instead
- */
 export function convertTextClipsToSubtitleSegments(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   textClips: any[], // TextClipData[] from backend schema
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   fps: number,
 ): SubtitleSegment[] {
-  console.warn(
-    '⚠️ convertTextClipsToSubtitleSegments is deprecated. Use extractTextSegments from textLayers.ts instead.',
-  );
-
-  if (!textClips || textClips.length === 0) {
-    return [];
-  }
-
-  // Return empty array - text clips should be processed via textLayers.ts
+  console.warn('⚠️ convertTextClipsToSubtitleSegments is deprecated and should not be used. Text clips are handled by textLayers.ts using extractTextSegments().');
+  
+  // This function should never be called - text clips are handled separately
   return [];
 }
 
@@ -644,8 +639,8 @@ function computeASSStyleParams(
 
   let fontSize = style?.fontSize
     ? parseInt(style.fontSize.replace('px', ''))
-    : 20;
-
+    : 40;
+  
   // Apply scale factor to font size
   const effectiveScale = scale || 1;
   if (effectiveScale !== 1) {

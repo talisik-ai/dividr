@@ -47,7 +47,7 @@ The application uses `faster-whisper` for audio transcription. Follow these step
 2. **Verify installation:**
 
    ```bash
-   python src/backend/scripts/transcribe.py --help
+   python src/backend/python/scripts/transcribe.py --help
    ```
 
    You should see the help message for the transcription script.
@@ -65,8 +65,8 @@ When building the application for distribution, ensure Python dependencies are i
    ```
 
 3. **The application will look for the transcribe.py script at:**
-   - Development: `src/backend/scripts/transcribe.py`
-   - Production: `resources/scripts/transcribe.py` (bundled in the build)
+   - Development: `src/backend/python/scripts/transcribe.py`
+   - Production: `resources/backend/python/scripts/transcribe.py` (bundled in the build)
 
 #### Python Dependencies
 
@@ -113,8 +113,12 @@ yarn run make
 dividr-ui/
 ├── src/
 │   ├── backend/
-│   │   └── scripts/
-│   │       └── transcribe.py    # Python transcription script
+│   │   ├── python/
+│   │   │   ├── main.py          # Python multi-tool entry point
+│   │   │   └── scripts/
+│   │   │       ├── transcribe.py    # Python transcription script
+│   │   │       └── noisereduction.py # Noise reduction script
+│   │   └── whisper/              # Whisper transcription runners
 │   ├── frontend/                # React frontend code
 │   └── main.ts                  # Electron main process
 ├── requirements.txt             # Python dependencies
@@ -150,5 +154,5 @@ If you encounter issues with transcription:
 
 3. **Test the transcription script manually:**
    ```bash
-   python src/backend/scripts/transcribe.py --help
+   python src/backend/python/scripts/transcribe.py --help
    ```
