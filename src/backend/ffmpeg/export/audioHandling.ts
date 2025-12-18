@@ -152,17 +152,23 @@ export function applyFadeFilter(
   duration: number,
 ): string {
   if (duration <= 0) {
-    console.warn(`⚠️ Fade duration must be positive, got ${duration}. Skipping fade.`);
+    console.warn(
+      `⚠️ Fade duration must be positive, got ${duration}. Skipping fade.`,
+    );
     return `${inputRef}acopy${outputRef}`;
   }
 
   if (startTime < 0) {
-    console.warn(`⚠️ Fade start time cannot be negative, got ${startTime}. Using 0.`);
+    console.warn(
+      `⚠️ Fade start time cannot be negative, got ${startTime}. Using 0.`,
+    );
     startTime = 0;
   }
 
   const fadeFilter = `${inputRef}afade=t=${fadeType}:st=${startTime.toFixed(2)}:d=${duration.toFixed(2)}${outputRef}`;
-  console.log(`🎵 Applied ${fadeType === 'in' ? 'fade in' : 'fade out'}: start=${startTime.toFixed(2)}s, duration=${duration.toFixed(2)}s`);
+  console.log(
+    `🎵 Applied ${fadeType === 'in' ? 'fade in' : 'fade out'}: start=${startTime.toFixed(2)}s, duration=${duration.toFixed(2)}s`,
+  );
   return fadeFilter;
 }
 
