@@ -3,8 +3,8 @@ import React, { useMemo } from 'react';
 import {
   calculatePlaceholderRows,
   calculateRowBoundsWithPlaceholders,
-  TrackRowDefinition,
   parseRowId,
+  TrackRowDefinition,
 } from './utils/dynamicTrackRows';
 import { getRowHeight } from './utils/timelineConstants';
 

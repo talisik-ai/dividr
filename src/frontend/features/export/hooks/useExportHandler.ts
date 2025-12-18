@@ -136,7 +136,7 @@ export const useExportHandler = () => {
       console.log('🛑 Calling ffmpeg:cancel IPC...');
       const result = await window.electronAPI.invoke('ffmpeg:cancel');
       console.log('🛑 FFmpeg cancel result:', result);
-      
+
       // Update UI state
       cancelRender();
       setRenderDialogState('cancelled');

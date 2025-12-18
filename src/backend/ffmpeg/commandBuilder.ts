@@ -557,22 +557,22 @@ function createAspectRatioCropFilters(
 
   // Universal strategy: Always preserve the smaller source dimension
   const smallerDimension = Math.min(sourceWidth, sourceHeight);
-  
+
   if (targetRatio < 1) {
     // Portrait target (width < height) - smaller dimension becomes final width
     cropWidth = smallerDimension;
     cropHeight = Math.round(cropWidth / targetRatio);
-    
+
     // Scale so that BOTH cropWidth and cropHeight fit
     // We need to ensure the scaled video is at least as large as the crop dimensions
     const scaleFactorForWidth = cropWidth / sourceWidth;
     const scaleFactorForHeight = cropHeight / sourceHeight;
-    
+
     // Use the LARGER scale factor to ensure both dimensions fit
     const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
     scaleWidth = Math.round(sourceWidth * scaleFactor);
     scaleHeight = Math.round(sourceHeight * scaleFactor);
-    
+
     // Safety check: ensure scaled dimensions are at least as large as crop dimensions
     // This handles rounding errors
     if (scaleWidth < cropWidth) scaleWidth = cropWidth;
@@ -585,17 +585,17 @@ function createAspectRatioCropFilters(
     // Landscape target (width >= height) - smaller dimension becomes final height
     cropHeight = smallerDimension;
     cropWidth = Math.round(cropHeight * targetRatio);
-    
+
     // Determine which dimension needs to be scaled to accommodate the crop
     // We need to scale so that BOTH cropWidth and cropHeight fit
     const scaleFactorForWidth = cropWidth / sourceWidth;
     const scaleFactorForHeight = cropHeight / sourceHeight;
-    
+
     // Use the LARGER scale factor to ensure both dimensions fit
     const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
     scaleWidth = Math.round(sourceWidth * scaleFactor);
     scaleHeight = Math.round(sourceHeight * scaleFactor);
-    
+
     // Safety check: ensure scaled dimensions are at least as large as crop dimensions
     // This handles rounding errors
     if (scaleWidth < cropWidth) scaleWidth = cropWidth;
@@ -609,14 +609,10 @@ function createAspectRatioCropFilters(
   console.log(
     `📐 Source: ${sourceWidth}x${sourceHeight} (ratio: ${sourceRatio.toFixed(3)}), Target ratio: ${targetRatio.toFixed(3)}`,
   );
+  console.log(`📐 Step 1: Scale to ${scaleWidth}x${scaleHeight}`);
+  console.log(`📐 Step 2: Crop to ${cropWidth}x${cropHeight}`);
   console.log(
-    `📐 Step 1: Scale to ${scaleWidth}x${scaleHeight}`
-  );
-  console.log(
-    `📐 Step 2: Crop to ${cropWidth}x${cropHeight}`
-  );
-  console.log(
-    `📐 Final: ${cropWidth}x${cropHeight} (ratio: ${(cropWidth/cropHeight).toFixed(3)})`
+    `📐 Final: ${cropWidth}x${cropHeight} (ratio: ${(cropWidth / cropHeight).toFixed(3)})`,
   );
 
   // Center the crop
@@ -626,9 +622,7 @@ function createAspectRatioCropFilters(
   console.log(
     `📐 Final dimensions: ${cropWidth}x${cropHeight} (ratio: ${(cropWidth / cropHeight).toFixed(3)})`,
   );
-  console.log(
-    `📐 Crop position: (${cropX}, ${cropY})`,
-  );
+  console.log(`📐 Crop position: (${cropX}, ${cropY})`);
 
   // Apply scale first, then crop
   // This ensures we scale up before cropping down
@@ -1500,14 +1494,24 @@ function buildImageOverlayFilters(
     // W = targetDimensions.width, H = targetDimensions.height, w = currentWidth, h = currentHeight
     const centerX = (targetDimensions.width - currentWidth) / 2;
     const centerY = (targetDimensions.height - currentHeight) / 2;
-    const pixelX = Math.round(centerX + (transform.x * targetDimensions.width) / 2);
-    const pixelY = Math.round(centerY + (transform.y * targetDimensions.height) / 2);
+    const pixelX = Math.round(
+      centerX + (transform.x * targetDimensions.width) / 2,
+    );
+    const pixelY = Math.round(
+      centerY + (transform.y * targetDimensions.height) / 2,
+    );
 
     console.log(`📍 Image overlay ${index} position coordinates:`);
-    console.log(`   - Normalized: x=${transform.x.toFixed(3)}, y=${transform.y.toFixed(3)} (-1 to 1 range, 0=center)`);
+    console.log(
+      `   - Normalized: x=${transform.x.toFixed(3)}, y=${transform.y.toFixed(3)} (-1 to 1 range, 0=center)`,
+    );
     console.log(`   - Pixel coords: x=${pixelX}px, y=${pixelY}px`);
-    console.log(`   - Video dimensions: ${targetDimensions.width}x${targetDimensions.height}`);
-    console.log(`   - Image dimensions (after scale/rotate): ${currentWidth}x${currentHeight}`);
+    console.log(
+      `   - Video dimensions: ${targetDimensions.width}x${targetDimensions.height}`,
+    );
+    console.log(
+      `   - Image dimensions (after scale/rotate): ${currentWidth}x${currentHeight}`,
+    );
     console.log(`   - FFmpeg expression: overlay=${overlayX}:${overlayY}`);
 
     // Step 5: Overlay the image onto the current video with time-based enable
@@ -1785,7 +1789,11 @@ function buildSeparateTimelineFilterComplex(
   for (const input of job.inputs) {
     const trackInfo = getTrackInfo(input);
     const path = getInputPath(input);
-    if (!isGapInput(path) && FILE_EXTENSIONS.VIDEO.test(path) && trackInfo.aspectRatio) {
+    if (
+      !isGapInput(path) &&
+      FILE_EXTENSIONS.VIDEO.test(path) &&
+      trackInfo.aspectRatio
+    ) {
       targetAspectRatio = trackInfo.aspectRatio;
       console.log(`📐 Found aspect ratio in trackInfo: ${targetAspectRatio}`);
       break;
@@ -1967,21 +1975,21 @@ function buildSeparateTimelineFilterComplex(
   // This ensures subtitles and images are positioned correctly relative to the final video dimensions
   // Use aspect ratio from trackInfo (preferred) or fall back to job.operations.aspect
   const finalAspectRatio = targetAspectRatio || job.operations.aspect;
-  
+
   let aspectRatioCropFilter = '';
   let croppedVideoLabel = currentVideoLabel; // Track the current video label after crop
-  
+
   console.log('📐 Checking aspect ratio conversion conditions:');
   console.log('   - targetAspectRatio (from trackInfo):', targetAspectRatio);
   console.log('   - job.operations.aspect:', job.operations.aspect);
   console.log('   - finalAspectRatio (used):', finalAspectRatio);
   console.log('   - hasVideoContent:', hasVideoContent);
   console.log('   - targetDimensions:', targetDimensions);
-  
+
   if (finalAspectRatio && hasVideoContent) {
     const targetRatio = parseAspectRatio(finalAspectRatio);
     const sourceRatio = targetDimensions.width / targetDimensions.height;
-    
+
     console.log(
       `📐 Final output aspect ratio conversion: source=${sourceRatio.toFixed(3)} (${targetDimensions.width}x${targetDimensions.height}), target=${targetRatio.toFixed(3)} (${finalAspectRatio})`,
     );
@@ -1989,7 +1997,7 @@ function buildSeparateTimelineFilterComplex(
     // Check if we need to convert (ratios differ by more than 1%)
     const ratioDifference = Math.abs(targetRatio - sourceRatio) / sourceRatio;
     console.log(`📐 Ratio difference: ${(ratioDifference * 100).toFixed(2)}%`);
-    
+
     if (ratioDifference > 0.01) {
       // Calculate scale and crop dimensions
       let scaleWidth: number;
@@ -1998,63 +2006,66 @@ function buildSeparateTimelineFilterComplex(
       let cropHeight: number;
 
       // Universal strategy: Always preserve the smaller source dimension
-      const smallerDimension = Math.min(targetDimensions.width, targetDimensions.height);
-      
+      const smallerDimension = Math.min(
+        targetDimensions.width,
+        targetDimensions.height,
+      );
+
       if (targetRatio < 1) {
         // Portrait target (width < height) - smaller dimension becomes final width
         cropWidth = smallerDimension;
         cropHeight = Math.round(cropWidth / targetRatio);
-        
+
         // Scale so that BOTH cropWidth and cropHeight fit
         // We need to ensure the scaled video is at least as large as the crop dimensions
         const scaleFactorForWidth = cropWidth / targetDimensions.width;
         const scaleFactorForHeight = cropHeight / targetDimensions.height;
-        
+
         // Use the LARGER scale factor to ensure both dimensions fit
         const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
         scaleWidth = Math.round(targetDimensions.width * scaleFactor);
         scaleHeight = Math.round(targetDimensions.height * scaleFactor);
-        
+
         // Safety check: ensure scaled dimensions are at least as large as crop dimensions
         // This handles rounding errors
         if (scaleWidth < cropWidth) scaleWidth = cropWidth;
         if (scaleHeight < cropHeight) scaleHeight = cropHeight;
-        
-        console.log(`📐 Portrait target: smaller dim (${smallerDimension}) → final width, scale factor: ${scaleFactor.toFixed(3)}`);
+
+        console.log(
+          `📐 Portrait target: smaller dim (${smallerDimension}) → final width, scale factor: ${scaleFactor.toFixed(3)}`,
+        );
       } else {
         // Landscape target (width >= height) - smaller dimension becomes final height
         cropHeight = smallerDimension;
         cropWidth = Math.round(cropHeight * targetRatio);
-        
+
         // Determine which dimension needs to be scaled to accommodate the crop
         // We need to scale so that BOTH cropWidth and cropHeight fit
         const scaleFactorForWidth = cropWidth / targetDimensions.width;
         const scaleFactorForHeight = cropHeight / targetDimensions.height;
-        
+
         // Use the LARGER scale factor to ensure both dimensions fit
         const scaleFactor = Math.max(scaleFactorForWidth, scaleFactorForHeight);
         scaleWidth = Math.round(targetDimensions.width * scaleFactor);
         scaleHeight = Math.round(targetDimensions.height * scaleFactor);
-        
+
         // Safety check: ensure scaled dimensions are at least as large as crop dimensions
         // This handles rounding errors
         if (scaleWidth < cropWidth) scaleWidth = cropWidth;
         if (scaleHeight < cropHeight) scaleHeight = cropHeight;
-        
-        console.log(`📐 Landscape target: smaller dim (${smallerDimension}) → final height, scale factor: ${scaleFactor.toFixed(3)}`);
+
+        console.log(
+          `📐 Landscape target: smaller dim (${smallerDimension}) → final height, scale factor: ${scaleFactor.toFixed(3)}`,
+        );
       }
-      
+
       console.log(
-        `📐 Final conversion: Source ${targetDimensions.width}x${targetDimensions.height} (ratio: ${sourceRatio.toFixed(3)}) → Target ratio: ${targetRatio.toFixed(3)}`
+        `📐 Final conversion: Source ${targetDimensions.width}x${targetDimensions.height} (ratio: ${sourceRatio.toFixed(3)}) → Target ratio: ${targetRatio.toFixed(3)}`,
       );
+      console.log(`📐   Step 1: Scale to ${scaleWidth}x${scaleHeight}`);
+      console.log(`📐   Step 2: Crop to ${cropWidth}x${cropHeight}`);
       console.log(
-        `📐   Step 1: Scale to ${scaleWidth}x${scaleHeight}`
-      );
-      console.log(
-        `📐   Step 2: Crop to ${cropWidth}x${cropHeight}`
-      );
-      console.log(
-        `📐   Result: ${cropWidth}x${cropHeight} = ${(cropWidth/cropHeight).toFixed(3)} ratio`
+        `📐   Result: ${cropWidth}x${cropHeight} = ${(cropWidth / cropHeight).toFixed(3)} ratio`,
       );
 
       // Center the crop
@@ -2062,19 +2073,21 @@ function buildSeparateTimelineFilterComplex(
       const cropY = Math.round((scaleHeight - cropHeight) / 2);
 
       console.log(
-        `📐 Final dimensions after scale+crop: ${cropWidth}x${cropHeight} at crop position (${cropX}, ${cropY})`
+        `📐 Final dimensions after scale+crop: ${cropWidth}x${cropHeight} at crop position (${cropX}, ${cropY})`,
       );
       console.log(
-        `📐 ⚠️  IMPORTANT: Scale+Crop is applied BEFORE images and subtitles`
+        `📐 ⚠️  IMPORTANT: Scale+Crop is applied BEFORE images and subtitles`,
       );
       console.log(
-        `📐    Images and subtitle coordinates will be relative to the final video (${cropWidth}x${cropHeight})`
+        `📐    Images and subtitle coordinates will be relative to the final video (${cropWidth}x${cropHeight})`,
       );
 
       // Apply scale + crop filter BEFORE images and subtitles
       aspectRatioCropFilter = `[${currentVideoLabel}]scale=${scaleWidth}:${scaleHeight},crop=${cropWidth}:${cropHeight}:${cropX}:${cropY}[video_cropped]`;
       croppedVideoLabel = 'video_cropped';
-      console.log(`📐 Scale+Crop filter: scale=${scaleWidth}:${scaleHeight},crop=${cropWidth}:${cropHeight}:${cropX}:${cropY}`);
+      console.log(
+        `📐 Scale+Crop filter: scale=${scaleWidth}:${scaleHeight},crop=${cropWidth}:${cropHeight}:${cropX}:${cropY}`,
+      );
     } else {
       console.log(
         `📐 Aspect ratios are similar (${(ratioDifference * 100).toFixed(2)}% difference), no conversion needed`,
@@ -2090,10 +2103,13 @@ function buildSeparateTimelineFilterComplex(
     // Calculate the final dimensions after scale+crop
     const targetRatio = parseAspectRatio(finalAspectRatio!);
     const sourceRatio = targetDimensions.width / targetDimensions.height;
-    
+
     // Universal strategy: preserve smaller dimension
-    const smallerDimension = Math.min(targetDimensions.width, targetDimensions.height);
-    
+    const smallerDimension = Math.min(
+      targetDimensions.width,
+      targetDimensions.height,
+    );
+
     if (targetRatio < 1) {
       // Portrait target - smaller dimension becomes final width
       const cropWidth = smallerDimension;
@@ -2105,15 +2121,17 @@ function buildSeparateTimelineFilterComplex(
       const cropWidth = Math.round(cropHeight * targetRatio);
       finalVideoDimensions = { width: cropWidth, height: cropHeight };
     }
-    
-    console.log(`📐 Final video dimensions after scale+crop: ${finalVideoDimensions.width}x${finalVideoDimensions.height}`);
+
+    console.log(
+      `📐 Final video dimensions after scale+crop: ${finalVideoDimensions.width}x${finalVideoDimensions.height}`,
+    );
   }
 
   // Apply image overlays AFTER aspect ratio crop (if any)
   // This ensures images are positioned relative to the cropped video dimensions
   let imageOverlayFilters: string[] = [];
   let videoLabelAfterImages = croppedVideoLabel;
-  
+
   if (allImageSegments.length > 0 && hasVideoContent) {
     // Calculate total duration from all layers
     let totalDuration = audioTimeline.totalDuration;
@@ -2130,7 +2148,7 @@ function buildSeparateTimelineFilterComplex(
     console.log(
       `🖼️ Image positions will be relative to ${finalVideoDimensions.width}x${finalVideoDimensions.height}`,
     );
-    
+
     const imageOverlayResult = buildImageOverlayFilters(
       allImageSegments,
       categorizedInputs,
@@ -2179,7 +2197,9 @@ function buildSeparateTimelineFilterComplex(
     } else {
       // Use 'subtitles' filter for other formats
       subtitleFilter = `[${videoLabelAfterImages}]subtitles='${escapedPath}'${fontsDirParam}[video]`;
-      console.log(`📝 Added subtitles filter (format: ${fileExtension}) - applied AFTER crop and images`);
+      console.log(
+        `📝 Added subtitles filter (format: ${fileExtension}) - applied AFTER crop and images`,
+      );
     }
   } else if (hasVideoContent) {
     // No subtitles - just rename current label to video
@@ -2196,13 +2216,18 @@ function buildSeparateTimelineFilterComplex(
   const allFilters = [...videoFilters, ...audioFilters];
   if (audioConcatFilter) allFilters.push(audioConcatFilter);
   if (aspectRatioCropFilter) {
-    console.log('📐 ✅ ADDING ASPECT RATIO CROP FILTER TO CHAIN (BEFORE IMAGES AND SUBTITLES):', aspectRatioCropFilter);
+    console.log(
+      '📐 ✅ ADDING ASPECT RATIO CROP FILTER TO CHAIN (BEFORE IMAGES AND SUBTITLES):',
+      aspectRatioCropFilter,
+    );
     allFilters.push(aspectRatioCropFilter);
   } else {
     console.log('📐 ❌ NO ASPECT RATIO CROP FILTER TO ADD');
   }
   if (imageOverlayFilters.length > 0) {
-    console.log(`🖼️ ✅ ADDING ${imageOverlayFilters.length} IMAGE OVERLAY FILTERS TO CHAIN (AFTER CROP, BEFORE SUBTITLES)`);
+    console.log(
+      `🖼️ ✅ ADDING ${imageOverlayFilters.length} IMAGE OVERLAY FILTERS TO CHAIN (AFTER CROP, BEFORE SUBTITLES)`,
+    );
     allFilters.push(...imageOverlayFilters);
   }
   if (subtitleFilter) allFilters.push(subtitleFilter);
@@ -2400,7 +2425,7 @@ function handleFilterComplex(
     // 1. Aspect ratio crop is applied first (if needed): [video_with_images] -> [video_cropped]
     // 2. Subtitles are applied after crop: [video_cropped] -> [video]
     // So we always map [video] as the final output
-    
+
     // Add hardware upload filter for VAAPI if needed
     if (hwAccel?.type === 'vaapi') {
       console.log('🎮 Adding VAAPI hardware upload filter');
@@ -2535,15 +2560,21 @@ export async function buildFfmpegCommand(
   const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
 
   // Log aspect ratio from both sources
-  console.log('📐 ASPECT RATIO from job.operations.aspect:', job.operations.aspect || 'NONE');
-  
+  console.log(
+    '📐 ASPECT RATIO from job.operations.aspect:',
+    job.operations.aspect || 'NONE',
+  );
+
   // Check for aspect ratio in trackInfo
   let trackInfoAspectRatio: string | undefined = undefined;
   for (const input of job.inputs) {
     const trackInfo = getTrackInfo(input);
     if (trackInfo.aspectRatio) {
       trackInfoAspectRatio = trackInfo.aspectRatio;
-      console.log('📐 ASPECT RATIO from trackInfo.aspectRatio:', trackInfoAspectRatio);
+      console.log(
+        '📐 ASPECT RATIO from trackInfo.aspectRatio:',
+        trackInfoAspectRatio,
+      );
       break;
     }
   }
@@ -2594,5 +2625,3 @@ export async function buildFfmpegCommand(
   console.log('Full FFmpeg Command:', ['ffmpeg', ...cmd.args].join(' '));
   return cmd.args;
 }
-
-
