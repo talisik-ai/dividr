@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   ProcessedTimeline,
   ProcessedTimelineSegment,
@@ -39,7 +40,10 @@ export function collectAllLayers(
   for (const [layerNum, timeline] of imageLayers.entries()) {
     if (allLayers.has(layerNum)) {
       // Layer already exists (has video) - add images to it
-      const existing = allLayers.get(layerNum)!;
+      const existing = allLayers.get(layerNum);
+      if (!existing) {
+        continue;
+      }
       existing.imageSegments = timeline.segments;
     } else {
       allLayers.set(layerNum, {
@@ -75,7 +79,11 @@ export function collectAllLayers(
     if (!textByLayer.has(layer)) {
       textByLayer.set(layer, []);
     }
-    textByLayer.get(layer)!.push(segment);
+    const existing = textByLayer.get(layer);
+    if (!existing) {
+      return;
+    }
+    existing.push(segment);
   });
 
   console.log(
@@ -89,7 +97,10 @@ export function collectAllLayers(
   for (const [layerNum, segments] of textByLayer.entries()) {
     if (allLayers.has(layerNum)) {
       // Layer already exists - add text to it
-      const existing = allLayers.get(layerNum)!;
+      const existing = allLayers.get(layerNum);
+      if (!existing) {
+        continue;
+      }
       existing.textSegments = segments;
     } else {
       allLayers.set(layerNum, {
@@ -141,6 +152,7 @@ export function findBottomMostVideoImageLayer(
 ): number | null {
   return (
     sortedLayers.find(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       ([num, track]) => track.videoTimeline || track.imageSegments,
     )?.[0] ?? null
   );
@@ -160,7 +172,7 @@ export interface OverlayItem {
 /**
  * Builds the complete overlay order by collecting all overlays from all layers
  * and sorting them by layer number. This ensures proper z-ordering.
- * 
+ *
  * Returns overlays sorted by layer number, with video layers prepared first.
  */
 export function buildOverlayOrder(
@@ -207,4 +219,3 @@ export function buildOverlayOrder(
 
   return allOverlays;
 }
-
