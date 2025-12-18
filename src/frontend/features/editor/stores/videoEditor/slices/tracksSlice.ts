@@ -982,6 +982,10 @@ export const createTracksSlice: StateCreator<
   },
 
   updateTrack: (trackId, updates) => {
+    // Record action for undo/redo
+    const state = get() as any;
+    state.recordAction?.('Update Track');
+
     // CRITICAL: Prevent mutation of sourceFps - it must remain immutable
     // sourceFps represents the original FPS from the source media file
     // and should NEVER be changed after track creation
@@ -1002,7 +1006,6 @@ export const createTracksSlice: StateCreator<
       ),
     }));
 
-    const state = get() as any;
     state.markUnsavedChanges?.();
   },
 

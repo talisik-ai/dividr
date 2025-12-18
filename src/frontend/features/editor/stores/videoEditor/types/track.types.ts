@@ -116,10 +116,12 @@ export interface VideoTrack {
    * Defaults to sourceFps when track is created.
    */
   effectiveFps?: number;
-  volume?: number;
+  volume?: number; // Legacy 0-1 volume for backward compatibility
+  volumeDb?: number; // Decibel-based volume control (-∞ to +12 dB)
   visible: boolean;
   locked: boolean;
   muted?: boolean;
+  noiseReductionEnabled?: boolean; // Audio noise reduction toggle
   color: string;
   subtitleText?: string;
   subtitleType?: 'karaoke' | 'regular'; // Distinguish between karaoke (generated) and regular (imported) subtitles
