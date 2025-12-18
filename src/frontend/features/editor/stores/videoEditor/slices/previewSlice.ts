@@ -5,7 +5,11 @@ import { DEFAULT_PREVIEW_CONFIG } from '../utils/constants';
 
 export interface PreviewSlice {
   preview: PreviewState;
-  setCanvasSize: (width: number, height: number, storeAsOriginal?: boolean) => void;
+  setCanvasSize: (
+    width: number,
+    height: number,
+    storeAsOriginal?: boolean,
+  ) => void;
   resetCanvasSize: () => void;
   setPreviewScale: (scale: number) => void;
   setPreviewPan: (panX: number, panY: number) => void;
@@ -43,7 +47,11 @@ export const createPreviewSlice: StateCreator<
 
       // Store original dimensions if requested (typically on first video import)
       // or if original dimensions haven't been set yet
-      if (storeAsOriginal || (!state.preview.originalCanvasWidth && !state.preview.originalCanvasHeight)) {
+      if (
+        storeAsOriginal ||
+        (!state.preview.originalCanvasWidth &&
+          !state.preview.originalCanvasHeight)
+      ) {
         updates.originalCanvasWidth = width;
         updates.originalCanvasHeight = height;
       }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 import { spawn } from 'child_process';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import started from 'electron-squirrel-startup';
@@ -59,7 +60,7 @@ interface SpriteSheetJob {
 }
 
 const activeSpriteSheetJobs = new Map<string, SpriteSheetJob>();
-let spriteSheetJobCounter = 0;
+const spriteSheetJobCounter = 0;
 
 // Initialize ffmpeg paths dynamically with fallbacks
 async function initializeFfmpegPaths() {
@@ -1237,11 +1238,10 @@ async function processSpriteSheetsInBackground(
 
           let stderr = '';
           let stdout = '';
-          let processTimeout: NodeJS.Timeout;
 
           // Set adaptive timeout based on video complexity
           const timeoutMs = Math.min(300000, 60000 + i * 60000); // Max 5 minutes, min 1 minute + 1 minute per sheet
-          processTimeout = setTimeout(() => {
+          const processTimeout: NodeJS.Timeout = setTimeout(() => {
             ffmpeg.kill('SIGKILL');
             resolve({
               success: false,
