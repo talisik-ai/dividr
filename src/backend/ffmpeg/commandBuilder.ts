@@ -31,6 +31,7 @@ const AUDIO_DEFAULTS = {
 
 // Enhanced timeline processing with proper cumulative positioning
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface TimelineSegment {
   input: TrackInfo;
   originalIndex: number;
@@ -44,6 +45,7 @@ interface TimelineSegment {
  * @param filePath - The file path to convert
  * @returns FFmpeg-compatible path with proper escaping
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function convertToFfmpegPath(filePath: string): string {
   let ffmpegPath = filePath;
 
@@ -195,6 +197,7 @@ function isGapInput(path: string): boolean {
 /**
  * Calculates the actual duration of a track, accounting for trimming
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function calculateTrackDuration(
   trackInfo: TrackInfo,
   defaultDuration = 1,
@@ -505,12 +508,12 @@ function parseAspectRatio(aspectRatio: string): number {
  * For aspect ratio conversion (e.g., 16:9 to 9:16), this function:
  * 1. Scales the video to preserve one dimension (e.g., height for 16:9 to 9:16)
  * 2. Crops the other dimension to achieve the target aspect ratio
- * 
+ *
  * Example: 1920x1080 (16:9) to 9:16
  * - Scale height from 1080 to 1920 (width becomes 3413)
  * - Crop width from 3413 to 1080
  * - Final: 1080x1920 (9:16)
- * 
+ *
  * @param originalIndex - Unique index for filter labeling
  * @param inputRef - Input filter reference
  * @param aspectRatio - Target aspect ratio (e.g., "16:9", "4:3", "9:16")
@@ -518,6 +521,7 @@ function parseAspectRatio(aspectRatio: string): number {
  * @param sourceHeight - Source video height
  * @returns AudioTrimResult with filter reference and filter strings
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function createAspectRatioCropFilters(
   originalIndex: number,
   inputRef: string,
@@ -573,8 +577,10 @@ function createAspectRatioCropFilters(
     // This handles rounding errors
     if (scaleWidth < cropWidth) scaleWidth = cropWidth;
     if (scaleHeight < cropHeight) scaleHeight = cropHeight;
-    
-    console.log(`📐 Portrait target: smaller dim (${smallerDimension}) → final width, scale factor: ${scaleFactor.toFixed(3)}`);
+
+    console.log(
+      `📐 Portrait target: smaller dim (${smallerDimension}) → final width, scale factor: ${scaleFactor.toFixed(3)}`,
+    );
   } else {
     // Landscape target (width >= height) - smaller dimension becomes final height
     cropHeight = smallerDimension;
@@ -594,12 +600,14 @@ function createAspectRatioCropFilters(
     // This handles rounding errors
     if (scaleWidth < cropWidth) scaleWidth = cropWidth;
     if (scaleHeight < cropHeight) scaleHeight = cropHeight;
-    
-    console.log(`📐 Landscape target: smaller dim (${smallerDimension}) → final height, scale factor: ${scaleFactor.toFixed(3)}`);
+
+    console.log(
+      `📐 Landscape target: smaller dim (${smallerDimension}) → final height, scale factor: ${scaleFactor.toFixed(3)}`,
+    );
   }
-  
+
   console.log(
-    `📐 Source: ${sourceWidth}x${sourceHeight} (ratio: ${sourceRatio.toFixed(3)}), Target ratio: ${targetRatio.toFixed(3)}`
+    `📐 Source: ${sourceWidth}x${sourceHeight} (ratio: ${sourceRatio.toFixed(3)}), Target ratio: ${targetRatio.toFixed(3)}`,
   );
   console.log(
     `📐 Step 1: Scale to ${scaleWidth}x${scaleHeight}`
