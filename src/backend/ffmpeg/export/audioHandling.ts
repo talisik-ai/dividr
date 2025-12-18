@@ -146,6 +146,28 @@ export function applyVolumeFilter(
   return volumeFilter;
 }
 
+export function applyFadeFilter(
+  inputRef: string,
+  outputRef: string,
+  fadeType: 'in' | 'out',
+  startTime: number,
+  duration: number,
+): string {
+  if (duration <= 0) {
+    console.warn(`⚠️ Fade duration must be positive, got ${duration}. Skipping fade.`);
+    return `${inputRef}acopy${outputRef}`;
+  }
+
+  if (startTime < 0) {
+    console.warn(`⚠️ Fade start time cannot be negative, got ${startTime}. Using 0.`);
+    startTime = 0;
+  }
+
+  const fadeFilter = `${inputRef}afade=t=${fadeType}:st=${startTime.toFixed(2)}:d=${duration.toFixed(2)}${outputRef}`;
+  console.log(`🎵 Applied ${fadeType === 'in' ? 'fade in' : 'fade out'}: start=${startTime.toFixed(2)}s, duration=${duration.toFixed(2)}s`);
+  return fadeFilter;
+}
+
 /**
  * Optional function to get volume in decibels for a segment
  * Returns a float value in decibels (defaults to 0dB if not provided)
@@ -251,7 +273,7 @@ export function processAudioTimeline(
         const finalRef = `[a${segmentIndex}_final]`;
         audioFilters.push(`${delayedRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedRef}`);
         audioFilters.push(`${paddedRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalRef}`);
-        console.log(`🎵 Padded and trimmed audio stream ${segmentIndex} to exact ${totalVideoDuration.toFixed(3)}s to match video duration`);
+        
 
         audioSegmentsWithTiming.push({
           segment,
