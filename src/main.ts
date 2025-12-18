@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { spawn } from 'child_process';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
@@ -1231,7 +1233,7 @@ async function processSpriteSheetsInBackground(
       // Execute FFmpeg command with improved error handling and timeout
       const result = await new Promise<{ success: boolean; error?: string }>(
         (resolve) => {
-          const ffmpeg = spawn(ffmpegPath!, adjustedCommand, {
+          const ffmpeg = spawn(ffmpegPath as string, adjustedCommand, {
             stdio: ['ignore', 'pipe', 'pipe'],
             windowsHide: true, // Hide console window on Windows
           });

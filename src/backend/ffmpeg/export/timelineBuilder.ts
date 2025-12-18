@@ -1,9 +1,9 @@
 import {
+  CategorizedInputs,
   ProcessedTimeline,
   ProcessedTimelineSegment,
   TrackInfo,
   VideoEditJob,
-  CategorizedInputs,
 } from '../schema/ffmpegConfig';
 
 const VIDEO_DEFAULTS = {
@@ -78,7 +78,8 @@ export function buildSeparateTimelines(
 
     // Use trackRowIndex to determine layer (higher row index = higher layer)
     // Fallback to layerIndex or old layer field for backward compatibility
-    const layer = trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
+    const layer =
+      trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
 
     if (FILE_EXTENSIONS.VIDEO.test(path)) {
       console.log(
@@ -87,7 +88,11 @@ export function buildSeparateTimelines(
       if (!videoInputsByLayer.has(layer)) {
         videoInputsByLayer.set(layer, []);
       }
-      videoInputsByLayer.get(layer)!.push({ trackInfo, originalIndex });
+      const existing = videoInputsByLayer.get(layer);
+      if (!existing) {
+        return;
+      }
+      existing.push({ trackInfo, originalIndex });
     } else if (FILE_EXTENSIONS.IMAGE.test(path)) {
       console.log(
         `🖼️ Adding image input ${originalIndex} to layer ${layer} (trackRowIndex: ${trackInfo.trackRowIndex ?? 'N/A'}): ${path} (timeline: ${trackInfo.timelineStartFrame}-${trackInfo.timelineEndFrame})`,
@@ -95,7 +100,11 @@ export function buildSeparateTimelines(
       if (!imageInputsByLayer.has(layer)) {
         imageInputsByLayer.set(layer, []);
       }
-      imageInputsByLayer.get(layer)!.push({ trackInfo, originalIndex });
+      const existing = imageInputsByLayer.get(layer);
+      if (!existing) {
+        return;
+      }
+      existing.push({ trackInfo, originalIndex });
     } else if (FILE_EXTENSIONS.AUDIO.test(path)) {
       console.log(`🎵 Adding audio input ${originalIndex}: ${path}`);
       audioInputs.push({ trackInfo, originalIndex });
@@ -111,30 +120,39 @@ export function buildSeparateTimelines(
   // Upper layers should not have gaps filled - they'll be transparent where there's no content
   // Note: Audio layers are not considered when determining the bottom-most layer
   const videoLayers = new Map<number, ProcessedTimeline>();
-  const sortedVideoLayers = Array.from(videoInputsByLayer.entries()).sort((a, b) => a[0] - b[0]);
-  const sortedImageLayers = Array.from(imageInputsByLayer.entries()).sort((a, b) => a[0] - b[0]);
-  
+  const sortedVideoLayers = Array.from(videoInputsByLayer.entries()).sort(
+    (a, b) => a[0] - b[0],
+  );
+  const sortedImageLayers = Array.from(imageInputsByLayer.entries()).sort(
+    (a, b) => a[0] - b[0],
+  );
+
   // Find the bottom-most video/image layer (lowest layer number across both video and image layers)
   // Audio layers are excluded from this determination
   const allVideoImageLayers = [
     ...sortedVideoLayers.map(([layer]) => layer),
     ...sortedImageLayers.map(([layer]) => layer),
   ].sort((a, b) => a - b);
-  const bottomMostVideoImageLayer = allVideoImageLayers.length > 0 ? allVideoImageLayers[0] : null;
-  
+  const bottomMostVideoImageLayer =
+    allVideoImageLayers.length > 0 ? allVideoImageLayers[0] : null;
+
   for (const [layer, layerInputs] of videoInputsByLayer.entries()) {
     console.log(
       `🎥 Building video layer ${layer} with ${layerInputs.length} inputs`,
     );
     let videoSegments = buildVideoTimeline(layerInputs, targetFrameRate);
-    
+
     // Only fill gaps for the bottom-most video/image layer - this creates the black background for all layers above
     // Audio layers are not considered when determining bottom-most layer
     if (layer === bottomMostVideoImageLayer) {
-      console.log(`   🎬 Layer ${layer} is bottom-most video/image layer - filling gaps with black video clips`);
+      console.log(
+        `   🎬 Layer ${layer} is bottom-most video/image layer - filling gaps with black video clips`,
+      );
       videoSegments = fillTimelineGaps(videoSegments, targetFrameRate, 'video');
     } else {
-      console.log(`   🎬 Layer ${layer} is upper layer - skipping gap filling (will be transparent)`);
+      console.log(
+        `   🎬 Layer ${layer} is upper layer - skipping gap filling (will be transparent)`,
+      );
       // Don't fill gaps for upper layers - they'll be transparent where there's no content
     }
 
@@ -212,6 +230,7 @@ function fillTimelineGaps(
   let currentTime = 0;
   let gapIndex = 0;
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   sortedSegments.forEach((segment, index) => {
     // Check if there's a gap before this segment
     const gapDuration = segment.startTime - currentTime;
@@ -286,7 +305,8 @@ function buildVideoTimeline(
     const duration = endTime - startTime;
     // Use trackRowIndex to determine layer (higher row index = higher layer)
     // Fallback to layerIndex or old layer field for backward compatibility
-    const layer = trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
+    const layer =
+      trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
     const trackRowIndex = trackInfo.trackRowIndex ?? 0;
     const layerIndex = trackInfo.layerIndex ?? trackInfo.trackRowIndex ?? 0;
 
@@ -327,7 +347,8 @@ function buildImageTimeline(
     const duration = endTime - startTime;
     // Use trackRowIndex to determine layer (higher row index = higher layer)
     // Fallback to layerIndex or old layer field for backward compatibility
-    const layer = trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
+    const layer =
+      trackInfo.trackRowIndex ?? trackInfo.layerIndex ?? trackInfo.layer ?? 0;
     const trackRowIndex = trackInfo.trackRowIndex ?? 0;
     const layerIndex = trackInfo.layerIndex ?? trackInfo.trackRowIndex ?? 0;
 
@@ -456,4 +477,3 @@ export function handleTimelineProcessing(
 
   return { videoLayers, imageLayers, finalAudioTimeline, categorizedInputs };
 }
-

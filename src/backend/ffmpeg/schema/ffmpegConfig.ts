@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface ImageTransform {
   x: number; // Normalized position (-1 to 1)
   y: number; // Normalized position (-1 to 1)
@@ -23,8 +24,8 @@ export interface TrackInfo {
   width?: number;
   height?: number;
   aspectRatio?: string; // Aspect ratio in width:height format (e.g., '16:9', '9:16', '1920:1080')
-  detectedAspectRatioLabel?: string; 
-  sourceFps?: number; 
+  detectedAspectRatioLabel?: string;
+  sourceFps?: number;
   effectiveFps?: number; // User-set FPS for this track (used for export interpretation)
   isImage?: boolean; // Internal flag to mark image layers for overlay processing
   layer?: number; // Layer index for video/image tracks (0 = base layer, higher = overlay priority)

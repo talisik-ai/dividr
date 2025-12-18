@@ -447,7 +447,7 @@ export async function getBestVideoCodec(
   }
 
   return preferHEVC
-    ? detection.fallback.hevcCodec!
+    ? detection.fallback.hevcCodec
     : detection.fallback.videoCodec;
 }
 

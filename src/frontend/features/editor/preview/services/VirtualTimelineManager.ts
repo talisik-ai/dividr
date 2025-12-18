@@ -132,7 +132,11 @@ export class VirtualTimelineManager {
         if (!this.segmentsBySource.has(segment.sourceUrl)) {
           this.segmentsBySource.set(segment.sourceUrl, []);
         }
-        this.segmentsBySource.get(segment.sourceUrl)!.push(segment);
+        const existing = this.segmentsBySource.get(segment.sourceUrl);
+        if (!existing) {
+          return;
+        }
+        existing.push(segment);
       }
     }
 

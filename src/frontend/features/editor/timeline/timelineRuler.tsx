@@ -22,6 +22,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
     frameWidth,
     totalFrames,
     scrollX,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     fps: _fps, // Unused - kept for backward compatibility
     tracks,
     inPoint,

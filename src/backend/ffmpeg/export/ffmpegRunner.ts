@@ -199,7 +199,7 @@ export async function runFfmpeg(
   const result = await window.electronAPI.ffmpegRun(job);
 
   if (result.success) {
-    return result.result!;
+    return result.result;
   } else {
     throw new Error(result.error || 'FFmpeg execution failed');
   }
