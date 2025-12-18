@@ -2358,18 +2358,27 @@ const createWindow = () => {
 
     mainWindow.webContents.once('dom-ready', () => {
       logStartupPerf();
+      // DOM is ready, loader HTML is already visible from index.html
+      // Show window immediately since loader is in HTML
+      if (mainWindow && !mainWindow.isVisible()) {
+        clearTimeout(fallbackShow);
+        mainWindow.show();
+        kickoffDeferredInitialization();
+      }
     });
 
     mainWindow.webContents.once('did-finish-load', () => {
       logStartupPerf();
     });
 
-    // Show window only when ready to prevent white flash
+    // Show window when ready (fallback)
     mainWindow.once('ready-to-show', () => {
       clearTimeout(fallbackShow);
       logStartupPerf();
-      mainWindow?.show();
-      kickoffDeferredInitialization();
+      if (!mainWindow?.isVisible()) {
+        mainWindow?.show();
+        kickoffDeferredInitialization();
+      }
     });
 
     if (
