@@ -225,6 +225,47 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeWhisperProgressListener: () =>
     ipcRenderer.removeAllListeners('whisper:progress'),
 
+  // =========================================================================
+  // Media Tools APIs (Noise Reduction)
+  // =========================================================================
+
+  // Reduce noise from audio file
+  mediaToolsNoiseReduce: (
+    inputPath: string,
+    outputPath: string,
+    options?: {
+      stationary?: boolean;
+      propDecrease?: number;
+      nFft?: number;
+    },
+  ) =>
+    ipcRenderer.invoke(
+      'media-tools:noise-reduce',
+      inputPath,
+      outputPath,
+      options,
+    ),
+
+  // Cancel active media-tools operation
+  mediaToolsCancel: () => ipcRenderer.invoke('media-tools:cancel'),
+
+  // Get media-tools status
+  mediaToolsStatus: () => ipcRenderer.invoke('media-tools:status'),
+
+  // Listen for media-tools progress updates
+  onMediaToolsProgress: (
+    callback: (progress: {
+      stage: 'loading' | 'processing' | 'saving' | 'complete' | 'error';
+      progress: number;
+      message?: string;
+    }) => void,
+  ) =>
+    ipcRenderer.on('media-tools:progress', (_, progress) => callback(progress)),
+
+  // Remove media-tools progress listener
+  removeMediaToolsProgressListener: () =>
+    ipcRenderer.removeAllListeners('media-tools:progress'),
+
   // Check if media file has audio
   mediaHasAudio: (filePath: string) =>
     ipcRenderer.invoke('media:has-audio', filePath),

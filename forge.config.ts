@@ -17,7 +17,7 @@ const config: ForgeConfig = {
     extraResource: [
       './src/frontend/assets/logo',
       './src/backend/python/scripts',
-      './transcribe-bin',
+      './dividr-tools-bin',
     ],
     ignore: [
       // Git and docs
@@ -26,9 +26,7 @@ const config: ForgeConfig = {
       /^\/README\.md$/,
       /^\/docs\//,
 
-      // Large binary directories (user must install separately)
-      /^\/whisper-bin\//,
-      /^\/whisper-models\//,
+      // Large binary directories (not packaged with app)
       /^\/ffmpeg-bin\//,
 
       // Python environment (user must install separately)

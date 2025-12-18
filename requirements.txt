@@ -7,7 +7,7 @@ faster-whisper>=1.0.0
 
 # PyTorch (CPU version) - Required by Faster-Whisper
 # For GPU support, install: torch>=2.0.0+cu118 (CUDA 11.8) or torch>=2.0.0+cu121 (CUDA 12.1)
-torch>=2.0.0
+torch>=2.0.0    
 
 # Requests - Required by faster-whisper for model downloads
 requests>=2.31.0

@@ -1,0 +1,8 @@
+# This directory contains the dividr-tools binary
+# The binary is built using PyInstaller:
+#   pyinstaller main.spec --distpath dividr-tools-bin/win32
+#
+# Platform subdirectories:
+#   - win32/dividr-tools.exe
+#   - darwin/dividr-tools
+#   - linux/dividr-tools

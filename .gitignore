@@ -38,7 +38,7 @@ TEST*.xml
 
 # Applications
 *.app
-# Ignore all .exe files except whisper-bin/win32/main.exe
+# Ignore all .exe files
 *.exe
 *.war
 
@@ -146,14 +146,6 @@ out/
 
 public/
 
-# Whisper models (large binary files - download separately)
-whisper-bin/win32/*
-whisper-bin/darwin/*
-whisper-bin/linux/*
-whisper-models/*.bin
-# Keep directory structure
-!whisper-models/.gitkeep
-
 # Python virtual environments (user must install separately)
 venv/
 .venv/
@@ -168,4 +160,7 @@ src/backend/scripts/dist/
 
 # FFmpeg binaries (bundled via npm packages)
 ffmpeg-bin/
-transcribe-bin/
+
+# Python binaries (built via PyInstaller)
+dividr-tools-bin/*
+!dividr-tools-bin/.gitkeep

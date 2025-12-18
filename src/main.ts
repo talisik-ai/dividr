@@ -12,25 +12,25 @@ import {
   runFfmpegWithProgress,
 } from './backend/ffmpeg/export/ffmpegRunner';
 import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
-// Import old Whisper.cpp runner (keeping for backward compatibility if needed)
-// import {
-//   cancelTranscription as cancelWhisperCpp,
-//   getWhisperStatus as getWhisperCppStatus,
-//   initializeWhisperPath,
-//   transcribeAudio as transcribeWithWhisperCpp,
-//   WhisperProgress,
-//   WhisperResult,
-// } from './backend/whisper/whisperRunner';
 
-// Import new Python-based Faster-Whisper runner
+// Import unified media-tools runner (transcription + noise reduction)
+import type {
+  MediaToolsProgress,
+  NoiseReductionResult,
+  WhisperResult,
+} from './backend/media-tools/mediaToolsRunner';
 import {
+  cancelCurrentOperation,
   cancelTranscription,
+  getMediaToolsStatus,
   getPythonWhisperStatus,
   initializePythonWhisper,
+  reduceNoise,
   transcribeAudio,
-  WhisperProgress,
-  WhisperResult,
-} from './backend/whisper/pythonWhisperRunner';
+} from './backend/media-tools/mediaToolsRunner';
+
+// Backward compatible type alias
+type WhisperProgress = MediaToolsProgress;
 
 // Import Vite dev server URL
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -2156,12 +2156,99 @@ ipcMain.handle('whisper:status', async () => {
     try {
       await ensurePythonInitialized('ipc:whisper:status');
     } catch (error) {
-      console.log('⚠️ Python initialization failed during status check:', error);
+      console.log(
+        '⚠️ Python initialization failed during status check:',
+        error,
+      );
       // Continue to return status even if initialization failed
     }
   }
 
   const status = getPythonWhisperStatus();
+  console.log('   Status:', status);
+
+  return status;
+});
+
+// ============================================================================
+// Media Tools IPC Handlers (Noise Reduction)
+// ============================================================================
+
+// IPC Handler for noise reduction
+ipcMain.handle(
+  'media-tools:noise-reduce',
+  async (
+    event,
+    inputPath: string,
+    outputPath: string,
+    options?: {
+      stationary?: boolean;
+      propDecrease?: number;
+      nFft?: number;
+    },
+  ) => {
+    console.log('🔇 MAIN PROCESS: media-tools:noise-reduce handler called');
+    console.log('   Input path:', inputPath);
+    console.log('   Output path:', outputPath);
+    console.log('   Options:', options);
+
+    try {
+      await ensurePythonInitialized('ipc:media-tools:noise-reduce');
+
+      const result: NoiseReductionResult = await reduceNoise(
+        inputPath,
+        outputPath,
+        {
+          ...options,
+          onProgress: (progress: MediaToolsProgress) => {
+            // Send progress updates to renderer process
+            event.sender.send('media-tools:progress', progress);
+          },
+        },
+      );
+
+      console.log('✅ Noise reduction successful');
+      return { success: true, result };
+    } catch (error) {
+      console.error('❌ Noise reduction failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  },
+);
+
+// IPC Handler to cancel media-tools operation
+ipcMain.handle('media-tools:cancel', async () => {
+  console.log('🛑 MAIN PROCESS: media-tools:cancel handler called');
+
+  const cancelled = cancelCurrentOperation();
+  return {
+    success: cancelled,
+    message: cancelled
+      ? 'Operation cancelled'
+      : 'No active operation to cancel',
+  };
+});
+
+// IPC Handler to check media-tools status
+ipcMain.handle('media-tools:status', async () => {
+  console.log('📊 MAIN PROCESS: media-tools:status handler called');
+
+  // Try to initialize if not already initialized
+  if (!getMediaToolsStatus().available) {
+    try {
+      await ensurePythonInitialized('ipc:media-tools:status');
+    } catch (error) {
+      console.log(
+        '⚠️ Media tools initialization failed during status check:',
+        error,
+      );
+    }
+  }
+
+  const status = getMediaToolsStatus();
   console.log('   Status:', status);
 
   return status;
