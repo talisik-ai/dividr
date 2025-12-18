@@ -318,6 +318,67 @@ declare global {
         hasAudio: boolean;
         error?: string;
       }>;
+
+      // ========================================================================
+      // Media Tools API (Noise Reduction)
+      // ========================================================================
+
+      /**
+       * Reduce noise from audio file
+       * @param inputPath - Path to input audio file
+       * @param outputPath - Path to output audio file
+       * @param options - Noise reduction options
+       */
+      mediaToolsNoiseReduce: (
+        inputPath: string,
+        outputPath: string,
+        options?: {
+          stationary?: boolean;
+          propDecrease?: number;
+          nFft?: number;
+        },
+      ) => Promise<{
+        success: boolean;
+        result?: {
+          success: boolean;
+          outputPath: string;
+          message?: string;
+        };
+        error?: string;
+      }>;
+
+      /**
+       * Cancel active media-tools operation
+       */
+      mediaToolsCancel: () => Promise<{ success: boolean; message: string }>;
+
+      /**
+       * Get media-tools status
+       */
+      mediaToolsStatus: () => Promise<{
+        available: boolean;
+        mode: 'standalone' | 'python' | 'unavailable';
+        mediaToolsPath: string | null;
+        pythonPath: string | null;
+        mainPyScriptPath: string | null;
+        isProcessing: boolean;
+      }>;
+
+      /**
+       * Listen for media-tools progress updates
+       */
+      onMediaToolsProgress: (
+        callback: (progress: {
+          stage: 'loading' | 'processing' | 'saving' | 'complete' | 'error';
+          progress: number;
+          message?: string;
+        }) => void,
+      ) => void;
+
+      /**
+       * Remove media-tools progress listener
+       */
+      removeMediaToolsProgressListener: () => void;
     };
     appControl: {
       showWindow: () => Promise<boolean>;

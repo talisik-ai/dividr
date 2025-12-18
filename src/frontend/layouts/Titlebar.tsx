@@ -143,9 +143,9 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
             {/* Dark Mode/Light Mode Toggle */}
             <div className="flex items-center gap-7">
               {process.env.NODE_ENV === 'development' && (
-                <Link to="/whisper-test">
-                  <Button variant="ghost" size="sm" title="Whisper Test">
-                    Test Whisper
+                <Link to="/dev-tools">
+                  <Button variant="ghost" size="sm" title="Test Tools">
+                    Test Tools
                   </Button>
                 </Link>
               )}
