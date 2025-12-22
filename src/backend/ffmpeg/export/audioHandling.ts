@@ -250,17 +250,29 @@ export function processAudioTimeline(
         audioFilters.push(...trimResult.filters);
 
         // Apply volume control (before delay/positioning)
-        // Defaults to 0dB if callback not provided or returns undefined
+        // Priority: 1) volumeDb from trackInfo payload, 2) callback, 3) default to 0dB
         let currentAudioRef = trimResult.filterRef;
-        const volumeDb: number = getVolumeDb?.(segment) ?? 0.0;
+        const volumeDb: number =
+          trackInfo.volumeDb !== undefined
+            ? trackInfo.volumeDb
+            : (getVolumeDb?.(segment) ?? 0.0);
 
         // Only apply volume filter if adjustment is non-zero (0dB means no change)
-        if (volumeDb !== 0.0) {
+        // Also handle -Infinity for complete silence (mute)
+        if (volumeDb !== 0.0 && volumeDb !== -Infinity) {
           const volumeRef = `[a${segmentIndex}_volume]`;
           audioFilters.push(
             applyVolumeFilter(currentAudioRef, volumeRef, volumeDb),
           );
           currentAudioRef = volumeRef;
+        } else if (volumeDb === -Infinity || trackInfo.muted) {
+          // Handle mute: use volume filter with very low dB or volume=0
+          const volumeRef = `[a${segmentIndex}_volume]`;
+          audioFilters.push(
+            applyVolumeFilter(currentAudioRef, volumeRef, -60.0),
+          );
+          currentAudioRef = volumeRef;
+          console.log(`🔇 Muted audio segment ${segmentIndex}`);
         }
 
         // Add delay to position audio at correct timeline position
