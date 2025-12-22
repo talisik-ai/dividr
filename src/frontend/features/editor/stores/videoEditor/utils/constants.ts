@@ -70,3 +70,8 @@ export const DEFAULT_PLAYBACK_CONFIG = {
   volume: 1,
   muted: false,
 } as const;
+
+export const DEFAULT_AUDIO_PROPERTIES = {
+  volumeDb: 0, // 0 dB = unity gain
+  noiseReductionEnabled: false,
+};

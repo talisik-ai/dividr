@@ -1,6 +1,7 @@
 import { cn } from '@/frontend/utils/utils';
 import React, { useMemo } from 'react';
 import { useVideoEditorStore } from '../../stores/videoEditor/index';
+import { AudioProperties } from './audio/audioProperties';
 import { ImageProperties } from './image/imageProperties';
 import { SubtitleProperties } from './subtitles/subtitleProperties';
 import { TextProperties } from './text/textProperties';
@@ -46,6 +47,11 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
     [selectedTracks],
   );
 
+  const hasAudioSelection = useMemo(
+    () => selectedTracks.some((track) => track.type === 'audio'),
+    [selectedTracks],
+  );
+
   // Early return if no tracks are selected
   if (selectedTracks.length === 0) {
     return null;
@@ -56,7 +62,8 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
     !hasSubtitleSelection &&
     !hasTextSelection &&
     !hasVideoSelection &&
-    !hasImageSelection
+    !hasImageSelection &&
+    !hasAudioSelection
   ) {
     return null;
   }
@@ -81,10 +88,18 @@ const PropertiesPanelComponent: React.FC<PropertiesPanelProps> = ({
         <VideoProperties selectedTrackIds={selectedTrackIds} />
       )}
 
-      {hasImageSelection &&
+      {hasAudioSelection &&
         !hasTextSelection &&
         !hasSubtitleSelection &&
         !hasVideoSelection && (
+          <AudioProperties selectedTrackIds={selectedTrackIds} />
+        )}
+
+      {hasImageSelection &&
+        !hasTextSelection &&
+        !hasSubtitleSelection &&
+        !hasVideoSelection &&
+        !hasAudioSelection && (
           <ImageProperties selectedTrackIds={selectedTrackIds} />
         )}
 
