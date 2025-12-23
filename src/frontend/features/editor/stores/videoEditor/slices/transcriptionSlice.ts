@@ -256,6 +256,28 @@ export const createTranscriptionSlice: StateCreator<
       };
     }
 
+    // Check if runtime is available
+    try {
+      const runtimeStatus = await window.electronAPI.runtimeStatus();
+      if (!runtimeStatus.installed) {
+        return {
+          success: false,
+          error: 'RUNTIME_REQUIRED',
+          requiresDownload: true,
+        } as any;
+      }
+      if (runtimeStatus.needsUpdate) {
+        return {
+          success: false,
+          error: 'RUNTIME_UPDATE_REQUIRED',
+          requiresDownload: true,
+        } as any;
+      }
+    } catch (error) {
+      console.error('Failed to check runtime status:', error);
+      // Continue anyway - the actual transcription will fail with a clearer error
+    }
+
     // Validate that media has audio
     let audioPath: string | null = null;
 

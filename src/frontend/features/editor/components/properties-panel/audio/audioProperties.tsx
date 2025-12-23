@@ -1,3 +1,4 @@
+import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import { Button } from '@/frontend/components/ui/button';
 import { Input } from '@/frontend/components/ui/input';
 import { Separator } from '@/frontend/components/ui/separator';
@@ -9,7 +10,7 @@ import {
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
 import { RotateCcw, VolumeX } from 'lucide-react';
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { DEFAULT_AUDIO_METADATA } from '../../../stores/videoEditor/types/track.types';
 
@@ -189,15 +190,50 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     return db === -Infinity ? -60 : Math.max(-60, Math.min(12, db));
   }, []);
 
+  // State for runtime download modal
+  const [showRuntimeModal, setShowRuntimeModal] = useState(false);
+  const [pendingNoiseReduction, setPendingNoiseReduction] = useState(false);
+
   // Handle noise reduction toggle (single action - creates undo entry)
   const handleNoiseReductionToggle = useCallback(
-    (enabled: boolean) => {
+    async (enabled: boolean) => {
+      if (enabled) {
+        // Check runtime before enabling
+        try {
+          const runtimeStatus = await window.electronAPI.runtimeStatus();
+          if (!runtimeStatus.installed || runtimeStatus.needsUpdate) {
+            // Show download modal instead of enabling
+            setPendingNoiseReduction(true);
+            setShowRuntimeModal(true);
+            return;
+          }
+        } catch (error) {
+          console.error('Failed to check runtime status:', error);
+          // Continue anyway - the actual noise reduction will fail with a clearer error
+        }
+      }
+
       beginAudioUpdate();
       updateAudioProperties({ noiseReductionEnabled: enabled });
       endAudioUpdate();
     },
     [updateAudioProperties, beginAudioUpdate, endAudioUpdate],
   );
+
+  // Handle successful runtime download - enable noise reduction
+  const handleRuntimeDownloadSuccess = useCallback(() => {
+    if (pendingNoiseReduction) {
+      beginAudioUpdate();
+      updateAudioProperties({ noiseReductionEnabled: true });
+      endAudioUpdate();
+      setPendingNoiseReduction(false);
+    }
+  }, [
+    pendingNoiseReduction,
+    updateAudioProperties,
+    beginAudioUpdate,
+    endAudioUpdate,
+  ]);
 
   // Handle reset to defaults (single action - creates undo entry)
   const handleReset = useCallback(() => {
@@ -340,6 +376,17 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           </p>
         </div>
       )}
+
+      {/* Runtime Download Modal for Noise Reduction */}
+      <RuntimeDownloadModal
+        isOpen={showRuntimeModal}
+        onClose={() => {
+          setShowRuntimeModal(false);
+          setPendingNoiseReduction(false);
+        }}
+        onSuccess={handleRuntimeDownloadSuccess}
+        featureName="Noise Reduction"
+      />
     </div>
   );
 };

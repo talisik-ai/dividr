@@ -102,6 +102,11 @@ let currentProcess: ChildProcess | null = null;
 
 /**
  * Detect dividr-tools executable or Python fallback
+ *
+ * Priority order:
+ * 1. Downloaded runtime in userData (on-demand download location)
+ * 2. Bundled resources (legacy bundled installation)
+ * 3. System Python (development mode)
  */
 const detectMediaToolsExecutable = (): {
   executable: string;
@@ -110,10 +115,27 @@ const detectMediaToolsExecutable = (): {
 } | null => {
   const isWindows = process.platform === 'win32';
   const platform = process.platform;
+  const exeName = isWindows ? 'dividr-tools.exe' : 'dividr-tools';
 
-  // In packaged app, try bundled standalone executable first
+  // Priority 1: Check userData first (on-demand download location)
+  const userDataPath = path.join(
+    app.getPath('userData'),
+    'dividr-tools',
+    platform,
+    exeName,
+  );
+
+  if (fs.existsSync(userDataPath)) {
+    console.log(`✅ Found downloaded dividr-tools at: ${userDataPath}`);
+    return {
+      executable: userDataPath,
+      executableArgs: [],
+      isPythonScript: false,
+    };
+  }
+
+  // Priority 2: In packaged app, try bundled standalone executable
   if (app.isPackaged) {
-    const exeName = isWindows ? 'dividr-tools.exe' : 'dividr-tools';
     const bundledExePaths = [
       path.join(process.resourcesPath, 'dividr-tools-bin', platform, exeName),
       path.join(process.resourcesPath, 'dividr-tools-bin', exeName),
@@ -154,10 +176,10 @@ const detectMediaToolsExecutable = (): {
       }
     }
 
-    console.log('⚠️ Bundled dividr-tools not found, trying system Python');
+    console.log('⚠️ dividr-tools not found in userData or bundled resources');
   }
 
-  // Fall back to system Python (development mode)
+  // Priority 3: Fall back to system Python (development mode)
   return detectPythonEnvironment();
 };
 

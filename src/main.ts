@@ -29,6 +29,15 @@ import {
   transcribeAudio,
 } from './backend/media-tools/mediaToolsRunner';
 
+// Import runtime download manager for on-demand installation
+import {
+  cancelDownload,
+  checkRuntimeStatus,
+  downloadRuntime,
+  removeRuntime,
+  verifyInstallation,
+} from './backend/runtime/runtimeDownloadManager';
+
 // Backward compatible type alias
 type WhisperProgress = MediaToolsProgress;
 
@@ -2252,6 +2261,65 @@ ipcMain.handle('media-tools:status', async () => {
   console.log('   Status:', status);
 
   return status;
+});
+
+// ============================================================================
+// Runtime Download IPC Handlers
+// ============================================================================
+
+// IPC Handler to check runtime status
+ipcMain.handle('runtime:status', async () => {
+  console.log('📊 MAIN PROCESS: runtime:status handler called');
+
+  const status = await checkRuntimeStatus();
+  console.log('   Runtime status:', status);
+
+  return status;
+});
+
+// IPC Handler to start runtime download
+ipcMain.handle('runtime:download', async (event) => {
+  console.log('📥 MAIN PROCESS: runtime:download handler called');
+
+  try {
+    const result = await downloadRuntime((progress) => {
+      // Send progress updates to renderer process
+      event.sender.send('runtime:download-progress', progress);
+    });
+
+    console.log('   Download result:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ Runtime download failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// IPC Handler to cancel runtime download
+ipcMain.handle('runtime:cancel-download', async () => {
+  console.log('🛑 MAIN PROCESS: runtime:cancel-download handler called');
+
+  const result = await cancelDownload();
+  return result;
+});
+
+// IPC Handler to verify runtime installation
+ipcMain.handle('runtime:verify', async () => {
+  console.log('🔍 MAIN PROCESS: runtime:verify handler called');
+
+  const isValid = await verifyInstallation();
+  return { valid: isValid };
+});
+
+// IPC Handler to remove runtime
+ipcMain.handle('runtime:remove', async () => {
+  console.log('🗑️ MAIN PROCESS: runtime:remove handler called');
+
+  const result = await removeRuntime();
+  return result;
 });
 
 // IPC Handler to check if a media file has audio
