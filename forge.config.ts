@@ -29,6 +29,8 @@ const config: ForgeConfig = {
 
       // Large binary directories (not packaged with app)
       /^\/ffmpeg-bin\//,
+      /^\/dividr-tools-bin\//,
+      /^\/build\//,
 
       // Python environment (user must install separately)
       /^\/venv\//,
