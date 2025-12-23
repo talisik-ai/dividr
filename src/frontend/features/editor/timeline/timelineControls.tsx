@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { KaraokeIcon } from '@/frontend/assets/icons/karaoke';
+import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import { Button } from '@/frontend/components/ui/button';
 import {
   DropdownMenu,
@@ -514,6 +515,13 @@ const GenerateKaraokeButton: React.FC = React.memo(() => {
     existingSubtitleCount: 0,
   });
 
+  // Runtime download modal state
+  const [showRuntimeModal, setShowRuntimeModal] = useState(false);
+  const [pendingKaraokeAction, setPendingKaraokeAction] = useState<{
+    trackIds: string[];
+    deleteExisting: boolean;
+  } | null>(null);
+
   // Check if transcription is in progress
   const isTranscribing = !!currentTranscribingTrackId;
 
@@ -617,6 +625,11 @@ const GenerateKaraokeButton: React.FC = React.memo(() => {
             console.log(
               `✅ Generated ${result.trackIds?.length || 0} subtitles for ${track.name}`,
             );
+          } else if (result.requiresDownload) {
+            // Runtime not installed - show download modal and stop processing
+            setPendingKaraokeAction({ trackIds, deleteExisting });
+            setShowRuntimeModal(true);
+            return; // Exit early, will retry after download
           } else {
             failCount++;
             console.error(
@@ -646,6 +659,16 @@ const GenerateKaraokeButton: React.FC = React.memo(() => {
     },
     [tracks, removeTrack, generateKaraokeSubtitlesFromTrack],
   );
+
+  // Handler for successful runtime download - retry pending karaoke generation
+  const handleRuntimeDownloadSuccess = useCallback(() => {
+    if (pendingKaraokeAction) {
+      const { trackIds, deleteExisting } = pendingKaraokeAction;
+      setPendingKaraokeAction(null);
+      // Retry the karaoke generation
+      handleConfirmKaraokeGeneration(trackIds, deleteExisting);
+    }
+  }, [pendingKaraokeAction, handleConfirmKaraokeGeneration]);
 
   const isDisabled = targetTracks.length === 0 || isTranscribing;
 
@@ -712,6 +735,17 @@ const GenerateKaraokeButton: React.FC = React.memo(() => {
             );
           }
         }}
+      />
+
+      {/* Runtime download modal for transcription feature */}
+      <RuntimeDownloadModal
+        isOpen={showRuntimeModal}
+        onClose={() => {
+          setShowRuntimeModal(false);
+          setPendingKaraokeAction(null);
+        }}
+        onSuccess={handleRuntimeDownloadSuccess}
+        featureName="Karaoke Subtitle Generation"
       />
     </>
   );

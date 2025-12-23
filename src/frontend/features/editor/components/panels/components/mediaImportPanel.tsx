@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/frontend/components/ui/alert-dialog';
+import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import { Badge } from '@/frontend/components/ui/badge';
 import { Button } from '@/frontend/components/ui/button';
 import {
@@ -421,6 +422,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     existingSubtitleCount: 0,
   });
 
+  // Runtime download modal state
+  const [showRuntimeModal, setShowRuntimeModal] = useState(false);
+  const [pendingKaraokeAction, setPendingKaraokeAction] = useState<{
+    fileId: string;
+    deleteExisting: boolean;
+  } | null>(null);
+
   const handleGenerateKaraokeSubtitles = useCallback(
     (fileId: string) => {
       const mediaItem = mediaLibrary.find((item) => item.id === fileId);
@@ -536,6 +544,10 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           toast.success(
             `Successfully generated ${result.trackIds.length} karaoke subtitle tracks!`,
           );
+        } else if (result.requiresDownload) {
+          // Runtime not installed - show download modal
+          setPendingKaraokeAction({ fileId, deleteExisting });
+          setShowRuntimeModal(true);
         } else {
           toast.error(result.error || 'Failed to generate karaoke subtitles');
         }
@@ -561,6 +573,16 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       });
     }
   }, []);
+
+  // Handler for successful runtime download - retry pending karaoke generation
+  const handleRuntimeDownloadSuccess = useCallback(() => {
+    if (pendingKaraokeAction) {
+      const { fileId, deleteExisting } = pendingKaraokeAction;
+      setPendingKaraokeAction(null);
+      // Retry the karaoke generation
+      handleConfirmKaraokeGeneration(fileId, deleteExisting);
+    }
+  }, [pendingKaraokeAction, handleConfirmKaraokeGeneration]);
 
   const formatDuration = (seconds: number): string => {
     if (seconds < 60) {
@@ -1186,6 +1208,17 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
             );
           }
         }}
+      />
+
+      {/* Runtime download modal for transcription feature */}
+      <RuntimeDownloadModal
+        isOpen={showRuntimeModal}
+        onClose={() => {
+          setShowRuntimeModal(false);
+          setPendingKaraokeAction(null);
+        }}
+        onSuccess={handleRuntimeDownloadSuccess}
+        featureName="Karaoke Subtitle Generation"
       />
     </>
   );
