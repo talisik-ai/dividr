@@ -1,3 +1,5 @@
+import { VideoTrack } from '../../stores/videoEditor/types';
+
 /**
  * Shared constants for timeline layout to ensure perfect alignment
  * across all timeline components (ruler, controllers, tracks, thumbnail setter)
@@ -220,7 +222,6 @@ export const TIMELINE_HEADER_HEIGHT_CLASSES = 'h-8';
 
 /**
  * All track row IDs in their canonical order
- * This matches TRACK_ROWS from timelineTracks.tsx
  */
 export const ALL_TRACK_ROW_IDS = [
   'text',
@@ -228,6 +229,59 @@ export const ALL_TRACK_ROW_IDS = [
   'image',
   'video',
   'audio',
+];
+
+/**
+ * Track row definition interface
+ */
+export interface TrackRowDef {
+  id: VideoTrack['type'];
+  name: string;
+  trackTypes: VideoTrack['type'][];
+  color: string;
+  icon: string;
+}
+
+/**
+ * Static track row definitions for UI components
+ * Used for track type selection and layout calculations
+ */
+export const TRACK_ROWS: TrackRowDef[] = [
+  {
+    id: 'text',
+    name: 'Text',
+    trackTypes: ['text'],
+    color: '#3498db',
+    icon: '🔤',
+  },
+  {
+    id: 'subtitle',
+    name: 'Subtitles',
+    trackTypes: ['subtitle'],
+    color: '#9b59b6',
+    icon: '💬',
+  },
+  {
+    id: 'image',
+    name: 'Images/Overlays',
+    trackTypes: ['image'],
+    color: '#e67e22',
+    icon: '🖼️',
+  },
+  {
+    id: 'video',
+    name: 'Video',
+    trackTypes: ['video'],
+    color: '#8e44ad',
+    icon: '🎬',
+  },
+  {
+    id: 'audio',
+    name: 'Audio',
+    trackTypes: ['audio'],
+    color: '#27ae60',
+    icon: '🎵',
+  },
 ];
 
 /**

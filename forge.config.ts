@@ -1,3 +1,6 @@
+// import { MakerPKG } from '@electron-forge/maker-pkg';
+import { MakerDeb } from '@electron-forge/maker-deb';
+import { MakerRpm } from '@electron-forge/maker-rpm';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
@@ -13,13 +16,24 @@ const config: ForgeConfig = {
     },
     icon: './favicon.ico',
     name: 'DiviDr',
-    executableName: 'DiviDr',
+    executableName: 'diviDr',
     extraResource: [
       './src/frontend/assets/logo',
       './src/backend/python/scripts',
       // dividr-tools is now downloaded on-demand from GitHub Releases
       // to reduce installer size from ~1.3GB to ~200MB
     ],
+    // macOS code signing - uses APPLE_IDENTITY env variable
+    ...(process.env.APPLE_IDENTITY && {
+      osxSign: {
+        identity: process.env.APPLE_IDENTITY,
+        optionsForFile: () => ({
+          hardenedRuntime: true,
+          entitlements: './entitlements.plist',
+          'entitlements-inherit': './entitlements.plist',
+        }),
+      },
+    }),
     ignore: [
       // Git and docs
       /^\/\.gitignore$/,
@@ -67,7 +81,7 @@ const config: ForgeConfig = {
         outputDirectory: undefined,
         installerIcon: './favicon.ico',
         uninstallerIcon: './favicon.ico',
-        exe: 'DiviDr.exe',
+        exe: 'diviDr.exe',
         setupIcon: './favicon.ico',
         oneClick: false,
         perMachine: false,
@@ -84,6 +98,35 @@ const config: ForgeConfig = {
 
     // Cross-platform ZIP packages
     new MakerZIP({}, ['darwin', 'win32', 'linux']),
+
+    // Linux DEB package (Debian/Ubuntu)
+    new MakerDeb({
+      options: {
+        name: 'dividr',
+        productName: 'Dividr',
+        genericName: 'Video Editor',
+        description:
+          'A powerful video editing application built with Electron and FFmpeg',
+        maintainer: 'Dividr Team <dividr@gmail.com>',
+        homepage: 'https://github.com/talisik-ai/dividr',
+        icon: './favicon.ico',
+        categories: ['AudioVideo', 'Video', 'AudioVideoEditing'],
+      },
+    }),
+
+    // Linux RPM package (Fedora/RHEL/CentOS)
+    new MakerRpm({
+      options: {
+        name: 'dividr',
+        productName: 'Dividr',
+        genericName: 'Video Editor',
+        description:
+          'A powerful video editing application built with Electron and FFmpeg',
+        homepage: 'https://github.com/talisik-ai/dividr',
+        icon: './favicon.ico',
+        categories: ['AudioVideo', 'Video', 'AudioVideoEditing'],
+      },
+    }),
   ],
 
   plugins: [

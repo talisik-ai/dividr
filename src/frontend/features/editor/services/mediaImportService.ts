@@ -38,7 +38,11 @@ export async function importMediaUnified(
   // Prevent duplicate imports
   if (ongoingImports.has(importKey)) {
     console.log('⚠️ Import already in progress');
-    return ongoingImports.get(importKey)!;
+    const existing = ongoingImports.get(importKey);
+    if (!existing) {
+      return;
+    }
+    return existing;
   }
 
   const importFn = options.addToTimeline

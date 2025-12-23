@@ -1,25 +1,20 @@
 import * as path from 'path';
 import {
-  getHardwareAcceleration,
-  getSpecificHardwareAcceleration,
-  type HardwareAcceleration,
-} from './hardwareAccelerationDetector';
-import {
   AudioProcessingContext,
   AudioTrimResult,
   CategorizedInputs,
   CommandParts,
   InputCategory,
-  ProcessedTimeline,
-  ProcessedTimelineSegment,
   TrackInfo,
   VideoEditJob,
   VideoProcessingContext,
 } from '../schema/ffmpegConfig';
+import { handleFilterComplex } from './handleFilterComplex';
 import {
-  buildSeparateTimelineFilterComplex,
-  handleFilterComplex,
-} from './handleFilterComplex';
+  getHardwareAcceleration,
+  getSpecificHardwareAcceleration,
+  type HardwareAcceleration,
+} from './hardwareAccelerationDetector';
 import { handleTimelineProcessing } from './timelineBuilder';
 
 const VIDEO_DEFAULTS = {
@@ -287,9 +282,7 @@ function createVideoTrimFilters(
     // Use trim with exact duration - no setpts needed for static images
     return {
       filterRef: trimmedRef,
-      filters: [
-        `${inputStreamRef}trim=duration=${duration}${trimmedRef}`,
-      ],
+      filters: [`${inputStreamRef}trim=duration=${duration}${trimmedRef}`],
     };
   }
 
@@ -391,8 +384,6 @@ function createSarNormalizationFilters(
   };
 }
 
-
-
 // -------------------------
 // Audio Processing Functions
 // -------------------------
@@ -468,8 +459,6 @@ function createSilentAudioFilters(
   };
 }
 
-
-
 // -------------------------
 // Step handlers
 // -------------------------
@@ -511,7 +500,6 @@ function handleFileInputs(job: VideoEditJob, cmd: CommandParts): void {
     }
   });
 }
-
 
 /**
  * Applies FPS control to command output
@@ -623,15 +611,21 @@ export async function buildFfmpegCommand(
   const targetFrameRate = job.operations.targetFrameRate || VIDEO_DEFAULTS.FPS;
 
   // Log aspect ratio from both sources
-  console.log('📐 ASPECT RATIO from job.operations.aspect:', job.operations.aspect || 'NONE');
-  
+  console.log(
+    '📐 ASPECT RATIO from job.operations.aspect:',
+    job.operations.aspect || 'NONE',
+  );
+
   // Check for aspect ratio in trackInfo
   let trackInfoAspectRatio: string | undefined = undefined;
   for (const input of job.inputs) {
     const trackInfo = getTrackInfo(input);
     if (trackInfo.aspectRatio) {
       trackInfoAspectRatio = trackInfo.aspectRatio;
-      console.log('📐 ASPECT RATIO from trackInfo.aspectRatio:', trackInfoAspectRatio);
+      console.log(
+        '📐 ASPECT RATIO from trackInfo.aspectRatio:',
+        trackInfoAspectRatio,
+      );
       break;
     }
   }
@@ -687,5 +681,3 @@ export async function buildFfmpegCommand(
   console.log('Full FFmpeg Command:', ['ffmpeg', ...cmd.args].join(' '));
   return cmd.args;
 }
-
-
