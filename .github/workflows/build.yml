@@ -1,14 +1,25 @@
-name: Build
+name: Build (Manual)
 
+# This workflow is for testing builds WITHOUT creating releases
+# Use release workflows (triggered by tags) for actual releases
 on:
-  push:
-    branches: [main, staging]
-  pull_request:
-    branches: [main]
+  # Manual trigger only - saves GitHub Actions credits
   workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
+          - linux
 
 jobs:
   build-windows:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
     runs-on: windows-latest
 
     steps:
@@ -39,6 +50,7 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
     runs-on: macos-latest
 
     steps:
@@ -69,6 +81,7 @@ jobs:
           if-no-files-found: error
 
   build-linux:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
     runs-on: ubuntu-latest
 
     steps:

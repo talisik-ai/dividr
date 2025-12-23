@@ -1,10 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches: ['**']  # Run on all branches
+  # Only run CI on pull requests to main branches (to validate before merging)
   pull_request:
-    branches: ['**']  # Run on PRs to all branches
+    branches: [main, staging]
+  # Allow manual triggering for testing
+  workflow_dispatch:
 
 jobs:
   lint-and-test:
