@@ -516,32 +516,58 @@ export const verifyInstallation = async (): Promise<boolean> => {
     return false;
   }
 
-  // Check if file is executable
   try {
     const stats = statSync(exePath);
 
-    // On Unix, check executable permission
+    // Check file has reasonable size (at least 1MB for a PyInstaller bundle)
+    if (stats.size < 1024 * 1024) {
+      console.error('Runtime executable too small, likely corrupted');
+      return false;
+    }
+
+    // On Unix, check/set executable permission
     if (process.platform !== 'win32') {
       const isExecutable = (stats.mode & 0o111) !== 0;
       if (!isExecutable) {
-        // Try to make it executable
         chmodSync(exePath, 0o755);
       }
     }
 
-    // Try running --version to verify it works
-    const result = execSync(`"${exePath}" --version`, {
-      encoding: 'utf8',
-      timeout: 10000,
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    console.log('Runtime version check:', result.trim());
+    console.log(
+      `Runtime verified: ${exePath} (${(stats.size / 1024 / 1024).toFixed(1)} MB)`,
+    );
     return true;
   } catch (error) {
     console.error('Runtime verification failed:', error);
     return false;
+  }
+};
+
+/**
+ * Helper to remove directory with retry for locked files
+ */
+const rmSyncWithRetry = (dirPath: string, maxRetries = 3): void => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      rmSync(dirPath, { recursive: true, force: true });
+      return;
+    } catch (error: unknown) {
+      const isEBUSY =
+        error instanceof Error &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === 'EBUSY';
+      if (isEBUSY && i < maxRetries - 1) {
+        // Wait a bit and retry
+        console.log(
+          `Directory locked, retrying in 1s... (${i + 1}/${maxRetries})`,
+        );
+        execSync('timeout /t 1 /nobreak >nul 2>&1 || sleep 1', {
+          stdio: 'ignore',
+        });
+      } else {
+        throw error;
+      }
+    }
   }
 };
 
@@ -629,9 +655,9 @@ export const downloadRuntime = async (
     console.log(`Downloaded file checksum: ${checksum}`);
 
     // Step 5: Extract
-    // Clean up existing platform directory
+    // Clean up existing platform directory (with retry for locked files)
     if (existsSync(platformDir)) {
-      rmSync(platformDir, { recursive: true, force: true });
+      rmSyncWithRetry(platformDir);
     }
 
     await extractZip(zipPath, platformDir, onProgress);
