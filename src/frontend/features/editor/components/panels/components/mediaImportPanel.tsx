@@ -1,4 +1,5 @@
 import { KaraokeIcon } from '@/frontend/assets/icons/karaoke';
+import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,7 +10,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/frontend/components/ui/alert-dialog';
-import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import { Badge } from '@/frontend/components/ui/badge';
 import { Button } from '@/frontend/components/ui/button';
 import {

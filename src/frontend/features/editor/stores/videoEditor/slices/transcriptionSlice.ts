@@ -104,6 +104,7 @@ export interface TranscriptionSlice {
       faster_than_realtime?: boolean;
     };
     error?: string;
+    requiresDownload?: boolean;
   }>;
   generateKaraokeSubtitles: (
     mediaId: string,
@@ -157,6 +158,7 @@ export interface TranscriptionSlice {
       faster_than_realtime?: boolean;
     };
     error?: string;
+    requiresDownload?: boolean;
   }>;
 
   setTranscriptionProgress: (
@@ -264,14 +266,14 @@ export const createTranscriptionSlice: StateCreator<
           success: false,
           error: 'RUNTIME_REQUIRED',
           requiresDownload: true,
-        } as any;
+        };
       }
       if (runtimeStatus.needsUpdate) {
         return {
           success: false,
           error: 'RUNTIME_UPDATE_REQUIRED',
           requiresDownload: true,
-        } as any;
+        };
       }
     } catch (error) {
       console.error('Failed to check runtime status:', error);
