@@ -1,4 +1,5 @@
 import { KaraokeIcon } from '@/frontend/assets/icons/karaoke';
+import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import { Button } from '@/frontend/components/ui/button';
 import {
   DropdownMenu,
@@ -76,6 +77,14 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
       mediaName: '',
       existingSubtitleCount: 0,
     });
+
+    // Runtime download modal state
+    const [showRuntimeModal, setShowRuntimeModal] = useState(false);
+    const [pendingKaraokeAction, setPendingKaraokeAction] = useState<{
+      trackIds: string[];
+      deleteExisting: boolean;
+    } | null>(null);
+
     // Check if any non-audio tracks in this row are visible
     const hasVisibleTracks = tracks.some(
       (track) => track.type !== 'audio' && track.visible,
@@ -230,14 +239,19 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
               },
             });
 
-            if (!result.success) {
+            if (result.success) {
+              console.log(
+                `✅ Generated ${result.trackIds?.length || 0} subtitles for ${track.name}`,
+              );
+            } else if (result.requiresDownload) {
+              // Runtime not installed - show download modal and stop processing
+              setPendingKaraokeAction({ trackIds, deleteExisting });
+              setShowRuntimeModal(true);
+              return; // Exit early, will retry after download
+            } else {
               console.error(
                 `Failed to generate karaoke subtitles for ${track.name}:`,
                 result.error,
-              );
-            } else {
-              console.log(
-                `✅ Generated ${result.trackIds?.length || 0} subtitles for ${track.name}`,
               );
             }
           } catch (error) {
@@ -261,6 +275,16 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
         });
       }
     }, []);
+
+    // Handler for successful runtime download - retry pending karaoke generation
+    const handleRuntimeDownloadSuccess = useCallback(() => {
+      if (pendingKaraokeAction) {
+        const { trackIds, deleteExisting } = pendingKaraokeAction;
+        setPendingKaraokeAction(null);
+        // Retry the karaoke generation
+        handleConfirmKaraokeGeneration(trackIds, deleteExisting);
+      }
+    }, [pendingKaraokeAction, handleConfirmKaraokeGeneration]);
 
     // Parse row ID to get row index and type for label
     const parsedRow = useMemo(() => {
@@ -401,6 +425,17 @@ const TrackControllerRow: React.FC<TrackControllerRowProps> = React.memo(
             }}
           />
         )}
+
+        {/* Runtime download modal for transcription feature */}
+        <RuntimeDownloadModal
+          isOpen={showRuntimeModal}
+          onClose={() => {
+            setShowRuntimeModal(false);
+            setPendingKaraokeAction(null);
+          }}
+          onSuccess={handleRuntimeDownloadSuccess}
+          featureName="Karaoke Subtitle Generation"
+        />
       </div>
     );
   },

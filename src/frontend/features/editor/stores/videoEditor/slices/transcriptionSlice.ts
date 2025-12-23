@@ -104,6 +104,7 @@ export interface TranscriptionSlice {
       faster_than_realtime?: boolean;
     };
     error?: string;
+    requiresDownload?: boolean;
   }>;
   generateKaraokeSubtitles: (
     mediaId: string,
@@ -157,6 +158,7 @@ export interface TranscriptionSlice {
       faster_than_realtime?: boolean;
     };
     error?: string;
+    requiresDownload?: boolean;
   }>;
 
   setTranscriptionProgress: (
@@ -254,6 +256,28 @@ export const createTranscriptionSlice: StateCreator<
         success: false,
         error: 'Media item not found',
       };
+    }
+
+    // Check if runtime is available
+    try {
+      const runtimeStatus = await window.electronAPI.runtimeStatus();
+      if (!runtimeStatus.installed) {
+        return {
+          success: false,
+          error: 'RUNTIME_REQUIRED',
+          requiresDownload: true,
+        };
+      }
+      if (runtimeStatus.needsUpdate) {
+        return {
+          success: false,
+          error: 'RUNTIME_UPDATE_REQUIRED',
+          requiresDownload: true,
+        };
+      }
+    } catch (error) {
+      console.error('Failed to check runtime status:', error);
+      // Continue anyway - the actual transcription will fail with a clearer error
     }
 
     // Validate that media has audio

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { Toaster } from 'sonner';
+import { RuntimeDownloadModal } from './frontend/components/custom/RuntimeDownloadModal';
+import { RuntimeMissingBanner } from './frontend/components/custom/RuntimeMissingBanner';
 import StartupLoader from './frontend/components/custom/StartupLoader';
 import { useShortcutRegistryInit } from './frontend/features/editor/stores/videoEditor';
+import { RuntimeStatusProvider } from './frontend/providers/RuntimeStatusProvider';
 import { ThemeProvider } from './frontend/providers/ThemeProvider';
 import { WindowStateProvider } from './frontend/providers/WindowStateProvider';
 import { router } from './frontend/routes';
@@ -17,6 +20,7 @@ function App() {
   const [startupStage, setStartupStage] =
     useState<StartupStage>('renderer-mount');
   const [startupProgress, setStartupProgress] = useState(0);
+  const [showGlobalDownloadModal, setShowGlobalDownloadModal] = useState(false);
 
   useEffect(() => {
     // Subscribe to startup progress
@@ -61,24 +65,38 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <WindowStateProvider>
-        {/* Show startup loader until app is ready */}
-        {!isAppReady && (
-          <StartupLoader
-            stage={getStageMessage(startupStage)}
-            progress={startupProgress}
-            isVisible={!isAppReady}
-          />
-        )}
+        <RuntimeStatusProvider>
+          {/* Show startup loader until app is ready */}
+          {!isAppReady && (
+            <StartupLoader
+              stage={getStageMessage(startupStage)}
+              progress={startupProgress}
+              isVisible={!isAppReady}
+            />
+          )}
 
-        {/* Main app - render immediately but hidden behind loader */}
-        <div style={{ display: isAppReady ? 'block' : 'none' }}>
-          <RouterProvider router={router} />
-          <Toaster
-            richColors
-            position="bottom-right"
-            style={{ fontFamily: 'inherit' }}
-          />
-        </div>
+          {/* Main app - render immediately but hidden behind loader */}
+          <div style={{ display: isAppReady ? 'block' : 'none' }}>
+            {/* Banner for missing runtime - shown after startup */}
+            <RuntimeMissingBanner
+              onDownloadClick={() => setShowGlobalDownloadModal(true)}
+            />
+
+            <RouterProvider router={router} />
+            <Toaster
+              richColors
+              position="bottom-right"
+              style={{ fontFamily: 'inherit' }}
+            />
+
+            {/* Global runtime download modal */}
+            <RuntimeDownloadModal
+              isOpen={showGlobalDownloadModal}
+              onClose={() => setShowGlobalDownloadModal(false)}
+              featureName="AI Features"
+            />
+          </div>
+        </RuntimeStatusProvider>
       </WindowStateProvider>
     </ThemeProvider>
   );

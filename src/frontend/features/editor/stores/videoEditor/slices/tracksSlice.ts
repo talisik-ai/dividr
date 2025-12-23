@@ -295,6 +295,30 @@ export interface TracksSlice {
   unlinkSelectedTracks: () => void;
   toggleLinkedAudioMute: (videoTrackId: string) => void;
 
+  // ==========================================================================
+  // Audio Property Updates (Batch-Safe for Slider Drag)
+  // ==========================================================================
+  /**
+   * Begin a batch audio update transaction.
+   * Call this before slider drag starts to group all changes into a single undo entry.
+   * Must be paired with endAudioUpdate().
+   */
+  beginAudioUpdate: () => void;
+  /**
+   * End a batch audio update transaction.
+   * Call this when slider drag ends to commit the grouped changes.
+   */
+  endAudioUpdate: () => void;
+  /**
+   * Update audio properties for a track.
+   * Safe to call during slider drag (between beginAudioUpdate/endAudioUpdate).
+   * Does not create individual history entries during batch mode.
+   */
+  updateTrackAudio: (
+    trackId: string,
+    updates: { volumeDb?: number; noiseReductionEnabled?: boolean },
+  ) => void;
+
   // State management helpers
   markUnsavedChanges?: () => void;
   updateProjectThumbnailFromTimeline?: () => Promise<void>;
@@ -400,6 +424,9 @@ export const createTracksSlice: StateCreator<
         source: extractedAudio?.audioPath || trackData.source,
         previewUrl: extractedAudio?.previewUrl || undefined,
         trackRowIndex: audioRowIndex,
+        // Audio processing defaults (see AudioMetadata in track.types.ts)
+        volumeDb: 0, // Unity gain
+        noiseReductionEnabled: false,
       };
 
       set((state: any) => ({
@@ -516,6 +543,11 @@ export const createTracksSlice: StateCreator<
         trackRowIndex: rowIndex,
         // Apply auto-fit transform for images
         ...(imageTransform && { textTransform: imageTransform }),
+        // Audio processing defaults for standalone audio tracks (see AudioMetadata in track.types.ts)
+        ...(trackData.type === 'audio' && {
+          volumeDb: 0, // Unity gain
+          noiseReductionEnabled: false,
+        }),
       };
 
       set((state: any) => ({
@@ -654,6 +686,9 @@ export const createTracksSlice: StateCreator<
             source: extractedAudio?.audioPath || trackData.source,
             previewUrl: extractedAudio?.previewUrl || trackData.previewUrl,
             trackRowIndex: audioRowIndex,
+            // Audio processing defaults (see AudioMetadata in track.types.ts)
+            volumeDb: 0, // Unity gain
+            noiseReductionEnabled: false,
           };
 
           newTracks.push(videoTrack);
@@ -674,6 +709,12 @@ export const createTracksSlice: StateCreator<
             id,
             color: getTrackColor(state.tracks.length + newTracks.length),
             trackRowIndex: rowIndex,
+            // Audio processing defaults for standalone audio tracks (see AudioMetadata in track.types.ts)
+            ...(trackData.type === 'audio' && {
+              volumeDb: 0, // Unity gain
+              noiseReductionEnabled: false,
+              muted: false,
+            }),
           };
 
           newTracks.push(newTrack);
@@ -982,6 +1023,10 @@ export const createTracksSlice: StateCreator<
   },
 
   updateTrack: (trackId, updates) => {
+    // Record action for undo/redo
+    const state = get() as any;
+    state.recordAction?.('Update Track');
+
     // CRITICAL: Prevent mutation of sourceFps - it must remain immutable
     // sourceFps represents the original FPS from the source media file
     // and should NEVER be changed after track creation
@@ -1002,7 +1047,6 @@ export const createTracksSlice: StateCreator<
       ),
     }));
 
-    const state = get() as any;
     state.markUnsavedChanges?.();
   },
 
@@ -2172,5 +2216,47 @@ export const createTracksSlice: StateCreator<
         (get() as any).unlinkTracks(trackId);
       }
     });
+  },
+
+  // ==========================================================================
+  // Audio Property Updates (Batch-Safe for Slider Drag)
+  // ==========================================================================
+
+  beginAudioUpdate: () => {
+    const state = get() as any;
+    // Use the undo/redo grouping mechanism to batch slider updates
+    state.beginGroup?.('Update Audio');
+  },
+
+  endAudioUpdate: () => {
+    const state = get() as any;
+    // End the grouping - this creates a single undo entry for all changes
+    state.endGroup?.();
+  },
+
+  updateTrackAudio: (trackId, updates) => {
+    // This method does NOT call recordAction - it relies on being inside
+    // a beginGroup/endGroup transaction (via beginAudioUpdate/endAudioUpdate)
+    // for batch-safe slider updates, OR it's called directly for single updates
+    // like toggle switches.
+
+    set((state: any) => ({
+      tracks: state.tracks.map((track: VideoTrack) =>
+        track.id === trackId
+          ? {
+              ...track,
+              ...(updates.volumeDb !== undefined && {
+                volumeDb: updates.volumeDb,
+              }),
+              ...(updates.noiseReductionEnabled !== undefined && {
+                noiseReductionEnabled: updates.noiseReductionEnabled,
+              }),
+            }
+          : track,
+      ),
+    }));
+
+    const state = get() as any;
+    state.markUnsavedChanges?.();
   },
 });

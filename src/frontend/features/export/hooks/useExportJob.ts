@@ -483,8 +483,12 @@ function convertTracksToFFmpegInputs(
     const trackDurationSeconds = track.duration / timelineFps;
     const sourceStartTime = track.sourceStartTime || 0;
 
+    const audioInfo =
+      track.type === 'audio' || track.type === 'video'
+        ? `, volume=${track.volumeDb !== undefined ? (track.volumeDb === -Infinity ? '-∞' : `${track.volumeDb.toFixed(1)}dB`) : 'default'}`
+        : '';
     console.log(
-      `🎥 Adding track "${track.name}": type=${track.type}, timeline=${track.startFrame}-${track.endFrame}, source start ${sourceStartTime}s, duration ${trackDurationSeconds}s, dimensions: ${track.width}x${track.height}, aspect ratio: ${track.detectedAspectRatioLabel || 'custom'}`,
+      `🎥 Adding track "${track.name}": type=${track.type}, timeline=${track.startFrame}-${track.endFrame}, source start ${sourceStartTime}s, duration ${trackDurationSeconds}s, dimensions: ${track.width}x${track.height}, aspect ratio: ${track.detectedAspectRatioLabel || 'custom'}${audioInfo}`,
     );
 
     // DON'T attach audio to video tracks - process them independently
@@ -497,6 +501,7 @@ function convertTracksToFFmpegInputs(
       timelineStartFrame: track.startFrame, // Timeline position where track starts
       timelineEndFrame: track.endFrame, // Timeline position where track ends
       muted: track.type === 'video' ? true : false, // Video tracks are "muted" (no audio from video file)
+      volumeDb: track.volumeDb ?? 0, // Volume in decibels (-60 to +12 dB, or -Infinity for mute)
       trackType: track.type,
       visible: track.visible,
       width: track.width,
