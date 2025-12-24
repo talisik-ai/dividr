@@ -7,6 +7,7 @@ import {
   PROJECT_VERSION,
   ProjectData,
   ProjectExportData,
+  ProjectSizeInfo,
   ProjectSummary,
   projectToSummary,
 } from '@/shared/types/project.types';
@@ -121,8 +122,44 @@ export class ProjectService {
   }
 
   /**
+   * Calculate size information from project data
+   * Uses unique media sources to avoid double-counting the same file
+   */
+  private calculateProjectSizeFromData(project: ProjectData): ProjectSizeInfo {
+    const projectFileSize = new Blob([JSON.stringify(project)]).size;
+    const mediaLibrary = project.videoEditor.mediaLibrary || [];
+
+    // Use Map to dedupe by source path (avoid double-counting same file)
+    const uniqueSources = new Map<string, number>();
+    let missingCount = 0;
+
+    for (const media of mediaLibrary) {
+      const sourceKey = media.source || media.id;
+      if (!uniqueSources.has(sourceKey)) {
+        uniqueSources.set(sourceKey, media.size || 0);
+        if (!media.size || media.size === 0) {
+          missingCount++;
+        }
+      }
+    }
+
+    let totalMediaSize = 0;
+    uniqueSources.forEach((size) => {
+      totalMediaSize += size;
+    });
+
+    return {
+      projectFileSize,
+      totalMediaSize,
+      mediaCount: uniqueSources.size,
+      missingMediaCount: missingCount,
+      status: missingCount > 0 ? 'partial' : 'complete',
+    };
+  }
+
+  /**
    * Get all projects (optimized with lazy loading)
-   * Returns summaries for performance
+   * Returns summaries with size information for performance
    */
   async getAllProjects(): Promise<ProjectSummary[]> {
     try {
@@ -132,7 +169,10 @@ export class ProjectService {
 
       return projects
         .filter(isValidProject)
-        .map(projectToSummary)
+        .map((project) => ({
+          ...projectToSummary(project),
+          sizeInfo: this.calculateProjectSizeFromData(project),
+        }))
         .sort(
           (a, b) =>
             new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -163,6 +203,7 @@ export class ProjectService {
 
   /**
    * Get recent projects (optimized query)
+   * Returns summaries with size information
    */
   async getRecentProjects(limit = 5): Promise<ProjectSummary[]> {
     try {
@@ -181,7 +222,10 @@ export class ProjectService {
           if (cursor && results.length < limit) {
             const project = cursor.value;
             if (isValidProject(project) && project.metadata.lastOpenedAt) {
-              results.push(projectToSummary(project));
+              results.push({
+                ...projectToSummary(project),
+                sizeInfo: this.calculateProjectSizeFromData(project),
+              });
             }
             cursor.continue();
           } else {

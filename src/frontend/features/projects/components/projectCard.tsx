@@ -72,6 +72,38 @@ const ProjectCard = ({
             {formatDuration(project.duration)}
           </Badge>
 
+          {/* <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                className={`absolute bottom-2 right-2 bg-black/20 dark:bg-white/20 ${
+                  hasProjectMissingMedia(project) ? 'text-amber-400' : ''
+                }`}
+              >
+                {hasProjectMissingMedia(project) ? (
+                  <AlertTriangle
+                    className="-ms-0.5 opacity-60"
+                    size={12}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <HardDrive
+                    className="-ms-0.5 opacity-60"
+                    size={12}
+                    aria-hidden="true"
+                  />
+                )}
+                {getProjectMediaSize(project)}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p className="text-xs">
+                {hasProjectMissingMedia(project)
+                  ? `Media size (${project.sizeInfo?.missingMediaCount} file(s) missing)`
+                  : 'Total media size'}
+              </p>
+            </TooltipContent>
+          </Tooltip> */}
+
           {/* Hover overlay with play button */}
           <div className="absolute inset-0 bg-black/20 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
             <Button

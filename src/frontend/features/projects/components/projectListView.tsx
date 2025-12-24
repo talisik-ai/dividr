@@ -8,14 +8,22 @@ import {
   TableHeader,
   TableRow,
 } from '@/frontend/components/ui/table';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/frontend/components/ui/tooltip';
 import { ProjectSummary } from '@/shared/types/project.types';
 import { formatDistanceToNow } from 'date-fns';
-import { Clock, Play } from 'lucide-react';
+import { AlertTriangle, Clock, HardDrive, Play } from 'lucide-react';
 import { useState } from 'react';
 import {
   formatDuration,
+  getProjectFileSize,
   getProjectIcon,
-  getProjectSize,
+  getProjectMediaCount,
+  getProjectMediaSize,
+  hasProjectMissingMedia,
 } from '../lib/project.helpers';
 import { InlineProjectNameEditor } from './inlineProjectNameEditor';
 import { ProjectActionsDropdown } from './projectActionsDropdown';
@@ -93,7 +101,7 @@ export const ProjectListView = ({
               />
             </TableHead>
             <TableHead>Title</TableHead>
-            <TableHead className="w-24">Size</TableHead>
+            <TableHead className="w-28">Media Size</TableHead>
             <TableHead className="w-32">Duration</TableHead>
             <TableHead className="w-48">Last Opened</TableHead>
             <TableHead className="w-16"></TableHead>
@@ -173,9 +181,39 @@ export const ProjectListView = ({
                 </div>
               </TableCell>
               <TableCell>
-                <span className="text-sm text-muted-foreground">
-                  {getProjectSize(project)}
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-default">
+                      {hasProjectMissingMedia(project) ? (
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                      ) : (
+                        <HardDrive className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                      )}
+                      <span
+                        className={
+                          hasProjectMissingMedia(project) ? 'text-amber-500' : ''
+                        }
+                      >
+                        {getProjectMediaSize(project)}
+                      </span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <div className="text-xs space-y-1">
+                      <p className="font-medium">Size Breakdown</p>
+                      <p>
+                        Media assets ({getProjectMediaCount(project)}):{' '}
+                        {getProjectMediaSize(project)}
+                      </p>
+                      <p>Project file: {getProjectFileSize(project)}</p>
+                      {hasProjectMissingMedia(project) && (
+                        <p className="text-amber-500">
+                          {project.sizeInfo?.missingMediaCount} file(s) missing
+                        </p>
+                      )}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1 text-sm">
