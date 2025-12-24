@@ -139,7 +139,12 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         ],
       );
 
-      // Hybrid tile generation - maintains tiling logic but optimized
+      // Hybrid tile generation - pixel-position based for correct zoom behavior
+      // Key insight: iterate by PIXEL POSITION at native tile width intervals,
+      // then pick the appropriate thumbnail for each position.
+      // This ensures:
+      // - Zoom-out: Frame-skipping (fewer tiles, each at proper aspect ratio)
+      // - Zoom-in: Frame-repeating (same thumbnail repeated to fill space)
       const hybridTiles = useMemo(() => {
         const { spriteSheets } = state;
         if (spriteSheets.length === 0) return [];
@@ -157,74 +162,61 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         const aspectRatio = firstThumb.width / firstThumb.height;
         const nativeDisplayWidth = aspectRatio * height;
 
-        // Generate tiles with proper tiling (not stretching)
-        for (let i = 0; i < allThumbnails.length; i++) {
-          const thumbnail = allThumbnails[i];
-          const thumbnailTimeInTrack = thumbnail.timestamp - trackStartTime;
+        // Total pixel width of the track
+        const totalPixels = durationSeconds * pixelsPerSecond;
 
-          // Skip if outside track bounds
-          if (
-            thumbnailTimeInTrack < -0.1 ||
-            thumbnailTimeInTrack > durationSeconds + 0.1
-          ) {
-            continue;
-          }
+        // Iterate by pixel position at native tile width intervals
+        // This is the key change: we step through by display width, not by thumbnails
+        let tileIndex = 0;
+        let currentPixelX = 0;
 
-          // Calculate coverage for this thumbnail
-          const nextThumbnail = allThumbnails[i + 1];
-          const coverageEndTime = nextThumbnail
-            ? nextThumbnail.timestamp - trackStartTime
-            : durationSeconds;
+        while (currentPixelX < totalPixels) {
+          // Calculate the time position for this tile
+          const currentTimeInTrack = currentPixelX / pixelsPerSecond;
+          const currentTimeAbsolute = trackStartTime + currentTimeInTrack;
 
-          // Calculate how many pixels this thumbnail's time interval covers
-          const intervalPixels =
-            (coverageEndTime - thumbnailTimeInTrack) * pixelsPerSecond;
+          // Find the thumbnail that covers this time position
+          // Binary search for efficiency with large thumbnail arrays
+          let closestThumbnail = allThumbnails[0];
+          let left = 0;
+          let right = allThumbnails.length - 1;
 
-          // Calculate how many tiles we need to fill this interval
-          // Add small epsilon to ensure we don't miss the last tile due to floating point errors
-          const tilesNeeded = Math.ceil(
-            intervalPixels / nativeDisplayWidth + 0.0001,
-          );
-
-          // Calculate the start position for this thumbnail's coverage
-          const coverageStartX = thumbnailTimeInTrack * pixelsPerSecond;
-
-          // Generate individual tiles (similar to Version A's approach)
-          for (let tileIndex = 0; tileIndex < tilesNeeded; tileIndex++) {
-            // Calculate this tile's position directly from coverage start
-            // This avoids accumulating floating-point errors
-            const tileStartX = coverageStartX + tileIndex * nativeDisplayWidth;
-
-            // Calculate the tile's end position
-            const tileEndX = Math.min(
-              tileStartX + nativeDisplayWidth,
-              coverageEndTime * pixelsPerSecond,
-            );
-
-            // Calculate tile width from positions
-            const tileWidth = tileEndX - tileStartX;
-
-            // Stop if we've exceeded this thumbnail's coverage
-            if (tileStartX >= coverageEndTime * pixelsPerSecond) break;
-
-            // Only add tiles with meaningful width
-            if (tileWidth > 0.5) {
-              tiles.push({
-                id: `${thumbnail.id}-${tileIndex}`,
-                thumbnail,
-                startX: coverageStartX,
-                endX: coverageEndTime * pixelsPerSecond,
-                tileStartX,
-                tileWidth,
-                repeatIndex: tileIndex,
-                clipOffset: 0, // For partial tiles at edges, we could calculate clip offset
-              });
+          while (left <= right) {
+            const mid = Math.floor((left + right) / 2);
+            if (allThumbnails[mid].timestamp <= currentTimeAbsolute) {
+              closestThumbnail = allThumbnails[mid];
+              left = mid + 1;
+            } else {
+              right = mid - 1;
             }
           }
+
+          // Calculate tile width (may be partial at the end)
+          const tileWidth = Math.min(
+            nativeDisplayWidth,
+            totalPixels - currentPixelX,
+          );
+
+          // Only add tiles with meaningful width
+          if (tileWidth > 0.5) {
+            tiles.push({
+              id: `tile-${tileIndex}-${closestThumbnail.id}`,
+              thumbnail: closestThumbnail,
+              startX: currentPixelX,
+              endX: currentPixelX + tileWidth,
+              tileStartX: currentPixelX,
+              tileWidth,
+              repeatIndex: tileIndex,
+              clipOffset: 0,
+            });
+          }
+
+          currentPixelX += nativeDisplayWidth;
+          tileIndex++;
         }
 
         return tiles;
-      }, [state.spriteSheets, trackMetrics, height, displayFps, frameWidth]);
+      }, [state.spriteSheets, trackMetrics, height]);
 
       // High-performance viewport culling with buffer zone
       const visibleTiles = useMemo(() => {
