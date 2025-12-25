@@ -56,6 +56,65 @@ let isWindowFocused = true;
 let ffmpegPath: string | null = null;
 let ffprobePath: { path: string } | null = null;
 
+// File path to open when app starts (from double-click on .dividr file)
+let pendingFilePath: string | null = null;
+
+/**
+ * Get .dividr file path from command-line arguments (Windows double-click)
+ */
+function getFileFromArgs(args: string[] = process.argv): string | null {
+  // Skip the first arg (executable path) and any electron-specific args
+  const fileArgs = args.slice(1);
+  for (const arg of fileArgs) {
+    if (
+      arg.endsWith('.dividr') &&
+      !arg.startsWith('-') &&
+      !arg.startsWith('--')
+    ) {
+      return arg;
+    }
+  }
+  return null;
+}
+
+// Check for file argument on startup
+pendingFilePath = getFileFromArgs();
+
+// Single instance lock - ensures only one instance of the app runs
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running, quit this one
+  app.quit();
+} else {
+  // Handle second instance launch (e.g., double-click on .dividr file while app is running)
+  app.on('second-instance', (_event, commandLine) => {
+    if (mainWindow) {
+      // Restore and focus the existing window
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+
+      // Check if a .dividr file was passed
+      const filePath = getFileFromArgs(commandLine);
+      if (filePath) {
+        mainWindow.webContents.send('open-project-file', filePath);
+      }
+    }
+  });
+}
+
+// macOS: Handle file opened via Finder (before app is ready)
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  if (filePath.endsWith('.dividr')) {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('open-project-file', filePath);
+    } else {
+      pendingFilePath = filePath;
+    }
+  }
+});
+
 // Background worker management for sprite sheet generation
 interface SpriteSheetJob {
   id: string;
@@ -2439,6 +2498,12 @@ const createWindow = () => {
 
     mainWindow.webContents.once('did-finish-load', () => {
       logStartupPerf();
+
+      // Send pending file path to renderer if app was opened with a .dividr file
+      if (pendingFilePath && mainWindow) {
+        mainWindow.webContents.send('open-project-file', pendingFilePath);
+        pendingFilePath = null;
+      }
     });
 
     // Show window when ready (fallback)

@@ -462,6 +462,9 @@ declare global {
       getMaximizeState: () => Promise<boolean>;
       onMaximizeChanged: (callback: (isMaximized: boolean) => void) => void;
       offMaximizeChanged: () => void;
+      // File association: Handle .dividr files opened via double-click
+      onOpenProjectFile: (callback: (filePath: string) => void) => void;
+      offOpenProjectFile: () => void;
     };
   }
 }

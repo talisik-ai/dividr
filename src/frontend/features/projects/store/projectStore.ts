@@ -49,6 +49,7 @@ interface ProjectStore {
   // Import/Export
   exportProject: (id: string) => Promise<void>;
   importProject: (file: File) => Promise<string>;
+  importProjectFromPath: (filePath: string) => Promise<string>;
 
   // Utility
   reset: () => void;
@@ -348,6 +349,35 @@ export const useProjectStore = create<ProjectStore>()(
         const text = await file.text();
         const exportData = JSON.parse(text);
 
+        const newProjectId = await projectService.importProject(exportData);
+        await get().loadProjects();
+
+        return newProjectId;
+      } finally {
+        set({ isLoading: false });
+      }
+    },
+
+    importProjectFromPath: async (filePath) => {
+      set({ isLoading: true });
+
+      try {
+        // Read file content from disk using Electron API
+        const text = await window.electronAPI.readFile(filePath);
+        const exportData = JSON.parse(text);
+
+        // Check if a project with the same title already exists
+        const existingProjects = await projectService.getAllProjects();
+        const existingProject = existingProjects.find(
+          (p) => p.title === exportData.metadata?.title,
+        );
+
+        if (existingProject) {
+          // Project already exists, just return its ID (don't import again)
+          return existingProject.id;
+        }
+
+        // Import the project (creates a new entry in IndexedDB)
         const newProjectId = await projectService.importProject(exportData);
         await get().loadProjects();
 

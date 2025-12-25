@@ -375,4 +375,14 @@ contextBridge.exposeInMainWorld('appControl', {
   isWindowFocused: () => ipcRenderer.invoke('is-window-focused'),
   clearLastClipboardText: () => ipcRenderer.invoke('clear-last-clipboard-text'),
   clearClipboard: () => ipcRenderer.invoke('clear-clipboard'),
+
+  // File association: Handle .dividr files opened via double-click
+  onOpenProjectFile: (callback: (filePath: string) => void) => {
+    ipcRenderer.on('open-project-file', (_event, filePath: string) =>
+      callback(filePath),
+    );
+  },
+  offOpenProjectFile: () => {
+    ipcRenderer.removeAllListeners('open-project-file');
+  },
 });
