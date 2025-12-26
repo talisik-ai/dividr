@@ -107,7 +107,14 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
   const [isScaling, setIsScaling] = useState(false);
+  const [isResizingWidth, setIsResizingWidth] = useState(false); // Width-only resize (left/right handles)
   const [isRotating, setIsRotating] = useState(false);
+  // Track if user has explicitly set a width via left/right handles
+  // This prevents auto-size from overwriting user-defined width
+  const hasUserDefinedWidthRef = useRef(false);
+  // Track current width during drag for immediate visual feedback
+  // This bypasses ResizeObserver delay for responsive boundary updates
+  const [currentDragWidth, setCurrentDragWidth] = useState<number | null>(null);
 
   // Get playback control methods
   const startDraggingTransform = useVideoEditorStore(
@@ -126,6 +133,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     y: number;
     scale: number;
     rotation: number;
+    width?: number; // Initial width for width-resize operations
   } | null>(null);
   const [containerSize, setContainerSize] = useState<{
     width: number;
@@ -397,6 +405,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
   // Update dimensions in the store when content size changes
   // CRITICAL: Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
+  // CRITICAL: Skip WIDTH updates when user has explicitly set width via left/right handles
   useEffect(() => {
     if (disableAutoSizeUpdates) return;
 
@@ -422,14 +431,29 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
       // Only update if the video-space dimensions have changed significantly
       const threshold = 1; // 1px tolerance in video space
-      if (
-        Math.abs(currentWidth - videoSpaceWidth) > threshold ||
-        Math.abs(currentHeight - videoSpaceHeight) > threshold
-      ) {
-        onTransformUpdate(track.id, {
-          width: videoSpaceWidth,
-          height: videoSpaceHeight,
-        });
+
+      // Check if width or height needs updating
+      const widthChanged = Math.abs(currentWidth - videoSpaceWidth) > threshold;
+      const heightChanged =
+        Math.abs(currentHeight - videoSpaceHeight) > threshold;
+
+      // If user has defined width via left/right handles, don't auto-update width
+      // But still update height so container adjusts to text reflow
+      if (hasUserDefinedWidthRef.current) {
+        // Only update height when user has defined width
+        if (heightChanged) {
+          onTransformUpdate(track.id, {
+            height: videoSpaceHeight,
+          });
+        }
+      } else {
+        // Normal behavior: update both width and height
+        if (widthChanged || heightChanged) {
+          onTransformUpdate(track.id, {
+            width: videoSpaceWidth,
+            height: videoSpaceHeight,
+          });
+        }
       }
     }
   }, [
@@ -553,7 +577,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     ],
   );
 
-  // Handle mouse down on scale handles
+  // Handle mouse down on scale handles (corners)
   const handleScaleMouseDown = useCallback(
     (e: React.MouseEvent, handle: HandleType) => {
       // Only allow transform handles in select mode
@@ -573,6 +597,53 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       }
     },
     [isSelected, transform, startDraggingTransform, interactionMode],
+  );
+
+  // Handle mouse down on width resize handles (left/right edges)
+  // This resizes the text container width WITHOUT scaling font size
+  // Text will reflow/wrap based on the new width
+  const handleWidthResizeMouseDown = useCallback(
+    (e: React.MouseEvent, handle: HandleType) => {
+      // Only allow transform handles in select mode
+      if (interactionMode !== 'select' || !isSelected) return;
+
+      e.stopPropagation();
+      e.preventDefault();
+      setIsResizingWidth(true);
+      setActiveHandle(handle);
+      setDragStart({ x: e.clientX, y: e.clientY });
+
+      // Mark that user has explicitly set a width
+      // This prevents auto-size from overwriting it
+      hasUserDefinedWidthRef.current = true;
+
+      // Store current width for delta calculations
+      // Use containerSize.width as the current rendered width (in screen pixels)
+      const currentWidthScreen = containerSize.width;
+      const currentWidthVideo = currentWidthScreen / effectiveRenderScale;
+
+      // Set immediate drag width for visual feedback (in screen pixels)
+      setCurrentDragWidth(currentWidthScreen);
+
+      setInitialTransform({
+        ...transform,
+        width: currentWidthVideo,
+      });
+
+      // Pause playback if playing
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
+    },
+    [
+      isSelected,
+      transform,
+      containerSize.width,
+      effectiveRenderScale,
+      startDraggingTransform,
+      interactionMode,
+    ],
   );
 
   // Handle mouse down on rotation handle
@@ -605,7 +676,14 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
   // Handle mouse move for all interactions
   useEffect(() => {
-    if (!isDragging && !isScaling && !isRotating && !isPendingDrag) return;
+    if (
+      !isDragging &&
+      !isScaling &&
+      !isResizingWidth &&
+      !isRotating &&
+      !isPendingDrag
+    )
+      return;
     if (!dragStart || !initialTransform) return;
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -660,13 +738,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
             vertical: [0], // Center
           };
 
-          // Add edge snap points
-          const actualWidth = disableScaleTransform
-            ? containerSize.width
-            : containerSize.width * transform.scale;
-          const actualHeight = disableScaleTransform
-            ? containerSize.height
-            : containerSize.height * transform.scale;
+          // Add edge snap points - always include scale
+          const actualWidth = containerSize.width * transform.scale;
+          const actualHeight = containerSize.height * transform.scale;
           const halfWidth = actualWidth / 2;
           const halfHeight = actualHeight / 2;
 
@@ -706,12 +780,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
         // Notify parent of drag state for guide rendering
         if (onDragStateChange && containerSize.width > 0) {
-          const actualWidth = disableScaleTransform
-            ? containerSize.width
-            : containerSize.width * transform.scale;
-          const actualHeight = disableScaleTransform
-            ? containerSize.height
-            : containerSize.height * transform.scale;
+          // Always include scale in actual dimensions
+          const actualWidth = containerSize.width * transform.scale;
+          const actualHeight = containerSize.height * transform.scale;
           onDragStateChange(true, {
             x: newPixelX,
             y: newPixelY,
@@ -758,11 +829,72 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         }
 
         let newScale = initialTransform.scale * scaleFactor;
-        newScale = Math.max(0.1, Math.min(5, newScale));
+        // Only prevent zero/negative scale - no artificial upper limit
+        // This matches professional editors that allow very large/small text
+        newScale = Math.max(0.01, newScale);
 
         // Only update scale - width/height will be recalculated by the ResizeObserver effect
         onTransformUpdate(track.id, {
           scale: newScale,
+        });
+      } else if (isResizingWidth && activeHandle) {
+        // Width-only resize for left/right handles
+        // This changes container width WITHOUT scaling font size
+        // Text will naturally reflow/wrap based on the new width
+        const initialWidth =
+          initialTransform.width || containerSize.width / effectiveRenderScale;
+
+        // Calculate new width based on handle and delta
+        // Convert delta from screen pixels to video space
+        // IMPORTANT: Divide by transform.scale so visual change matches drag distance
+        // This ensures 50px drag = 50px visual change, regardless of scale
+        const videoDelta = deltaX / effectiveRenderScale / transform.scale;
+        let newWidth: number;
+        let xAdjustment = 0; // Position adjustment to keep opposite edge fixed
+
+        if (activeHandle === 'r') {
+          // Right handle: drag right to widen, left to narrow
+          // LEFT edge should stay fixed, so adjust X position
+          newWidth = initialWidth + videoDelta;
+          // When width increases, center moves right by half the width change
+          xAdjustment = (newWidth - initialWidth) / 2;
+        } else {
+          // Left handle: drag left to widen, right to narrow
+          // RIGHT edge should stay fixed, so adjust X position
+          newWidth = initialWidth - videoDelta;
+          // When width increases, center moves left by half the width change
+          xAdjustment = -(newWidth - initialWidth) / 2;
+        }
+
+        // Clamp width to reasonable bounds (min 50px, max 3x video width)
+        const minWidth = 50;
+        const maxWidth = videoWidth * 3;
+        const clampedWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+
+        // Recalculate X adjustment if width was clamped
+        if (clampedWidth !== newWidth) {
+          if (activeHandle === 'r') {
+            xAdjustment = (clampedWidth - initialWidth) / 2;
+          } else {
+            xAdjustment = -(clampedWidth - initialWidth) / 2;
+          }
+          newWidth = clampedWidth;
+        }
+
+        // Update drag width for immediate visual feedback (in screen pixels)
+        // This is used for boundary dimensions and content width during drag
+        setCurrentDragWidth(newWidth * effectiveRenderScale);
+
+        // Calculate new X position in video space, then convert to normalized
+        const initialVideoX = initialTransform.x / effectiveRenderScale;
+        const newVideoX = initialVideoX + xAdjustment;
+        const normalizedX = newVideoX / (videoWidth / 2);
+
+        // Update width AND position - height will be auto-calculated by content reflow
+        // Position adjustment ensures the opposite edge stays fixed during resize
+        onTransformUpdate(track.id, {
+          width: newWidth,
+          x: normalizedX,
         });
       } else if (isRotating) {
         const boundaryRect = boundaryRef.current?.getBoundingClientRect();
@@ -849,10 +981,12 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setIsDragging(false);
       setIsPendingDrag(false);
       setIsScaling(false);
+      setIsResizingWidth(false);
       setIsRotating(false);
       setActiveHandle(null);
       setDragStart(null);
       setInitialTransform(null);
+      setCurrentDragWidth(null); // Clear drag width feedback
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -866,6 +1000,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     isDragging,
     isPendingDrag,
     isScaling,
+    isResizingWidth,
     isRotating,
     dragStart,
     initialTransform,
@@ -891,6 +1026,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
     if (isEditing) return 'text';
     if (isTextEditMode && isSelected) return 'text'; // Show text cursor when in text edit mode
     if (isDragging) return 'grabbing';
+    if (isResizingWidth) return 'ew-resize'; // Width resize cursor for left/right handles
     if (isScaling) {
       switch (activeHandle) {
         case 'tl':
@@ -902,9 +1038,6 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         case 't':
         case 'b':
           return 'ns-resize';
-        case 'l':
-        case 'r':
-          return 'ew-resize';
         default:
           return 'nwse-resize';
       }
@@ -920,17 +1053,32 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const handleScale = previewScale < 0.5 ? 0.5 : 1;
 
   // Content component - may be wrapped in clipping layer
-  // When disableScaleTransform is true, we omit scale() from the CSS transform
-  // This allows text to be re-rendered at actual size for vector-sharp rendering
-  const contentTransform = disableScaleTransform
-    ? `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`
-    : `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`;
+  // Scale is ALWAYS applied to support corner handle scaling
+  // This matches industry-standard behavior (CapCut, Canva, Figma)
+  const contentTransform = `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotation}deg)`;
 
   // Determine pointer events based on interaction mode
   // Pan Tool: disable all interactions
   // Text Tool: keep text interactive (allow editing text)
   // Select Tool: enable all interactions
   const shouldDisablePointerEvents = interactionMode === 'pan';
+
+  // Calculate the user-defined width constraint for text wrapping
+  // Only apply width constraint if user has explicitly resized using left/right handles
+  // This allows text to flow naturally until user constrains it
+  // During active resize, use currentDragWidth for immediate feedback
+  // Otherwise, use stored width from transform (scaled from video space to screen pixels)
+  const userDefinedWidth = (() => {
+    // During active width resize, use the drag width for immediate feedback
+    if (isResizingWidth && currentDragWidth !== null) {
+      return currentDragWidth;
+    }
+    // After resize, use the stored width
+    if (hasUserDefinedWidthRef.current && normalizedTransform.width) {
+      return normalizedTransform.width * effectiveRenderScale;
+    }
+    return undefined;
+  })();
 
   const contentComponent = (
     <div
@@ -956,7 +1104,17 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         ref={contentRef}
         className="relative"
         data-text-element="true"
-        style={{ pointerEvents: 'auto' }}
+        style={{
+          pointerEvents: 'auto',
+          // Apply user-defined width for text wrapping when set via left/right handles
+          // This causes text to reflow within the specified width
+          ...(userDefinedWidth && {
+            width: `${userDefinedWidth}px`,
+            wordWrap: 'break-word',
+            overflowWrap: 'break-word',
+            whiteSpace: 'pre-wrap',
+          }),
+        }}
         onDoubleClick={handleDoubleClick}
       >
         {isEditing ? (
@@ -974,10 +1132,36 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
               cursor: 'text',
               userSelect: 'text',
               WebkitUserSelect: 'text',
+              // Apply width constraint when user has set it via left/right handles
+              ...(userDefinedWidth && {
+                width: `${userDefinedWidth}px`,
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                whiteSpace: 'pre-wrap',
+              }),
             }}
           >
             {track.textContent}
           </div>
+        ) : userDefinedWidth && React.isValidElement(children) ? (
+          // When user has defined width, clone children and override its
+          // inline styles to force text wrapping within the constrained width.
+          // This overrides wordBreak: 'keep-all' and overflowWrap: 'normal'
+          // that are set on the text content in UnifiedOverlayRenderer.
+          React.cloneElement(
+            children as React.ReactElement<{ style?: React.CSSProperties }>,
+            {
+              style: {
+                ...(children.props as { style?: React.CSSProperties }).style,
+                width: '100%',
+                maxWidth: '100%',
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                wordBreak: 'break-word',
+                whiteSpace: 'pre-wrap',
+              },
+            },
+          )
         ) : (
           children
         )}
@@ -1024,13 +1208,10 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
               top: '50%',
               transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
               transformOrigin: 'center center',
-              // When disableScaleTransform is true, content is already scaled, so don't multiply again
-              width: disableScaleTransform
-                ? `${containerSize.width}px`
-                : `${containerSize.width * transform.scale}px`,
-              height: disableScaleTransform
-                ? `${containerSize.height}px`
-                : `${containerSize.height * transform.scale}px`,
+              // Boundary dimensions ALWAYS include scale to match content scaling
+              // During width resize, use currentDragWidth for immediate visual feedback
+              width: `${(isResizingWidth && currentDragWidth !== null ? currentDragWidth : containerSize.width) * transform.scale}px`,
+              height: `${containerSize.height * transform.scale}px`,
               border: `${2 * handleScale}px solid #F45513`,
               borderRadius: `${4 * handleScale}px`,
               zIndex: 10000, // Very high z-index to ensure handles are always on top and interactive
@@ -1081,6 +1262,8 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
             })}
 
             {/* Edge Handles - Left and Right only (as partial height lines) */}
+            {/* These resize container WIDTH only, causing text to reflow/wrap */}
+            {/* This matches industry-standard text behavior (CapCut, Premiere, Figma) */}
             {['r', 'l'].map((handle) => (
               <div
                 key={handle}
@@ -1103,7 +1286,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
                   }),
                 }}
                 onMouseDown={(e) =>
-                  handleScaleMouseDown(e, handle as HandleType)
+                  handleWidthResizeMouseDown(e, handle as HandleType)
                 }
               />
             ))}
