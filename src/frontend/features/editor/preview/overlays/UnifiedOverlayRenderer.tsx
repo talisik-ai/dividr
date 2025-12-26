@@ -479,7 +479,9 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         actualHeight={actualHeight}
         panX={panX}
         panY={panY}
-        zIndexOverlay={subtitleZIndex}
+        // When selected, z-index must be above SelectionHitTestLayer (9000)
+        // to allow drag boundary to receive pointer events.
+        zIndexOverlay={hasSelected ? 9500 : subtitleZIndex}
         renderScale={renderScale}
         isTextEditMode={isTextEditMode}
         interactionMode={interactionMode}
@@ -887,7 +889,15 @@ function renderTextTrack(
         top: `calc(50% + ${panY}px)`,
         transform: 'translate(-50%, -50%)',
         overflow: 'visible',
-        zIndex,
+        // When selected, z-index must be above SelectionHitTestLayer (9000)
+        // to allow transform handles to receive pointer events.
+        // Use 9500 to be above SelectionHitTestLayer but below TransformBoundaryLayer (10000).
+        zIndex: isSelected ? 9500 : zIndex,
+        // CRITICAL: pointer-events: none allows clicks to pass through
+        // the wrapper to lower z-index elements (like SelectionHitTestLayer).
+        // TextTransformBoundary's content and handles have pointer-events: auto
+        // so they can still receive events when clicked directly.
+        pointerEvents: 'none',
       }}
     >
       <TextTransformBoundary

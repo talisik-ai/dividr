@@ -452,9 +452,26 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         return;
       }
 
+      // PRIORITY: Handle transform handles first
+      // Transform handles of a selected element must ALWAYS work,
+      // regardless of what other elements are at this position.
+      // This ensures handles are not blocked by spatial hit-testing.
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('transform-handle')) {
+        // Let the handle's own mouseDown handler take over
+        // Don't do any spatial hit-testing - handles are authoritative
+        return;
+      }
+
+      // If in edit mode, don't process drag or hit-testing
+      if (isEditing) {
+        return;
+      }
+
       // CRITICAL: Check if another element should receive this click
       // This enables proper spatial hit-testing - a higher z-index element
       // visible at this position should be selected instead
+      // NOTE: This only applies to content area clicks, not handles (checked above)
       if (getTopElementAtPoint) {
         const topElementId = getTopElementAtPoint(e.clientX, e.clientY);
         if (topElementId && topElementId !== track.id) {
@@ -503,11 +520,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         return;
       }
 
-      // Don't start drag if clicking on a handle or in edit mode
-      const target = e.target as HTMLElement;
-      if (target.classList.contains('transform-handle') || isEditing) {
-        return;
-      }
+      // At this point we're clicking on the content area (not a handle, not editing)
 
       // Set up pending drag state immediately so we can track mouse movement
       setDragStart({ x: e.clientX, y: e.clientY });
