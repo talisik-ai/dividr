@@ -38,11 +38,7 @@ export interface SubtitleSegment {
     x?: number; // X coordinate (0-1 normalized, or pixel value if > 1)
     y?: number; // Y coordinate (0-1 normalized, or pixel value if > 1)
     scale?: number; // Scale factor (1 = 100%, 2 = 200%, etc.)
-    rotation?: number; // Rotation angle in degrees (UI convention: clockwise)
-    // Positive = clockwise, negative = counter-clockwise
-    // Note: Negated when converted to ASS \frz tag (which uses counter-clockwise)
-    // Positive = clockwise, negative = counter-clockwise
-    // Note: Negated when converted to ASS \frz tag (which uses counter-clockwise)
+    // Note: Subtitles don't support rotation - use text tracks for rotatable text
   };
 }
 
@@ -278,12 +274,26 @@ export function extractSubtitleSegments(
     const segmentStyle = track.subtitleStyle
       ? convertSubtitleStyleToTextStyle(track.subtitleStyle)
       : convertTrackStyleToTextStyle(track.textStyle);
+
+    // Extract transform/position data from subtitleTransform
+    // This includes position (x, y), scale, and dimensions
+    // Note: Subtitles don't support rotation, so we don't include it
+    const position = track.subtitleTransform
+      ? {
+          x: track.subtitleTransform.x,
+          y: track.subtitleTransform.y,
+          scale: track.subtitleTransform.scale,
+          // No rotation for subtitles
+        }
+      : undefined;
+
     return {
       startTime,
       endTime,
       text: track.subtitleText || '',
       index: index + 1,
       style: segmentStyle,
+      position,
     };
   });
 
@@ -856,7 +866,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       console.log(`   - Layer offset: ${layerOffset}`);
       if (segment.position) {
         console.log(
-          `   - Position: x=${segment.position.x?.toFixed(3)}, y=${segment.position.y?.toFixed(3)}, scale=${segment.position.scale}, rotation=${segment.position.rotation}°`,
+          `   - Position: x=${segment.position.x?.toFixed(3)}, y=${segment.position.y?.toFixed(3)}, scale=${segment.position.scale}`,
         );
       }
 
@@ -992,29 +1002,17 @@ function convertToASSCoordinate(value: number, resolution: number): number {
 }
 
 /**
- * Generates ASS position and rotation override tags
- * @param position - Position object with x, y, and rotation
+ * Generates ASS position override tags
+ * @param position - Position object with x, y, and scale
  * @param videoDimensions - Video dimensions for coordinate conversion
  * @returns ASS override tags string (empty if no position specified)
  *
- *
  * Transform handling:
  * - Position: Converts normalized coordinates (0-1) to pixel coordinates
- * - Rotation: Converts from UI clockwise to ASS counter-clockwise (negated)
- * - Alignment: Sets center alignment (5) when using custom position for proper rotation pivot
+ * - Alignment: Sets center alignment (5) when using custom position
  * - Scale: Applied directly to font size, not via ASS tags
  *
- *
- * ASS rotation convention:
- * - ASS uses counter-clockwise rotation (mathematical convention)
- * - Our UI uses clockwise rotation (CSS convention)
- * - We negate the rotation value to convert between conventions
- *
- *
- * ASS rotation tags:
- * - \frz<angle>: Rotation around Z axis (2D rotation, counter-clockwise in ASS)
- * - \frx<angle>: Rotation around X axis (3D rotation, pitch)
- * - \fry<angle>: Rotation around Y axis (3D rotation, yaw)
+ * Note: Subtitles don't support rotation - use text tracks for rotatable text
  */
 function generatePositionTags(
   position?: SubtitleSegment['position'],
@@ -1054,27 +1052,11 @@ function generatePositionTags(
     // \pos(x,y) - absolute position
     tags.push(`\\pos(${x},${y})`);
 
-    // When using \pos, we need to set alignment to center (5) for proper rotation pivot
+    // When using \pos, we need to set alignment to center (5) for proper positioning
     tags.push('\\an5');
   }
 
-  // Add rotation if specified
-  // Note: ASS uses counter-clockwise rotation (mathematical convention)
-  // But our UI uses clockwise rotation (CSS convention), so we need to negate
-  if (position.rotation !== undefined && position.rotation !== 0) {
-    // Negate rotation to convert from clockwise (UI) to counter-clockwise (ASS)
-    // Round to 2 decimal places to avoid floating point precision issues
-    const assRotation = -Math.round(position.rotation * 100) / 100;
-
-    // \frz<angle> - rotation around Z axis (2D rotation)
-    // In ASS: Positive = counter-clockwise, Negative = clockwise
-    // We negate our clockwise rotation to match ASS convention
-    tags.push(`\\frz${assRotation}`);
-
-    console.log(
-      `🔄 Applied rotation: ${position.rotation}° (UI clockwise) → ${assRotation}° (ASS counter-clockwise)`,
-    );
-  }
+  // Note: Subtitles don't support rotation - use text tracks for rotatable text
 
   return tags.length > 0 ? `{${tags.join('')}}` : '';
 }

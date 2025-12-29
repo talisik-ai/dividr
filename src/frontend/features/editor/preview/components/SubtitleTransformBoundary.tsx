@@ -273,27 +273,28 @@ export const SubtitleTransformBoundary: React.FC<
       const currentWidth = normalizedTransform.width || 0;
       const currentHeight = normalizedTransform.height || 0;
 
-      // Calculate dimensions in video space
-      const videoSpaceWidth = containerSize.width / effectiveRenderScale;
-      const videoSpaceHeight = containerSize.height / effectiveRenderScale;
+      // For subtitle, store containerSize directly (not divided by renderScale)
+      // because subtitle font-size doesn't scale with zoom level
+      // This differs from TextTransformBoundary which uses CSS scale
+      const newWidth = containerSize.width;
+      const newHeight = containerSize.height;
 
-      const threshold = 1; // 1px tolerance in video space
-      const widthChanged = Math.abs(currentWidth - videoSpaceWidth) > threshold;
-      const heightChanged =
-        Math.abs(currentHeight - videoSpaceHeight) > threshold;
+      const threshold = 1; // 1px tolerance
+      const widthChanged = Math.abs(currentWidth - newWidth) > threshold;
+      const heightChanged = Math.abs(currentHeight - newHeight) > threshold;
 
       // If user has defined width via handles, don't auto-update width
       if (hasUserDefinedWidthRef.current) {
         if (heightChanged) {
           onTransformUpdate(track.id, {
-            height: videoSpaceHeight,
+            height: newHeight,
           });
         }
       } else {
         if (widthChanged || heightChanged) {
           onTransformUpdate(track.id, {
-            width: videoSpaceWidth,
-            height: videoSpaceHeight,
+            width: newWidth,
+            height: newHeight,
           });
         }
       }
@@ -856,6 +857,17 @@ export const SubtitleTransformBoundary: React.FC<
     return undefined;
   })();
 
+  // Calculate boundary dimensions for subtitle
+  // Unlike TextTransformBoundary, subtitle uses font-size scaling (not CSS scale)
+  // So containerSize already reflects the visual size and doesn't need renderScale adjustment
+  // We use stored dimensions to maintain stability across zoom changes
+  const storedWidth = normalizedTransform.width || 0;
+  const storedHeight = normalizedTransform.height || 0;
+  // Use stored dimensions if available, otherwise fall back to containerSize
+  // Don't multiply by effectiveRenderScale since subtitle content size is independent of zoom
+  const boundaryWidth = storedWidth > 0 ? storedWidth : containerSize.width;
+  const boundaryHeight = storedHeight > 0 ? storedHeight : containerSize.height;
+
   // Content transform - NO CSS scale for subtitles
   // Unlike TextTransformBoundary, subtitle scaling is handled via font-size multiplication
   // This preserves text quality at all scale levels (no blurring from CSS scale)
@@ -997,10 +1009,10 @@ export const SubtitleTransformBoundary: React.FC<
               top: '50%',
               transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
               transformOrigin: 'center center',
-              // Boundary dimensions - NO multiplication by transform.scale
-              // Since subtitle uses font-based scaling (not CSS scale), containerSize already reflects scaled size
-              width: `${isResizingWidth && currentDragWidth !== null ? currentDragWidth : containerSize.width}px`,
-              height: `${containerSize.height}px`,
+              // Boundary dimensions use stored video-space dimensions scaled to screen space
+              // This prevents boundary from expanding/shrinking incorrectly when zooming
+              width: `${isResizingWidth && currentDragWidth !== null ? currentDragWidth : boundaryWidth}px`,
+              height: `${boundaryHeight}px`,
               border: `${2 * handleScale}px solid #F45513`,
               borderRadius: `${4 * handleScale}px`,
               zIndex: 10000,

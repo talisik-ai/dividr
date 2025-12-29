@@ -101,6 +101,7 @@ export const useExportJob = () => {
         audioTracks,
         imageTracks,
         textTracks,
+        subtitleTracks,
         mediaLibrary,
         customDimensions,
       );
@@ -383,6 +384,7 @@ function processLinkedTracks(
   audioTracks: VideoTrack[],
   imageTracks: VideoTrack[],
   textTracks: VideoTrack[],
+  subtitleTracks: VideoTrack[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   mediaLibrary: {
     id: string;
@@ -457,6 +459,9 @@ function processLinkedTracks(
   // Add text tracks
   processedTracks.push(...textTracks);
 
+  // Add subtitle tracks (for transform data export)
+  processedTracks.push(...subtitleTracks);
+
   return {
     processedTracks,
     videoDimensions: { width: videoWidth, height: videoHeight },
@@ -494,7 +499,8 @@ function convertTracksToFFmpegInputs(
     // DON'T attach audio to video tracks - process them independently
     // Video tracks will be video-only, audio tracks will be audio-only
     const trackInfo: TrackInfo = {
-      path: track.type === 'text' ? '' : track.source, // Text tracks don't have a file path
+      path:
+        track.type === 'text' || track.type === 'subtitle' ? '' : track.source, // Text and subtitle tracks don't have a file path
       audioPath: undefined, // Always undefined - no audio attached to video
       startTime: sourceStartTime, // Where to start reading from source file
       duration: Math.max(0.033, trackDurationSeconds), // How long to read from source
@@ -559,6 +565,21 @@ function convertTracksToFFmpegInputs(
       };
       console.log(
         `🔤 Text transform for "${track.name}": pos=(${track.textTransform.x.toFixed(2)}, ${track.textTransform.y.toFixed(2)}), scale=${track.textTransform.scale.toFixed(2)}, rotation=${track.textTransform.rotation.toFixed(1)}°, size=${track.textTransform.width}x${track.textTransform.height}`,
+      );
+    }
+
+    // Add subtitle transform for subtitle tracks (no rotation support)
+    if (track.type === 'subtitle' && track.subtitleTransform) {
+      trackInfo.subtitleTransform = {
+        x: track.subtitleTransform.x,
+        y: track.subtitleTransform.y,
+        scale: track.subtitleTransform.scale,
+        rotation: 0, // Subtitles don't support rotation
+        width: track.subtitleTransform.width,
+        height: track.subtitleTransform.height,
+      };
+      console.log(
+        `📝 Subtitle transform for "${track.name}": pos=(${track.subtitleTransform.x.toFixed(2)}, ${track.subtitleTransform.y.toFixed(2)}), scale=${track.subtitleTransform.scale.toFixed(2)}, size=${track.subtitleTransform.width}x${track.subtitleTransform.height}`,
       );
     }
 
