@@ -64,7 +64,13 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   isTextEditMode?: boolean;
   getTextStyleForSubtitle: (style: any, segmentStyle?: any) => any;
   activeStyle: any;
-  globalSubtitlePosition: { x: number; y: number; scale?: number; width?: number; height?: number };
+  globalSubtitlePosition: {
+    x: number;
+    y: number;
+    scale?: number;
+    width?: number;
+    height?: number;
+  };
   onSubtitleTransformUpdate: (trackId: string, transform: any) => void;
   onSubtitleSelect: (trackId: string) => void;
   onSubtitleTextUpdate?: (trackId: string, newText: string) => void;

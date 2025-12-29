@@ -191,7 +191,9 @@ export const ProjectListView = ({
                       )}
                       <span
                         className={
-                          hasProjectMissingMedia(project) ? 'text-amber-500' : ''
+                          hasProjectMissingMedia(project)
+                            ? 'text-amber-500'
+                            : ''
                         }
                       >
                         {getProjectMediaSize(project)}
