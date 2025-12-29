@@ -25,6 +25,9 @@ interface SubtitleTransformBoundaryProps {
     transform: {
       x?: number;
       y?: number;
+      scale?: number;
+      width?: number;
+      height?: number;
     },
   ) => void;
   onSelect: (trackId: string) => void;
@@ -45,8 +48,15 @@ interface SubtitleTransformBoundaryProps {
   getTopElementAtPoint?: (screenX: number, screenY: number) => string | null;
 }
 
+// Handle types for subtitle: corner scaling, left/right width resize, NO rotation
+type HandleType = 'tl' | 'tr' | 'bl' | 'br' | 'r' | 'l' | null;
+
 // Default subtitle position: bottom-aligned with ~7% padding from bottom
 const DEFAULT_SUBTITLE_Y = 0.7; // Normalized coordinate (0.7 = 70% down from center)
+
+// Fixed handle size in pixels (consistent across all zoom levels)
+const HANDLE_SIZE = 10;
+const HANDLE_OFFSET = HANDLE_SIZE / 2;
 
 export const SubtitleTransformBoundary: React.FC<
   SubtitleTransformBoundaryProps
@@ -79,14 +89,22 @@ export const SubtitleTransformBoundary: React.FC<
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
   const effectiveRenderScale = renderScale ?? previewScale;
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const boundaryRef = useRef<HTMLDivElement>(null);
   const editableRef = useRef<HTMLDivElement>(null);
   const hasMigratedRef = useRef(false); // Track if we've already migrated coordinates
   const dragDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Delay before starting drag to allow double-click
   const lastClickTimeRef = useRef<number>(0); // Track last click time for double-click detection
   const transformDragStartedRef = useRef(false); // Track if we've started transform drag for playback pause
+  const hasUserDefinedWidthRef = useRef(false); // Track if user has explicitly set width via handles
+  const prevRenderScaleRef = useRef(effectiveRenderScale); // Track renderScale changes
+
   const [isDragging, setIsDragging] = useState(false);
   const [isPendingDrag, setIsPendingDrag] = useState(false); // Track if drag is pending (waiting for delay)
+  const [isScaling, setIsScaling] = useState(false);
+  const [isResizingWidth, setIsResizingWidth] = useState(false);
+  const [activeHandle, setActiveHandle] = useState<HandleType>(null);
+  const [currentDragWidth, setCurrentDragWidth] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
   const shouldRenderBoundary = isSelected && !contentOnly;
@@ -105,11 +123,16 @@ export const SubtitleTransformBoundary: React.FC<
   const [initialTransform, setInitialTransform] = useState<{
     x: number;
     y: number;
+    scale: number;
+    width?: number;
   } | null>(null);
   const [containerSize, setContainerSize] = useState<{
     width: number;
     height: number;
   }>({ width: 0, height: 0 });
+
+  // Zoom compensation for handles - keeps handles at reasonable size
+  const handleScale = previewScale < 0.5 ? 0.5 : 1;
 
   // Convert normalized coordinates to pixel coordinates for rendering
   const normalizedToPixels = useCallback(
@@ -138,6 +161,9 @@ export const SubtitleTransformBoundary: React.FC<
   const rawTransform = track.subtitleTransform || {
     x: 0,
     y: DEFAULT_SUBTITLE_Y,
+    scale: 1,
+    width: 0,
+    height: 0,
   };
 
   // Migration: If coordinates appear to be in pixel space, convert to normalized
@@ -158,12 +184,19 @@ export const SubtitleTransformBoundary: React.FC<
         x: normalized.x,
         y: normalized.y,
       });
-      return normalized;
+      return {
+        ...rawTransform,
+        x: normalized.x,
+        y: normalized.y,
+      };
     }
     return rawTransform;
   }, [
     rawTransform.x,
     rawTransform.y,
+    rawTransform.scale,
+    rawTransform.width,
+    rawTransform.height,
     pixelsToNormalized,
     onTransformUpdate,
     track.id,
@@ -171,10 +204,14 @@ export const SubtitleTransformBoundary: React.FC<
 
   // Convert to screen pixels for rendering
   const transform = React.useMemo(() => {
-    const pixels = normalizedToPixels(normalizedTransform);
+    const pixels = normalizedToPixels({
+      x: normalizedTransform.x,
+      y: normalizedTransform.y,
+    });
     return {
       x: pixels.x * effectiveRenderScale,
       y: pixels.y * effectiveRenderScale,
+      scale: normalizedTransform.scale ?? 1,
     };
   }, [normalizedTransform, normalizedToPixels, effectiveRenderScale]);
 
@@ -186,29 +223,97 @@ export const SubtitleTransformBoundary: React.FC<
     return pos;
   }, []);
 
-  // Measure container size
+  // Track content size changes to update boundary dimensions
+  // CRITICAL: We observe contentRef (the actual content), NOT containerRef (the transform wrapper)
+  // This matches TextTransformBoundary's measurement approach exactly
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!contentRef.current) return;
 
-    const updateSize = () => {
-      if (containerRef.current) {
-        setContainerSize({
-          width: containerRef.current.offsetWidth,
-          height: containerRef.current.offsetHeight,
-        });
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        // contentRect gives intrinsic size (before any CSS transforms)
+        setContainerSize({ width, height });
       }
+    });
+
+    resizeObserver.observe(contentRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
     };
+  }, []);
 
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(containerRef.current);
+  // Also update on content changes (matches TextTransformBoundary pattern)
+  // This forces re-measurement when subtitle text changes
+  useEffect(() => {
+    if (contentRef.current) {
+      setContainerSize({
+        width: contentRef.current.offsetWidth,
+        height: contentRef.current.offsetHeight,
+      });
+    }
+  }, [track.subtitleText]);
 
-    return () => observer.disconnect();
-  }, []); // Empty dependency array - ResizeObserver handles all size changes
+  // Update dimensions in the store when content size changes
+  // Skip updates when renderScale changes to prevent dimension recalculation on fullscreen toggle
+  // Skip WIDTH updates when user has explicitly set width via handles
+  useEffect(() => {
+    // Detect if renderScale changed (e.g., entering/exiting fullscreen)
+    const renderScaleChanged =
+      prevRenderScaleRef.current !== effectiveRenderScale;
+    prevRenderScaleRef.current = effectiveRenderScale;
+
+    // Skip dimension updates when renderScale changes
+    if (renderScaleChanged) {
+      return;
+    }
+
+    if (containerSize.width > 0 && containerSize.height > 0) {
+      const currentWidth = normalizedTransform.width || 0;
+      const currentHeight = normalizedTransform.height || 0;
+
+      // Calculate dimensions in video space
+      const videoSpaceWidth = containerSize.width / effectiveRenderScale;
+      const videoSpaceHeight = containerSize.height / effectiveRenderScale;
+
+      const threshold = 1; // 1px tolerance in video space
+      const widthChanged = Math.abs(currentWidth - videoSpaceWidth) > threshold;
+      const heightChanged =
+        Math.abs(currentHeight - videoSpaceHeight) > threshold;
+
+      // If user has defined width via handles, don't auto-update width
+      if (hasUserDefinedWidthRef.current) {
+        if (heightChanged) {
+          onTransformUpdate(track.id, {
+            height: videoSpaceHeight,
+          });
+        }
+      } else {
+        if (widthChanged || heightChanged) {
+          onTransformUpdate(track.id, {
+            width: videoSpaceWidth,
+            height: videoSpaceHeight,
+          });
+        }
+      }
+    }
+  }, [
+    containerSize.width,
+    containerSize.height,
+    normalizedTransform.width,
+    normalizedTransform.height,
+    track.id,
+    onTransformUpdate,
+    effectiveRenderScale,
+  ]);
 
   // Helper to enter edit mode
   const enterEditMode = useCallback(
     (selectAllText = false) => {
+      // boundaryOnly instances cannot enter edit mode
+      if (boundaryOnly) return;
+
       setIsEditing(true);
       // Notify parent that we're entering edit mode
       onEditModeChange?.(true);
@@ -216,7 +321,7 @@ export const SubtitleTransformBoundary: React.FC<
       setTimeout(() => {
         if (editableRef.current) {
           editableRef.current.focus();
-          // Only select all text if explicitly requested (e.g., from Text Tool mode single-click)
+          // Only select all text if explicitly requested
           if (selectAllText) {
             const selection = window.getSelection();
             const range = document.createRange();
@@ -224,11 +329,10 @@ export const SubtitleTransformBoundary: React.FC<
             selection?.removeAllRanges();
             selection?.addRange(range);
           }
-          // Otherwise, let the browser's natural selection happen (word selection on double-click)
         }
       }, 10);
     },
-    [onEditModeChange],
+    [onEditModeChange, boundaryOnly],
   );
 
   // Handle mouse down on the subtitle element (start dragging with delay to allow double-click)
@@ -240,14 +344,25 @@ export const SubtitleTransformBoundary: React.FC<
         return;
       }
 
+      // PRIORITY: Handle transform handles first
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('transform-handle')) {
+        // Let the handle's own mouseDown handler take over
+        return;
+      }
+
+      // If in edit mode, don't process drag or hit-testing
+      if (isEditing) {
+        return;
+      }
+
       // CRITICAL: Check if another element should receive this click
-      // This enables proper spatial hit-testing - a higher z-index element
-      // visible at this position should be selected instead
-      if (getTopElementAtPoint) {
+      // BUT skip this check when already selected - allow drag to proceed
+      // This is necessary because subtitle uses synthetic "global-subtitle-transform" ID
+      // but hit-test returns real subtitle track IDs
+      if (!isSelected && getTopElementAtPoint) {
         const topElementId = getTopElementAtPoint(e.clientX, e.clientY);
         if (topElementId && topElementId !== track.id) {
-          // Another element is above this one at the cursor position
-          // Select that element instead of handling this click
           e.stopPropagation();
           e.preventDefault();
           onSelect(topElementId);
@@ -255,18 +370,13 @@ export const SubtitleTransformBoundary: React.FC<
         }
       }
 
-      // Don't prevent default - let double-click through
-      e.stopPropagation();
-
-      // Track click time BEFORE any early returns for accurate double-click detection
+      // Track click time for double-click detection
       const now = Date.now();
       const timeSinceLastClick = now - lastClickTimeRef.current;
       lastClickTimeRef.current = now;
 
       // Check if this is a double-click (second click within 300ms)
-      // This works even across selection changes
       if (timeSinceLastClick < 300) {
-        // This is a double-click, cancel any pending drag
         if (dragDelayTimeoutRef.current) {
           clearTimeout(dragDelayTimeoutRef.current);
           dragDelayTimeoutRef.current = null;
@@ -275,38 +385,39 @@ export const SubtitleTransformBoundary: React.FC<
         setIsDragging(false);
         setDragStart(null);
 
-        // If not selected, select first then enter edit mode
         if (!isSelected) {
           onSelect(track.id);
         }
 
-        // Enter edit mode directly since we detected double-click
-        enterEditMode(true); // Select all text for immediate editing
+        // Skip edit mode if boundaryOnly
+        if (boundaryOnly) return;
+
+        e.stopPropagation();
+        enterEditMode(true);
         return;
       }
+
+      e.stopPropagation();
+      // Prevent text selection on other elements during drag
+      e.preventDefault();
 
       if (!isSelected) {
         onSelect(track.id);
         return;
       }
 
-      // Don't start drag if in edit mode
-      if (isEditing) {
-        return;
-      }
-
-      // Set up pending drag state immediately so we can track mouse movement
+      // Set up pending drag state
       setDragStart({ x: e.clientX, y: e.clientY });
-      setInitialTransform(transform);
+      setInitialTransform({ ...transform, scale: transform.scale });
       setIsPendingDrag(true);
 
-      // Pause playback if playing (pause immediately, not after delay)
+      // Pause playback if playing
       if (!transformDragStartedRef.current) {
         transformDragStartedRef.current = true;
         startDraggingTransform();
       }
 
-      // Start actual drag after a short delay (allows double-click to interrupt)
+      // Start actual drag after a short delay
       dragDelayTimeoutRef.current = setTimeout(() => {
         setIsDragging(true);
         setIsPendingDrag(false);
@@ -321,14 +432,74 @@ export const SubtitleTransformBoundary: React.FC<
       startDraggingTransform,
       interactionMode,
       enterEditMode,
+      boundaryOnly,
       getTopElementAtPoint,
+    ],
+  );
+
+  // Handle mouse down on scale handles (corners)
+  const handleScaleMouseDown = useCallback(
+    (e: React.MouseEvent, handle: HandleType) => {
+      if (interactionMode !== 'select' || !isSelected) return;
+
+      e.stopPropagation();
+      e.preventDefault();
+      setIsScaling(true);
+      setActiveHandle(handle);
+      setDragStart({ x: e.clientX, y: e.clientY });
+      setInitialTransform({ ...transform, scale: transform.scale });
+
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
+    },
+    [isSelected, transform, startDraggingTransform, interactionMode],
+  );
+
+  // Handle mouse down on width resize handles (left/right edges)
+  const handleWidthResizeMouseDown = useCallback(
+    (e: React.MouseEvent, handle: HandleType) => {
+      if (interactionMode !== 'select' || !isSelected) return;
+
+      e.stopPropagation();
+      e.preventDefault();
+      setIsResizingWidth(true);
+      setActiveHandle(handle);
+      setDragStart({ x: e.clientX, y: e.clientY });
+
+      // Mark that user has explicitly set a width
+      hasUserDefinedWidthRef.current = true;
+
+      // Store current width for delta calculations
+      const currentWidthScreen = containerSize.width;
+      const currentWidthVideo = currentWidthScreen / effectiveRenderScale;
+
+      setCurrentDragWidth(currentWidthScreen);
+
+      setInitialTransform({
+        ...transform,
+        width: currentWidthVideo,
+      });
+
+      if (!transformDragStartedRef.current) {
+        transformDragStartedRef.current = true;
+        startDraggingTransform();
+      }
+    },
+    [
+      isSelected,
+      transform,
+      containerSize.width,
+      effectiveRenderScale,
+      startDraggingTransform,
+      interactionMode,
     ],
   );
 
   // Handle single click - enters edit mode when text edit mode is active
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
-      // Only handle single clicks in text edit mode (not pan mode)
       if (!isTextEditMode || interactionMode === 'pan') return;
 
       e.stopPropagation();
@@ -339,7 +510,6 @@ export const SubtitleTransformBoundary: React.FC<
         return;
       }
 
-      // Enter edit mode and select all text on single click in Text Tool mode
       enterEditMode(true);
     },
     [
@@ -352,13 +522,12 @@ export const SubtitleTransformBoundary: React.FC<
     ],
   );
 
-  // Handle double-click for inline editing (works in both Text Tool and Selection Tool modes)
+  // Handle double-click for inline editing
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
 
-      // Cancel any pending drag operation
       if (dragDelayTimeoutRef.current) {
         clearTimeout(dragDelayTimeoutRef.current);
         dragDelayTimeoutRef.current = null;
@@ -367,35 +536,41 @@ export const SubtitleTransformBoundary: React.FC<
       setIsDragging(false);
       setDragStart(null);
 
-      // If not selected, select first then enter edit mode
       if (!isSelected) {
         onSelect(track.id);
-        // Enter edit mode after a brief delay to allow selection to process
         setTimeout(() => {
-          enterEditMode(true); // Select all text for immediate editing
+          enterEditMode(true);
         }, 50);
         return;
       }
 
-      // Always enter edit mode on double-click, regardless of mode
-      // Select all text for immediate typing/replacement
       enterEditMode(true);
     },
     [isSelected, track.id, onSelect, enterEditMode],
   );
 
-  // Handle mouse move for dragging
+  // Handle mouse move for all interactions
   useEffect(() => {
-    if (!isDragging && !isPendingDrag) return;
+    if (!isDragging && !isScaling && !isResizingWidth && !isPendingDrag) return;
     if (!dragStart || !initialTransform) return;
 
+    // Prevent text selection on other elements during drag
+    // Add global user-select: none to body
+    const originalUserSelect = document.body.style.userSelect;
+    const originalWebkitUserSelect = document.body.style.webkitUserSelect;
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+
     const handleMouseMove = (e: MouseEvent) => {
+      // Prevent text selection during drag
+      e.preventDefault();
+
       const deltaX = e.clientX - dragStart.x;
       const deltaY = e.clientY - dragStart.y;
 
       // If drag is pending and user moves mouse significantly, start drag immediately
       if (isPendingDrag) {
-        const movementThreshold = 5; // pixels
+        const movementThreshold = 5;
         if (
           Math.abs(deltaX) > movementThreshold ||
           Math.abs(deltaY) > movementThreshold
@@ -407,111 +582,176 @@ export const SubtitleTransformBoundary: React.FC<
           setIsDragging(true);
           setIsPendingDrag(false);
 
-          // Pause playback if playing (when drag is confirmed)
           if (!transformDragStartedRef.current) {
             transformDragStartedRef.current = true;
             startDraggingTransform();
           }
         }
-        return; // Don't process drag until it's confirmed
+        return;
       }
 
-      // Convert screen delta to video coordinate delta
-      // initialTransform is in screen pixels, deltaX/Y is in screen pixels
-      // We need to convert both to video space before adding
-      const videoDeltaX = deltaX / effectiveRenderScale;
-      const videoDeltaY = deltaY / effectiveRenderScale;
+      if (isDragging) {
+        // Convert screen delta to video coordinate delta
+        const videoDeltaX = deltaX / effectiveRenderScale;
+        const videoDeltaY = deltaY / effectiveRenderScale;
 
-      // initialTransform is already scaled, so convert it back to video space first
-      const initialVideoX = initialTransform.x / effectiveRenderScale;
-      const initialVideoY = initialTransform.y / effectiveRenderScale;
+        const initialVideoX = initialTransform.x / effectiveRenderScale;
+        const initialVideoY = initialTransform.y / effectiveRenderScale;
 
-      // Calculate new position in video space
-      let newPixelX = initialVideoX + videoDeltaX;
-      let newPixelY = initialVideoY + videoDeltaY;
+        let newPixelX = initialVideoX + videoDeltaX;
+        let newPixelY = initialVideoY + videoDeltaY;
 
-      // Snapping logic - only when Shift or Ctrl is held
-      if (e.shiftKey || e.ctrlKey || e.metaKey) {
-        const snapTolerance = e.ctrlKey || e.metaKey ? 2 : 10; // Strong snap (Ctrl) vs soft snap (Shift)
+        // Snapping logic
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+          const snapTolerance = e.ctrlKey || e.metaKey ? 2 : 10;
 
-        // Define snap points (in video pixel coordinates, centered at 0,0)
-        const snapPoints = {
-          horizontal: [0], // Center
-          vertical: [0], // Center
-        };
+          const snapPoints = {
+            horizontal: [0],
+            vertical: [0],
+          };
 
-        // Add edge snap points
-        const halfWidth = containerSize.width / 2;
-        const halfHeight = containerSize.height / 2;
+          // No transform.scale multiplication - font-based scaling means containerSize is already scaled
+          const actualWidth = containerSize.width;
+          const actualHeight = containerSize.height;
+          const halfWidth = actualWidth / 2;
+          const halfHeight = actualHeight / 2;
 
-        // Video frame edges (in video pixel coordinates)
-        snapPoints.horizontal.push(
-          -videoHeight / 2 + halfHeight, // Top edge
-          videoHeight / 2 - halfHeight, // Bottom edge
-        );
-        snapPoints.vertical.push(
-          -videoWidth / 2 + halfWidth, // Left edge
-          videoWidth / 2 - halfWidth, // Right edge
-        );
+          snapPoints.horizontal.push(
+            -videoHeight / 2 + halfHeight,
+            videoHeight / 2 - halfHeight,
+          );
+          snapPoints.vertical.push(
+            -videoWidth / 2 + halfWidth,
+            videoWidth / 2 - halfWidth,
+          );
 
-        // Snap to horizontal points
-        for (const snapY of snapPoints.horizontal) {
-          if (Math.abs(newPixelY - snapY) < snapTolerance) {
-            newPixelY = snapY;
-            break;
+          for (const snapY of snapPoints.horizontal) {
+            if (Math.abs(newPixelY - snapY) < snapTolerance) {
+              newPixelY = snapY;
+              break;
+            }
+          }
+
+          for (const snapX of snapPoints.vertical) {
+            if (Math.abs(newPixelX - snapX) < snapTolerance) {
+              newPixelX = snapX;
+              break;
+            }
           }
         }
 
-        // Snap to vertical points
-        for (const snapX of snapPoints.vertical) {
-          if (Math.abs(newPixelX - snapX) < snapTolerance) {
-            newPixelX = snapX;
-            break;
-          }
-        }
-      }
-
-      // Convert to normalized coordinates
-      const normalizedPos = pixelsToNormalized({
-        x: newPixelX,
-        y: newPixelY,
-      });
-      const clampedPos = clampNormalized(normalizedPos);
-
-      // Notify parent of drag state for guide rendering
-      if (onDragStateChange && containerSize.width > 0) {
-        onDragStateChange(true, {
+        const normalizedPos = pixelsToNormalized({
           x: newPixelX,
           y: newPixelY,
-          width: containerSize.width,
-          height: containerSize.height,
+        });
+        const clampedPos = clampNormalized(normalizedPos);
+
+        if (onDragStateChange && containerSize.width > 0) {
+          // No transform.scale multiplication - font-based scaling means containerSize is already scaled
+          onDragStateChange(true, {
+            x: newPixelX,
+            y: newPixelY,
+            width: containerSize.width,
+            height: containerSize.height,
+          });
+        }
+
+        onTransformUpdate(track.id, {
+          x: clampedPos.x,
+          y: clampedPos.y,
+        });
+      } else if (isScaling && activeHandle) {
+        // Scale calculation - same logic as TextTransformBoundary
+        const scaleSensitivity = 200;
+        let scaleFactor = 1;
+
+        switch (activeHandle) {
+          case 'tl':
+            scaleFactor = 1 - (deltaX + deltaY) / (2 * scaleSensitivity);
+            break;
+          case 'tr':
+            scaleFactor = 1 + (deltaX - deltaY) / (2 * scaleSensitivity);
+            break;
+          case 'bl':
+            scaleFactor = 1 + (-deltaX + deltaY) / (2 * scaleSensitivity);
+            break;
+          case 'br':
+            scaleFactor = 1 + (deltaX + deltaY) / (2 * scaleSensitivity);
+            break;
+        }
+
+        let newScale = initialTransform.scale * scaleFactor;
+        newScale = Math.max(0.01, newScale);
+
+        onTransformUpdate(track.id, {
+          scale: newScale,
+        });
+      } else if (isResizingWidth && activeHandle) {
+        // Width-only resize - same logic as TextTransformBoundary
+        const initialWidth =
+          initialTransform.width || containerSize.width / effectiveRenderScale;
+
+        const videoDelta = deltaX / effectiveRenderScale / transform.scale;
+        let newWidth: number;
+        let xAdjustment = 0;
+
+        if (activeHandle === 'r') {
+          newWidth = initialWidth + videoDelta;
+          xAdjustment = (newWidth - initialWidth) / 2;
+        } else {
+          newWidth = initialWidth - videoDelta;
+          xAdjustment = -(newWidth - initialWidth) / 2;
+        }
+
+        const minWidth = 50;
+        const maxWidth = videoWidth * 3;
+        const clampedWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+
+        if (clampedWidth !== newWidth) {
+          if (activeHandle === 'r') {
+            xAdjustment = (clampedWidth - initialWidth) / 2;
+          } else {
+            xAdjustment = -(clampedWidth - initialWidth) / 2;
+          }
+          newWidth = clampedWidth;
+        }
+
+        setCurrentDragWidth(newWidth * effectiveRenderScale);
+
+        const initialVideoX = initialTransform.x / effectiveRenderScale;
+        const newVideoX = initialVideoX + xAdjustment;
+        const normalizedX = newVideoX / (videoWidth / 2);
+
+        onTransformUpdate(track.id, {
+          width: newWidth,
+          x: normalizedX,
         });
       }
-
-      onTransformUpdate(track.id, {
-        x: clampedPos.x,
-        y: clampedPos.y,
-      });
     };
 
     const handleMouseUp = () => {
-      // Clear any pending drag timeout
       if (dragDelayTimeoutRef.current) {
         clearTimeout(dragDelayTimeoutRef.current);
         dragDelayTimeoutRef.current = null;
       }
 
-      setIsDragging(false);
-      setIsPendingDrag(false);
-      setDragStart(null);
-      setInitialTransform(null);
-      onDragStateChange?.(false);
+      if (isDragging) {
+        onDragStateChange?.(false);
+      }
 
-      // Resume playback if we paused it
       if (transformDragStartedRef.current) {
         transformDragStartedRef.current = false;
         endDraggingTransform();
       }
+
+      setIsDragging(false);
+      setIsPendingDrag(false);
+      setIsScaling(false);
+      setIsResizingWidth(false);
+      setActiveHandle(null);
+      setDragStart(null);
+      setInitialTransform(null);
+      setCurrentDragWidth(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -520,21 +760,28 @@ export const SubtitleTransformBoundary: React.FC<
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      // Restore original user-select values
+      document.body.style.userSelect = originalUserSelect;
+      document.body.style.webkitUserSelect = originalWebkitUserSelect;
     };
   }, [
     isDragging,
     isPendingDrag,
+    isScaling,
+    isResizingWidth,
     dragStart,
     initialTransform,
+    activeHandle,
+    track.id,
     effectiveRenderScale,
-    videoWidth,
-    videoHeight,
-    containerSize,
-    pixelsToNormalized,
-    clampNormalized,
     onTransformUpdate,
     onDragStateChange,
-    track.id,
+    pixelsToNormalized,
+    clampNormalized,
+    containerSize,
+    transform.scale,
+    videoWidth,
+    videoHeight,
     startDraggingTransform,
     endDraggingTransform,
   ]);
@@ -551,7 +798,6 @@ export const SubtitleTransformBoundary: React.FC<
       onTextUpdate?.(track.id, newText);
     }
     setIsEditing(false);
-    // Notify parent that we're exiting edit mode
     onEditModeChange?.(false);
   }, [track.id, track.subtitleText, onTextUpdate, onEditModeChange]);
 
@@ -559,17 +805,14 @@ export const SubtitleTransformBoundary: React.FC<
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
-        // Enter without shift: save and exit
         e.preventDefault();
         handleBlur();
       } else if (e.key === 'Escape') {
-        // Escape: cancel and revert
         e.preventDefault();
         if (editableRef.current && track.subtitleText) {
           editableRef.current.innerText = track.subtitleText;
         }
         setIsEditing(false);
-        // Notify parent that we're exiting edit mode
         onEditModeChange?.(false);
       }
     },
@@ -579,19 +822,47 @@ export const SubtitleTransformBoundary: React.FC<
   // Get cursor style based on state
   const getCursor = () => {
     if (isEditing) return 'text';
-    if (isTextEditMode && isSelected) return 'text'; // Show text cursor when in text edit mode
+    if (isTextEditMode && isSelected) return 'text';
     if (isDragging) return 'grabbing';
+    if (isResizingWidth) return 'ew-resize';
+    if (isScaling) {
+      switch (activeHandle) {
+        case 'tl':
+        case 'br':
+          return 'nwse-resize';
+        case 'tr':
+        case 'bl':
+          return 'nesw-resize';
+        default:
+          return 'nwse-resize';
+      }
+    }
     if (isSelected) return 'grab';
     return 'pointer';
   };
 
   // Determine pointer events based on interaction mode
-  // Pan Tool: disable all interactions
-  // Text Tool: keep subtitle interactive (allow editing subtitles)
-  // Select Tool: enable all interactions
   const shouldDisablePointerEvents = interactionMode === 'pan';
 
-  // Content component
+  // Calculate the user-defined width constraint for text wrapping
+  // Width is in screen space, CSS scale handles the visual scaling
+  const userDefinedWidth = (() => {
+    if (isResizingWidth && currentDragWidth !== null) {
+      return currentDragWidth;
+    }
+    if (hasUserDefinedWidthRef.current && normalizedTransform.width) {
+      return normalizedTransform.width * effectiveRenderScale;
+    }
+    return undefined;
+  })();
+
+  // Content transform - NO CSS scale for subtitles
+  // Unlike TextTransformBoundary, subtitle scaling is handled via font-size multiplication
+  // This preserves text quality at all scale levels (no blurring from CSS scale)
+  const contentTransform = `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`;
+
+  // Content component - simplified structure to match TextTransformBoundary
+  // containerRef has transform, contentRef wraps content directly (measured for boundary)
   const contentComponent = (
     <div
       ref={containerRef}
@@ -600,13 +871,10 @@ export const SubtitleTransformBoundary: React.FC<
       style={{
         left: '50%',
         top: '50%',
-        transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
+        transform: contentTransform,
         transformOrigin: 'center center',
         cursor: getCursor(),
         pointerEvents: shouldDisablePointerEvents ? 'none' : 'auto',
-        display: 'inline-block',
-        width: 'fit-content', // Hug actual subtitle content
-        maxWidth: `${actualWidth}px`, // Cap wrapping to canvas width
         userSelect: isEditing ? 'text' : 'none',
         WebkitUserSelect: isEditing ? 'text' : 'none',
       }}
@@ -614,26 +882,70 @@ export const SubtitleTransformBoundary: React.FC<
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
+      {/* contentRef directly wraps content - matches TextTransformBoundary structure */}
       <div
-        ref={editableRef}
-        contentEditable={isEditing}
-        suppressContentEditableWarning
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        onDoubleClick={handleDoubleClick}
+        ref={contentRef}
+        className="relative"
+        data-subtitle-content="true"
         style={{
-          outline: 'none',
-          pointerEvents: isEditing ? 'auto' : 'none',
-          position: 'relative',
-          display: 'inline-block', // Prevent block-level full-width wrapping
-          width: 'fit-content', // Hug content to avoid forced wraps
-          whiteSpace: 'pre', // Keep explicit breaks but avoid wrapping when width allows
-          overflowWrap: 'normal', // Prevent browser from forcing soft-wraps
-          wordBreak: 'keep-all', // Avoid breaking words unless necessary
-          maxWidth: '100%', // Respect the parent cap while hugging content width
+          pointerEvents: 'auto',
+          // Width constraint for text wrapping (same pattern as TextTransformBoundary)
+          ...(userDefinedWidth && {
+            width: `${userDefinedWidth}px`,
+            wordWrap: 'break-word',
+            overflowWrap: 'break-word',
+            whiteSpace: 'pre-wrap',
+          }),
         }}
+        onDoubleClick={handleDoubleClick}
       >
-        {children}
+        {isEditing ? (
+          <div
+            ref={editableRef}
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            style={{
+              outline: 'none',
+              minWidth: '20px',
+              minHeight: '20px',
+              cursor: 'text',
+              userSelect: 'text',
+              WebkitUserSelect: 'text',
+              ...(userDefinedWidth && {
+                width: `${userDefinedWidth}px`,
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                whiteSpace: 'pre-wrap',
+              }),
+            }}
+          >
+            {/* Show subtitle text when editing */}
+            {(children as any)?.props?.children?.[0]?.props?.children || ''}
+          </div>
+        ) : userDefinedWidth ? (
+          // When user has defined width, wrap children to force text wrapping
+          <div
+            className="subtitle-text-wrap-container"
+            style={{ width: '100%', maxWidth: '100%' }}
+          >
+            <style>
+              {`.subtitle-text-wrap-container,
+                .subtitle-text-wrap-container * {
+                  white-space: pre-wrap !important;
+                  word-wrap: break-word !important;
+                  overflow-wrap: break-word !important;
+                  word-break: break-word !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
+                }`}
+            </style>
+            {children}
+          </div>
+        ) : (
+          children
+        )}
       </div>
     </div>
   );
@@ -647,11 +959,11 @@ export const SubtitleTransformBoundary: React.FC<
         left: `calc(50% + ${panX}px)`,
         top: `calc(50% + ${panY}px)`,
         transform: 'translate(-50%, -50%)',
-        overflow: 'visible', // Allow transform handles to extend beyond canvas
-        zIndex: zIndexOverlay, // 1500 - ensures subtitles render above images but below text
+        overflow: 'visible',
+        zIndex: zIndexOverlay,
       }}
     >
-      {/* Content clipping layer - clips subtitle content but not selection boundary */}
+      {/* Content clipping layer */}
       {shouldRenderContent ? (
         <div
           className="absolute pointer-events-none"
@@ -661,7 +973,7 @@ export const SubtitleTransformBoundary: React.FC<
             left: '50%',
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            overflow: 'hidden', // Clip content outside canvas
+            overflow: 'hidden',
             pointerEvents: 'none',
           }}
         >
@@ -671,10 +983,7 @@ export const SubtitleTransformBoundary: React.FC<
         contentComponent
       )}
 
-      {/* Selection Boundary - Rendered separately like TextTransformBoundary */}
-      {/* IMPORTANT: Must render with high z-index outside clipping context for off-canvas interactivity */}
-      {/* Hide boundary only when actively editing text, not when text edit mode is active */}
-      {/* Only show transform boundary in select mode */}
+      {/* Selection Boundary with handles */}
       {shouldRenderBoundary &&
         isSelected &&
         !isEditing &&
@@ -688,15 +997,89 @@ export const SubtitleTransformBoundary: React.FC<
               top: '50%',
               transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px)`,
               transformOrigin: 'center center',
-              width: `${containerSize.width}px`,
+              // Boundary dimensions - NO multiplication by transform.scale
+              // Since subtitle uses font-based scaling (not CSS scale), containerSize already reflects scaled size
+              width: `${isResizingWidth && currentDragWidth !== null ? currentDragWidth : containerSize.width}px`,
               height: `${containerSize.height}px`,
-              border: '2px solid #F45513',
-              zIndex: 10000, // Very high z-index to ensure boundary is always on top and interactive
-              pointerEvents: 'auto', // Allow boundary to capture drag events for off-canvas dragging
-              cursor: getCursor(), // Show appropriate cursor
+              border: `${2 * handleScale}px solid #F45513`,
+              borderRadius: `${4 * handleScale}px`,
+              zIndex: 10000,
+              pointerEvents: 'auto',
+              cursor: getCursor(),
             }}
             onMouseDown={handleMouseDown}
-          />
+            onDoubleClick={boundaryOnly ? undefined : handleDoubleClick}
+          >
+            {/* Corner Handles for Scaling */}
+            {['tl', 'tr', 'bl', 'br'].map((handle) => {
+              const getCursorForHandle = (h: string) => {
+                if (h === 'tl' || h === 'br') return 'nwse-resize';
+                if (h === 'tr' || h === 'bl') return 'nesw-resize';
+                return 'nwse-resize';
+              };
+
+              return (
+                <div
+                  key={handle}
+                  className="transform-handle absolute rounded-full pointer-events-auto hover:scale-125 transition-transform bg-white dark:bg-primary"
+                  style={{
+                    width: `${HANDLE_SIZE * handleScale}px`,
+                    height: `${HANDLE_SIZE * handleScale}px`,
+                    cursor: getCursorForHandle(handle),
+                    ...(handle === 'tl' && {
+                      top: `-${HANDLE_OFFSET * handleScale}px`,
+                      left: `-${HANDLE_OFFSET * handleScale}px`,
+                    }),
+                    ...(handle === 'tr' && {
+                      top: `-${HANDLE_OFFSET * handleScale}px`,
+                      right: `-${HANDLE_OFFSET * handleScale}px`,
+                    }),
+                    ...(handle === 'bl' && {
+                      bottom: `-${HANDLE_OFFSET * handleScale}px`,
+                      left: `-${HANDLE_OFFSET * handleScale}px`,
+                    }),
+                    ...(handle === 'br' && {
+                      bottom: `-${HANDLE_OFFSET * handleScale}px`,
+                      right: `-${HANDLE_OFFSET * handleScale}px`,
+                    }),
+                  }}
+                  onMouseDown={(e) =>
+                    handleScaleMouseDown(e, handle as HandleType)
+                  }
+                />
+              );
+            })}
+
+            {/* Edge Handles - Left and Right only (for width resize) */}
+            {['r', 'l'].map((handle) => (
+              <div
+                key={handle}
+                className="transform-handle absolute pointer-events-auto hover:opacity-80 transition-opacity"
+                style={{
+                  width: `${5 * handleScale}px`,
+                  height: '40%',
+                  backgroundColor: 'white',
+                  borderRadius: `${999 * handleScale}px`,
+                  cursor: 'ew-resize',
+                  ...(handle === 'r' && {
+                    right: `-${3 * handleScale}px`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }),
+                  ...(handle === 'l' && {
+                    left: `-${3 * handleScale}px`,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                  }),
+                }}
+                onMouseDown={(e) =>
+                  handleWidthResizeMouseDown(e, handle as HandleType)
+                }
+              />
+            ))}
+
+            {/* NO Rotation Handle - explicitly excluded for subtitles */}
+          </div>
         )}
     </div>
   );

@@ -490,11 +490,23 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   );
 
   const handleSubtitleTransformUpdate = useCallback(
-    (trackId: string, transform: { x?: number; y?: number }) => {
+    (
+      trackId: string,
+      transform: {
+        x?: number;
+        y?: number;
+        scale?: number;
+        width?: number;
+        height?: number;
+      },
+    ) => {
       const currentPosition = textStyle.globalSubtitlePosition;
       setGlobalSubtitlePosition({
         x: transform.x ?? currentPosition.x,
         y: transform.y ?? currentPosition.y,
+        scale: transform.scale ?? currentPosition.scale ?? 1,
+        width: transform.width ?? currentPosition.width ?? 0,
+        height: transform.height ?? currentPosition.height ?? 0,
       });
     },
     [textStyle.globalSubtitlePosition, setGlobalSubtitlePosition],

@@ -263,10 +263,13 @@ export interface VideoTrack {
   normalizedSubtitleStartTime?: number;
   normalizedSubtitleEndTime?: number;
   subtitleSafeGapSeconds?: number;
-  // Global subtitle transform (position only - applies to ALL subtitle tracks)
+  // Global subtitle transform (applies to ALL subtitle tracks)
   subtitleTransform?: {
     x: number; // X position normalized (-1 to 1, relative to video center, 0 = center)
     y: number; // Y position normalized (-1 to 1, relative to video center, default bottom-aligned)
+    scale?: number; // Scale factor (default 1, 1 = 100%)
+    width?: number; // Width in video space pixels (0 = auto)
+    height?: number; // Height in video space pixels (0 = auto)
   };
   // Text clip properties (for type === 'text')
   textContent?: string; // The actual text content for text clips

@@ -64,7 +64,7 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   isTextEditMode?: boolean;
   getTextStyleForSubtitle: (style: any, segmentStyle?: any) => any;
   activeStyle: any;
-  globalSubtitlePosition: { x: number; y: number };
+  globalSubtitlePosition: { x: number; y: number; scale?: number; width?: number; height?: number };
   onSubtitleTransformUpdate: (trackId: string, transform: any) => void;
   onSubtitleSelect: (trackId: string) => void;
   onSubtitleTextUpdate?: (trackId: string, newText: string) => void;
@@ -507,6 +507,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
             getTextStyleForSubtitle,
             activeStyle,
             renderScale,
+            globalSubtitlePosition.scale ?? 1,
             onSubtitleSelect,
           ),
         )}
@@ -679,13 +680,17 @@ function renderSubtitleContent(
   getStyle: (style: any, seg?: any) => any,
   activeStyle: any,
   renderScale: number,
+  userScale: number,
   onSelect: (id: string) => void,
 ) {
   const style = getStyle(activeStyle, track.subtitleStyle);
-  const fontSize = (parseFloat(style.fontSize) || 40) * renderScale;
-  const padV = SUBTITLE_PADDING_VERTICAL * renderScale;
-  const padH = SUBTITLE_PADDING_HORIZONTAL * renderScale;
-  const shadow = scaleTextShadow(style.textShadow, renderScale);
+  // Font size includes both renderScale (preview zoom) and userScale (user's scale factor)
+  // This is font-based scaling - preserves text quality at all scale levels (no CSS blur)
+  const effectiveScale = renderScale * userScale;
+  const fontSize = (parseFloat(style.fontSize) || 40) * effectiveScale;
+  const padV = SUBTITLE_PADDING_VERTICAL * effectiveScale;
+  const padH = SUBTITLE_PADDING_HORIZONTAL * effectiveScale;
+  const shadow = scaleTextShadow(style.textShadow, effectiveScale);
 
   const base: React.CSSProperties = {
     fontSize: `${fontSize}px`,
@@ -697,7 +702,7 @@ function renderSubtitleContent(
     textAlign: style.textAlign,
     lineHeight: style.lineHeight,
     letterSpacing: style.letterSpacing
-      ? `${parseFloat(String(style.letterSpacing)) * renderScale}px`
+      ? `${parseFloat(String(style.letterSpacing)) * effectiveScale}px`
       : undefined,
     display: 'inline-block',
     width: 'fit-content',

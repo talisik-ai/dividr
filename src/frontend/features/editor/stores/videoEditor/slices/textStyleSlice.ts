@@ -69,6 +69,9 @@ const DEFAULT_GLOBAL_CONTROLS = {
 const DEFAULT_GLOBAL_SUBTITLE_POSITION = {
   x: 0, // Centered horizontally
   y: 0.7, // Bottom-aligned (70% down from center)
+  scale: 1, // Default scale (100%)
+  width: 0, // Auto width
+  height: 0, // Auto height
 };
 
 // Export default text style state for project creation/reset
@@ -391,8 +394,14 @@ export const createTextStyleSlice: StateCreator<
       };
     }),
 
-  // Global subtitle position
-  setGlobalSubtitlePosition: (position: { x: number; y: number }) =>
+  // Global subtitle position and transform
+  setGlobalSubtitlePosition: (position: {
+    x: number;
+    y: number;
+    scale?: number;
+    width?: number;
+    height?: number;
+  }) =>
     set((state: any) => {
       state.markUnsavedChanges?.();
       return {
