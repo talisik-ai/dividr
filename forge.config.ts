@@ -20,7 +20,8 @@ const config: ForgeConfig = {
     extraResource: [
       './src/frontend/assets/logo',
       './src/backend/python/scripts',
-      './dividr-tools-bin',
+      // dividr-tools is now downloaded on-demand from GitHub Releases
+      // to reduce installer size from ~1.3GB to ~200MB
     ],
     // macOS code signing - uses APPLE_IDENTITY env variable
     ...(process.env.APPLE_IDENTITY && {
@@ -42,6 +43,8 @@ const config: ForgeConfig = {
 
       // Large binary directories (not packaged with app)
       /^\/ffmpeg-bin\//,
+      /^\/dividr-tools-bin\//,
+      /^\/build\//,
 
       // Python environment (user must install separately)
       /^\/venv\//,
@@ -90,6 +93,8 @@ const config: ForgeConfig = {
         deleteAppDataOnUninstall: false,
         menuCategory: false,
         language: 'English',
+        // Custom NSIS script for file associations
+        include: './installer.nsh',
       },
     },
 

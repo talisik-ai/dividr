@@ -269,6 +269,72 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Check if media file has audio
   mediaHasAudio: (filePath: string) =>
     ipcRenderer.invoke('media:has-audio', filePath),
+
+  // =========================================================================
+  // Runtime Download APIs
+  // =========================================================================
+
+  // Check runtime installation status
+  runtimeStatus: () =>
+    ipcRenderer.invoke('runtime:status') as Promise<{
+      installed: boolean;
+      version: string | null;
+      path: string | null;
+      needsUpdate: boolean;
+      requiredVersion: string;
+    }>,
+
+  // Start runtime download
+  runtimeDownload: () =>
+    ipcRenderer.invoke('runtime:download') as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
+
+  // Cancel runtime download
+  runtimeCancelDownload: () =>
+    ipcRenderer.invoke('runtime:cancel-download') as Promise<{
+      success: boolean;
+    }>,
+
+  // Verify runtime installation
+  runtimeVerify: () =>
+    ipcRenderer.invoke('runtime:verify') as Promise<{
+      valid: boolean;
+    }>,
+
+  // Remove runtime
+  runtimeRemove: () =>
+    ipcRenderer.invoke('runtime:remove') as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
+
+  // Listen for runtime download progress
+  onRuntimeDownloadProgress: (
+    callback: (progress: {
+      stage:
+        | 'fetching'
+        | 'downloading'
+        | 'extracting'
+        | 'verifying'
+        | 'complete'
+        | 'error';
+      progress: number;
+      bytesDownloaded?: number;
+      totalBytes?: number;
+      speed?: number;
+      message?: string;
+      error?: string;
+    }) => void,
+  ) =>
+    ipcRenderer.on('runtime:download-progress', (_, progress) =>
+      callback(progress),
+    ),
+
+  // Remove runtime download progress listener
+  removeRuntimeDownloadProgressListener: () =>
+    ipcRenderer.removeAllListeners('runtime:download-progress'),
 });
 
 contextBridge.exposeInMainWorld('appControl', {
@@ -309,4 +375,14 @@ contextBridge.exposeInMainWorld('appControl', {
   isWindowFocused: () => ipcRenderer.invoke('is-window-focused'),
   clearLastClipboardText: () => ipcRenderer.invoke('clear-last-clipboard-text'),
   clearClipboard: () => ipcRenderer.invoke('clear-clipboard'),
+
+  // File association: Handle .dividr files opened via double-click
+  onOpenProjectFile: (callback: (filePath: string) => void) => {
+    ipcRenderer.on('open-project-file', (_event, filePath: string) =>
+      callback(filePath),
+    );
+  },
+  offOpenProjectFile: () => {
+    ipcRenderer.removeAllListeners('open-project-file');
+  },
 });

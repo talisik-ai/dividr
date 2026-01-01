@@ -379,6 +379,77 @@ declare global {
        * Remove media-tools progress listener
        */
       removeMediaToolsProgressListener: () => void;
+
+      // ========================================================================
+      // Runtime Download APIs
+      // ========================================================================
+
+      /**
+       * Check runtime installation status
+       */
+      runtimeStatus: () => Promise<{
+        installed: boolean;
+        version: string | null;
+        path: string | null;
+        needsUpdate: boolean;
+        requiredVersion: string;
+      }>;
+
+      /**
+       * Start runtime download
+       */
+      runtimeDownload: () => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
+      /**
+       * Cancel runtime download
+       */
+      runtimeCancelDownload: () => Promise<{
+        success: boolean;
+      }>;
+
+      /**
+       * Verify runtime installation
+       */
+      runtimeVerify: () => Promise<{
+        valid: boolean;
+      }>;
+
+      /**
+       * Remove runtime
+       */
+      runtimeRemove: () => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
+      /**
+       * Listen for runtime download progress
+       */
+      onRuntimeDownloadProgress: (
+        callback: (progress: {
+          stage:
+            | 'fetching'
+            | 'downloading'
+            | 'extracting'
+            | 'verifying'
+            | 'complete'
+            | 'error';
+          progress: number;
+          bytesDownloaded?: number;
+          totalBytes?: number;
+          speed?: number;
+          message?: string;
+          error?: string;
+        }) => void,
+      ) => void;
+
+      /**
+       * Remove runtime download progress listener
+       */
+      removeRuntimeDownloadProgressListener: () => void;
     };
     appControl: {
       showWindow: () => Promise<boolean>;
@@ -391,6 +462,9 @@ declare global {
       getMaximizeState: () => Promise<boolean>;
       onMaximizeChanged: (callback: (isMaximized: boolean) => void) => void;
       offMaximizeChanged: () => void;
+      // File association: Handle .dividr files opened via double-click
+      onOpenProjectFile: (callback: (filePath: string) => void) => void;
+      offOpenProjectFile: () => void;
     };
   }
 }

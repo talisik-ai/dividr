@@ -29,10 +29,13 @@ export interface TextStyleState {
     hasGlow: boolean;
     opacity: number;
   };
-  // Global subtitle position (affects all subtitle tracks)
+  // Global subtitle position and transform (affects all subtitle tracks)
   globalSubtitlePosition: {
     x: number; // Normalized X position (-1 to 1, 0 = center)
     y: number; // Normalized Y position (-1 to 1, default 0.7 = bottom-aligned)
+    scale?: number; // Scale factor (default 1, 1 = 100%)
+    width?: number; // Width in video space pixels (0 = auto)
+    height?: number; // Height in video space pixels (0 = auto)
   };
 }
 
@@ -69,8 +72,14 @@ export interface TextStyleSlice {
   setOpacity: (opacity: number) => void;
   resetTextStyles: () => void;
 
-  // Global subtitle position
-  setGlobalSubtitlePosition: (position: { x: number; y: number }) => void;
+  // Global subtitle position and transform
+  setGlobalSubtitlePosition: (position: {
+    x: number;
+    y: number;
+    scale?: number;
+    width?: number;
+    height?: number;
+  }) => void;
 
   // Snapshot global styles to selected tracks (used when selecting tracks in 'selected' mode)
   snapshotStylesToSelectedTracks: () => void;

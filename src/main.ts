@@ -32,6 +32,15 @@ import {
   transcribeAudio,
 } from './backend/media-tools/mediaToolsRunner';
 
+// Import runtime download manager for on-demand installation
+import {
+  cancelDownload,
+  checkRuntimeStatus,
+  downloadRuntime,
+  removeRuntime,
+  verifyInstallation,
+} from './backend/runtime/runtimeDownloadManager';
+
 // Backward compatible type alias
 type WhisperProgress = MediaToolsProgress;
 
@@ -46,6 +55,65 @@ let isWindowFocused = true;
 // Dynamic import of ffmpeg binaries to avoid module resolution issues
 let ffmpegPath: string | null = null;
 let ffprobePath: { path: string } | null = null;
+
+// File path to open when app starts (from double-click on .dividr file)
+let pendingFilePath: string | null = null;
+
+/**
+ * Get .dividr file path from command-line arguments (Windows double-click)
+ */
+function getFileFromArgs(args: string[] = process.argv): string | null {
+  // Skip the first arg (executable path) and any electron-specific args
+  const fileArgs = args.slice(1);
+  for (const arg of fileArgs) {
+    if (
+      arg.endsWith('.dividr') &&
+      !arg.startsWith('-') &&
+      !arg.startsWith('--')
+    ) {
+      return arg;
+    }
+  }
+  return null;
+}
+
+// Check for file argument on startup
+pendingFilePath = getFileFromArgs();
+
+// Single instance lock - ensures only one instance of the app runs
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running, quit this one
+  app.quit();
+} else {
+  // Handle second instance launch (e.g., double-click on .dividr file while app is running)
+  app.on('second-instance', (_event, commandLine) => {
+    if (mainWindow) {
+      // Restore and focus the existing window
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+
+      // Check if a .dividr file was passed
+      const filePath = getFileFromArgs(commandLine);
+      if (filePath) {
+        mainWindow.webContents.send('open-project-file', filePath);
+      }
+    }
+  });
+}
+
+// macOS: Handle file opened via Finder (before app is ready)
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  if (filePath.endsWith('.dividr')) {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('open-project-file', filePath);
+    } else {
+      pendingFilePath = filePath;
+    }
+  }
+});
 
 // Background worker management for sprite sheet generation
 interface SpriteSheetJob {
@@ -2256,6 +2324,65 @@ ipcMain.handle('media-tools:status', async () => {
   return status;
 });
 
+// ============================================================================
+// Runtime Download IPC Handlers
+// ============================================================================
+
+// IPC Handler to check runtime status
+ipcMain.handle('runtime:status', async () => {
+  console.log('📊 MAIN PROCESS: runtime:status handler called');
+
+  const status = await checkRuntimeStatus();
+  console.log('   Runtime status:', status);
+
+  return status;
+});
+
+// IPC Handler to start runtime download
+ipcMain.handle('runtime:download', async (event) => {
+  console.log('📥 MAIN PROCESS: runtime:download handler called');
+
+  try {
+    const result = await downloadRuntime((progress) => {
+      // Send progress updates to renderer process
+      event.sender.send('runtime:download-progress', progress);
+    });
+
+    console.log('   Download result:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ Runtime download failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+});
+
+// IPC Handler to cancel runtime download
+ipcMain.handle('runtime:cancel-download', async () => {
+  console.log('🛑 MAIN PROCESS: runtime:cancel-download handler called');
+
+  const result = await cancelDownload();
+  return result;
+});
+
+// IPC Handler to verify runtime installation
+ipcMain.handle('runtime:verify', async () => {
+  console.log('🔍 MAIN PROCESS: runtime:verify handler called');
+
+  const isValid = await verifyInstallation();
+  return { valid: isValid };
+});
+
+// IPC Handler to remove runtime
+ipcMain.handle('runtime:remove', async () => {
+  console.log('🗑️ MAIN PROCESS: runtime:remove handler called');
+
+  const result = await removeRuntime();
+  return result;
+});
+
 // IPC Handler to check if a media file has audio
 ipcMain.handle('media:has-audio', async (event, filePath: string) => {
   console.log('🔊 MAIN PROCESS: media:has-audio handler called');
@@ -2371,6 +2498,12 @@ const createWindow = () => {
 
     mainWindow.webContents.once('did-finish-load', () => {
       logStartupPerf();
+
+      // Send pending file path to renderer if app was opened with a .dividr file
+      if (pendingFilePath && mainWindow) {
+        mainWindow.webContents.send('open-project-file', pendingFilePath);
+        pendingFilePath = null;
+      }
     });
 
     // Show window when ready (fallback)
