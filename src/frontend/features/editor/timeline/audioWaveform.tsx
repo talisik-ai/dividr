@@ -50,6 +50,16 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     // Version counter to trigger waveformData re-evaluation after NR waveform generation
     const [nrWaveformVersion, setNrWaveformVersion] = useState(0);
 
+    // Calculate volume gain from dB for waveform visual scaling
+    // This is a visual-only transformation - no re-analysis of audio data
+    const volumeGain = useMemo(() => {
+      const volumeDb = track.volumeDb ?? 0;
+      if (volumeDb === -Infinity) return 0;
+      // Convert dB to linear amplitude: amplitude = 10^(dB/20)
+      // Clamp to reasonable visual range (0 to ~4x for +12dB)
+      return Math.max(0, Math.pow(10, volumeDb / 20));
+    }, [track.volumeDb]);
+
     // Subscribe to NoiseReductionCache state changes
     useEffect(() => {
       if (track.type !== 'audio' || !track.noiseReductionEnabled) {
@@ -784,6 +794,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         totalBars: number,
         canvasHeight: number,
         isProgress: boolean,
+        gainMultiplier = 1, // Volume gain for visual scaling
       ) => {
         const ctx = canvas.getContext('2d', { alpha: true });
         if (!ctx) return;
@@ -826,8 +837,10 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         const maxBarHeight = canvasHeight - 4;
 
         // Render bars with CONSTANT pixel width
+        // Apply volume gain for visual scaling (clamp to 0-1 to prevent overflow)
         for (let i = 0; i < barPeaks.length; i++) {
-          const peak = Math.max(0, Math.min(1, barPeaks[i]));
+          const scaledPeak = barPeaks[i] * gainMultiplier;
+          const peak = Math.max(0, Math.min(1, scaledPeak));
           const barHeight = Math.round(peak * maxBarHeight);
 
           // Local x position within this tile
@@ -875,12 +888,16 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         'lodTiers' in waveformData ? waveformData.lodTiers : undefined;
 
       // Create a unique key for the current state
-      // Include noiseReductionEnabled to ensure re-render when toggled
+      // Include noiseReductionEnabled and volumeDb to ensure re-render when toggled
       const startTime =
         'startTime' in waveformData ? waveformData.startTime : 0;
       const endTime = 'endTime' in waveformData ? waveformData.endTime : 0;
       const nrState = track.noiseReductionEnabled ? 'nr' : 'orig';
-      const renderKey = `${track.id}_${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}_${width}_${zoomLevel}_${nrState}_${nrWaveformVersion}`;
+      const volumeDbKey =
+        track.volumeDb === -Infinity
+          ? 'muted'
+          : (track.volumeDb ?? 0).toFixed(1);
+      const renderKey = `${track.id}_${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}_${width}_${zoomLevel}_${nrState}_${nrWaveformVersion}_vol${volumeDbKey}`;
 
       if (lastRenderedKeyRef.current === renderKey) return;
 
@@ -918,6 +935,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
           tileConfig.totalBars,
           canvasHeight,
           false,
+          volumeGain,
         );
 
         // Progress canvas (brighter, for playback progress)
@@ -942,6 +960,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
               tileConfig.totalBars,
               canvasHeight,
               true,
+              volumeGain,
             );
           }
         }
@@ -956,6 +975,8 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       zoomLevel,
       track.id,
       track.noiseReductionEnabled,
+      track.volumeDb,
+      volumeGain,
       nrWaveformVersion,
       renderTile,
     ]);
@@ -1141,6 +1162,13 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       nextProps.track.noiseReductionEnabled;
 
     if (noiseReductionChanged) {
+      return false;
+    }
+
+    // Re-render when volume changes to scale waveform visually
+    const volumeChanged = prevProps.track.volumeDb !== nextProps.track.volumeDb;
+
+    if (volumeChanged) {
       return false;
     }
 
