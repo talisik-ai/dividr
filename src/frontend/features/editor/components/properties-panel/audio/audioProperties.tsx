@@ -1,6 +1,7 @@
 import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import { Button } from '@/frontend/components/ui/button';
 import { Input } from '@/frontend/components/ui/input';
+import { Progress } from '@/frontend/components/ui/progress';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
 import { Switch } from '@/frontend/components/ui/switch';
@@ -9,8 +10,18 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
-import { RotateCcw, VolumeX } from 'lucide-react';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { AlertCircle, Loader2, RotateCcw, VolumeX } from 'lucide-react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  NoiseReductionCache,
+  ProcessingState,
+} from '../../../preview/services/NoiseReductionCache';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { DEFAULT_AUDIO_METADATA } from '../../../stores/videoEditor/types/track.types';
 
@@ -194,6 +205,40 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   const [showRuntimeModal, setShowRuntimeModal] = useState(false);
   const [pendingNoiseReduction, setPendingNoiseReduction] = useState(false);
 
+  // State for noise reduction processing
+  const [nrCacheState, setNrCacheState] = useState<ProcessingState>('idle');
+  const [nrProgress, setNrProgress] = useState(0);
+  const [nrError, setNrError] = useState<string | null>(null);
+
+  // Get source URL for the selected track
+  const sourceUrl = useMemo(() => {
+    return selectedTrack?.previewUrl || selectedTrack?.source || null;
+  }, [selectedTrack?.previewUrl, selectedTrack?.source]);
+
+  // Subscribe to noise reduction cache state changes
+  useEffect(() => {
+    if (!sourceUrl) return;
+
+    const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
+
+    const updateState = () => {
+      setNrCacheState(NoiseReductionCache.getState(sourceId));
+      setNrProgress(NoiseReductionCache.getProgress(sourceId));
+      setNrError(NoiseReductionCache.getError(sourceId));
+    };
+
+    // Initialize state
+    updateState();
+
+    // Subscribe to changes
+    return NoiseReductionCache.subscribe(sourceId, updateState);
+  }, [sourceUrl]);
+
+  // Derived state for UI
+  const isProcessing = nrCacheState === 'processing';
+  const isCached = nrCacheState === 'cached';
+  const hasError = nrCacheState === 'error';
+
   // Handle noise reduction toggle (single action - creates undo entry)
   const handleNoiseReductionToggle = useCallback(
     async (enabled: boolean) => {
@@ -211,14 +256,56 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           console.error('Failed to check runtime status:', error);
           // Continue anyway - the actual noise reduction will fail with a clearer error
         }
-      }
 
-      beginAudioUpdate();
-      updateAudioProperties({ noiseReductionEnabled: enabled });
-      endAudioUpdate();
+        // Check if we have a valid source URL
+        if (!sourceUrl) {
+          console.error('No source URL available for noise reduction');
+          return;
+        }
+
+        const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
+
+        // Check if already cached - just enable the flag
+        if (NoiseReductionCache.hasCached(sourceId)) {
+          beginAudioUpdate();
+          updateAudioProperties({ noiseReductionEnabled: true });
+          endAudioUpdate();
+          return;
+        }
+
+        // Start processing
+        try {
+          await NoiseReductionCache.processSource(sourceId, sourceUrl);
+
+          // Processing complete - enable the flag
+          beginAudioUpdate();
+          updateAudioProperties({ noiseReductionEnabled: true });
+          endAudioUpdate();
+        } catch (error) {
+          console.error('Noise reduction processing failed:', error);
+          // Error is already stored in cache - UI will update via subscription
+          // Don't enable the flag on error
+        }
+      } else {
+        // Disable noise reduction
+        beginAudioUpdate();
+        updateAudioProperties({ noiseReductionEnabled: false });
+        endAudioUpdate();
+      }
     },
-    [updateAudioProperties, beginAudioUpdate, endAudioUpdate],
+    [updateAudioProperties, beginAudioUpdate, endAudioUpdate, sourceUrl],
   );
+
+  // Handle retry after error
+  const handleRetry = useCallback(async () => {
+    if (!sourceUrl) return;
+
+    const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
+    NoiseReductionCache.resetError(sourceId);
+
+    // Trigger processing again
+    handleNoiseReductionToggle(true);
+  }, [sourceUrl, handleNoiseReductionToggle]);
 
   // Handle successful runtime download - enable noise reduction
   const handleRuntimeDownloadSuccess = useCallback(() => {
@@ -349,23 +436,62 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
             <label className="text-sm font-semibold text-foreground">
               Noise Reduction
             </label>
-            {currentAudioProperties.noiseReductionEnabled && (
-              <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+            {isProcessing && (
+              <Loader2 className="size-4 animate-spin text-primary" />
             )}
+            {currentAudioProperties.noiseReductionEnabled &&
+              isCached &&
+              !isProcessing && (
+                <div className="w-2 h-2 bg-green-500 rounded-full" />
+              )}
           </div>
           <Switch
             checked={currentAudioProperties.noiseReductionEnabled}
             onCheckedChange={handleNoiseReductionToggle}
             className="h-4 w-7"
             thumbClassName="size-3.5"
-            disabled={isMultipleSelected}
+            disabled={isMultipleSelected || isProcessing}
           />
         </div>
-        <p className="text-xs text-muted-foreground">
-          {currentAudioProperties.noiseReductionEnabled
-            ? 'Noise reduction is enabled for this audio clip'
-            : 'Enable noise reduction to reduce background noise'}
-        </p>
+
+        {/* Progress indicator */}
+        {isProcessing && (
+          <div className="space-y-1">
+            <Progress value={nrProgress} className="h-1" />
+            <p className="text-xs text-muted-foreground">
+              Processing... {Math.round(nrProgress)}%
+            </p>
+          </div>
+        )}
+
+        {/* Error state */}
+        {hasError && nrError && (
+          <div className="flex items-start gap-2 p-2 rounded-md bg-destructive/10 border border-destructive/20">
+            <AlertCircle className="size-4 text-destructive flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-destructive truncate">{nrError}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs mt-1"
+                onClick={handleRetry}
+              >
+                Retry
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Status text */}
+        {!isProcessing && !hasError && (
+          <p className="text-xs text-muted-foreground">
+            {currentAudioProperties.noiseReductionEnabled && isCached
+              ? 'Noise reduction is active'
+              : currentAudioProperties.noiseReductionEnabled
+                ? 'Noise reduction enabled (processing pending)'
+                : 'Enable to reduce background noise'}
+          </p>
+        )}
       </div>
 
       {isMultipleSelected && (

@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
 import { resolveAudioFrameRequests } from '../services/FrameResolver';
+import { NoiseReductionCache } from '../services/NoiseReductionCache';
 import { USE_FRAME_DRIVEN_PLAYBACK } from './UnifiedOverlayRenderer';
 
 export interface MultiAudioPlayerProps {
@@ -323,15 +324,24 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
         curr.trackRowIndex > best.trackRowIndex ? curr : best,
       );
 
+      // Determine the audio source URL - use processed version if available
+      let resolvedSourceUrl = request.sourceUrl;
+      if (request.track.noiseReductionEnabled) {
+        const processedUrl = NoiseReductionCache.getProcessedUrl(sourceId);
+        if (processedUrl) {
+          resolvedSourceUrl = processedUrl;
+        }
+      }
+
       let audio = sourceAudioElementsRef.current.get(sourceId);
       if (!audio) {
         audio = new Audio();
         audio.preload = 'auto';
-        audio.src = request.sourceUrl;
+        audio.src = resolvedSourceUrl;
         sourceAudioElementsRef.current.set(sourceId, audio);
-      } else if (audio.src !== request.sourceUrl) {
-        // Source URL changed (shouldn't happen for same sourceId, but handle it)
-        audio.src = request.sourceUrl;
+      } else if (audio.src !== resolvedSourceUrl) {
+        // Source URL changed (original <-> processed, or different source)
+        audio.src = resolvedSourceUrl;
         audio.load();
       }
 

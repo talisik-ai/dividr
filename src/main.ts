@@ -4,6 +4,7 @@
 import { spawn } from 'child_process';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import started from 'electron-squirrel-startup';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -2325,6 +2326,132 @@ ipcMain.handle('media-tools:status', async () => {
 });
 
 // ============================================================================
+// Noise Reduction Cache IPC Handlers
+// ============================================================================
+
+// Noise reduction temp directory
+const NOISE_REDUCTION_TEMP_DIR = path.join(
+  os.tmpdir(),
+  'dividr-noise-reduction',
+);
+
+// IPC Handler to get a unique output path for noise reduction
+ipcMain.handle(
+  'noise-reduction:get-output-path',
+  async (_event, inputPath: string) => {
+    console.log(
+      '📁 MAIN PROCESS: noise-reduction:get-output-path handler called',
+    );
+    console.log('   Input path:', inputPath);
+
+    try {
+      // Ensure directory exists
+      if (!fs.existsSync(NOISE_REDUCTION_TEMP_DIR)) {
+        fs.mkdirSync(NOISE_REDUCTION_TEMP_DIR, { recursive: true });
+        console.log(
+          '   Created noise reduction temp directory:',
+          NOISE_REDUCTION_TEMP_DIR,
+        );
+      }
+
+      // Generate unique filename based on input path hash and timestamp
+      const hash = crypto
+        .createHash('md5')
+        .update(inputPath)
+        .digest('hex')
+        .slice(0, 12);
+      const timestamp = Date.now();
+      const outputPath = path.join(
+        NOISE_REDUCTION_TEMP_DIR,
+        `nr_${hash}_${timestamp}.wav`,
+      );
+
+      console.log('   Generated output path:', outputPath);
+      return { success: true, outputPath };
+    } catch (error) {
+      console.error('❌ Failed to generate output path:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  },
+);
+
+// IPC Handler to cleanup noise reduction temp files
+ipcMain.handle(
+  'noise-reduction:cleanup-files',
+  async (_event, filePaths: string[]) => {
+    console.log(
+      '🗑️ MAIN PROCESS: noise-reduction:cleanup-files handler called',
+    );
+    console.log('   Files to clean:', filePaths.length);
+
+    try {
+      let cleanedCount = 0;
+
+      for (const filePath of filePaths) {
+        try {
+          // Security: only delete files in our noise reduction directory
+          if (
+            filePath.startsWith(NOISE_REDUCTION_TEMP_DIR) &&
+            fs.existsSync(filePath)
+          ) {
+            fs.unlinkSync(filePath);
+            cleanedCount++;
+            console.log('   Cleaned up:', filePath);
+          } else {
+            console.warn('   Skipped (not in temp dir):', filePath);
+          }
+        } catch (error) {
+          console.warn(`   Failed to cleanup ${filePath}:`, error);
+        }
+      }
+
+      console.log(`✅ Cleaned up ${cleanedCount} noise reduction files`);
+      return { success: true, cleanedCount };
+    } catch (error) {
+      console.error('❌ Failed to cleanup noise reduction files:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  },
+);
+
+// IPC Handler to create a blob URL for a file
+ipcMain.handle(
+  'noise-reduction:create-preview-url',
+  async (_event, filePath: string) => {
+    console.log(
+      '🔗 MAIN PROCESS: noise-reduction:create-preview-url handler called',
+    );
+    console.log('   File path:', filePath);
+
+    try {
+      // Read the file and return base64 data for creating blob URL in renderer
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found: ${filePath}`);
+      }
+
+      const buffer = fs.readFileSync(filePath);
+      const base64 = buffer.toString('base64');
+      const mimeType = 'audio/wav';
+
+      console.log('✅ Created preview URL data, size:', buffer.length);
+      return { success: true, base64, mimeType };
+    } catch (error) {
+      console.error('❌ Failed to create preview URL:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  },
+);
+
+// ============================================================================
 // Runtime Download IPC Handlers
 // ============================================================================
 
@@ -2656,5 +2783,18 @@ app.on('before-quit', () => {
   if (mediaServer) {
     mediaServer.close();
     console.log('📁 Media server stopped');
+  }
+
+  // Cleanup noise reduction temp directory
+  if (fs.existsSync(NOISE_REDUCTION_TEMP_DIR)) {
+    try {
+      fs.rmSync(NOISE_REDUCTION_TEMP_DIR, { recursive: true, force: true });
+      console.log('🗑️ Cleaned up noise reduction temp directory');
+    } catch (error) {
+      console.warn(
+        '⚠️ Failed to cleanup noise reduction temp directory:',
+        error,
+      );
+    }
   }
 });
