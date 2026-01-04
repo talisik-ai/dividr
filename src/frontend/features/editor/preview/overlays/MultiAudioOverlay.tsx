@@ -267,11 +267,26 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     };
   }, []);
 
-  // Frame-driven mode: audio elements per clip ID
-  const clipAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const lastAudioSyncRef = useRef<
-    Map<string, { time: number; isPlaying: boolean }>
+  // Frame-driven mode: audio elements per SOURCE ID (not clip ID)
+  // This enables seamless transitions between same-source segments
+  const sourceAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(
+    new Map(),
+  );
+  const sourceAudioStateRef = useRef<
+    Map<
+      string,
+      {
+        lastSourceTime: number;
+        lastClipId: string;
+        expectedNextTime: number;
+        isPlaying: boolean;
+      }
+    >
   >(new Map());
+
+  // Tolerance for detecting continuous playback (prevents unnecessary seeks)
+  const CONTINUITY_TOLERANCE = 0.15; // 150ms - covers frame timing variance
+  const PLAYBACK_SYNC_TOLERANCE = 0.3; // 300ms during playback
 
   useEffect(() => {
     if (!useSourceRegistry) return;
@@ -279,7 +294,10 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     const frameDelta = Math.abs(currentFrame - prevFrameRef.current);
     const playStateChanged = isPlaying !== prevIsPlayingRef.current;
     const seekFrameThreshold = Math.max(5, Math.floor(fps * 0.5));
-    const isSeek = frameDelta > seekFrameThreshold || !isPlaying;
+    const isLargeSeek = frameDelta > seekFrameThreshold;
+
+    // Time delta since last frame (for continuity check)
+    const timeDelta = frameDelta / fps;
 
     const audioRequests = resolveAudioFrameRequests(
       currentFrame,
@@ -287,17 +305,34 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
       fps,
     );
 
-    const activeClipIds = new Set<string>();
-
+    // Group requests by source for seamless same-source transitions
+    const requestsBySource = new Map<string, typeof audioRequests>();
     for (const request of audioRequests) {
-      activeClipIds.add(request.clipId);
+      const existing = requestsBySource.get(request.sourceId) || [];
+      existing.push(request);
+      requestsBySource.set(request.sourceId, existing);
+    }
 
-      let audio = clipAudioElementsRef.current.get(request.clipId);
+    const activeSourceIds = new Set<string>();
+
+    requestsBySource.forEach((requests, sourceId) => {
+      activeSourceIds.add(sourceId);
+
+      // Use highest priority request for this source (highest trackRowIndex)
+      const request = requests.reduce((best, curr) =>
+        curr.trackRowIndex > best.trackRowIndex ? curr : best,
+      );
+
+      let audio = sourceAudioElementsRef.current.get(sourceId);
       if (!audio) {
         audio = new Audio();
         audio.preload = 'auto';
         audio.src = request.sourceUrl;
-        clipAudioElementsRef.current.set(request.clipId, audio);
+        sourceAudioElementsRef.current.set(sourceId, audio);
+      } else if (audio.src !== request.sourceUrl) {
+        // Source URL changed (shouldn't happen for same sourceId, but handle it)
+        audio.src = request.sourceUrl;
+        audio.load();
       }
 
       const shouldMute = isMuted || request.muted;
@@ -305,18 +340,54 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
       audio.volume = shouldMute ? 0 : Math.min(volume * request.volume, 1);
       audio.playbackRate = Math.max(0.25, Math.min(playbackRate, 4));
 
-      const lastSync = lastAudioSyncRef.current.get(request.clipId);
-      const diff = Math.abs(audio.currentTime - request.sourceTime);
-      const tolerance = isPlaying && !isSeek ? 0.5 : 0.1;
+      const lastState = sourceAudioStateRef.current.get(sourceId);
+      const currentAudioTime = audio.currentTime;
+      const targetSourceTime = request.sourceTime;
+      const diff = Math.abs(currentAudioTime - targetSourceTime);
 
-      if (
-        (isSeek || playStateChanged || diff > tolerance || !lastSync) &&
-        audio.readyState >= 1 &&
-        diff > tolerance
-      ) {
-        audio.currentTime = request.sourceTime;
+      // Determine if we should seek or let playback continue
+      let shouldSeek = false;
+
+      if (!lastState) {
+        // First time seeing this source - seek to target
+        shouldSeek = true;
+      } else if (isLargeSeek) {
+        // User performed a large timeline seek - always seek audio
+        shouldSeek = diff > CONTINUITY_TOLERANCE;
+      } else if (playStateChanged && !isPlaying) {
+        // Just paused - seek to exact position
+        shouldSeek = diff > CONTINUITY_TOLERANCE;
+      } else if (isPlaying) {
+        // During playback - check if audio is tracking timeline correctly
+        // Only seek if we've drifted significantly
+        shouldSeek = diff > PLAYBACK_SYNC_TOLERANCE;
+
+        // CRITICAL: Check for segment transition continuity
+        // If the expected source time matches target, this is a seamless transition
+        if (lastState.lastClipId !== request.clipId) {
+          // Clip changed - check if source time is continuous
+          const expectedTime = lastState.lastSourceTime + timeDelta;
+          const isContinuous =
+            Math.abs(targetSourceTime - expectedTime) < CONTINUITY_TOLERANCE;
+
+          if (isContinuous) {
+            // Seamless same-source transition - DON'T seek, let audio continue
+            shouldSeek = false;
+          } else {
+            // Discontinuous transition - seek to new position
+            shouldSeek = diff > CONTINUITY_TOLERANCE;
+          }
+        }
+      } else {
+        // Paused scrubbing - seek to match timeline
+        shouldSeek = diff > CONTINUITY_TOLERANCE;
       }
 
+      if (shouldSeek && audio.readyState >= 1) {
+        audio.currentTime = targetSourceTime;
+      }
+
+      // Handle play/pause
       if (isPlaying) {
         if (audio.paused && audio.readyState >= 2) {
           audio.play().catch(() => {
@@ -327,16 +398,20 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
         if (!audio.paused) audio.pause();
       }
 
-      lastAudioSyncRef.current.set(request.clipId, {
-        time: request.sourceTime,
+      // Update state for next frame
+      sourceAudioStateRef.current.set(sourceId, {
+        lastSourceTime: targetSourceTime,
+        lastClipId: request.clipId,
+        expectedNextTime: targetSourceTime + 1 / fps,
         isPlaying,
       });
-    }
+    });
 
-    clipAudioElementsRef.current.forEach((audio, clipId) => {
-      if (activeClipIds.has(clipId)) return;
+    // Pause audio for sources no longer active
+    sourceAudioElementsRef.current.forEach((audio, sourceId) => {
+      if (activeSourceIds.has(sourceId)) return;
       if (!audio.paused) audio.pause();
-      lastAudioSyncRef.current.delete(clipId);
+      sourceAudioStateRef.current.delete(sourceId);
     });
   }, [
     audioTracks,
@@ -349,17 +424,36 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     useSourceRegistry,
   ]);
 
-  // Cleanup clip audio when tracks change
+  // Cleanup source audio when tracks change
   useEffect(() => {
     if (!useSourceRegistry) return;
 
-    const currentClipIds = new Set(audioTracks.map((t) => t.id));
-    clipAudioElementsRef.current.forEach((audio, clipId) => {
-      if (!currentClipIds.has(clipId)) {
+    // Get all active source IDs from current tracks
+    const activeSourceIds = new Set<string>();
+    audioTracks.forEach((track) => {
+      const sourceUrl = track.previewUrl;
+      if (sourceUrl) {
+        // Normalize to match how we key in the map
+        try {
+          if (sourceUrl.startsWith('blob:')) {
+            activeSourceIds.add(sourceUrl);
+          } else {
+            const parsed = new URL(sourceUrl, window.location.origin);
+            activeSourceIds.add(decodeURIComponent(parsed.pathname));
+          }
+        } catch {
+          activeSourceIds.add(sourceUrl);
+        }
+      }
+    });
+
+    sourceAudioElementsRef.current.forEach((audio, sourceId) => {
+      if (!activeSourceIds.has(sourceId)) {
         audio.pause();
         audio.src = '';
         audio.load();
-        clipAudioElementsRef.current.delete(clipId);
+        sourceAudioElementsRef.current.delete(sourceId);
+        sourceAudioStateRef.current.delete(sourceId);
       }
     });
   }, [audioTracks, useSourceRegistry]);
@@ -367,12 +461,13 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
   // Cleanup on unmount (frame-driven mode)
   useEffect(() => {
     return () => {
-      clipAudioElementsRef.current.forEach((audio) => {
+      sourceAudioElementsRef.current.forEach((audio) => {
         audio.pause();
         audio.src = '';
         audio.load();
       });
-      clipAudioElementsRef.current.clear();
+      sourceAudioElementsRef.current.clear();
+      sourceAudioStateRef.current.clear();
     };
   }, []);
 
