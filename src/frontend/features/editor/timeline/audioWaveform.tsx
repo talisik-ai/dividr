@@ -1,6 +1,13 @@
 import AudioWaveformGenerator from '@/backend/frontend_use/audioWaveformGenerator';
 import { Loader2 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { NoiseReductionCache } from '../preview/services/NoiseReductionCache';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 
@@ -35,6 +42,36 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     // CRITICAL: Do NOT subscribe to currentFrame here to prevent re-renders
     // Progress updates are handled via direct DOM manipulation below
 
+    // Track noise reduction cache state for waveform regeneration
+    const [nrCacheState, setNrCacheState] = useState<
+      'idle' | 'processing' | 'cached' | 'error'
+    >('idle');
+
+    // Version counter to trigger waveformData re-evaluation after NR waveform generation
+    const [nrWaveformVersion, setNrWaveformVersion] = useState(0);
+
+    // Subscribe to NoiseReductionCache state changes
+    useEffect(() => {
+      if (track.type !== 'audio' || !track.noiseReductionEnabled) {
+        setNrCacheState('idle');
+        // Reset waveform version when NR is disabled to trigger re-evaluation back to original
+        setNrWaveformVersion((v) => v + 1);
+        return;
+      }
+
+      // Get initial state
+      const state = NoiseReductionCache.getState(track.source);
+      setNrCacheState(state);
+
+      // Subscribe to changes
+      const unsubscribe = NoiseReductionCache.subscribe(track.source, () => {
+        const newState = NoiseReductionCache.getState(track.source);
+        setNrCacheState(newState);
+      });
+
+      return unsubscribe;
+    }, [track.type, track.source, track.noiseReductionEnabled]);
+
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
     );
@@ -64,9 +101,87 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       [track.startFrame, track.endFrame, track.sourceStartTime, displayFps],
     );
 
+    // Determine audio source - use processed URL when noise reduction is cached
+    const effectiveAudioSource = useMemo(() => {
+      if (
+        track.type !== 'audio' ||
+        !track.noiseReductionEnabled ||
+        nrCacheState !== 'cached'
+      ) {
+        return null; // Use original source
+      }
+      // Get processed URL from NoiseReductionCache
+      return NoiseReductionCache.getProcessedUrl(track.source);
+    }, [track.type, track.source, track.noiseReductionEnabled, nrCacheState]);
+
     // Get waveform data from the store
     const waveformData = useMemo(() => {
       if (track.type !== 'audio') return null;
+
+      // If using noise-reduced audio, generate waveform from processed URL
+      // This ensures waveform matches what the user hears in preview/export
+      if (effectiveAudioSource) {
+        // Try to get cached waveform for processed audio
+        const processedWaveform = AudioWaveformGenerator.getCachedWaveform(
+          effectiveAudioSource,
+          track.sourceDuration
+            ? track.sourceDuration / displayFps
+            : trackMetrics.durationSeconds,
+          8000,
+          200,
+        );
+
+        if (processedWaveform?.success && processedWaveform.peaks.length > 0) {
+          // Apply segment extraction if needed
+          const segmentStartTime = track.sourceStartTime || 0;
+          const segmentEndTime =
+            segmentStartTime + trackMetrics.durationSeconds;
+          const fullDuration = track.sourceDuration
+            ? track.sourceDuration / displayFps
+            : trackMetrics.durationSeconds;
+          const isSegment =
+            segmentStartTime > 0 || segmentEndTime < fullDuration;
+
+          if (isSegment && processedWaveform.peaks.length > 0) {
+            const totalPeaks = processedWaveform.peaks.length;
+            const startPeakIndex = Math.round(
+              (segmentStartTime / fullDuration) * totalPeaks,
+            );
+            const endPeakIndex = Math.round(
+              (segmentEndTime / fullDuration) * totalPeaks,
+            );
+            const clampedStart = Math.max(
+              0,
+              Math.min(startPeakIndex, totalPeaks - 1),
+            );
+            const clampedEnd = Math.max(
+              clampedStart + 1,
+              Math.min(endPeakIndex, totalPeaks),
+            );
+            const segmentPeaks = processedWaveform.peaks.slice(
+              clampedStart,
+              clampedEnd,
+            );
+
+            return {
+              success: true,
+              peaks: segmentPeaks,
+              duration: segmentEndTime - segmentStartTime,
+              sampleRate: processedWaveform.sampleRate,
+              cacheKey: `nr_segment_${processedWaveform.cacheKey}_${segmentStartTime}_${segmentEndTime}`,
+              startTime: segmentStartTime,
+              endTime: segmentEndTime,
+              isSegment: true,
+              lodTiers: processedWaveform.lodTiers,
+            };
+          }
+
+          return processedWaveform;
+        }
+
+        // No cached waveform for processed audio - return null to trigger generation
+        return null;
+      }
 
       // CRITICAL: Use mediaId for accurate waveform lookup if available
       // This ensures each clip gets its own waveform, not a stale one from a previous clip
@@ -315,11 +430,15 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       track.name,
       track.sourceStartTime,
       track.sourceDuration,
+      track.noiseReductionEnabled, // Re-evaluate when NR is toggled
       trackMetrics.durationSeconds,
       getWaveformBySource,
       getWaveformByMediaId,
       mediaLibrary,
       track.mediaId,
+      effectiveAudioSource,
+      displayFps,
+      nrWaveformVersion, // Trigger re-evaluation when NR waveform changes
     ]);
 
     // Check if waveform generation is in progress
@@ -404,13 +523,79 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       mediaLibrary,
     ]);
 
+    // State for tracking noise-reduced waveform generation
+    const [isGeneratingNrWaveform, setIsGeneratingNrWaveform] = useState(false);
+
+    // Effect to generate waveform for noise-reduced audio
+    useEffect(() => {
+      // Skip if not using noise-reduced audio or already have waveform
+      if (
+        track.type !== 'audio' ||
+        !effectiveAudioSource ||
+        waveformData ||
+        isGeneratingNrWaveform
+      )
+        return;
+
+      // Generate waveform for noise-reduced audio
+      const duration = track.sourceDuration
+        ? track.sourceDuration / displayFps
+        : trackMetrics.durationSeconds;
+
+      console.log(
+        `🎵 Generating waveform for noise-reduced audio: ${track.name}`,
+      );
+      setIsGeneratingNrWaveform(true);
+
+      AudioWaveformGenerator.generateWaveform({
+        audioPath: effectiveAudioSource,
+        duration,
+        sampleRate: 8000,
+        peaksPerSecond: 200,
+      })
+        .then((result) => {
+          if (result.success) {
+            console.log(
+              `✅ Noise-reduced waveform generated for ${track.name}`,
+            );
+            // Increment version to trigger waveformData memo re-evaluation
+            setNrWaveformVersion((v) => v + 1);
+          } else {
+            console.warn(
+              `⚠️ Noise-reduced waveform generation failed for ${track.name}:`,
+              result.error,
+            );
+          }
+        })
+        .catch((error) => {
+          console.warn(
+            `⚠️ Noise-reduced waveform generation error for ${track.name}:`,
+            error,
+          );
+        })
+        .finally(() => {
+          setIsGeneratingNrWaveform(false);
+        });
+    }, [
+      track.type,
+      track.name,
+      track.sourceDuration,
+      effectiveAudioSource,
+      waveformData,
+      isGeneratingNrWaveform,
+      displayFps,
+      trackMetrics.durationSeconds,
+    ]);
+
     useEffect(() => {
       // Skip if not audio, already have waveform data, loading, or waveform exists in media library
+      // Also skip if using noise-reduced audio (handled by separate effect above)
       if (
         track.type !== 'audio' ||
         waveformData ||
         isLoading ||
-        hasExistingWaveform
+        hasExistingWaveform ||
+        effectiveAudioSource
       )
         return;
 
@@ -466,6 +651,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       generateWaveformForMedia,
       isGeneratingWaveform,
       mediaLibrary,
+      effectiveAudioSource,
     ]);
 
     // Get peaks for a specific range of bars using LOD-aware sampling
@@ -689,10 +875,12 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         'lodTiers' in waveformData ? waveformData.lodTiers : undefined;
 
       // Create a unique key for the current state
+      // Include noiseReductionEnabled to ensure re-render when toggled
       const startTime =
         'startTime' in waveformData ? waveformData.startTime : 0;
       const endTime = 'endTime' in waveformData ? waveformData.endTime : 0;
-      const renderKey = `${track.id}_${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}_${width}_${zoomLevel}`;
+      const nrState = track.noiseReductionEnabled ? 'nr' : 'orig';
+      const renderKey = `${track.id}_${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}_${width}_${zoomLevel}_${nrState}_${nrWaveformVersion}`;
 
       if (lastRenderedKeyRef.current === renderKey) return;
 
@@ -767,6 +955,8 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       height,
       zoomLevel,
       track.id,
+      track.noiseReductionEnabled,
+      nrWaveformVersion,
       renderTile,
     ]);
 
@@ -834,7 +1024,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       return null;
     }
 
-    if (isLoading) {
+    if (isLoading || isGeneratingNrWaveform) {
       return (
         <div
           className="flex items-center justify-center bg-secondary/10 border border-secondary/20 rounded"
@@ -842,7 +1032,9 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         >
           <Loader2 className="w-4 h-4 animate-spin text-green-400" />
           <span className="ml-1 text-xs text-green-400">
-            Loading waveform...
+            {isGeneratingNrWaveform
+              ? 'Processing waveform...'
+              : 'Loading waveform...'}
           </span>
         </div>
       );
@@ -940,6 +1132,15 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     const mutedChanged = prevProps.track.muted !== nextProps.track.muted;
 
     if (mutedChanged) {
+      return false;
+    }
+
+    // Re-render when noise reduction state changes to regenerate waveform
+    const noiseReductionChanged =
+      prevProps.track.noiseReductionEnabled !==
+      nextProps.track.noiseReductionEnabled;
+
+    if (noiseReductionChanged) {
       return false;
     }
 

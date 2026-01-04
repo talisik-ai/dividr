@@ -104,6 +104,20 @@ class NoiseReductionCacheImpl {
   }
 
   /**
+   * Get processed audio file path for export.
+   * Returns null if not cached.
+   * Use this for FFmpeg export pipeline instead of getProcessedUrl.
+   */
+  getProcessedPath(sourceId: string): string | null {
+    const normalizedId = this.normalizeSourceId(sourceId);
+    const entry = this.cache.get(normalizedId);
+    if (entry?.state === 'cached' && entry?.processedPath) {
+      return entry.processedPath;
+    }
+    return null;
+  }
+
+  /**
    * Get processing state for a source.
    */
   getState(sourceId: string): ProcessingState {
