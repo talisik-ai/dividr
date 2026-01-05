@@ -271,6 +271,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('media:has-audio', filePath),
 
   // =========================================================================
+  // Noise Reduction Cache APIs
+  // =========================================================================
+
+  // Get a unique output path for noise reduction
+  noiseReductionGetOutputPath: (inputPath: string) =>
+    ipcRenderer.invoke(
+      'noise-reduction:get-output-path',
+      inputPath,
+    ) as Promise<{
+      success: boolean;
+      outputPath?: string;
+      error?: string;
+    }>,
+
+  // Cleanup noise reduction temp files
+  noiseReductionCleanupFiles: (filePaths: string[]) =>
+    ipcRenderer.invoke('noise-reduction:cleanup-files', filePaths) as Promise<{
+      success: boolean;
+      cleanedCount?: number;
+      error?: string;
+    }>,
+
+  // Create preview URL data from processed file
+  noiseReductionCreatePreviewUrl: (filePath: string) =>
+    ipcRenderer.invoke(
+      'noise-reduction:create-preview-url',
+      filePath,
+    ) as Promise<{
+      success: boolean;
+      base64?: string;
+      mimeType?: string;
+      error?: string;
+    }>,
+
+  // =========================================================================
   // Runtime Download APIs
   // =========================================================================
 
@@ -375,4 +410,14 @@ contextBridge.exposeInMainWorld('appControl', {
   isWindowFocused: () => ipcRenderer.invoke('is-window-focused'),
   clearLastClipboardText: () => ipcRenderer.invoke('clear-last-clipboard-text'),
   clearClipboard: () => ipcRenderer.invoke('clear-clipboard'),
+
+  // File association: Handle .dividr files opened via double-click
+  onOpenProjectFile: (callback: (filePath: string) => void) => {
+    ipcRenderer.on('open-project-file', (_event, filePath: string) =>
+      callback(filePath),
+    );
+  },
+  offOpenProjectFile: () => {
+    ipcRenderer.removeAllListeners('open-project-file');
+  },
 });

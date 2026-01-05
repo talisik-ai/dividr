@@ -7,6 +7,19 @@
 
 import { VideoTrack } from '../../stores/videoEditor/index';
 
+/**
+ * Convert decibels to linear gain.
+ * Formula: linear = 10^(dB/20)
+ * - 0 dB = 1.0 (unity gain)
+ * - -6 dB ≈ 0.5
+ * - -Infinity dB = 0.0 (silence)
+ * - +12 dB ≈ 3.98 (max boost)
+ */
+export const dbToLinear = (db: number): number => {
+  if (db === -Infinity || db <= -60) return 0;
+  return Math.pow(10, db / 20);
+};
+
 export interface Transform {
   x: number;
   y: number;
@@ -211,12 +224,17 @@ export const resolveAudioFrameRequests = (
     const relativeFrame = timelineFrame - track.startFrame;
     const sourceTime = (track.sourceStartTime || 0) + relativeFrame / fps;
 
+    // Convert volumeDb to linear gain for HTMLAudioElement
+    // volumeDb is the source of truth (track.volume is deprecated)
+    const volumeDb = track.volumeDb ?? 0;
+    const linearVolume = dbToLinear(volumeDb);
+
     requests.push({
       clipId: track.id,
       sourceId: normalizeSourceId(sourceUrl),
       sourceUrl,
       sourceTime,
-      volume: track.volume ?? 1,
+      volume: linearVolume,
       muted: track.muted ?? false,
       trackRowIndex: track.trackRowIndex ?? 0,
       track,
@@ -272,4 +290,5 @@ export default {
   hasVisibleClipsAtFrame,
   normalizeSourceId,
   getVideoSource,
+  dbToLinear,
 };

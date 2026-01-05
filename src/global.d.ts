@@ -381,6 +381,41 @@ declare global {
       removeMediaToolsProgressListener: () => void;
 
       // ========================================================================
+      // Noise Reduction Cache APIs
+      // ========================================================================
+
+      /**
+       * Get a unique output path for noise reduction
+       * @param inputPath - Path to input audio file
+       */
+      noiseReductionGetOutputPath: (inputPath: string) => Promise<{
+        success: boolean;
+        outputPath?: string;
+        error?: string;
+      }>;
+
+      /**
+       * Cleanup noise reduction temp files
+       * @param filePaths - Array of file paths to clean up
+       */
+      noiseReductionCleanupFiles: (filePaths: string[]) => Promise<{
+        success: boolean;
+        cleanedCount?: number;
+        error?: string;
+      }>;
+
+      /**
+       * Create preview URL data from processed file
+       * @param filePath - Path to processed audio file
+       */
+      noiseReductionCreatePreviewUrl: (filePath: string) => Promise<{
+        success: boolean;
+        base64?: string;
+        mimeType?: string;
+        error?: string;
+      }>;
+
+      // ========================================================================
       // Runtime Download APIs
       // ========================================================================
 
@@ -462,6 +497,9 @@ declare global {
       getMaximizeState: () => Promise<boolean>;
       onMaximizeChanged: (callback: (isMaximized: boolean) => void) => void;
       offMaximizeChanged: () => void;
+      // File association: Handle .dividr files opened via double-click
+      onOpenProjectFile: (callback: (filePath: string) => void) => void;
+      offOpenProjectFile: () => void;
     };
   }
 }

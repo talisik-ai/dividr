@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import { toast, Toaster } from 'sonner';
 import { RuntimeDownloadModal } from './frontend/components/custom/RuntimeDownloadModal';
 import { RuntimeMissingBanner } from './frontend/components/custom/RuntimeMissingBanner';
 import StartupLoader from './frontend/components/custom/StartupLoader';
 import { useShortcutRegistryInit } from './frontend/features/editor/stores/videoEditor';
+import { useProjectStore } from './frontend/features/projects/store/projectStore';
 import { RuntimeStatusProvider } from './frontend/providers/RuntimeStatusProvider';
 import { ThemeProvider } from './frontend/providers/ThemeProvider';
 import { WindowStateProvider } from './frontend/providers/WindowStateProvider';
@@ -21,6 +22,10 @@ function App() {
     useState<StartupStage>('renderer-mount');
   const [startupProgress, setStartupProgress] = useState(0);
   const [showGlobalDownloadModal, setShowGlobalDownloadModal] = useState(false);
+
+  // Get project store actions
+  const { importProjectFromPath, openProject, initializeProjects } =
+    useProjectStore();
 
   useEffect(() => {
     // Subscribe to startup progress
@@ -47,6 +52,38 @@ function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Handle .dividr file opened via double-click or file association
+  useEffect(() => {
+    const handleOpenProjectFile = async (filePath: string) => {
+      try {
+        // Ensure projects are initialized before importing
+        await initializeProjects();
+
+        // Import the project from the file path
+        const projectId = await importProjectFromPath(filePath);
+
+        // Open the imported project
+        await openProject(projectId);
+
+        // Navigate to the video editor
+        router.navigate('/video-editor');
+
+        toast.success('Project opened successfully!');
+      } catch (error) {
+        console.error('Failed to open project file:', error);
+        toast.error('Failed to open project file');
+      }
+    };
+
+    // Register listener for file open events from main process
+    window.appControl?.onOpenProjectFile(handleOpenProjectFile);
+
+    return () => {
+      // Cleanup listener on unmount
+      window.appControl?.offOpenProjectFile();
+    };
+  }, [importProjectFromPath, openProject, initializeProjects]);
 
   // Map stage to user-friendly message
   const getStageMessage = (stage: StartupStage): string => {

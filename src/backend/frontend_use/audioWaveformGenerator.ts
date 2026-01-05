@@ -7,9 +7,16 @@ export interface WaveformOptions {
   endTime?: number; // End time in seconds for segmenting (default: duration)
 }
 
+// LOD (Level of Detail) tier for multi-resolution waveforms
+export interface WaveformLODTier {
+  level: number; // 0 = highest resolution, higher = lower resolution
+  peaksPerSecond: number; // Number of peaks per second at this LOD
+  peaks: number[]; // Peak data for this LOD level
+}
+
 export interface WaveformGenerationResult {
   success: boolean;
-  peaks: number[]; // Normalized peak data (0-1)
+  peaks: number[]; // Normalized peak data (0-1) - highest resolution
   duration: number; // Duration in seconds
   sampleRate: number; // Sample rate used
   error?: string;
@@ -17,6 +24,8 @@ export interface WaveformGenerationResult {
   startTime?: number; // Start time of this segment
   endTime?: number; // End time of this segment
   isSegment?: boolean; // Whether this is a segment of a larger waveform
+  // Multi-resolution LOD tiers for efficient zoom rendering
+  lodTiers?: WaveformLODTier[];
 }
 
 // Persistent cache interface for waveforms
@@ -30,12 +39,17 @@ interface WaveformCacheEntry {
 
 class AudioWaveformGenerator {
   private cache: Map<string, WaveformCacheEntry> = new Map();
-  private readonly CACHE_KEY_PREFIX = 'waveform_v1_';
+  private readonly CACHE_KEY_PREFIX = 'waveform_v3_'; // Updated version for higher resolution LOD
   private readonly DEFAULT_SAMPLE_RATE = 8000;
-  private readonly DEFAULT_PEAKS_PER_SECOND = 30; // Increased for better accuracy
+  // CRITICAL: High base resolution for extreme zoom support
+  // At 200 peaks/sec, a 5-minute clip has 60,000 peaks - enough for frame-level zoom
+  private readonly DEFAULT_PEAKS_PER_SECOND = 200;
   private readonly CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
   private readonly MAX_CACHE_SIZE = 50;
   private readonly CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+  // LOD tier configuration: progressive downsampling for efficient rendering at all zoom levels
+  // Higher tiers = more peaks/sec for extreme zoom, lower tiers = fewer peaks for zoomed-out view
+  private readonly LOD_TIERS = [200, 100, 50, 25, 12, 6, 3]; // peaks per second at each level
 
   constructor() {
     this.loadCache();
@@ -87,7 +101,7 @@ class AudioWaveformGenerator {
     }
 
     try {
-      // Use Web Audio API to analyze the audio file
+      // Use Web Audio API to analyze the audio file at highest resolution
       const peaks = await this.extractPeaksFromAudio(
         audioPath,
         duration,
@@ -95,6 +109,14 @@ class AudioWaveformGenerator {
         peaksPerSecond,
         startTime,
         endTime,
+      );
+
+      // Generate LOD tiers using max-pooling for efficient zoom rendering
+      const segmentDuration = endTime - startTime;
+      const lodTiers = this.generateLODTiers(
+        peaks,
+        segmentDuration,
+        peaksPerSecond,
       );
 
       const result: WaveformGenerationResult = {
@@ -106,6 +128,7 @@ class AudioWaveformGenerator {
         startTime,
         endTime,
         isSegment,
+        lodTiers, // Include pre-computed LOD tiers
       };
 
       // Cache the result
@@ -113,7 +136,7 @@ class AudioWaveformGenerator {
 
       console.log(`✅ Waveform generated successfully for: ${audioPath}`);
       console.log(
-        `📈 Generated ${peaks.length} peaks for ${result.duration}s audio`,
+        `📈 Generated ${peaks.length} peaks with ${lodTiers.length} LOD tiers for ${result.duration}s audio`,
       );
 
       return result;
@@ -219,6 +242,106 @@ class AudioWaveformGenerator {
       // Clean up audio context
       await audioContext.close();
     }
+  }
+
+  /**
+   * Generate LOD (Level of Detail) tiers using max-pooling
+   * Each tier has progressively fewer peaks, preserving maximum values
+   * This enables efficient bar-based rendering at any zoom level
+   */
+  private generateLODTiers(
+    basePeaks: number[],
+    duration: number,
+    basePeaksPerSecond: number,
+  ): WaveformLODTier[] {
+    const tiers: WaveformLODTier[] = [];
+
+    // LOD 0 is the base resolution (the input peaks)
+    tiers.push({
+      level: 0,
+      peaksPerSecond: basePeaksPerSecond,
+      peaks: basePeaks,
+    });
+
+    // Generate lower resolution tiers using max-pooling
+    let previousPeaks = basePeaks;
+    let previousPPS = basePeaksPerSecond;
+
+    for (let level = 1; level < this.LOD_TIERS.length; level++) {
+      const targetPPS = this.LOD_TIERS[level];
+
+      // Skip if target is higher than what we have
+      if (targetPPS >= previousPPS) continue;
+
+      // Calculate target peak count for this resolution
+      const targetPeakCount = Math.max(1, Math.floor(duration * targetPPS));
+
+      // Use max-pooling to preserve peaks (critical for accurate waveform display)
+      const pooledPeaks: number[] = [];
+      const samplesPerPool = previousPeaks.length / targetPeakCount;
+
+      for (let i = 0; i < targetPeakCount; i++) {
+        const startIdx = Math.floor(i * samplesPerPool);
+        const endIdx = Math.min(
+          Math.floor((i + 1) * samplesPerPool),
+          previousPeaks.length,
+        );
+
+        // Max-pooling: take the maximum value in this window
+        // This preserves peak visibility at lower resolutions
+        let maxValue = 0;
+        for (let j = startIdx; j < endIdx; j++) {
+          maxValue = Math.max(maxValue, previousPeaks[j]);
+        }
+        pooledPeaks.push(maxValue);
+      }
+
+      tiers.push({
+        level,
+        peaksPerSecond: targetPPS,
+        peaks: pooledPeaks,
+      });
+
+      // Use this tier as the source for the next lower resolution
+      previousPeaks = pooledPeaks;
+      previousPPS = targetPPS;
+    }
+
+    return tiers;
+  }
+
+  /**
+   * Select the best LOD tier for a given display requirement
+   * @param lodTiers Available LOD tiers
+   * @param requiredPeaksPerSecond The minimum peaks per second needed for display
+   * @returns The best matching LOD tier
+   */
+  selectLODTier(
+    lodTiers: WaveformLODTier[] | undefined,
+    requiredPeaksPerSecond: number,
+  ): WaveformLODTier | null {
+    if (!lodTiers || lodTiers.length === 0) return null;
+
+    // Find the tier with the lowest resolution that still meets the requirement
+    // This minimizes data processing while maintaining visual quality
+    let bestTier = lodTiers[0]; // Default to highest resolution
+
+    for (const tier of lodTiers) {
+      if (tier.peaksPerSecond >= requiredPeaksPerSecond) {
+        // This tier meets the requirement
+        // Prefer the lowest resolution that still works (for efficiency)
+        if (tier.peaksPerSecond < bestTier.peaksPerSecond) {
+          bestTier = tier;
+        }
+      }
+    }
+
+    // If no tier meets the requirement, use the highest resolution available
+    if (bestTier.peaksPerSecond < requiredPeaksPerSecond) {
+      bestTier = lodTiers[0];
+    }
+
+    return bestTier;
   }
 
   /**

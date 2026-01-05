@@ -10,6 +10,13 @@ export interface MediaLibraryItem {
   size: number;
   mimeType: string;
   thumbnail?: string;
+  /** Content signature for duplicate detection (partial hash) */
+  contentSignature?: {
+    partialHash: string;
+    fileSize: number;
+    fileName: string;
+    generatedAt: number;
+  };
   metadata?: {
     width?: number;
     height?: number;

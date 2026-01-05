@@ -93,6 +93,8 @@ const config: ForgeConfig = {
         deleteAppDataOnUninstall: false,
         menuCategory: false,
         language: 'English',
+        // Custom NSIS script for file associations
+        include: './installer.nsh',
       },
     },
 

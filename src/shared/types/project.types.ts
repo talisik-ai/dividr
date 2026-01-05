@@ -36,6 +36,15 @@ export interface VideoEditorProjectData {
   textStyle?: TextStyleState; // Optional for backward compatibility with existing projects
 }
 
+// Size information for a project
+export interface ProjectSizeInfo {
+  projectFileSize: number; // Size of JSON metadata in IndexedDB (bytes)
+  totalMediaSize: number; // Sum of unique referenced media files (bytes)
+  mediaCount: number; // Number of unique media assets
+  missingMediaCount: number; // Media files with size=0 or missing
+  status: 'complete' | 'partial' | 'calculating';
+}
+
 // UI state for project management
 export interface ProjectSummary {
   id: string;
@@ -46,6 +55,7 @@ export interface ProjectSummary {
   createdAt: string;
   updatedAt: string;
   lastOpenedAt?: string;
+  sizeInfo?: ProjectSizeInfo;
 }
 
 // Project file export/import format
@@ -62,7 +72,7 @@ export interface ProjectVersion {
   migrationNeeded: boolean;
 }
 
-export const PROJECT_VERSION = '1.0.0';
+export const PROJECT_VERSION = '1.0.1';
 export const PROJECT_DB_NAME = 'DividrProjects';
 export const PROJECT_STORE_NAME = 'projects';
 export const PROJECT_DB_VERSION = 1;

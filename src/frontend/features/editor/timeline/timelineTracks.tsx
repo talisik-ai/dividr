@@ -14,6 +14,7 @@ import {
   importMediaUnified,
 } from '../services/mediaImportService';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
+import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 import { AudioWaveform } from './audioWaveform';
 import { ImageTrackStrip } from './imageTrackStrip';
 import {
@@ -39,6 +40,25 @@ import {
 import { VideoSpriteSheetStrip } from './videoSpriteSheetStrip';
 
 const DRAG_ACTIVATION_THRESHOLD = 5;
+
+/**
+ * Calculate grid interval that matches the ruler's tick interval exactly.
+ * This ensures grid lines align with the ruler ticks.
+ * Uses the same logic as timelineRuler.tsx tickInterval calculation.
+ */
+const getGridInterval = (frameWidth: number, fps: number): number => {
+  const pixelsPerSecond = frameWidth * fps;
+
+  // MUST match timelineRuler.tsx tickInterval logic exactly
+  if (pixelsPerSecond >= 100) return fps / 4; // 0.25 second intervals
+  if (pixelsPerSecond >= 50) return fps / 2; // 0.5 second intervals
+  if (pixelsPerSecond >= 25) return fps; // 1 second intervals
+  if (pixelsPerSecond >= 10) return fps * 2; // 2 second intervals
+  if (pixelsPerSecond >= 5) return fps * 5; // 5 second intervals
+  if (pixelsPerSecond >= 2) return fps * 10; // 10 second intervals
+  if (pixelsPerSecond >= 1) return fps * 30; // 30 second intervals
+  return fps * 60; // 1 minute intervals
+};
 
 type MediaDragPayload = {
   mediaId: string;
@@ -828,6 +848,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.visible === nextProps.track.visible &&
       prevProps.track.locked === nextProps.track.locked &&
       prevProps.track.muted === nextProps.track.muted &&
+      prevProps.track.volumeDb === nextProps.track.volumeDb &&
+      prevProps.track.noiseReductionEnabled ===
+        nextProps.track.noiseReductionEnabled &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -894,6 +917,16 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
     const isTranscribing = useVideoEditorStore((state) => state.isTranscribing);
     const addTrackFromMediaLibrary = useVideoEditorStore(
       (state) => state.addTrackFromMediaLibrary,
+    );
+
+    // Get all tracks from store for FPS calculation
+    const allTracks = useVideoEditorStore((state) => state.tracks);
+    const displayFps = useMemo(() => getDisplayFps(allTracks), [allTracks]);
+
+    // Calculate grid interval that matches ruler ticks exactly
+    const gridInterval = useMemo(
+      () => getGridInterval(frameWidth, displayFps),
+      [frameWidth, displayFps],
     );
 
     const parsedRow = useMemo(() => {
@@ -1012,8 +1045,27 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
 
     const isBaseVideoRow = rowDef.id === 'video-0';
 
-    // Placeholder rows have reduced opacity grid
-    const gridOpacity = isPlaceholder ? '0.03' : '0.05';
+    // Grid opacity - single consistent value like professional editors
+    const gridOpacity = isPlaceholder ? '0.06' : '0.1';
+
+    // Calculate pixel spacing - matches ruler tick spacing exactly
+    // MUST be integer to avoid sub-pixel glowing
+    const gridSpacing = Math.round(gridInterval * frameWidth);
+
+    // Build single gradient - aligns with ruler ticks
+    const gridBackground = useMemo(() => {
+      // Always show grid, even when dense (matches ruler behavior)
+      if (gridSpacing < 2) return 'none';
+
+      // Single 1px line at exact pixel boundaries
+      return `repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent ${gridSpacing - 1}px,
+        hsl(var(--foreground) / ${gridOpacity}) ${gridSpacing - 1}px,
+        hsl(var(--foreground) / ${gridOpacity}) ${gridSpacing}px
+      )`;
+    }, [gridSpacing, gridOpacity]);
 
     return (
       <div
@@ -1031,19 +1083,13 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Grid lines - always rendered for all rows */}
+        {/* Grid lines - adaptive based on zoom level */}
         <div
           className="absolute top-0 h-full pointer-events-none"
           style={{
             left: 0,
             width: timelineWidth,
-            background: `repeating-linear-gradient(
-              90deg,
-              transparent,
-              transparent ${frameWidth * 30 - 1}px,
-              hsl(var(--foreground) / ${gridOpacity}) ${frameWidth * 30 - 1}px,
-              hsl(var(--foreground) / ${gridOpacity}) ${frameWidth * 30}px
-            )`,
+            background: gridBackground,
           }}
         />
 
@@ -1134,6 +1180,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           track.visible === nextTrack.visible &&
           track.locked === nextTrack.locked &&
           track.muted === nextTrack.muted &&
+          track.volumeDb === nextTrack.volumeDb &&
+          track.noiseReductionEnabled === nextTrack.noiseReductionEnabled &&
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
           track.previewUrl === nextTrack.previewUrl &&
@@ -1197,6 +1245,31 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
     const isEmptyTimeline = tracks.length === 0;
     const hasVideoTracks = tracks.some((track) => track.type === 'video');
+
+    // Calculate grid interval that matches ruler ticks exactly
+    const displayFps = useMemo(() => getDisplayFps(tracks), [tracks]);
+    const placeholderGridInterval = useMemo(
+      () => getGridInterval(frameWidth, displayFps),
+      [frameWidth, displayFps],
+    );
+
+    // Calculate pixel spacing - matches ruler tick spacing exactly
+    const placeholderGridSpacing = Math.round(
+      placeholderGridInterval * frameWidth,
+    );
+
+    // Build single gradient for placeholder grids - aligns with ruler ticks
+    const placeholderGridBackground = useMemo(() => {
+      if (placeholderGridSpacing < 2) return 'none';
+
+      return `repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent ${placeholderGridSpacing - 1}px,
+        hsl(var(--foreground) / 0.06) ${placeholderGridSpacing - 1}px,
+        hsl(var(--foreground) / 0.06) ${placeholderGridSpacing}px
+      )`;
+    }, [placeholderGridSpacing]);
 
     const migratedTracks = useMemo(
       () => migrateTracksWithRowIndex(tracks),
@@ -1670,19 +1743,13 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
                 }}
                 onDrop={handlePlaceholderDrop}
               >
-                {/* Grid lines - visual only, now a drop zone */}
+                {/* Grid lines - adaptive based on zoom level */}
                 <div
                   className="absolute top-0 h-full pointer-events-none"
                   style={{
                     left: 0,
                     width: timelineWidth,
-                    background: `repeating-linear-gradient(
-                    90deg,
-                    transparent,
-                    transparent ${frameWidth * 30 - 1}px,
-                    hsl(var(--foreground) / 0.03) ${frameWidth * 30 - 1}px,
-                    hsl(var(--foreground) / 0.03) ${frameWidth * 30}px
-                  )`,
+                    background: placeholderGridBackground,
                   }}
                 />
               </div>
@@ -1746,19 +1813,13 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
                 }}
                 onDrop={handlePlaceholderDrop}
               >
-                {/* Grid lines for placeholder */}
+                {/* Grid lines - adaptive based on zoom level */}
                 <div
                   className="absolute top-0 h-full pointer-events-none"
                   style={{
                     left: 0,
                     width: timelineWidth,
-                    background: `repeating-linear-gradient(
-                    90deg,
-                    transparent,
-                    transparent ${frameWidth * 30 - 1}px,
-                    hsl(var(--foreground) / 0.03) ${frameWidth * 30 - 1}px,
-                    hsl(var(--foreground) / 0.03) ${frameWidth * 30}px
-                  )`,
+                    background: placeholderGridBackground,
                   }}
                 />
               </div>
@@ -1795,6 +1856,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           track.visible === nextTrack.visible &&
           track.locked === nextTrack.locked &&
           track.muted === nextTrack.muted &&
+          track.volumeDb === nextTrack.volumeDb &&
+          track.noiseReductionEnabled === nextTrack.noiseReductionEnabled &&
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
           track.previewUrl === nextTrack.previewUrl &&

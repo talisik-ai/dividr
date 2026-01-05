@@ -1,6 +1,13 @@
 import AudioWaveformGenerator from '@/backend/frontend_use/audioWaveformGenerator';
 import { Loader2 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { NoiseReductionCache } from '../preview/services/NoiseReductionCache';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 
@@ -12,25 +19,68 @@ interface AudioWaveformProps {
   zoomLevel: number;
 }
 
-// Multi-resolution waveform data structure
-interface ResampledWaveform {
-  peaks: number[];
-  pixelsPerSample: number;
-  zoomLevel: number;
-}
+// CapCut-style bar waveform configuration - PIXEL LOCKED
+// These constants define the visual appearance of the waveform bars
+// CRITICAL: These values are in RAW PIXELS (not scaled by DPR)
+const BAR_WIDTH = 2; // Fixed bar width in pixels - NEVER changes with zoom
+const BAR_GAP = 1; // Fixed gap between bars in pixels
+const BAR_STEP = BAR_WIDTH + BAR_GAP; // Total step per bar (width + gap)
+
+// TILED RENDERING CONFIGURATION
+// Instead of one giant canvas, we use multiple fixed-size tile canvases
+// This eliminates canvas size limits and prevents any CSS stretching
+const TILE_WIDTH = 3000; // Each tile is exactly 3000px wide (1000 bars)
+const BARS_PER_TILE = Math.floor(TILE_WIDTH / BAR_STEP); // ~1000 bars per tile
 
 export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
   ({ track, frameWidth, width, height, zoomLevel }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+    // Container ref for the tile container
+    const tileContainerRef = useRef<HTMLDivElement>(null);
     const progressOverlayRef = useRef<HTMLDivElement>(null);
-    const lastRenderedZoomRef = useRef<number>(0);
-    const lastRenderedWaveformRef = useRef<string | null>(null);
-
-    // Cache resampled waveforms per zoom level
-    const resampledCache = useRef<Map<string, ResampledWaveform>>(new Map());
+    const lastRenderedKeyRef = useRef<string | null>(null);
 
     // CRITICAL: Do NOT subscribe to currentFrame here to prevent re-renders
     // Progress updates are handled via direct DOM manipulation below
+
+    // Track noise reduction cache state for waveform regeneration
+    const [nrCacheState, setNrCacheState] = useState<
+      'idle' | 'processing' | 'cached' | 'error'
+    >('idle');
+
+    // Version counter to trigger waveformData re-evaluation after NR waveform generation
+    const [nrWaveformVersion, setNrWaveformVersion] = useState(0);
+
+    // Calculate volume gain from dB for waveform visual scaling
+    // This is a visual-only transformation - no re-analysis of audio data
+    const volumeGain = useMemo(() => {
+      const volumeDb = track.volumeDb ?? 0;
+      if (volumeDb === -Infinity) return 0;
+      // Convert dB to linear amplitude: amplitude = 10^(dB/20)
+      // Clamp to reasonable visual range (0 to ~4x for +12dB)
+      return Math.max(0, Math.pow(10, volumeDb / 20));
+    }, [track.volumeDb]);
+
+    // Subscribe to NoiseReductionCache state changes
+    useEffect(() => {
+      if (track.type !== 'audio' || !track.noiseReductionEnabled) {
+        setNrCacheState('idle');
+        // Reset waveform version when NR is disabled to trigger re-evaluation back to original
+        setNrWaveformVersion((v) => v + 1);
+        return;
+      }
+
+      // Get initial state
+      const state = NoiseReductionCache.getState(track.source);
+      setNrCacheState(state);
+
+      // Subscribe to changes
+      const unsubscribe = NoiseReductionCache.subscribe(track.source, () => {
+        const newState = NoiseReductionCache.getState(track.source);
+        setNrCacheState(newState);
+      });
+
+      return unsubscribe;
+    }, [track.type, track.source, track.noiseReductionEnabled]);
 
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
@@ -61,9 +111,87 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       [track.startFrame, track.endFrame, track.sourceStartTime, displayFps],
     );
 
+    // Determine audio source - use processed URL when noise reduction is cached
+    const effectiveAudioSource = useMemo(() => {
+      if (
+        track.type !== 'audio' ||
+        !track.noiseReductionEnabled ||
+        nrCacheState !== 'cached'
+      ) {
+        return null; // Use original source
+      }
+      // Get processed URL from NoiseReductionCache
+      return NoiseReductionCache.getProcessedUrl(track.source);
+    }, [track.type, track.source, track.noiseReductionEnabled, nrCacheState]);
+
     // Get waveform data from the store
     const waveformData = useMemo(() => {
       if (track.type !== 'audio') return null;
+
+      // If using noise-reduced audio, generate waveform from processed URL
+      // This ensures waveform matches what the user hears in preview/export
+      if (effectiveAudioSource) {
+        // Try to get cached waveform for processed audio
+        const processedWaveform = AudioWaveformGenerator.getCachedWaveform(
+          effectiveAudioSource,
+          track.sourceDuration
+            ? track.sourceDuration / displayFps
+            : trackMetrics.durationSeconds,
+          8000,
+          200,
+        );
+
+        if (processedWaveform?.success && processedWaveform.peaks.length > 0) {
+          // Apply segment extraction if needed
+          const segmentStartTime = track.sourceStartTime || 0;
+          const segmentEndTime =
+            segmentStartTime + trackMetrics.durationSeconds;
+          const fullDuration = track.sourceDuration
+            ? track.sourceDuration / displayFps
+            : trackMetrics.durationSeconds;
+          const isSegment =
+            segmentStartTime > 0 || segmentEndTime < fullDuration;
+
+          if (isSegment && processedWaveform.peaks.length > 0) {
+            const totalPeaks = processedWaveform.peaks.length;
+            const startPeakIndex = Math.round(
+              (segmentStartTime / fullDuration) * totalPeaks,
+            );
+            const endPeakIndex = Math.round(
+              (segmentEndTime / fullDuration) * totalPeaks,
+            );
+            const clampedStart = Math.max(
+              0,
+              Math.min(startPeakIndex, totalPeaks - 1),
+            );
+            const clampedEnd = Math.max(
+              clampedStart + 1,
+              Math.min(endPeakIndex, totalPeaks),
+            );
+            const segmentPeaks = processedWaveform.peaks.slice(
+              clampedStart,
+              clampedEnd,
+            );
+
+            return {
+              success: true,
+              peaks: segmentPeaks,
+              duration: segmentEndTime - segmentStartTime,
+              sampleRate: processedWaveform.sampleRate,
+              cacheKey: `nr_segment_${processedWaveform.cacheKey}_${segmentStartTime}_${segmentEndTime}`,
+              startTime: segmentStartTime,
+              endTime: segmentEndTime,
+              isSegment: true,
+              lodTiers: processedWaveform.lodTiers,
+            };
+          }
+
+          return processedWaveform;
+        }
+
+        // No cached waveform for processed audio - return null to trigger generation
+        return null;
+      }
 
       // CRITICAL: Use mediaId for accurate waveform lookup if available
       // This ensures each clip gets its own waveform, not a stale one from a previous clip
@@ -92,16 +220,28 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
           if (isSegment && mediaIdWaveform.peaks.length > 0) {
             const totalPeaks = mediaIdWaveform.peaks.length;
-            const startPeakIndex = Math.floor(
+            // CRITICAL: Use Math.round for accurate boundary alignment
+            // Math.floor causes off-by-one errors at cut boundaries, leading to visual smearing
+            const startPeakIndex = Math.round(
               (segmentStartTime / fullDuration) * totalPeaks,
             );
-            const endPeakIndex = Math.floor(
+            const endPeakIndex = Math.round(
               (segmentEndTime / fullDuration) * totalPeaks,
             );
 
+            // Clamp indices to valid range
+            const clampedStart = Math.max(
+              0,
+              Math.min(startPeakIndex, totalPeaks - 1),
+            );
+            const clampedEnd = Math.max(
+              clampedStart + 1,
+              Math.min(endPeakIndex, totalPeaks),
+            );
+
             const segmentPeaks = mediaIdWaveform.peaks.slice(
-              startPeakIndex,
-              endPeakIndex,
+              clampedStart,
+              clampedEnd,
             );
 
             return {
@@ -164,16 +304,27 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         const fullWaveform = getWaveformBySource(sourceToCheck);
         if (fullWaveform?.success && fullWaveform.peaks.length > 0) {
           const totalPeaks = fullWaveform.peaks.length;
-          const startPeakIndex = Math.floor(
+          // CRITICAL: Use Math.round for accurate boundary alignment
+          const startPeakIndex = Math.round(
             (segmentStartTime / fullDuration) * totalPeaks,
           );
-          const endPeakIndex = Math.floor(
+          const endPeakIndex = Math.round(
             (segmentEndTime / fullDuration) * totalPeaks,
           );
 
+          // Clamp indices to valid range
+          const clampedStart = Math.max(
+            0,
+            Math.min(startPeakIndex, totalPeaks - 1),
+          );
+          const clampedEnd = Math.max(
+            clampedStart + 1,
+            Math.min(endPeakIndex, totalPeaks),
+          );
+
           const segmentPeaks = fullWaveform.peaks.slice(
-            startPeakIndex,
-            endPeakIndex,
+            clampedStart,
+            clampedEnd,
           );
 
           return {
@@ -237,16 +388,27 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       if (cachedWaveform?.success && cachedWaveform.peaks.length > 0) {
         if (isSegment) {
           const totalPeaks = cachedWaveform.peaks.length;
-          const startPeakIndex = Math.floor(
+          // CRITICAL: Use Math.round for accurate boundary alignment
+          const startPeakIndex = Math.round(
             (segmentStartTime / fullDuration) * totalPeaks,
           );
-          const endPeakIndex = Math.floor(
+          const endPeakIndex = Math.round(
             (segmentEndTime / fullDuration) * totalPeaks,
           );
 
+          // Clamp indices to valid range
+          const clampedStart = Math.max(
+            0,
+            Math.min(startPeakIndex, totalPeaks - 1),
+          );
+          const clampedEnd = Math.max(
+            clampedStart + 1,
+            Math.min(endPeakIndex, totalPeaks),
+          );
+
           const segmentPeaks = cachedWaveform.peaks.slice(
-            startPeakIndex,
-            endPeakIndex,
+            clampedStart,
+            clampedEnd,
           );
 
           return {
@@ -278,16 +440,27 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       track.name,
       track.sourceStartTime,
       track.sourceDuration,
+      track.noiseReductionEnabled, // Re-evaluate when NR is toggled
       trackMetrics.durationSeconds,
       getWaveformBySource,
       getWaveformByMediaId,
       mediaLibrary,
       track.mediaId,
+      effectiveAudioSource,
+      displayFps,
+      nrWaveformVersion, // Trigger re-evaluation when NR waveform changes
     ]);
 
+    // Check if waveform generation is in progress
     const isLoading = useMemo(() => {
       if (track.type !== 'audio') return false;
 
+      // First check by mediaId
+      if (track.mediaId) {
+        return isGeneratingWaveform(track.mediaId);
+      }
+
+      // Fallback to source-based lookup
       let sourceToCheck = track.source;
       if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
         const originalVideo = mediaLibrary.find(
@@ -307,14 +480,134 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       return mediaItem ? isGeneratingWaveform(mediaItem.id) : false;
     }, [
       track.type,
+      track.mediaId,
       track.source,
       track.previewUrl,
       isGeneratingWaveform,
       mediaLibrary,
     ]);
 
+    // CRITICAL: Check if waveform already exists in media library
+    // This prevents showing "Generating waveform..." when the waveform is already cached
+    const hasExistingWaveform = useMemo(() => {
+      if (track.type !== 'audio') return false;
+
+      // Check by mediaId first (most reliable)
+      if (track.mediaId) {
+        const mediaItem = mediaLibrary.find(
+          (item) => item.id === track.mediaId,
+        );
+        if (
+          mediaItem?.waveform?.success &&
+          mediaItem.waveform.peaks?.length > 0
+        ) {
+          return true;
+        }
+      }
+
+      // Fallback to source-based lookup
+      let sourceToCheck = track.source;
+      if (track.previewUrl && track.previewUrl.includes('extracted.wav')) {
+        const originalVideo = mediaLibrary.find(
+          (item) =>
+            item.type === 'video' &&
+            item.extractedAudio?.previewUrl === track.previewUrl,
+        );
+        if (originalVideo) {
+          sourceToCheck = originalVideo.source;
+        }
+      }
+
+      const mediaItem = mediaLibrary.find(
+        (item) => item.source === sourceToCheck,
+      );
+
+      return (
+        mediaItem?.waveform?.success && mediaItem.waveform.peaks?.length > 0
+      );
+    }, [
+      track.type,
+      track.mediaId,
+      track.source,
+      track.previewUrl,
+      mediaLibrary,
+    ]);
+
+    // State for tracking noise-reduced waveform generation
+    const [isGeneratingNrWaveform, setIsGeneratingNrWaveform] = useState(false);
+
+    // Effect to generate waveform for noise-reduced audio
     useEffect(() => {
-      if (track.type !== 'audio' || waveformData || isLoading) return;
+      // Skip if not using noise-reduced audio or already have waveform
+      if (
+        track.type !== 'audio' ||
+        !effectiveAudioSource ||
+        waveformData ||
+        isGeneratingNrWaveform
+      )
+        return;
+
+      // Generate waveform for noise-reduced audio
+      const duration = track.sourceDuration
+        ? track.sourceDuration / displayFps
+        : trackMetrics.durationSeconds;
+
+      console.log(
+        `🎵 Generating waveform for noise-reduced audio: ${track.name}`,
+      );
+      setIsGeneratingNrWaveform(true);
+
+      AudioWaveformGenerator.generateWaveform({
+        audioPath: effectiveAudioSource,
+        duration,
+        sampleRate: 8000,
+        peaksPerSecond: 200,
+      })
+        .then((result) => {
+          if (result.success) {
+            console.log(
+              `✅ Noise-reduced waveform generated for ${track.name}`,
+            );
+            // Increment version to trigger waveformData memo re-evaluation
+            setNrWaveformVersion((v) => v + 1);
+          } else {
+            console.warn(
+              `⚠️ Noise-reduced waveform generation failed for ${track.name}:`,
+              result.error,
+            );
+          }
+        })
+        .catch((error) => {
+          console.warn(
+            `⚠️ Noise-reduced waveform generation error for ${track.name}:`,
+            error,
+          );
+        })
+        .finally(() => {
+          setIsGeneratingNrWaveform(false);
+        });
+    }, [
+      track.type,
+      track.name,
+      track.sourceDuration,
+      effectiveAudioSource,
+      waveformData,
+      isGeneratingNrWaveform,
+      displayFps,
+      trackMetrics.durationSeconds,
+    ]);
+
+    useEffect(() => {
+      // Skip if not audio, already have waveform data, loading, or waveform exists in media library
+      // Also skip if using noise-reduced audio (handled by separate effect above)
+      if (
+        track.type !== 'audio' ||
+        waveformData ||
+        isLoading ||
+        hasExistingWaveform ||
+        effectiveAudioSource
+      )
+        return;
 
       // CRITICAL: Use mediaId for accurate waveform generation if available
       let mediaItem = null;
@@ -361,280 +654,332 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       track.previewUrl,
       track.sourceStartTime,
       trackMetrics.durationSeconds,
+      track.name,
       waveformData,
       isLoading,
+      hasExistingWaveform,
       generateWaveformForMedia,
       isGeneratingWaveform,
       mediaLibrary,
+      effectiveAudioSource,
     ]);
 
-    // Adaptive resampling based on zoom level with proper interpolation
-    const getResampledWaveform = useCallback(
-      (peaks: number[], displayWidth: number): ResampledWaveform => {
-        const cacheKey = `${track.id}_${zoomLevel.toFixed(2)}_${displayWidth}`;
+    // Get peaks for a specific range of bars using LOD-aware sampling
+    // CRITICAL: No interpolation, no smoothing - discrete bar sampling only
+    const getPeaksForBarRange = useCallback(
+      (
+        peaks: number[],
+        lodTiers:
+          | { level: number; peaksPerSecond: number; peaks: number[] }[]
+          | undefined,
+        startBar: number,
+        endBar: number,
+        totalBars: number,
+        durationSeconds: number,
+      ): number[] => {
+        const numBars = endBar - startBar;
+        if (numBars <= 0 || peaks.length === 0) return [];
 
-        // Check cache first
-        const cached = resampledCache.current.get(cacheKey);
-        if (cached) {
-          return cached;
+        // Calculate required peaks per second for this display
+        const barsPerSecond = totalBars / durationSeconds;
+
+        // Select the best LOD tier for this requirement
+        let sourcePeaks = peaks;
+        if (lodTiers && lodTiers.length > 0) {
+          const sortedTiers = [...lodTiers].sort(
+            (a, b) => b.peaksPerSecond - a.peaksPerSecond,
+          );
+          let selectedTier = sortedTiers[0];
+          for (const tier of sortedTiers) {
+            if (tier.peaksPerSecond >= barsPerSecond) {
+              selectedTier = tier;
+            } else {
+              break;
+            }
+          }
+          sourcePeaks = selectedTier.peaks;
         }
 
-        // Calculate pixels per audio sample
-        const pixelsPerSample = displayWidth / peaks.length;
+        // Map bar positions to peaks
+        const barPeaks: number[] = new Array(numBars);
+        const peaksPerBar = sourcePeaks.length / totalBars;
 
-        let resampledPeaks: number[];
-
-        if (pixelsPerSample >= 1) {
-          // HIGH ZOOM: Each sample gets >= 1 pixel
-          // Use linear interpolation to fill gaps smoothly
-          resampledPeaks = [];
-          const targetSamples = Math.ceil(displayWidth);
-
-          for (let i = 0; i < targetSamples; i++) {
-            const samplePosition = (i / targetSamples) * peaks.length;
-            const sampleIndex = Math.floor(samplePosition);
-            const fraction = samplePosition - sampleIndex;
-
-            const sample1 = peaks[sampleIndex] || 0;
-            const sample2 =
-              peaks[Math.min(sampleIndex + 1, peaks.length - 1)] || 0;
-
-            // Linear interpolation for smooth visuals
-            const interpolatedValue = sample1 + (sample2 - sample1) * fraction;
-            resampledPeaks.push(interpolatedValue);
-          }
-        } else if (pixelsPerSample >= 0.5) {
-          // MEDIUM ZOOM: 2-1 samples per pixel
-          // Use simple averaging for clean downsampling
-          // const samplesPerPixel = Math.ceil(1 / pixelsPerSample);
-          const targetSamples = Math.floor(displayWidth);
-          resampledPeaks = [];
-
-          for (let i = 0; i < targetSamples; i++) {
-            const startIdx = Math.floor((i / targetSamples) * peaks.length);
-            const endIdx = Math.min(
-              Math.floor(((i + 1) / targetSamples) * peaks.length),
-              peaks.length,
+        if (peaksPerBar >= 1) {
+          // ZOOM-OUT: More peaks than bars -> max-pooling
+          for (let i = 0; i < numBars; i++) {
+            const globalBarIndex = startBar + i;
+            const startPeakIdx = Math.floor(globalBarIndex * peaksPerBar);
+            const endPeakIdx = Math.min(
+              Math.floor((globalBarIndex + 1) * peaksPerBar),
+              sourcePeaks.length,
             );
-
-            // RMS averaging for better perceived loudness
-            let sum = 0;
-            let count = 0;
-            for (let j = startIdx; j < endIdx; j++) {
-              sum += (peaks[j] || 0) ** 2;
-              count++;
+            let maxPeak = 0;
+            for (let j = startPeakIdx; j < endPeakIdx; j++) {
+              maxPeak = Math.max(maxPeak, sourcePeaks[j] || 0);
             }
-            const rms = count > 0 ? Math.sqrt(sum / count) : 0;
-            resampledPeaks.push(rms);
+            barPeaks[i] = maxPeak;
           }
         } else {
-          // LOW ZOOM: Many samples per pixel
-          // Use max pooling to preserve peaks visibility
-          const targetSamples = Math.floor(displayWidth);
-          resampledPeaks = [];
-
-          for (let i = 0; i < targetSamples; i++) {
-            const startIdx = Math.floor((i / targetSamples) * peaks.length);
-            const endIdx = Math.min(
-              Math.floor(((i + 1) / targetSamples) * peaks.length),
-              peaks.length,
+          // ZOOM-IN: More bars than peaks -> peak-repeating
+          const barsPerPeak = totalBars / sourcePeaks.length;
+          for (let i = 0; i < numBars; i++) {
+            const globalBarIndex = startBar + i;
+            const peakIndex = Math.min(
+              Math.floor(globalBarIndex / barsPerPeak),
+              sourcePeaks.length - 1,
             );
-
-            // Max pooling to preserve peak visibility at low zoom
-            let maxPeak = 0;
-            for (let j = startIdx; j < endIdx; j++) {
-              maxPeak = Math.max(maxPeak, peaks[j] || 0);
-            }
-            resampledPeaks.push(maxPeak);
+            barPeaks[i] = sourcePeaks[peakIndex] || 0;
           }
         }
 
-        const result: ResampledWaveform = {
-          peaks: resampledPeaks,
-          pixelsPerSample,
-          zoomLevel,
-        };
-
-        // Cache the result
-        resampledCache.current.set(cacheKey, result);
-
-        // Limit cache size (keep last 10 zoom levels)
-        if (resampledCache.current.size > 10) {
-          const firstKey = resampledCache.current.keys().next().value;
-          resampledCache.current.delete(firstKey);
-        }
-
-        return result;
+        return barPeaks;
       },
-      [track.id, zoomLevel],
+      [],
     );
 
-    // Draw static waveform (renders both base and progress layers once)
-    const drawWaveform = useCallback(() => {
-      const baseCanvas = canvasRef.current;
-      const progressCanvas =
-        progressOverlayRef.current?.querySelector('canvas');
-      if (!baseCanvas || !progressCanvas || !waveformData) return;
+    // Calculate tile configuration based on current display width
+    // This is the core of the tiled rendering system
+    const tileConfig = useMemo(() => {
+      const trackDurationInFrames = trackMetrics.durationFrames;
+      const displayWidth = Math.min(width, trackDurationInFrames * frameWidth);
 
-      const baseCtx = baseCanvas.getContext('2d');
-      const progressCtx = progressCanvas.getContext('2d');
-      if (!baseCtx || !progressCtx) return;
+      if (displayWidth <= 0 || !isFinite(displayWidth)) {
+        return { tiles: [], totalBars: 0, displayWidth: 0 };
+      }
+
+      // Calculate total bars needed for the entire display
+      const totalBars = Math.floor(displayWidth / BAR_STEP);
+      if (totalBars <= 0) {
+        return { tiles: [], totalBars: 0, displayWidth };
+      }
+
+      // Calculate number of tiles needed
+      const numTiles = Math.ceil(totalBars / BARS_PER_TILE);
+
+      // Generate tile definitions
+      const tiles: Array<{
+        index: number;
+        startBar: number;
+        endBar: number;
+        x: number;
+        width: number;
+      }> = [];
+
+      for (let i = 0; i < numTiles; i++) {
+        const startBar = i * BARS_PER_TILE;
+        const endBar = Math.min(startBar + BARS_PER_TILE, totalBars);
+        const barsInTile = endBar - startBar;
+
+        tiles.push({
+          index: i,
+          startBar,
+          endBar,
+          x: startBar * BAR_STEP,
+          width: barsInTile * BAR_STEP,
+        });
+      }
+
+      return { tiles, totalBars, displayWidth };
+    }, [width, frameWidth, trackMetrics.durationFrames]);
+
+    // Render a single tile to its canvas
+    const renderTile = useCallback(
+      (
+        canvas: HTMLCanvasElement,
+        tile: { startBar: number; endBar: number; width: number },
+        peaks: number[],
+        lodTiers:
+          | { level: number; peaksPerSecond: number; peaks: number[] }[]
+          | undefined,
+        totalBars: number,
+        canvasHeight: number,
+        isProgress: boolean,
+        gainMultiplier = 1, // Volume gain for visual scaling
+      ) => {
+        const ctx = canvas.getContext('2d', { alpha: true });
+        if (!ctx) return;
+
+        // CRITICAL: Canvas bitmap = CSS size = tile width (NO STRETCHING)
+        canvas.width = tile.width;
+        canvas.height = canvasHeight;
+        canvas.style.width = `${tile.width}px`;
+        canvas.style.height = `${canvasHeight}px`;
+
+        // Disable smoothing
+        ctx.imageSmoothingEnabled = false;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, tile.width, canvasHeight);
+
+        // Get peaks for this tile's bar range
+        const barPeaks = getPeaksForBarRange(
+          peaks,
+          lodTiers,
+          tile.startBar,
+          tile.endBar,
+          totalBars,
+          trackMetrics.durationSeconds,
+        );
+
+        // Colors
+        const baseBarColor = isProgress
+          ? 'rgba(174, 169, 177, 1)'
+          : 'rgba(174, 169, 177, 0.85)';
+        const stackedBarColor = isProgress
+          ? 'rgba(161, 94, 253, 1)'
+          : 'rgba(161, 94, 253, 0.85)';
+
+        if (!isProgress) {
+          ctx.fillStyle = 'rgba(156, 163, 175, 0.1)';
+          ctx.fillRect(0, 0, tile.width, canvasHeight);
+        }
+
+        const maxBarHeight = canvasHeight - 4;
+
+        // Render bars with CONSTANT pixel width
+        // Apply volume gain for visual scaling (clamp to 0-1 to prevent overflow)
+        for (let i = 0; i < barPeaks.length; i++) {
+          const scaledPeak = barPeaks[i] * gainMultiplier;
+          const peak = Math.max(0, Math.min(1, scaledPeak));
+          const barHeight = Math.round(peak * maxBarHeight);
+
+          // Local x position within this tile
+          const x = i * BAR_STEP;
+
+          if (barHeight <= 0) continue;
+
+          // Calculate stacked percentage
+          const globalBarIndex = tile.startBar + i;
+          const baseThreshold = 0.3;
+          const variation = Math.sin(globalBarIndex * 0.1) * 0.1;
+          const normalizedPeak = Math.max(0, peak - baseThreshold);
+          const stackedPercentage = Math.max(
+            0,
+            Math.min(0.6, normalizedPeak + variation),
+          );
+
+          const stackedHeight = Math.round(barHeight * stackedPercentage);
+          const baseHeight = barHeight - stackedHeight;
+          const baseY = Math.round(canvasHeight - baseHeight);
+          const stackedY = Math.round(canvasHeight - barHeight);
+
+          if (baseHeight > 0) {
+            ctx.fillStyle = baseBarColor;
+            ctx.fillRect(x, baseY, BAR_WIDTH, baseHeight);
+          }
+
+          if (stackedHeight > 0) {
+            ctx.fillStyle = stackedBarColor;
+            ctx.fillRect(x, stackedY, BAR_WIDTH, stackedHeight);
+          }
+        }
+      },
+      [getPeaksForBarRange, trackMetrics.durationSeconds],
+    );
+
+    // Effect to render all tiles when waveform data or config changes
+    useEffect(() => {
+      if (!waveformData || !tileContainerRef.current) return;
 
       const { peaks } = waveformData;
       if (!peaks || peaks.length === 0) return;
 
-      // Create a unique key for the current waveform state (includes track ID, trim info)
-      // CRITICAL: Include track.id to ensure cache invalidation when track changes
+      const lodTiers =
+        'lodTiers' in waveformData ? waveformData.lodTiers : undefined;
+
+      // Create a unique key for the current state
+      // Include noiseReductionEnabled and volumeDb to ensure re-render when toggled
       const startTime =
         'startTime' in waveformData ? waveformData.startTime : 0;
       const endTime = 'endTime' in waveformData ? waveformData.endTime : 0;
-      const waveformKey = `${track.id}_${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}`;
-      const waveformChanged = lastRenderedWaveformRef.current !== waveformKey;
+      const nrState = track.noiseReductionEnabled ? 'nr' : 'orig';
+      const volumeDbKey =
+        track.volumeDb === -Infinity
+          ? 'muted'
+          : (track.volumeDb ?? 0).toFixed(1);
+      const renderKey = `${track.id}_${waveformData.cacheKey}_${peaks.length}_${startTime}_${endTime}_${width}_${zoomLevel}_${nrState}_${nrWaveformVersion}_vol${volumeDbKey}`;
 
-      // Clear resampled cache when waveform data changes (trim operation or track change)
-      if (waveformChanged) {
-        resampledCache.current.clear();
+      if (lastRenderedKeyRef.current === renderKey) return;
+
+      const container = tileContainerRef.current;
+      const progressOverlay = progressOverlayRef.current;
+      const canvasHeight = Math.round(height);
+
+      // Clear existing canvases
+      container.innerHTML = '';
+      if (progressOverlay) {
+        const progressContainer = progressOverlay.querySelector(
+          '[data-progress-tiles]',
+        );
+        if (progressContainer) {
+          progressContainer.innerHTML = '';
+        }
       }
 
-      const zoomChanged = zoomLevel !== lastRenderedZoomRef.current;
-      const shouldRedraw =
-        zoomChanged ||
-        waveformChanged ||
-        baseCanvas.width === 0 ||
-        baseCanvas.height === 0;
+      // Render each tile
+      tileConfig.tiles.forEach((tile) => {
+        // Base canvas (unprogressed)
+        const baseCanvas = document.createElement('canvas');
+        baseCanvas.style.position = 'absolute';
+        baseCanvas.style.left = `${tile.x}px`;
+        baseCanvas.style.top = '0';
+        container.appendChild(baseCanvas);
 
-      if (!shouldRedraw) return;
+        renderTile(
+          baseCanvas,
+          tile,
+          peaks,
+          lodTiers as
+            | { level: number; peaksPerSecond: number; peaks: number[] }[]
+            | undefined,
+          tileConfig.totalBars,
+          canvasHeight,
+          false,
+          volumeGain,
+        );
 
-      const dpr = window.devicePixelRatio || 1;
-      const maxCanvasSize = 32768;
-      const safeWidth = Math.min(width * dpr, maxCanvasSize);
-      const safeHeight = Math.min(height * dpr, maxCanvasSize);
+        // Progress canvas (brighter, for playback progress)
+        if (progressOverlay) {
+          const progressContainer = progressOverlay.querySelector(
+            '[data-progress-tiles]',
+          );
+          if (progressContainer) {
+            const progressCanvas = document.createElement('canvas');
+            progressCanvas.style.position = 'absolute';
+            progressCanvas.style.left = `${tile.x}px`;
+            progressCanvas.style.top = '0';
+            progressContainer.appendChild(progressCanvas);
 
-      // Setup both canvases
-      [baseCanvas, progressCanvas].forEach((canvas) => {
-        canvas.width = safeWidth;
-        canvas.height = safeHeight;
-        canvas.style.width = `${width}px`;
-        canvas.style.height = `${height}px`;
+            renderTile(
+              progressCanvas,
+              tile,
+              peaks,
+              lodTiers as
+                | { level: number; peaksPerSecond: number; peaks: number[] }[]
+                | undefined,
+              tileConfig.totalBars,
+              canvasHeight,
+              true,
+              volumeGain,
+            );
+          }
+        }
       });
 
-      const scaleX = safeWidth / width;
-      const scaleY = safeHeight / height;
-
-      baseCtx.scale(scaleX, scaleY);
-      progressCtx.scale(scaleX, scaleY);
-
-      baseCtx.clearRect(0, 0, width, height);
-      progressCtx.clearRect(0, 0, width, height);
-
-      const trackDurationInFrames = trackMetrics.durationFrames;
-      const displayWidth = Math.min(width, trackDurationInFrames * frameWidth);
-
-      if (displayWidth <= 0 || !isFinite(displayWidth)) return;
-
-      // Colors
-      const baseBarColor = 'rgba(174, 169, 177, 0.8)';
-      const stackedBarColor = 'rgba(161, 94, 253, 0.8)';
-      const progressBaseColor = 'rgba(174, 169, 177, 1)';
-      const progressStackedColor = 'rgba(161, 94, 253, 1)';
-      const backgroundColor = 'rgba(156, 163, 175, 0.1)';
-
-      baseCtx.fillStyle = backgroundColor;
-      baseCtx.fillRect(0, 0, width, height);
-
-      const calculateStackedPercentage = (
-        peak: number,
-        index: number,
-      ): number => {
-        const baseThreshold = 0.3;
-        const variation = Math.sin(index * 0.1) * 0.1;
-        const normalizedPeak = Math.max(0, peak - baseThreshold);
-        const percentage = Math.min(0.6, normalizedPeak + variation);
-        return Math.max(0, percentage);
-      };
-
-      // Get adaptively resampled waveform
-      const resampled = getResampledWaveform(peaks, displayWidth);
-      const { peaks: resampledPeaks, pixelsPerSample } = resampled;
-
-      const maxBarHeight = height - 4;
-
-      // Determine bar width based on zoom level
-      const barWidth = Math.max(1, Math.min(3, pixelsPerSample));
-      const barSpacing = barWidth > 2 ? 0.5 : 0;
-
-      // Render waveform on both canvases (base and progress versions)
-      for (let i = 0; i < resampledPeaks.length; i++) {
-        const peak = Math.max(0, Math.min(1, resampledPeaks[i]));
-        const barHeight = peak * maxBarHeight;
-
-        const x = (i / resampledPeaks.length) * displayWidth;
-
-        if (x < 0 || x >= displayWidth || barHeight <= 0) continue;
-
-        const stackedPercentage = calculateStackedPercentage(peak, i);
-        const stackedHeight = barHeight * stackedPercentage;
-        const baseHeight = barHeight - stackedHeight;
-
-        // Draw base (unprogressed) waveform
-        if (baseHeight > 0) {
-          baseCtx.fillStyle = baseBarColor;
-          baseCtx.fillRect(
-            x,
-            height - baseHeight,
-            barWidth - barSpacing,
-            baseHeight,
-          );
-        }
-
-        if (stackedHeight > 0) {
-          baseCtx.fillStyle = stackedBarColor;
-          baseCtx.fillRect(
-            x,
-            height - baseHeight - stackedHeight,
-            barWidth - barSpacing,
-            stackedHeight,
-          );
-        }
-
-        // Draw progress (brighter) waveform on overlay canvas
-        if (baseHeight > 0) {
-          progressCtx.fillStyle = progressBaseColor;
-          progressCtx.fillRect(
-            x,
-            height - baseHeight,
-            barWidth - barSpacing,
-            baseHeight,
-          );
-        }
-
-        if (stackedHeight > 0) {
-          progressCtx.fillStyle = progressStackedColor;
-          progressCtx.fillRect(
-            x,
-            height - baseHeight - stackedHeight,
-            barWidth - barSpacing,
-            stackedHeight,
-          );
-        }
-      }
-
-      lastRenderedZoomRef.current = zoomLevel;
-      lastRenderedWaveformRef.current = waveformKey;
+      lastRenderedKeyRef.current = renderKey;
     }, [
       waveformData,
+      tileConfig,
       width,
       height,
-      frameWidth,
-      track,
-      trackMetrics.durationFrames,
       zoomLevel,
-      getResampledWaveform,
+      track.id,
+      track.noiseReductionEnabled,
+      track.volumeDb,
+      volumeGain,
+      nrWaveformVersion,
+      renderTile,
     ]);
-
-    React.useEffect(() => {
-      drawWaveform();
-    }, [drawWaveform]);
 
     // CRITICAL: Subscribe to playback updates outside React render cycle
     // This updates the progress overlay via direct DOM manipulation
@@ -670,13 +1015,11 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     }, [track.startFrame, track.endFrame, frameWidth, width]);
 
     const handleCanvasClick = useCallback(
-      (event: React.MouseEvent<HTMLCanvasElement>) => {
+      (event: React.MouseEvent<HTMLDivElement>) => {
         if (!waveformData) return;
 
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const rect = canvas.getBoundingClientRect();
+        const container = event.currentTarget;
+        const rect = container.getBoundingClientRect();
         const clickX = event.clientX - rect.left;
 
         const frameOffset = Math.floor(clickX / frameWidth);
@@ -702,7 +1045,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       return null;
     }
 
-    if (isLoading) {
+    if (isLoading || isGeneratingNrWaveform) {
       return (
         <div
           className="flex items-center justify-center bg-secondary/10 border border-secondary/20 rounded"
@@ -710,20 +1053,37 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         >
           <Loader2 className="w-4 h-4 animate-spin text-green-400" />
           <span className="ml-1 text-xs text-green-400">
-            Loading waveform...
+            {isGeneratingNrWaveform
+              ? 'Processing waveform...'
+              : 'Loading waveform...'}
           </span>
         </div>
       );
     }
 
     if (!waveformData) {
+      // If waveform exists in media library but waveformData is null,
+      // show a brief loading state instead of "Generating waveform..."
+      // This handles the race condition on initial mount
+      if (hasExistingWaveform) {
+        return (
+          <div
+            className="flex text-xs gap-2 px-2 items-center"
+            style={{ width, height }}
+          >
+            <Loader2 className="size-3 animate-spin" />
+            <span className="truncate">Loading waveform...</span>
+          </div>
+        );
+      }
+
       return (
         <div
           className="flex text-xs gap-2 px-2 items-center"
           style={{ width, height }}
         >
           <Loader2 className="size-3 animate-spin" />
-          <span className="truncate"> Generating waveform...</span>
+          <span className="truncate">Generating waveform...</span>
         </div>
       );
     }
@@ -732,15 +1092,17 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       <div
         className="relative bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden"
         style={{ width, height }}
+        onClick={handleCanvasClick}
       >
-        {/* Static waveform canvas - never re-renders during playback */}
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full"
-          onClick={handleCanvasClick}
+        {/* Tile container - holds multiple fixed-size canvas tiles */}
+        {/* Each tile is exactly TILE_WIDTH pixels, no CSS stretching */}
+        <div
+          ref={tileContainerRef}
+          className="absolute top-0 left-0 h-full"
+          style={{ width: tileConfig.displayWidth }}
         />
 
-        {/* Progress overlay - updated via direct DOM manipulation (no React re-render) */}
+        {/* Progress overlay - clips tiles based on playback position */}
         <div
           ref={progressOverlayRef}
           className="absolute top-0 left-0 h-full pointer-events-none overflow-hidden"
@@ -749,7 +1111,12 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
             willChange: 'width',
           }}
         >
-          <canvas className="w-full h-full" />
+          {/* Progress tile container - same structure as base tiles */}
+          <div
+            data-progress-tiles
+            className="absolute top-0 left-0 h-full"
+            style={{ width: tileConfig.displayWidth }}
+          />
         </div>
 
         {height <= 26 && (
@@ -786,6 +1153,22 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     const mutedChanged = prevProps.track.muted !== nextProps.track.muted;
 
     if (mutedChanged) {
+      return false;
+    }
+
+    // Re-render when noise reduction state changes to regenerate waveform
+    const noiseReductionChanged =
+      prevProps.track.noiseReductionEnabled !==
+      nextProps.track.noiseReductionEnabled;
+
+    if (noiseReductionChanged) {
+      return false;
+    }
+
+    // Re-render when volume changes to scale waveform visually
+    const volumeChanged = prevProps.track.volumeDb !== nextProps.track.volumeDb;
+
+    if (volumeChanged) {
       return false;
     }
 

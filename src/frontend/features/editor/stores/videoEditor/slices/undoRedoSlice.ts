@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { StateCreator } from 'zustand';
-import { VideoTrack } from '../types';
+import { MediaLibraryItem, VideoTrack } from '../types';
 
 /**
  * UndoableState - Represents the state that can be undone/redone
@@ -8,6 +8,7 @@ import { VideoTrack } from '../types';
  */
 export interface UndoableState {
   tracks: VideoTrack[];
+  mediaLibrary: MediaLibraryItem[];
   timeline: {
     currentFrame: number;
     totalFrames: number;
@@ -93,6 +94,7 @@ export const createUndoRedoSlice: StateCreator<
 
     return {
       tracks: JSON.parse(JSON.stringify(state.tracks || [])),
+      mediaLibrary: JSON.parse(JSON.stringify(state.mediaLibrary || [])),
       timeline: {
         currentFrame: state.timeline.currentFrame,
         totalFrames: state.timeline.totalFrames,
@@ -113,6 +115,7 @@ export const createUndoRedoSlice: StateCreator<
     set((state: any) => ({
       ...state,
       tracks: JSON.parse(JSON.stringify(undoableState.tracks)),
+      mediaLibrary: JSON.parse(JSON.stringify(undoableState.mediaLibrary)),
       timeline: {
         ...state.timeline,
         currentFrame: undoableState.timeline.currentFrame,

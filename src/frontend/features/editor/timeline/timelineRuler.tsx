@@ -82,7 +82,51 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
       [displayFps],
     );
 
-    // Memoize tick interval calculation based on zoom level
+    // Minimum pixel spacing for labels (CapCut-style - labels never disappear)
+    const MIN_LABEL_SPACING_PX = 50;
+
+    // Calculate label interval based on minimum pixel spacing
+    // This ensures labels are ALWAYS visible at appropriate intervals
+    const labelInterval = useMemo(() => {
+      const pixelsPerSecond = frameWidth * displayFps;
+
+      // Time intervals to choose from (in seconds)
+      const intervals = [
+        1 / displayFps, // 1 frame
+        0.25, // quarter second
+        0.5, // half second
+        1, // 1 second
+        2, // 2 seconds
+        5, // 5 seconds
+        10, // 10 seconds
+        15, // 15 seconds
+        30, // 30 seconds
+        60, // 1 minute
+        120, // 2 minutes
+        300, // 5 minutes
+        600, // 10 minutes
+        900, // 15 minutes
+        1800, // 30 minutes
+        3600, // 1 hour
+        7200, // 2 hours
+        14400, // 4 hours
+        28800, // 8 hours
+        86400, // 24 hours
+      ];
+
+      // Find the smallest interval that gives at least MIN_LABEL_SPACING_PX
+      for (const seconds of intervals) {
+        const pixelSpacing = seconds * pixelsPerSecond;
+        if (pixelSpacing >= MIN_LABEL_SPACING_PX) {
+          return seconds * displayFps; // Convert to frames
+        }
+      }
+
+      // Fallback for extremely zoomed out (should never reach here)
+      return 86400 * displayFps;
+    }, [frameWidth, displayFps]);
+
+    // Tick interval for visual marks (more frequent than labels)
     const tickInterval = useMemo(() => {
       const pixelsPerSecond = frameWidth * displayFps;
 
@@ -98,7 +142,15 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
 
     // Memoize ticks calculation with real-time scroll position
     const ticks = useMemo(() => {
-      const ticksArray = [];
+      const ticksArray: {
+        frame: number;
+        x: number;
+        time: string;
+        isSecond: boolean;
+        isMinute: boolean;
+        isHour: boolean;
+        isLabelTick: boolean;
+      }[] = [];
       const pixelsPerSecond = frameWidth * displayFps;
 
       // Use actual scroll position if available, otherwise fallback to prop
@@ -121,6 +173,10 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
       ) {
         if (frame >= 0) {
           const x = frame * frameWidth - currentScrollX;
+          // A tick is a "label tick" if it falls on the calculated label interval
+          const isLabelTick =
+            labelInterval > 0 && Math.abs(frame % labelInterval) < 0.001;
+
           ticksArray.push({
             frame,
             x,
@@ -128,6 +184,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
             isSecond: frame % displayFps === 0,
             isMinute: frame % (displayFps * 60) === 0,
             isHour: frame % (displayFps * 3600) === 0,
+            isLabelTick,
           });
         }
       }
@@ -138,6 +195,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
       frameWidth,
       effectiveEndFrame,
       tickInterval,
+      labelInterval,
       formatTime,
       displayFps,
       timelineScrollElement,
@@ -211,143 +269,96 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(
         </div>
 
         {/* Time Ticks */}
-        {ticks.map(({ frame, x, time, isSecond, isMinute, isHour }) => {
-          // Responsive tick height based on zoom level
-          const pixelsPerSecond = frameWidth * displayFps;
-          const getTickHeight = () => {
-            if (isHour) {
-              return 14;
-            }
-            if (isMinute) {
-              return pixelsPerSecond >= 100
-                ? 20
-                : pixelsPerSecond >= 50
-                  ? 16
-                  : 14;
-            }
-            if (isSecond) {
-              return pixelsPerSecond >= 150
-                ? 16
-                : pixelsPerSecond >= 100
-                  ? 12
-                  : 10;
-            }
-            return pixelsPerSecond >= 200 ? 10 : 8;
-          };
-          const tickHeight = getTickHeight();
-
-          // Theme-aware tick styling
-          const tickClasses = isHour
-            ? 'bg-foreground'
-            : isMinute
-              ? 'bg-foreground/80'
-              : isSecond
-                ? 'bg-muted-foreground'
-                : 'bg-muted-foreground/60';
-
-          const labelClasses = isHour
-            ? 'text-foreground'
-            : isMinute
-              ? 'text-foreground/80'
-              : isSecond
-                ? 'text-muted-foreground'
-                : 'text-muted-foreground/60';
-
-          // Smart label visibility based on zoom level and spacing
-          const getShowLabel = () => {
+        {ticks.map(
+          ({ frame, x, time, isSecond, isMinute, isHour, isLabelTick }) => {
+            // Responsive tick height based on zoom level and tick importance
             const pixelsPerSecond = frameWidth * displayFps;
 
-            // Very zoomed in (> 100px per second) - show all labels
-            if (pixelsPerSecond >= 200) {
-              return true;
-            }
+            // Determine tick importance (for styling hierarchy)
+            const isMajorTick = isLabelTick || isHour || isMinute;
 
-            // Zoomed in (50-100px per second) - show second and minute labels
-            if (pixelsPerSecond >= 30) {
-              return isSecond || isMinute || isHour;
-            }
+            const getTickHeight = () => {
+              // Label ticks get prominent height
+              if (isLabelTick) {
+                return 16;
+              }
+              if (isHour) {
+                return 14;
+              }
+              if (isMinute) {
+                return pixelsPerSecond >= 100
+                  ? 14
+                  : pixelsPerSecond >= 50
+                    ? 12
+                    : 10;
+              }
+              if (isSecond) {
+                return pixelsPerSecond >= 150
+                  ? 10
+                  : pixelsPerSecond >= 100
+                    ? 8
+                    : 6;
+              }
+              // Sub-second ticks
+              return pixelsPerSecond >= 200 ? 6 : 4;
+            };
+            const tickHeight = getTickHeight();
 
-            // Medium zoom (25-50px per second) - show only minute and hour labels
-            if (pixelsPerSecond >= 25) {
-              return isMinute || isHour;
-            }
+            // Theme-aware tick styling - label ticks are most prominent
+            const tickClasses = isLabelTick
+              ? 'bg-foreground'
+              : isHour
+                ? 'bg-foreground/90'
+                : isMinute
+                  ? 'bg-foreground/70'
+                  : isSecond
+                    ? 'bg-muted-foreground/60'
+                    : 'bg-muted-foreground/40';
 
-            // Medium-low zoom (10-25px per second) - show every 2nd minute and hours
-            if (pixelsPerSecond >= 10) {
-              return (
-                isHour ||
-                (isMinute && Math.floor(frame / displayFps) % 120 === 0)
-              ); // every 2 minutes
-            }
+            const labelClasses = isLabelTick
+              ? 'text-foreground'
+              : isHour
+                ? 'text-foreground/90'
+                : isMinute
+                  ? 'text-foreground/80'
+                  : 'text-muted-foreground';
 
-            // Low zoom (5-10px per second) - show every 5th minute and hours
-            if (pixelsPerSecond >= 5) {
-              return (
-                isHour ||
-                (isMinute && Math.floor(frame / displayFps) % 300 === 0)
-              ); // every 5 minutes
-            }
+            // CRITICAL: Labels are shown ONLY on label ticks (guaranteed minimum spacing)
+            // This ensures labels NEVER disappear at any zoom level
+            const showLabel = isLabelTick;
 
-            // Very low zoom (2-5px per second) - show every 10th minute and hours
-            if (pixelsPerSecond >= 2) {
-              return (
-                isHour ||
-                (isMinute && Math.floor(frame / displayFps) % 600 === 0)
-              ); // every 10 minutes
-            }
-
-            // Extremely zoomed out (< 2px per second) - show only hours
-            return isHour;
-          };
-
-          const showLabel = getShowLabel();
-
-          return (
-            <div key={frame} className="absolute top-0" style={{ left: x }}>
-              <div
-                className={cn('mb-px', tickClasses)}
-                style={{
-                  width: isMinute ? '2px' : '1px',
-                  height: `${tickHeight}px`,
-                }}
-              />
-              {showLabel && (
+            return (
+              <div key={frame} className="absolute top-0" style={{ left: x }}>
                 <div
-                  className={cn(
-                    '-translate-x-1/2 whitespace-nowrap',
-                    labelClasses,
-                    isHour
-                      ? 'font-bold'
-                      : isMinute
-                        ? 'font-semibold'
-                        : 'font-normal',
-                  )}
+                  className={cn(tickClasses)}
                   style={{
-                    fontSize: (() => {
-                      const pixelsPerSecond = frameWidth * displayFps;
-
-                      // Larger font sizes for higher zoom levels
-                      if (isHour) {
-                        return '12px';
-                      }
-                      if (isMinute) {
-                        return pixelsPerSecond >= 100
-                          ? '12px'
-                          : pixelsPerSecond >= 50
-                            ? '11px'
-                            : '10px';
-                      }
-                      // Seconds
-                      return pixelsPerSecond >= 150 ? '11px' : '10px';
-                    })(),
+                    width: isMajorTick ? '2px' : '1px',
+                    height: `${tickHeight}px`,
                   }}
-                >
-                  {time}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                />
+                {showLabel && (
+                  <div
+                    className={cn(
+                      '-translate-x-1/2 whitespace-nowrap',
+                      labelClasses,
+                      isHour || isMinute ? 'font-semibold' : 'font-normal',
+                    )}
+                    style={{
+                      fontSize:
+                        pixelsPerSecond >= 100
+                          ? '11px'
+                          : pixelsPerSecond >= 25
+                            ? '10px'
+                            : '9px',
+                    }}
+                  >
+                    {time}
+                  </div>
+                )}
+              </div>
+            );
+          },
+        )}
 
         {/* In/Out Points with improved design */}
         {inPoint !== undefined && (
