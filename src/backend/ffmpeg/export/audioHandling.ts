@@ -144,6 +144,34 @@ export function applyVolumeFilter(
   return volumeFilter;
 }
 
+export function applyFadeFilter(
+  inputRef: string,
+  outputRef: string,
+  fadeType: 'in' | 'out',
+  startTime: number,
+  duration: number,
+): string {
+  if (duration <= 0) {
+    console.warn(
+      `⚠️ Fade duration must be positive, got ${duration}. Skipping fade.`,
+    );
+    return `${inputRef}acopy${outputRef}`;
+  }
+
+  if (startTime < 0) {
+    console.warn(
+      `⚠️ Fade start time cannot be negative, got ${startTime}. Using 0.`,
+    );
+    startTime = 0;
+  }
+
+  const fadeFilter = `${inputRef}afade=t=${fadeType}:st=${startTime.toFixed(2)}:d=${duration.toFixed(2)}${outputRef}`;
+  console.log(
+    `🎵 Applied ${fadeType === 'in' ? 'fade in' : 'fade out'}: start=${startTime.toFixed(2)}s, duration=${duration.toFixed(2)}s`,
+  );
+  return fadeFilter;
+}
+
 /**
  * Optional function to get volume in decibels for a segment
  * Returns a float value in decibels (defaults to 0dB if not provided)
@@ -222,17 +250,29 @@ export function processAudioTimeline(
         audioFilters.push(...trimResult.filters);
 
         // Apply volume control (before delay/positioning)
-        // Defaults to 0dB if callback not provided or returns undefined
+        // Priority: 1) volumeDb from trackInfo payload, 2) callback, 3) default to 0dB
         let currentAudioRef = trimResult.filterRef;
-        const volumeDb: number = getVolumeDb?.(segment) ?? 0.0;
+        const volumeDb: number =
+          trackInfo.volumeDb !== undefined
+            ? trackInfo.volumeDb
+            : (getVolumeDb?.(segment) ?? 0.0);
 
         // Only apply volume filter if adjustment is non-zero (0dB means no change)
-        if (volumeDb !== 0.0) {
+        // Also handle -Infinity for complete silence (mute)
+        if (volumeDb !== 0.0 && volumeDb !== -Infinity) {
           const volumeRef = `[a${segmentIndex}_volume]`;
           audioFilters.push(
             applyVolumeFilter(currentAudioRef, volumeRef, volumeDb),
           );
           currentAudioRef = volumeRef;
+        } else if (volumeDb === -Infinity || trackInfo.muted) {
+          // Handle mute: use volume filter with very low dB or volume=0
+          const volumeRef = `[a${segmentIndex}_volume]`;
+          audioFilters.push(
+            applyVolumeFilter(currentAudioRef, volumeRef, -60.0),
+          );
+          currentAudioRef = volumeRef;
+          console.log(`🔇 Muted audio segment ${segmentIndex}`);
         }
 
         // Add delay to position audio at correct timeline position
