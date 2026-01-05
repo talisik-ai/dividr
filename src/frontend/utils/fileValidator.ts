@@ -11,7 +11,8 @@
  * ✅ Minimum file size enforcement (video: 10KB, audio: 1KB, image: 100B, subtitle: 10B)
  * ✅ Magic byte header validation (MP4, AVI, MKV, WEBM, MP3, WAV, AAC, PNG, JPEG, GIF, WEBP)
  * ✅ Metadata readability (duration, dimensions, sample rate)
- * ✅ Browser decoding test via URL.createObjectURL()
+ * ✅ Browser decoding test via URL.createObjectURL() (for browser-native formats only)
+ * ✅ FFmpeg-only format support (AVI, WMV, FLV, MKV, MOV) - skips browser validation, relies on header check
  * ✅ Seek/playback testing for videos and audio
  * ✅ All MediaError codes handled (MEDIA_ERR_ABORTED, MEDIA_ERR_NETWORK, MEDIA_ERR_DECODE, MEDIA_ERR_SRC_NOT_SUPPORTED)
  * ✅ Canvas rendering test for images
@@ -93,6 +94,27 @@ export class FileIntegrityValidator {
     };
   }
 
+  // Container formats that FFmpeg supports but browsers don't natively support
+  // These should skip browser decoding validation and rely on header + FFmpeg validation
+  private static readonly FFMPEG_ONLY_VIDEO_EXTENSIONS = [
+    '.avi',
+    '.wmv',
+    '.flv',
+    '.mkv', // MKV can contain codecs browsers don't support
+    '.mov', // MOV can contain codecs browsers don't support
+  ];
+
+  /**
+   * Check if a video format should skip browser validation
+   * (formats supported by FFmpeg but not by browsers)
+   */
+  private static shouldSkipBrowserValidation(fileName: string): boolean {
+    const lowerName = fileName.toLowerCase();
+    return this.FFMPEG_ONLY_VIDEO_EXTENSIONS.some((ext) =>
+      lowerName.endsWith(ext),
+    );
+  }
+
   /**
    * Enhanced video validation with comprehensive checks
    */
@@ -113,7 +135,22 @@ export class FileIntegrityValidator {
         return headerValid;
       }
 
-      // Check 3: Browser decoding test
+      // Check 3: Skip browser validation for FFmpeg-only formats (AVI, WMV, FLV, etc.)
+      // These formats are valid but browsers can't decode them - FFmpeg will handle them
+      if (this.shouldSkipBrowserValidation(file.name)) {
+        console.log(
+          `✅ Skipping browser validation for FFmpeg-supported format: ${file.name}`,
+        );
+        return {
+          isValid: true,
+          fileType: 'video',
+          metadata: {
+            // Metadata will be extracted via FFmpeg during actual processing
+          },
+        };
+      }
+
+      // Check 4: Browser decoding test (only for browser-native formats)
       const video = document.createElement('video');
       const objectUrl = URL.createObjectURL(file);
 
