@@ -848,6 +848,9 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.visible === nextProps.track.visible &&
       prevProps.track.locked === nextProps.track.locked &&
       prevProps.track.muted === nextProps.track.muted &&
+      prevProps.track.volumeDb === nextProps.track.volumeDb &&
+      prevProps.track.noiseReductionEnabled ===
+        nextProps.track.noiseReductionEnabled &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -1177,6 +1180,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           track.visible === nextTrack.visible &&
           track.locked === nextTrack.locked &&
           track.muted === nextTrack.muted &&
+          track.volumeDb === nextTrack.volumeDb &&
+          track.noiseReductionEnabled === nextTrack.noiseReductionEnabled &&
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
           track.previewUrl === nextTrack.previewUrl &&
@@ -1851,6 +1856,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           track.visible === nextTrack.visible &&
           track.locked === nextTrack.locked &&
           track.muted === nextTrack.muted &&
+          track.volumeDb === nextTrack.volumeDb &&
+          track.noiseReductionEnabled === nextTrack.noiseReductionEnabled &&
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
           track.previewUrl === nextTrack.previewUrl &&

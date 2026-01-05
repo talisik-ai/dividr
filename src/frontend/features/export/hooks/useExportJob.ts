@@ -4,6 +4,7 @@
  */
 import { TrackInfo, VideoEditJob } from '@/backend/ffmpeg/schema/ffmpegConfig';
 import { useCallback } from 'react';
+import { NoiseReductionCache } from '../../editor/preview/services/NoiseReductionCache';
 import {
   useVideoEditorStore,
   VideoTrack,
@@ -496,11 +497,27 @@ function convertTracksToFFmpegInputs(
       `🎥 Adding track "${track.name}": type=${track.type}, timeline=${track.startFrame}-${track.endFrame}, source start ${sourceStartTime}s, duration ${trackDurationSeconds}s, dimensions: ${track.width}x${track.height}, aspect ratio: ${track.detectedAspectRatioLabel || 'custom'}${audioInfo}`,
     );
 
+    // Resolve the audio source path - use noise-reduced version if available
+    let resolvedPath = track.source;
+    if (track.type === 'audio' && track.noiseReductionEnabled) {
+      const processedPath = NoiseReductionCache.getProcessedPath(track.source);
+      if (processedPath) {
+        resolvedPath = processedPath;
+        console.log(
+          `🔇 Using noise-reduced audio for "${track.name}": ${processedPath}`,
+        );
+      } else {
+        console.warn(
+          `⚠️ Noise reduction enabled for "${track.name}" but no processed file found - using original`,
+        );
+      }
+    }
+
     // DON'T attach audio to video tracks - process them independently
     // Video tracks will be video-only, audio tracks will be audio-only
     const trackInfo: TrackInfo = {
       path:
-        track.type === 'text' || track.type === 'subtitle' ? '' : track.source, // Text and subtitle tracks don't have a file path
+        track.type === 'text' || track.type === 'subtitle' ? '' : resolvedPath, // Text and subtitle tracks don't have a file path
       audioPath: undefined, // Always undefined - no audio attached to video
       startTime: sourceStartTime, // Where to start reading from source file
       duration: Math.max(0.033, trackDurationSeconds), // How long to read from source

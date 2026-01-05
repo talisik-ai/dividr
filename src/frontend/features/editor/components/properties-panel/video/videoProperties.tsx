@@ -13,6 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
+import { cn } from '@/frontend/utils/utils';
 import { RotateCcw } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
@@ -323,7 +324,13 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
 
         {/* Video Tab with nested Basic/Advanced tabs */}
         {hasAudio ? (
-          <TabsContent value="video" className="flex-1 overflow-hidden">
+          <TabsContent
+            value="video"
+            className={cn(
+              'flex-1 overflow-hidden',
+              activeTab === 'video' && 'grid',
+            )}
+          >
             <Tabs
               value={videoSubTab}
               onValueChange={setVideoSubTab}
