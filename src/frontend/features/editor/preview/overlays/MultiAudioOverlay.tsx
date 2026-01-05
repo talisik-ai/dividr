@@ -6,7 +6,7 @@
  * - Frame-driven mode: Audio elements keyed by clip ID (handles same-source overlaps)
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { VideoTrack } from '../../stores/videoEditor/index';
 import { resolveAudioFrameRequests } from '../services/FrameResolver';
 import { NoiseReductionCache } from '../services/NoiseReductionCache';
@@ -59,6 +59,14 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
   const prevFrameRef = useRef<number>(currentFrame);
   const prevIsPlayingRef = useRef<boolean>(isPlaying);
   const lastUpdateRef = useRef<number>(0);
+
+  // Compute a signature that changes when any track's volume properties change
+  // This is used by the volume-update effect to react to volumeDb/muted changes
+  const volumeSignature = useMemo(() => {
+    return audioTracks
+      .map((t) => `${t.id}:${t.volumeDb ?? 0}:${t.muted ? 1 : 0}`)
+      .join('|');
+  }, [audioTracks]);
 
   const getOrCreateAudioElement = useCallback(
     (previewUrl: string, trackId: string): HTMLAudioElement | null => {
@@ -289,6 +297,36 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
   const CONTINUITY_TOLERANCE = 0.15; // 150ms - covers frame timing variance
   const PLAYBACK_SYNC_TOLERANCE = 0.3; // 300ms during playback
 
+  // Separate effect for volume-only updates (no seeking, no playback changes)
+  // This runs whenever volume properties change and immediately updates audio.volume
+  useEffect(() => {
+    if (!useSourceRegistry) return;
+
+    // Directly update volume on all active audio elements
+    sourceAudioElementsRef.current.forEach((audio, sourceId) => {
+      // Find the track for this source to get its current volume
+      const track = audioTracks.find((t) => {
+        const url = t.previewUrl;
+        if (!url) return false;
+        try {
+          if (url.startsWith('blob:')) return url === sourceId;
+          const parsed = new URL(url, window.location.origin);
+          return decodeURIComponent(parsed.pathname) === sourceId;
+        } catch {
+          return url === sourceId;
+        }
+      });
+
+      if (track) {
+        const volumeDb = track.volumeDb ?? 0;
+        const linearVolume = volumeDb <= -60 ? 0 : Math.pow(10, volumeDb / 20);
+        const shouldMute = isMuted || track.muted;
+        audio.muted = shouldMute;
+        audio.volume = shouldMute ? 0 : Math.min(volume * linearVolume, 1);
+      }
+    });
+  }, [audioTracks, volumeSignature, isMuted, volume, useSourceRegistry]);
+
   useEffect(() => {
     if (!useSourceRegistry) return;
 
@@ -423,6 +461,10 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
       if (!audio.paused) audio.pause();
       sourceAudioStateRef.current.delete(sourceId);
     });
+
+    // Update refs for next frame comparison
+    prevFrameRef.current = currentFrame;
+    prevIsPlayingRef.current = isPlaying;
   }, [
     audioTracks,
     currentFrame,
@@ -432,6 +474,8 @@ export const MultiAudioPlayer: React.FC<MultiAudioPlayerProps> = ({
     volume,
     playbackRate,
     useSourceRegistry,
+    // Note: volumeSignature is NOT included here - volume updates are handled
+    // by a separate effect to avoid triggering seek logic
   ]);
 
   // Cleanup source audio when tracks change

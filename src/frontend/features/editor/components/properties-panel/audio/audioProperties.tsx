@@ -42,6 +42,9 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
 }) => {
   // Selective subscriptions to avoid re-renders during playback
   const tracks = useVideoEditorStore((state) => state.tracks);
+  const isPlaying = useVideoEditorStore((state) => state.playback.isPlaying);
+  const play = useVideoEditorStore((state) => state.play);
+  const pause = useVideoEditorStore((state) => state.pause);
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrackAudio = useVideoEditorStore(
@@ -54,6 +57,10 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
 
   // Track if we're in a slider drag to avoid multiple beginGroup calls
   const isDraggingRef = useRef(false);
+  // Track if playback was active before drag to resume after
+  const wasPlayingRef = useRef(false);
+  // Timer for delayed resume after drag
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Get selected audio tracks (or forced track)
   const selectedAudioTracks = useMemo(() => {
@@ -96,6 +103,15 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     setLocalInputValue(formatDbValue(currentAudioProperties.volumeDb));
   }, [currentAudioProperties.volumeDb]);
 
+  // Cleanup resume timer on unmount
+  useEffect(() => {
+    return () => {
+      if (resumeTimerRef.current) {
+        clearTimeout(resumeTimerRef.current);
+      }
+    };
+  }, []);
+
   // Helper function to update audio properties for selected tracks (batch-safe)
   const updateAudioProperties = useCallback(
     (propertyUpdates: Partial<typeof DEFAULT_AUDIO_PROPERTIES>) => {
@@ -115,21 +131,42 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     );
   }, [currentAudioProperties]);
 
-  // Handle volume slider drag start (begin batch transaction)
+  // Handle volume slider drag start (begin batch transaction + pause playback)
   const handleVolumeSliderDragStart = useCallback(() => {
     if (!isDraggingRef.current) {
       isDraggingRef.current = true;
       beginAudioUpdate();
-    }
-  }, [beginAudioUpdate]);
 
-  // Handle volume slider drag end (end batch transaction)
+      // Clear any pending resume timer
+      if (resumeTimerRef.current) {
+        clearTimeout(resumeTimerRef.current);
+        resumeTimerRef.current = null;
+      }
+
+      // Pause playback if playing (to avoid audio glitches during drag)
+      if (isPlaying) {
+        wasPlayingRef.current = true;
+        pause();
+      }
+    }
+  }, [beginAudioUpdate, isPlaying, pause]);
+
+  // Handle volume slider drag end (end batch transaction + delayed resume)
   const handleVolumeSliderDragEnd = useCallback(() => {
     if (isDraggingRef.current) {
       isDraggingRef.current = false;
       endAudioUpdate();
+
+      // Resume playback after a short delay if it was playing before
+      if (wasPlayingRef.current) {
+        resumeTimerRef.current = setTimeout(() => {
+          play();
+          wasPlayingRef.current = false;
+          resumeTimerRef.current = null;
+        }, 150); // 150ms delay for smooth transition
+      }
     }
-  }, [endAudioUpdate]);
+  }, [endAudioUpdate, play]);
 
   // Handle volume slider change (dB scale) - called during drag
   const handleVolumeSliderChange = useCallback(
