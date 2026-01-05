@@ -49,6 +49,7 @@ import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { VideoTrack } from '../../../stores/videoEditor/types';
 import { isSubtitleFile } from '../../../stores/videoEditor/utils/subtitleParser';
 import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
+import { DuplicateMediaDialog } from '../../dialogs/duplicateMediaDialog';
 import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
 interface MediaItem {
   id: string;
@@ -116,6 +117,14 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   );
   const transcriptionProgress = useVideoEditorStore(
     (state) => state.transcriptionProgress,
+  );
+
+  // Duplicate detection state
+  const duplicateDetection = useVideoEditorStore(
+    (state) => state.duplicateDetection,
+  );
+  const hideDuplicateDialog = useVideoEditorStore(
+    (state) => state.hideDuplicateDialog,
   );
 
   // Check if any transcription is in progress (from media library or timeline)
@@ -1207,6 +1216,27 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
               deleteExisting,
             );
           }
+        }}
+      />
+
+      <DuplicateMediaDialog
+        open={duplicateDetection?.show ?? false}
+        onOpenChange={(open) => {
+          if (!open) {
+            duplicateDetection?.pendingResolve?.(false);
+            hideDuplicateDialog?.();
+          }
+        }}
+        existingMediaName={duplicateDetection?.existingMedia?.name ?? ''}
+        existingMediaThumbnail={duplicateDetection?.existingMedia?.thumbnail}
+        newFileName={duplicateDetection?.pendingFile?.name ?? ''}
+        onUseExisting={() => {
+          duplicateDetection?.pendingResolve?.(true);
+          hideDuplicateDialog?.();
+        }}
+        onImportAsCopy={() => {
+          duplicateDetection?.pendingResolve?.(false);
+          hideDuplicateDialog?.();
         }}
       />
 

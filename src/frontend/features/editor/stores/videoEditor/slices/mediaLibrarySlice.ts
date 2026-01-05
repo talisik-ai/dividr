@@ -3,14 +3,25 @@ import AudioWaveformGenerator from '@/backend/frontend_use/audioWaveformGenerato
 import { VideoSpriteSheetGenerator } from '@/backend/frontend_use/videoSpriteSheetGenerator';
 import { VideoThumbnailGenerator } from '@/backend/frontend_use/videoThumbnailGenerator';
 import { projectService } from '@/backend/services/projectService';
+import { ContentSignature } from '@/frontend/utils/contentSignature';
 import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
 import { MediaLibraryItem } from '../types';
+
+/** State for duplicate detection dialog */
+export interface DuplicateDetectionState {
+  show: boolean;
+  existingMedia: MediaLibraryItem | null;
+  pendingFile: File | null;
+  pendingSignature: ContentSignature | null;
+  pendingResolve: ((useExisting: boolean) => void) | null;
+}
 
 export interface MediaLibrarySlice {
   mediaLibrary: MediaLibraryItem[];
   generatingSpriteSheets: Set<string>;
   generatingWaveforms: Set<string>;
+  duplicateDetection: DuplicateDetectionState | null;
   addToMediaLibrary: (item: Omit<MediaLibraryItem, 'id'>) => string;
   removeFromMediaLibrary: (mediaId: string, force?: boolean) => void;
   updateMediaLibraryItem: (
@@ -37,6 +48,18 @@ export interface MediaLibrarySlice {
   setGeneratingWaveform: (mediaId: string, isGenerating: boolean) => void;
   generateWaveformForMedia: (mediaId: string) => Promise<boolean>;
 
+  // Duplicate detection
+  findDuplicateBySignature: (
+    signature: ContentSignature,
+  ) => MediaLibraryItem | undefined;
+  showDuplicateDialog: (
+    existingMedia: MediaLibraryItem,
+    pendingFile: File,
+    pendingSignature: ContentSignature,
+    resolve: (useExisting: boolean) => void,
+  ) => void;
+  hideDuplicateDialog: () => void;
+
   // State management helpers
   markUnsavedChanges?: () => void;
   updateTrack?: (trackId: string, updates: any) => void;
@@ -52,6 +75,37 @@ export const createMediaLibrarySlice: StateCreator<
   mediaLibrary: [],
   generatingSpriteSheets: new Set<string>(),
   generatingWaveforms: new Set<string>(),
+  duplicateDetection: null,
+
+  findDuplicateBySignature: (signature: ContentSignature) => {
+    const state = get() as any;
+    return state.mediaLibrary?.find(
+      (item: MediaLibraryItem) =>
+        item.contentSignature?.partialHash === signature.partialHash &&
+        item.contentSignature?.fileSize === signature.fileSize,
+    );
+  },
+
+  showDuplicateDialog: (
+    existingMedia: MediaLibraryItem,
+    pendingFile: File,
+    pendingSignature: ContentSignature,
+    resolve: (useExisting: boolean) => void,
+  ) => {
+    set({
+      duplicateDetection: {
+        show: true,
+        existingMedia,
+        pendingFile,
+        pendingSignature,
+        pendingResolve: resolve,
+      },
+    });
+  },
+
+  hideDuplicateDialog: () => {
+    set({ duplicateDetection: null });
+  },
 
   addToMediaLibrary: (itemData) => {
     const id = uuidv4();
@@ -105,6 +159,9 @@ export const createMediaLibrarySlice: StateCreator<
           `Cannot delete "${mediaItem.name}" - it's currently used by ${affectedTracks.length} track(s) on the timeline. Please remove the tracks first.`,
         );
       } else {
+        // Record undo state before cascade delete (captures media + tracks)
+        state.recordAction?.('Delete Media');
+
         // Force delete: cascade remove all affected tracks
         console.log(
           `⚠️ Force deleting media "${mediaItem.name}" and removing ${affectedTracks.length} track(s) from timeline`,
@@ -115,6 +172,9 @@ export const createMediaLibrarySlice: StateCreator<
           state.removeTrack?.(track.id);
         });
       }
+    } else {
+      // Record undo state before delete (no tracks affected)
+      state.recordAction?.('Delete Media');
     }
 
     // Safe to delete - no tracks are using this media (or we force deleted them)
