@@ -92,7 +92,14 @@ export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel
+            onClick={() => {
+              onUseExisting();
+              onOpenChange(false);
+            }}
+          >
+            Cancel
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
               onImportAsCopy();
