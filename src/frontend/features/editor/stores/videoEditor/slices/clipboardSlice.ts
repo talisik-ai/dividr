@@ -194,6 +194,12 @@ export const createClipboardSlice: StateCreator<
       return;
     }
 
+    // Get playhead position for paste at playhead behavior
+    const playheadFrame = state.timeline?.currentFrame ?? 0;
+    const existingTracks: VideoTrack[] = state.tracks || [];
+
+    console.log(`[Clipboard] Pasting at playhead frame: ${playheadFrame}`);
+
     // Begin grouped transaction for atomic undo of all pasted tracks
     const trackCount = clipboardData.tracks.length;
     state.beginGroup?.(`Paste ${trackCount} Track${trackCount > 1 ? 's' : ''}`);
@@ -213,21 +219,212 @@ export const createClipboardSlice: StateCreator<
       ...clipboardData.tracks.map((track) => track.startFrame),
     );
 
-    // Find the unified insertion point (end of timeline across all track types)
-    const allTrackTypes = [...new Set(clipboardData.tracks.map((t) => t.type))];
-    let maxInsertionPoint = 0;
+    // PROFESSIONAL PASTE BEHAVIOR:
+    // 1. Paste at playhead position (not end of timeline)
+    // 2. Determine track placement based on playhead intersection
+    // 3. Handle collisions by shifting to available vertical slot above
 
-    allTrackTypes.forEach((trackType) => {
-      const existingTracksOfType = state.tracks.filter(
-        (t: VideoTrack) => t.type === trackType,
+    /**
+     * Helper: Check if a time range intersects with the playhead
+     */
+    const intersectsPlayhead = (
+      startFrame: number,
+      endFrame: number,
+    ): boolean => {
+      return playheadFrame >= startFrame && playheadFrame < endFrame;
+    };
+
+    /**
+     * Helper: Find clips at playhead position on a specific row
+     */
+    const findClipsAtPlayhead = (
+      trackType: VideoTrack['type'],
+      rowIndex: number,
+    ): VideoTrack[] => {
+      return existingTracks.filter(
+        (t) =>
+          t.type === trackType &&
+          (t.trackRowIndex ?? 0) === rowIndex &&
+          intersectsPlayhead(t.startFrame, t.endFrame),
       );
-      if (existingTracksOfType.length > 0) {
-        const maxEnd = Math.max(
-          ...existingTracksOfType.map((t: VideoTrack) => t.endFrame),
+    };
+
+    /**
+     * Helper: Check if a position would collide with existing clips
+     */
+    const hasCollisionAtPosition = (
+      startFrame: number,
+      endFrame: number,
+      trackType: VideoTrack['type'],
+      rowIndex: number,
+      excludeIds: string[] = [],
+    ): boolean => {
+      const excludeSet = new Set(excludeIds);
+      return existingTracks.some(
+        (t) =>
+          t.type === trackType &&
+          (t.trackRowIndex ?? 0) === rowIndex &&
+          !excludeSet.has(t.id) &&
+          startFrame < t.endFrame &&
+          endFrame > t.startFrame,
+      );
+    };
+
+    /**
+     * Helper: Find next available row index above for collision avoidance
+     * Returns the first row index (going up) where the clip can be placed without collision
+     */
+    const findAvailableRowAbove = (
+      startFrame: number,
+      endFrame: number,
+      trackType: VideoTrack['type'],
+      startingRowIndex: number,
+      excludeIds: string[] = [],
+      tracksToAdd: VideoTrack[] = [],
+    ): number => {
+      // Get all existing row indices for this track type
+      const existingRowIndices = existingTracks
+        .filter((t) => t.type === trackType)
+        .map((t) => t.trackRowIndex ?? 0);
+
+      // Include row indices from tracks being added in this paste operation
+      const addingRowIndices = tracksToAdd
+        .filter((t) => t.type === trackType)
+        .map((t) => t.trackRowIndex ?? 0);
+
+      const allRowIndices = [
+        ...new Set([...existingRowIndices, ...addingRowIndices]),
+      ];
+      const maxRowIndex =
+        allRowIndices.length > 0 ? Math.max(...allRowIndices) : 0;
+
+      // Combine existing tracks with tracks being added for collision checking
+      const allTracksForCollision = [...existingTracks, ...tracksToAdd];
+      const excludeSet = new Set(excludeIds);
+
+      // Try each row index starting from startingRowIndex, going up
+      for (
+        let rowIndex = startingRowIndex;
+        rowIndex <= maxRowIndex + 1;
+        rowIndex++
+      ) {
+        const wouldCollide = allTracksForCollision.some(
+          (t) =>
+            t.type === trackType &&
+            (t.trackRowIndex ?? 0) === rowIndex &&
+            !excludeSet.has(t.id) &&
+            startFrame < t.endFrame &&
+            endFrame > t.startFrame,
         );
-        maxInsertionPoint = Math.max(maxInsertionPoint, maxEnd);
+
+        if (!wouldCollide) {
+          return rowIndex;
+        }
       }
-    });
+
+      // If all rows have collisions, create a new row above the max
+      return maxRowIndex + 1;
+    };
+
+    /**
+     * Helper: Determine target row for a track based on playhead intersection rules
+     *
+     * Priority Order:
+     * A. If playhead intersects existing clip on SAME row as copied clip → insert ABOVE
+     * B. If playhead intersects a track but not on copied clip's row → paste on that row
+     * C. If playhead doesn't intersect any track → paste on same row as original
+     */
+    const determineTargetRow = (
+      track: VideoTrack,
+      proposedStartFrame: number,
+      proposedEndFrame: number,
+      tracksToAdd: VideoTrack[] = [],
+    ): number => {
+      const originalRowIndex = track.trackRowIndex ?? 0;
+      const trackType = track.type;
+
+      // Rule A: Check if playhead intersects clips on the SAME row as the copied clip
+      const clipsOnSameRow = findClipsAtPlayhead(trackType, originalRowIndex);
+      if (clipsOnSameRow.length > 0) {
+        console.log(
+          `[Clipboard] Playhead intersects clip on same row (${originalRowIndex}), finding slot above`,
+        );
+        // Find available slot above the original row
+        return findAvailableRowAbove(
+          proposedStartFrame,
+          proposedEndFrame,
+          trackType,
+          originalRowIndex + 1,
+          [],
+          tracksToAdd,
+        );
+      }
+
+      // Rule B: Check if playhead intersects ANY track of the same type on a different row
+      const allIntersectingClips = existingTracks.filter(
+        (t) =>
+          t.type === trackType && intersectsPlayhead(t.startFrame, t.endFrame),
+      );
+
+      if (allIntersectingClips.length > 0) {
+        // Use the row of the intersected clip
+        const intersectedRow = allIntersectingClips[0].trackRowIndex ?? 0;
+        console.log(
+          `[Clipboard] Playhead intersects clip on row ${intersectedRow}, checking for collision`,
+        );
+
+        // Check if we can place on that row without collision
+        const wouldCollide = hasCollisionAtPosition(
+          proposedStartFrame,
+          proposedEndFrame,
+          trackType,
+          intersectedRow,
+        );
+
+        if (!wouldCollide) {
+          return intersectedRow;
+        }
+
+        // If collision, find available slot above
+        return findAvailableRowAbove(
+          proposedStartFrame,
+          proposedEndFrame,
+          trackType,
+          intersectedRow + 1,
+          [],
+          tracksToAdd,
+        );
+      }
+
+      // Rule C: Playhead doesn't intersect any track - use original row
+      // But still check for collision at that position
+      const wouldCollide = hasCollisionAtPosition(
+        proposedStartFrame,
+        proposedEndFrame,
+        trackType,
+        originalRowIndex,
+      );
+
+      if (!wouldCollide) {
+        console.log(
+          `[Clipboard] No playhead intersection, using original row ${originalRowIndex}`,
+        );
+        return originalRowIndex;
+      }
+
+      // Collision at original row - find available slot above
+      console.log(
+        `[Clipboard] Collision at original row ${originalRowIndex}, finding slot above`,
+      );
+      return findAvailableRowAbove(
+        proposedStartFrame,
+        proposedEndFrame,
+        trackType,
+        originalRowIndex + 1,
+        [],
+        tracksToAdd,
+      );
+    };
 
     // Group tracks by whether they are linked pairs or singles
     const processedIds = new Set<string>();
@@ -247,6 +444,10 @@ export const createClipboardSlice: StateCreator<
 
       // Calculate relative offset from the minimum start frame (preserve spacing)
       const relativeOffset = track.startFrame - minStartFrame;
+
+      // PASTE AT PLAYHEAD: Use playhead as insertion point instead of end of timeline
+      const proposedStartFrame = playheadFrame + relativeOffset;
+      const proposedEndFrame = proposedStartFrame + duration;
 
       // Check if this track is part of a linked pair in the clipboard
       const isPartOfLinkedPair =
@@ -275,10 +476,24 @@ export const createClipboardSlice: StateCreator<
           const linkedDuration = linkedTrack.endFrame - linkedTrack.startFrame;
           const linkedRelativeOffset = linkedTrack.startFrame - minStartFrame;
 
-          // Both tracks maintain their relative positions from the group
-          const finalStartFrame = maxInsertionPoint + relativeOffset;
-          const linkedFinalStartFrame =
-            maxInsertionPoint + linkedRelativeOffset;
+          // Both tracks use playhead-based positioning
+          const finalStartFrame = playheadFrame + relativeOffset;
+          const linkedFinalStartFrame = playheadFrame + linkedRelativeOffset;
+          const linkedFinalEndFrame = linkedFinalStartFrame + linkedDuration;
+
+          // Determine target rows for both tracks
+          const targetRowIndex = determineTargetRow(
+            track,
+            finalStartFrame,
+            finalStartFrame + duration,
+            newTracks,
+          );
+          const linkedTargetRowIndex = determineTargetRow(
+            linkedTrack,
+            linkedFinalStartFrame,
+            linkedFinalEndFrame,
+            newTracks,
+          );
 
           // Create pasted tracks with ALL metadata preserved
           const pastedTrack: VideoTrack = {
@@ -287,6 +502,7 @@ export const createClipboardSlice: StateCreator<
             startFrame: finalStartFrame,
             endFrame: finalStartFrame + duration,
             duration: duration,
+            trackRowIndex: targetRowIndex,
             linkedTrackId: newLinkedId,
             isLinked: true,
           };
@@ -295,8 +511,9 @@ export const createClipboardSlice: StateCreator<
             ...linkedTrack,
             id: newLinkedId,
             startFrame: linkedFinalStartFrame,
-            endFrame: linkedFinalStartFrame + linkedDuration,
+            endFrame: linkedFinalEndFrame,
             duration: linkedDuration,
+            trackRowIndex: linkedTargetRowIndex,
             linkedTrackId: newId,
             isLinked: true,
           };
@@ -305,23 +522,29 @@ export const createClipboardSlice: StateCreator<
           newTrackIds.push(newId, newLinkedId);
 
           console.log(
-            `[Clipboard] Pasted linked pair: ${newId} at frame ${finalStartFrame}, ${newLinkedId} at frame ${linkedFinalStartFrame}`,
+            `[Clipboard] Pasted linked pair: ${track.type}-${targetRowIndex} at frame ${finalStartFrame}, ${linkedTrack.type}-${linkedTargetRowIndex} at frame ${linkedFinalStartFrame}`,
           );
         }
       } else {
         // Handle single/unlinked track
         processedIds.add(track.id);
 
-        // Maintain relative position from the group
-        const finalStartFrame = maxInsertionPoint + relativeOffset;
+        // Determine target row based on playhead intersection rules
+        const targetRowIndex = determineTargetRow(
+          track,
+          proposedStartFrame,
+          proposedEndFrame,
+          newTracks,
+        );
 
         // Create pasted track with ALL metadata preserved
         const pastedTrack: VideoTrack = {
           ...track,
           id: newId,
-          startFrame: finalStartFrame,
-          endFrame: finalStartFrame + duration,
+          startFrame: proposedStartFrame,
+          endFrame: proposedEndFrame,
           duration: duration,
+          trackRowIndex: targetRowIndex,
           // Break link if pasting only one side of a linked pair
           isLinked: false,
           linkedTrackId: undefined,
@@ -331,7 +554,7 @@ export const createClipboardSlice: StateCreator<
         newTrackIds.push(newId);
 
         console.log(
-          `[Clipboard] Pasted single track: ${newId} at frame ${finalStartFrame}`,
+          `[Clipboard] Pasted ${track.type} to row ${targetRowIndex} at frame ${proposedStartFrame}`,
         );
       }
     });
@@ -344,7 +567,13 @@ export const createClipboardSlice: StateCreator<
     }));
 
     // Select the newly pasted tracks (this also triggers re-render)
+    // This provides visual feedback by highlighting the pasted clips
     state.setSelectedTracks(newTrackIds);
+
+    // Trigger duplication feedback animation for pasted tracks
+    if (state.triggerDuplicationFeedback) {
+      newTrackIds.forEach((id) => state.triggerDuplicationFeedback(id));
+    }
 
     // Mark unsaved changes
     state.markUnsavedChanges?.();
@@ -353,7 +582,7 @@ export const createClipboardSlice: StateCreator<
     state.endGroup?.();
 
     console.log(
-      `[Clipboard] Pasted ${newTrackIds.length} track(s) with preserved relationships and spacing`,
+      `[Clipboard] Pasted ${newTrackIds.length} track(s) at playhead (frame ${playheadFrame}) with smart row placement`,
     );
   },
 

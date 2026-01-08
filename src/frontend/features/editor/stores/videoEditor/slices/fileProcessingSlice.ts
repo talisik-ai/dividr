@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { generateContentSignatureFromPath } from '@/frontend/utils/contentSignature';
 import { FileIntegrityValidator } from '@/frontend/utils/fileValidator';
 import { StateCreator } from 'zustand';
 import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
@@ -234,6 +235,17 @@ const processSubtitleFile = async (
 const getTrackColor = (index: number) =>
   TRACK_COLORS[index % TRACK_COLORS.length];
 
+// Result type for processImportedFile
+interface ProcessImportResult {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  url: string;
+  isDuplicate?: boolean;
+  existingMediaId?: string;
+}
+
 // Shared helper function to process imported files
 const processImportedFile = async (
   fileInfo: any,
@@ -247,7 +259,14 @@ const processImportedFile = async (
     mediaId: string,
     updates: Partial<MediaLibraryItem>,
   ) => void,
-) => {
+  checkDuplicateFn?: (
+    signature: MediaLibraryItem['contentSignature'],
+  ) => MediaLibraryItem | undefined,
+  handleDuplicateFn?: (
+    existingMedia: MediaLibraryItem,
+    signature: MediaLibraryItem['contentSignature'],
+  ) => Promise<boolean>,
+): Promise<ProcessImportResult> => {
   // Get accurate duration using FFprobe
   // Note: For images, we use a default duration since images are static and extensible
   let actualDurationSeconds: number;
@@ -348,6 +367,58 @@ const processImportedFile = async (
     mimeType = `image/${fileInfo.extension}`;
   }
 
+  // Generate content signature for duplicate detection
+  let contentSignature: MediaLibraryItem['contentSignature'] | undefined;
+  try {
+    const signature = await generateContentSignatureFromPath(fileInfo.path);
+    if (signature) {
+      contentSignature = signature;
+      console.log(
+        `🔑 Generated content signature for ${fileInfo.name}: ${signature.partialHash.substring(0, 16)}...`,
+      );
+
+      // Check for duplicate if callback provided
+      if (checkDuplicateFn && contentSignature) {
+        const existingMedia = checkDuplicateFn(contentSignature);
+        if (existingMedia) {
+          console.log(
+            `🔄 Duplicate detected: "${fileInfo.name}" matches existing "${existingMedia.name}"`,
+          );
+
+          // Handle duplicate - ask user what to do
+          if (handleDuplicateFn) {
+            const useExisting = await handleDuplicateFn(
+              existingMedia,
+              contentSignature,
+            );
+            if (useExisting) {
+              // User chose to use existing - return without importing
+              console.log(
+                `✅ Using existing media: ${existingMedia.name} (${existingMedia.id})`,
+              );
+              return {
+                id: existingMedia.id,
+                name: existingMedia.name,
+                type: existingMedia.mimeType,
+                size: existingMedia.size,
+                url: existingMedia.previewUrl || existingMedia.source,
+                isDuplicate: true,
+                existingMediaId: existingMedia.id,
+              };
+            }
+            // User chose to import as copy - continue with import
+            console.log(`📋 Importing as copy: ${fileInfo.name}`);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `⚠️ Failed to generate content signature for ${fileInfo.name}:`,
+      error,
+    );
+  }
+
   // Add to media library with appropriate metadata
   const mediaLibraryItem: Omit<MediaLibraryItem, 'id'> = {
     name: fileInfo.name,
@@ -357,6 +428,7 @@ const processImportedFile = async (
     duration: actualDurationSeconds,
     size: fileInfo.size,
     mimeType,
+    contentSignature,
     metadata:
       trackType === 'audio'
         ? {
@@ -745,69 +817,94 @@ export const createFileProcessingSlice: StateCreator<
         thumbnail?: string;
       }> = [];
 
-      // Process only valid files and add to media library
-      // Use Promise.allSettled to ensure all files are processed independently
-      // Even if one file fails, others will still be imported successfully
-      const results = await Promise.allSettled(
-        validFileIndices.map(async (index) => {
-          const fileInfo = result.files[index];
-          try {
-            const fileData = await processImportedFile(
-              fileInfo,
-              (get() as any).addToMediaLibrary,
-              undefined, // No timeline addition
-              () => (get() as any).timeline.fps,
-              (get() as any).generateSpriteSheetForMedia,
-              (get() as any).generateThumbnailForMedia,
-              (get() as any).generateWaveformForMedia,
-              (get() as any).updateMediaLibraryItem,
-            );
-            return { success: true, fileData, fileName: fileInfo.name };
-          } catch (error: any) {
-            console.error(`❌ Failed to import ${fileInfo.name}:`, error);
-            return {
-              success: false,
-              fileName: fileInfo.name,
-              error: error.message || 'Failed to process file',
-            };
-          }
-        }),
-      );
+      // Start undo group for batch import
+      const state = get() as any;
+      state.beginGroup?.('Import Media');
 
-      // Process results and separate successful imports from failures
-      results.forEach((result) => {
-        if (result.status === 'fulfilled') {
-          if (result.value.success) {
-            importedFiles.push(result.value.fileData);
+      try {
+        // Process only valid files and add to media library
+        // Use Promise.allSettled to ensure all files are processed independently
+        // Even if one file fails, others will still be imported successfully
+        const results = await Promise.allSettled(
+          validFileIndices.map(async (index) => {
+            const fileInfo = result.files[index];
+            try {
+              const storeState = get() as any;
+              const fileData = await processImportedFile(
+                fileInfo,
+                storeState.addToMediaLibrary,
+                undefined, // No timeline addition
+                () => storeState.timeline.fps,
+                storeState.generateSpriteSheetForMedia,
+                storeState.generateThumbnailForMedia,
+                storeState.generateWaveformForMedia,
+                storeState.updateMediaLibraryItem,
+                // Duplicate detection callbacks
+                storeState.findDuplicateBySignature,
+                async (existingMedia, signature) => {
+                  // Show dialog and wait for user choice
+                  return new Promise<boolean>((resolve) => {
+                    // Create a dummy File object for the dialog
+                    const pendingFile = new File([], fileInfo.name);
+                    storeState.showDuplicateDialog(
+                      existingMedia,
+                      pendingFile,
+                      signature,
+                      resolve,
+                    );
+                  });
+                },
+              );
+              return { success: true, fileData, fileName: fileInfo.name };
+            } catch (error: any) {
+              console.error(`❌ Failed to import ${fileInfo.name}:`, error);
+              return {
+                success: false,
+                fileName: fileInfo.name,
+                error: error.message || 'Failed to process file',
+              };
+            }
+          }),
+        );
+
+        // Process results and separate successful imports from failures
+        results.forEach((result) => {
+          if (result.status === 'fulfilled') {
+            if (result.value.success) {
+              importedFiles.push(result.value.fileData);
+            } else {
+              rejectedFiles.push({
+                name: result.value.fileName,
+                reason: result.value.error,
+                error: result.value.error,
+              });
+            }
           } else {
+            // Promise was rejected (shouldn't happen with try-catch, but handle it)
             rejectedFiles.push({
-              name: result.value.fileName,
-              reason: result.value.error,
-              error: result.value.error,
+              name: 'Unknown file',
+              reason: result.reason?.message || 'Promise rejected',
+              error: result.reason?.toString(),
             });
           }
-        } else {
-          // Promise was rejected (shouldn't happen with try-catch, but handle it)
-          rejectedFiles.push({
-            name: 'Unknown file',
-            reason: result.reason?.message || 'Promise rejected',
-            error: result.reason?.toString(),
-          });
+        });
+
+        console.log(
+          `✅ Successfully imported ${importedFiles.length} files from dialog`,
+        );
+        if (rejectedFiles.length > 0) {
+          console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
         }
-      });
 
-      console.log(
-        `✅ Successfully imported ${importedFiles.length} files from dialog`,
-      );
-      if (rejectedFiles.length > 0) {
-        console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
+        return {
+          success: true,
+          importedFiles,
+          rejectedFiles: rejectedFiles.length > 0 ? rejectedFiles : undefined,
+        };
+      } finally {
+        // End undo group
+        state.endGroup?.();
       }
-
-      return {
-        success: true,
-        importedFiles,
-        rejectedFiles: rejectedFiles.length > 0 ? rejectedFiles : undefined,
-      };
     } catch (error: any) {
       console.error('Failed to import media from dialog:', error);
       return {
@@ -1052,66 +1149,92 @@ export const createFileProcessingSlice: StateCreator<
             thumbnail?: string;
           }> = [];
 
-          // Process files and add to media library
-          // Use Promise.allSettled to ensure all files are processed independently
-          // Even if one file fails, others will still be imported successfully
-          const results = await Promise.allSettled(
-            result.files.map(async (fileInfo) => {
-              try {
-                const fileData = await processImportedFile(
-                  fileInfo,
-                  (get() as any).addToMediaLibrary,
-                  undefined, // No timeline addition
-                  () => (get() as any).timeline.fps,
-                  (get() as any).generateSpriteSheetForMedia,
-                  (get() as any).generateThumbnailForMedia,
-                  (get() as any).generateWaveformForMedia,
-                  (get() as any).updateMediaLibraryItem,
-                );
-                return { success: true, fileData, fileName: fileInfo.name };
-              } catch (error: any) {
-                console.error(`❌ Failed to import ${fileInfo.name}:`, error);
-                return {
-                  success: false,
-                  fileName: fileInfo.name,
-                  error: error.message || 'Failed to process file',
-                };
-              }
-            }),
-          );
+          // Start undo group for batch import
+          const state = get() as any;
+          state.beginGroup?.('Import Media');
 
-          // Process results and separate successful imports from failures
-          results.forEach((result) => {
-            if (result.status === 'fulfilled') {
-              if (result.value.success) {
-                importedFiles.push(result.value.fileData);
+          try {
+            // Process files and add to media library
+            // Use Promise.allSettled to ensure all files are processed independently
+            // Even if one file fails, others will still be imported successfully
+            const results = await Promise.allSettled(
+              result.files.map(async (fileInfo) => {
+                try {
+                  const storeState = get() as any;
+                  const fileData = await processImportedFile(
+                    fileInfo,
+                    storeState.addToMediaLibrary,
+                    undefined, // No timeline addition
+                    () => storeState.timeline.fps,
+                    storeState.generateSpriteSheetForMedia,
+                    storeState.generateThumbnailForMedia,
+                    storeState.generateWaveformForMedia,
+                    storeState.updateMediaLibraryItem,
+                    // Duplicate detection callbacks
+                    storeState.findDuplicateBySignature,
+                    async (existingMedia, signature) => {
+                      return new Promise<boolean>((resolve) => {
+                        const pendingFile = new File([], fileInfo.name);
+                        storeState.showDuplicateDialog(
+                          existingMedia,
+                          pendingFile,
+                          signature,
+                          resolve,
+                        );
+                      });
+                    },
+                  );
+                  return { success: true, fileData, fileName: fileInfo.name };
+                } catch (error: any) {
+                  console.error(`❌ Failed to import ${fileInfo.name}:`, error);
+                  return {
+                    success: false,
+                    fileName: fileInfo.name,
+                    error: error.message || 'Failed to process file',
+                  };
+                }
+              }),
+            );
+
+            // Process results and separate successful imports from failures
+            results.forEach((result) => {
+              if (result.status === 'fulfilled') {
+                if (result.value.success) {
+                  importedFiles.push(result.value.fileData);
+                } else {
+                  rejectedFiles.push({
+                    name: result.value.fileName,
+                    reason: result.value.error,
+                    error: result.value.error,
+                  });
+                }
               } else {
+                // Promise was rejected (shouldn't happen with try-catch, but handle it)
                 rejectedFiles.push({
-                  name: result.value.fileName,
-                  reason: result.value.error,
-                  error: result.value.error,
+                  name: 'Unknown file',
+                  reason: result.reason?.message || 'Promise rejected',
+                  error: result.reason?.toString(),
                 });
               }
-            } else {
-              // Promise was rejected (shouldn't happen with try-catch, but handle it)
-              rejectedFiles.push({
-                name: 'Unknown file',
-                reason: result.reason?.message || 'Promise rejected',
-                error: result.reason?.toString(),
-              });
+            });
+
+            console.log(
+              `✅ Successfully imported ${importedFiles.length} files`,
+            );
+            if (rejectedFiles.length > 0) {
+              console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
             }
-          });
 
-          console.log(`✅ Successfully imported ${importedFiles.length} files`);
-          if (rejectedFiles.length > 0) {
-            console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
+            return {
+              success: true,
+              importedFiles,
+              rejectedFiles:
+                rejectedFiles.length > 0 ? rejectedFiles : undefined,
+            };
+          } finally {
+            // End undo group
+            state.endGroup?.();
           }
-
-          return {
-            success: true,
-            importedFiles,
-            rejectedFiles: rejectedFiles.length > 0 ? rejectedFiles : undefined,
-          };
         } catch (error: any) {
           console.error('Failed to import media from drop:', error);
           return {
@@ -1252,106 +1375,130 @@ export const createFileProcessingSlice: StateCreator<
             thumbnail?: string;
           }> = [];
 
-          // STEP 1: Process files and add to media library ONLY
-          // Use Promise.allSettled to ensure all files are processed independently
-          // Even if one file fails, others will still be imported successfully
-          const libraryResults = await Promise.allSettled(
-            result.files.map(async (fileInfo) => {
-              try {
-                const fileData = await processImportedFile(
-                  fileInfo,
-                  (get() as any).addToMediaLibrary,
-                  undefined, // Do NOT add to timeline yet - we'll do that separately
-                  () => (get() as any).timeline.fps,
-                  (get() as any).generateSpriteSheetForMedia,
-                  (get() as any).generateThumbnailForMedia,
-                  (get() as any).generateWaveformForMedia,
-                  (get() as any).updateMediaLibraryItem,
-                );
-                return { success: true, fileData, fileName: fileInfo.name };
-              } catch (error: any) {
-                console.error(`❌ Failed to import ${fileInfo.name}:`, error);
-                return {
-                  success: false,
-                  fileName: fileInfo.name,
-                  error: error.message || 'Failed to process file',
-                };
-              }
-            }),
-          );
+          // Start undo group for batch import to timeline
+          const state = get() as any;
+          state.beginGroup?.('Import Media to Timeline');
 
-          // Process library import results and separate successful imports from failures
-          const mediaIdsToAddToTimeline: string[] = [];
-          libraryResults.forEach((result) => {
-            if (result.status === 'fulfilled') {
-              if (result.value.success) {
-                importedFiles.push(result.value.fileData);
-                mediaIdsToAddToTimeline.push(result.value.fileData.id);
-              } else {
-                rejectedFiles.push({
-                  name: result.value.fileName,
-                  reason: result.value.error,
-                  error: result.value.error,
-                });
-              }
-            } else {
-              // Promise was rejected (shouldn't happen with try-catch, but handle it)
-              rejectedFiles.push({
-                name: 'Unknown file',
-                reason: result.reason?.message || 'Promise rejected',
-                error: result.reason?.toString(),
-              });
-            }
-          });
-
-          console.log(
-            `✅ Added ${importedFiles.length} files to media library`,
-          );
-
-          // STEP 2: Add successfully imported media to timeline using addTrackFromMediaLibrary
-          // This ensures we reuse cached sprites/waveforms and avoid duplicate track creation
-          if (mediaIdsToAddToTimeline.length > 0) {
-            console.log(
-              `📍 Adding ${mediaIdsToAddToTimeline.length} files to timeline from media library...`,
-            );
-
-            const timelineResults = await Promise.allSettled(
-              mediaIdsToAddToTimeline.map(async (mediaId) => {
+          try {
+            // STEP 1: Process files and add to media library ONLY
+            // Use Promise.allSettled to ensure all files are processed independently
+            // Even if one file fails, others will still be imported successfully
+            const libraryResults = await Promise.allSettled(
+              result.files.map(async (fileInfo) => {
                 try {
-                  await (get() as any).addTrackFromMediaLibrary(mediaId, 0);
-                  return { success: true, mediaId };
-                } catch (error: any) {
-                  console.error(
-                    `❌ Failed to add to timeline: ${mediaId}:`,
-                    error,
+                  const storeState = get() as any;
+                  const fileData = await processImportedFile(
+                    fileInfo,
+                    storeState.addToMediaLibrary,
+                    undefined, // Do NOT add to timeline yet - we'll do that separately
+                    () => storeState.timeline.fps,
+                    storeState.generateSpriteSheetForMedia,
+                    storeState.generateThumbnailForMedia,
+                    storeState.generateWaveformForMedia,
+                    storeState.updateMediaLibraryItem,
+                    // Duplicate detection callbacks
+                    storeState.findDuplicateBySignature,
+                    async (existingMedia, signature) => {
+                      return new Promise<boolean>((resolve) => {
+                        const pendingFile = new File([], fileInfo.name);
+                        storeState.showDuplicateDialog(
+                          existingMedia,
+                          pendingFile,
+                          signature,
+                          resolve,
+                        );
+                      });
+                    },
                   );
-                  return { success: false, mediaId, error: error.message };
+                  return { success: true, fileData, fileName: fileInfo.name };
+                } catch (error: any) {
+                  console.error(`❌ Failed to import ${fileInfo.name}:`, error);
+                  return {
+                    success: false,
+                    fileName: fileInfo.name,
+                    error: error.message || 'Failed to process file',
+                  };
                 }
               }),
             );
 
-            // Log any timeline addition failures (shouldn't happen, but log for debugging)
-            timelineResults.forEach((result) => {
-              if (result.status === 'fulfilled' && !result.value.success) {
-                console.warn(
-                  `⚠️ Media imported to library but failed to add to timeline: ${result.value.mediaId}`,
-                );
+            // Process library import results and separate successful imports from failures
+            const mediaIdsToAddToTimeline: string[] = [];
+            libraryResults.forEach((result) => {
+              if (result.status === 'fulfilled') {
+                if (result.value.success) {
+                  importedFiles.push(result.value.fileData);
+                  mediaIdsToAddToTimeline.push(result.value.fileData.id);
+                } else {
+                  rejectedFiles.push({
+                    name: result.value.fileName,
+                    reason: result.value.error,
+                    error: result.value.error,
+                  });
+                }
+              } else {
+                // Promise was rejected (shouldn't happen with try-catch, but handle it)
+                rejectedFiles.push({
+                  name: 'Unknown file',
+                  reason: result.reason?.message || 'Promise rejected',
+                  error: result.reason?.toString(),
+                });
               }
             });
 
             console.log(
-              `✅ Added ${mediaIdsToAddToTimeline.length} files to timeline from media library`,
+              `✅ Added ${importedFiles.length} files to media library`,
             );
-          }
-          if (rejectedFiles.length > 0) {
-            console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
-          }
 
-          return {
-            success: true,
-            importedFiles,
-            rejectedFiles: rejectedFiles.length > 0 ? rejectedFiles : undefined,
-          };
+            // STEP 2: Add successfully imported media to timeline using addTrackFromMediaLibrary
+            // This ensures we reuse cached sprites/waveforms and avoid duplicate track creation
+            if (mediaIdsToAddToTimeline.length > 0) {
+              console.log(
+                `📍 Adding ${mediaIdsToAddToTimeline.length} files to timeline from media library...`,
+              );
+
+              const timelineResults = await Promise.allSettled(
+                mediaIdsToAddToTimeline.map(async (mediaId) => {
+                  try {
+                    await (get() as any).addTrackFromMediaLibrary(mediaId, 0);
+                    return { success: true, mediaId };
+                  } catch (error: any) {
+                    console.error(
+                      `❌ Failed to add to timeline: ${mediaId}:`,
+                      error,
+                    );
+                    return { success: false, mediaId, error: error.message };
+                  }
+                }),
+              );
+
+              // Log any timeline addition failures (shouldn't happen, but log for debugging)
+              timelineResults.forEach((result) => {
+                if (result.status === 'fulfilled' && !result.value.success) {
+                  console.warn(
+                    `⚠️ Media imported to library but failed to add to timeline: ${result.value.mediaId}`,
+                  );
+                }
+              });
+
+              console.log(
+                `✅ Added ${mediaIdsToAddToTimeline.length} files to timeline from media library`,
+              );
+            }
+            if (rejectedFiles.length > 0) {
+              console.warn(`⚠️ Rejected ${rejectedFiles.length} files`);
+            }
+
+            return {
+              success: true,
+              importedFiles,
+              rejectedFiles:
+                rejectedFiles.length > 0 ? rejectedFiles : undefined,
+            };
+          } finally {
+            // End undo group
+            state.endGroup?.();
+          }
         } catch (error: any) {
           console.error('Failed to import media to timeline:', error);
           return {

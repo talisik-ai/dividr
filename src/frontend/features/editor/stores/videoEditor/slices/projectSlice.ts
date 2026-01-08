@@ -220,13 +220,34 @@ export const createProjectSlice: StateCreator<
     if (!state.hasUnsavedChanges) {
       set({ hasUnsavedChanges: true });
 
+      // Log the source of what triggered auto-save
+      // const stackTrace = new Error().stack;
+      // const callerMatch = stackTrace?.match(/at\s+(\w+\.?\w*)\s+\(/g);
+      // const callerInfo = callerMatch
+      //   ? callerMatch
+      //       .slice(1, 4)
+      //       .map((call) => call.replace(/at\s+/, '').replace(/\s+\(/, ''))
+      //       .join(' → ')
+      //   : 'Unknown source';
+
+      // console.log('🔄 Auto-save triggered by:', callerInfo);
+      // console.trace('📋 Full call stack:');
+
       if (state.isAutoSaveEnabled && state.currentProjectId) {
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           const currentState = get() as any;
           if (currentState.hasUnsavedChanges && currentState.currentProjectId) {
+            // console.log(
+            //   '💾 Executing auto-save (triggered by:',
+            //   callerInfo,
+            //   ')',
+            // );
             currentState.saveProjectData().catch(console.error);
           }
         }, 2000);
+
+        // Store timeout ID for potential cancellation (optional enhancement)
+        (state as any)._autoSaveTimeoutId = timeoutId;
       }
     }
   },
