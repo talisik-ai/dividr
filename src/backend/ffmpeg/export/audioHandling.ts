@@ -291,13 +291,54 @@ export function processAudioTimeline(
           audioFilters.push(`${currentAudioRef}acopy${delayedRef}`);
         }
 
+        // Apply fade in if specified (at the start of the audio segment)
+        let fadedRef = delayedRef;
+        if (
+          trackInfo.fadeInDuration !== undefined &&
+          trackInfo.fadeInDuration > 0
+        ) {
+          const fadeInRef = `[a${segmentIndex}_fadein]`;
+          audioFilters.push(
+            applyFadeFilter(
+              delayedRef,
+              fadeInRef,
+              'in',
+              0,
+              trackInfo.fadeInDuration,
+            ),
+          );
+          fadedRef = fadeInRef;
+        }
+
+        // Apply fade out if specified (at the end of the audio segment)
+        // Fade out starts at (segment duration - fadeOutDuration) relative to the segment start
+        const segmentDuration = segment.duration;
+        if (
+          trackInfo.fadeOutDuration !== undefined &&
+          trackInfo.fadeOutDuration > 0 &&
+          segmentDuration > trackInfo.fadeOutDuration
+        ) {
+          const fadeOutStartTime = segmentDuration - trackInfo.fadeOutDuration;
+          const fadeOutRef = `[a${segmentIndex}_fadeout]`;
+          audioFilters.push(
+            applyFadeFilter(
+              fadedRef,
+              fadeOutRef,
+              'out',
+              fadeOutStartTime,
+              trackInfo.fadeOutDuration,
+            ),
+          );
+          fadedRef = fadeOutRef;
+        }
+
         // Trim all audio streams to totalVideoDuration to prevent amix from extending beyond video duration
         // This fixes the issue where adelay extends stream duration and amix matches the longest stream
         // We pad first to ensure streams are at least totalVideoDuration, then trim to exact duration
         const paddedRef = `[a${segmentIndex}_padded]`;
         const finalRef = `[a${segmentIndex}_final]`;
         audioFilters.push(
-          `${delayedRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedRef}`,
+          `${fadedRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedRef}`,
         );
         audioFilters.push(
           `${paddedRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalRef}`,

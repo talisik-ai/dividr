@@ -19,6 +19,8 @@ export interface TrackInfo {
   timelineEndFrame?: number; // Timeline position where this track ends (in frames)
   muted?: boolean; // Whether this track's audio should be muted
   volumeDb?: number; // Volume in decibels (-60 to +12 dB). Use -Infinity for complete silence (mute). 0 dB = unity gain (no change).
+  fadeInDuration?: number; // Fade in duration in seconds (applied at the start of the audio segment)
+  fadeOutDuration?: number; // Fade out duration in seconds (applied at the end of the audio segment)
   trackType?: 'video' | 'audio' | 'image' | 'subtitle' | 'text' | 'both'; // Type of the track
   visible?: boolean; // Whether this track's video should be visible (if false, show black)
   gapType?: 'video' | 'audio' | 'both';
