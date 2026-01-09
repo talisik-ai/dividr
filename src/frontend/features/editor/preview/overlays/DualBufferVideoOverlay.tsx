@@ -2057,6 +2057,120 @@ export const DualBufferVideo = forwardRef<
     ]);
 
     // =========================================================================
+    // STALL RECOVERY HANDLERS - Fix black screen on long videos after rotation
+    // =========================================================================
+    // When video stalls (waiting event), we mark it as not ready.
+    // When video resumes (playing event), we re-confirm the visual slot.
+    // This ensures proper recovery after buffering, especially for long videos.
+    // =========================================================================
+
+    const handleVideoAWaiting = useCallback(() => {
+      logFrameHold('VideoA waiting: Video stalled, marking not ready', {});
+      // Mark frame as not confirmed ready - video is buffering
+      frameConfirmedReadyRef.current.A = false;
+      // Don't change readyA state to avoid triggering source reload
+      // The visualSlot will be updated when canPlay fires again
+    }, []);
+
+    const handleVideoBWaiting = useCallback(() => {
+      logFrameHold('VideoB waiting: Video stalled, marking not ready', {});
+      // Mark frame as not confirmed ready - video is buffering
+      frameConfirmedReadyRef.current.B = false;
+      // Don't change readyB state to avoid triggering source reload
+      // The visualSlot will be updated when canPlay fires again
+    }, []);
+
+    const handleVideoAPlaying = useCallback(() => {
+      logFrameHold('VideoA playing: Video resumed', {});
+      // Mark frame as confirmed ready
+      frameConfirmedReadyRef.current.A = true;
+      setReadyA(true);
+
+      // CRITICAL: If this is the active slot and visual slot doesn't match,
+      // commit the visual slot now that video is playing
+      if (activeSlot === 'A' && visualSlot !== 'A') {
+        logFrameHold('VideoA playing: Recovering visual slot after stall', {});
+        setVisualSlot('A');
+      }
+    }, [activeSlot, visualSlot]);
+
+    const handleVideoBPlaying = useCallback(() => {
+      logFrameHold('VideoB playing: Video resumed', {});
+      // Mark frame as confirmed ready
+      frameConfirmedReadyRef.current.B = true;
+      setReadyB(true);
+
+      // CRITICAL: If this is the active slot and visual slot doesn't match,
+      // commit the visual slot now that video is playing
+      if (activeSlot === 'B' && visualSlot !== 'B') {
+        logFrameHold('VideoB playing: Recovering visual slot after stall', {});
+        setVisualSlot('B');
+      }
+    }, [activeSlot, visualSlot]);
+
+    // =========================================================================
+    // SEEKED HANDLER - Ensure visual slot sync after seeking on long videos
+    // =========================================================================
+    // When video finishes seeking (especially on long videos), ensure the
+    // visual slot is properly synchronized with the active slot.
+    // This prevents black screen issues after rotation/transform changes.
+    // =========================================================================
+
+    const handleVideoASeeked = useCallback(() => {
+      const video = videoARef.current;
+      if (!video) return;
+
+      logFrameHold('VideoA seeked: Seek complete', {
+        readyState: video.readyState,
+        currentTime: video.currentTime.toFixed(3),
+      });
+
+      // If video is ready after seek and this is the active slot,
+      // ensure visual slot is synced
+      if (video.readyState >= 2 && activeSlot === 'A') {
+        frameConfirmedReadyRef.current.A = true;
+        if (visualSlot !== 'A') {
+          // Use double RAF to ensure frame is decoded before showing
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (activeSlot === 'A' && visualSlot !== 'A') {
+                logFrameHold('VideoA seeked: Syncing visual slot after seek', {});
+                setVisualSlot('A');
+              }
+            });
+          });
+        }
+      }
+    }, [activeSlot, visualSlot]);
+
+    const handleVideoBSeeked = useCallback(() => {
+      const video = videoBRef.current;
+      if (!video) return;
+
+      logFrameHold('VideoB seeked: Seek complete', {
+        readyState: video.readyState,
+        currentTime: video.currentTime.toFixed(3),
+      });
+
+      // If video is ready after seek and this is the active slot,
+      // ensure visual slot is synced
+      if (video.readyState >= 2 && activeSlot === 'B') {
+        frameConfirmedReadyRef.current.B = true;
+        if (visualSlot !== 'B') {
+          // Use double RAF to ensure frame is decoded before showing
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (activeSlot === 'B' && visualSlot !== 'B') {
+                logFrameHold('VideoB seeked: Syncing visual slot after seek', {});
+                setVisualSlot('B');
+              }
+            });
+          });
+        }
+      }
+    }, [activeSlot, visualSlot]);
+
+    // =========================================================================
     // RENDER
     // =========================================================================
 
@@ -2117,6 +2231,9 @@ export const DualBufferVideo = forwardRef<
           muted={!(activeSlot === 'A' && handleAudio && !isMuted)}
           onLoadedMetadata={handleVideoAMetadata}
           onCanPlay={handleVideoACanPlay}
+          onWaiting={handleVideoAWaiting}
+          onPlaying={handleVideoAPlaying}
+          onSeeked={handleVideoASeeked}
         />
 
         <video
@@ -2138,6 +2255,9 @@ export const DualBufferVideo = forwardRef<
           muted={!(activeSlot === 'B' && handleAudio && !isMuted)}
           onLoadedMetadata={handleVideoBMetadata}
           onCanPlay={handleVideoBCanPlay}
+          onWaiting={handleVideoBWaiting}
+          onPlaying={handleVideoBPlaying}
+          onSeeked={handleVideoBSeeked}
         />
       </div>
     );
