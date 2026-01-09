@@ -180,6 +180,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     const magneticSnapFrame = useVideoEditorStore(
       (state) => state.playback.magneticSnapFrame,
     );
+    const previewInteractionMode = useVideoEditorStore(
+      (state) => state.preview.interactionMode,
+    );
+    const setPreviewInteractionMode = useVideoEditorStore(
+      (state) => state.setPreviewInteractionMode,
+    );
     // Calculate effective timeline duration based on actual track content - memoized
     const effectiveEndFrame = useMemo(() => {
       // When tracks exist, use the maximum track end frame
@@ -1620,6 +1626,13 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       (e: React.MouseEvent) => {
         if (!tracksRef.current) return;
 
+        // CRITICAL: Reset preview interaction mode when clicking on timeline
+        // This ensures the preview cursor mode doesn't block timeline interaction
+        // Preview edit modes (text-edit, pan) should only apply to the preview canvas
+        if (previewInteractionMode !== 'select') {
+          setPreviewInteractionMode('select');
+        }
+
         // Block all timeline interactions during track drag/resize or playhead drag operations
         if (playback.isDraggingTrack || isDraggingPlayhead) {
           return;
@@ -1700,6 +1713,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         interactionHandlers,
         visibleTrackRows,
         dynamicRowsWithPlaceholders,
+        previewInteractionMode,
+        setPreviewInteractionMode,
       ],
     );
 

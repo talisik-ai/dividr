@@ -521,11 +521,26 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   );
 
   // Unified selection handler for hit-test layer (routes to type-specific handlers)
+  // Supports multi-selection via Ctrl/Cmd+Click (standard desktop behavior)
   const handleUnifiedSelect = useCallback(
-    (trackId: string) => {
+    (trackId: string, multiSelect = false) => {
       const track = tracks.find((t) => t.id === trackId);
       if (!track) return;
 
+      if (multiSelect) {
+        // Multi-selection: toggle the track in the selection
+        const currentSelection = timeline.selectedTrackIds;
+        if (currentSelection.includes(trackId)) {
+          // Remove from selection if already selected
+          setSelectedTracks(currentSelection.filter((id) => id !== trackId));
+        } else {
+          // Add to selection if not selected
+          setSelectedTracks([...currentSelection, trackId]);
+        }
+        return;
+      }
+
+      // Single selection: use type-specific handlers (which replace selection)
       switch (track.type) {
         case 'video':
           handleVideoSelect(trackId);
@@ -545,6 +560,7 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     },
     [
       tracks,
+      timeline.selectedTrackIds,
       handleVideoSelect,
       handleImageSelect,
       handleTextSelect,
@@ -857,9 +873,10 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   return (
     <div
       ref={containerRef}
+      data-preview-canvas="true"
       className={cn(
         className,
-        'relative overflow-hidden rounded-lg preview-background',
+        'relative overflow-hidden rounded-lg preview-background video-preview-container preview-canvas-area',
         'bg-zinc-100 dark:bg-zinc-900',
         containerCursor,
       )}
@@ -873,6 +890,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       onDragOver={handleDrag}
       onDrop={handleDrop}
       onMouseDown={(e) => {
+        // Stop propagation to prevent the layout click handler from resetting preview mode
+        e.stopPropagation();
         if (preview.interactionMode === 'pan' && preview.previewScale > 1) {
           handlePanStart(e);
           return;

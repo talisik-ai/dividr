@@ -4,7 +4,8 @@ import { VideoEditorHeader } from '@/frontend/features/editor/components/videoEd
 import { FullscreenPreview } from '@/frontend/features/editor/preview/FullscreenPreview';
 import { ToolsPanel } from '@/frontend/features/editor/preview/ToolsPanel';
 import { useIsPanelVisible } from '@/frontend/features/editor/stores/PanelStore';
-import React from 'react';
+import { useVideoEditorStore } from '@/frontend/features/editor/stores/videoEditor';
+import React, { useCallback } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Timeline } from '../features/editor/timeline/timeline';
 import Toolbar from '../features/editor/Toolbar';
@@ -12,10 +13,41 @@ import TitleBar from './Titlebar';
 
 const VideoEditorLayoutComponent = () => {
   const isPanelVisible = useIsPanelVisible();
+  const previewInteractionMode = useVideoEditorStore(
+    (state) => state.preview.interactionMode,
+  );
+  const setPreviewInteractionMode = useVideoEditorStore(
+    (state) => state.setPreviewInteractionMode,
+  );
+
+  // Reset preview interaction mode when clicking outside the preview canvas
+  // This ensures preview cursor modes (text-edit, pan) are scoped to the preview only
+  const handleLayoutClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Only reset if we're in a non-select mode
+      if (previewInteractionMode === 'select') return;
+
+      // Check if the click target is within the preview canvas area
+      const target = e.target as HTMLElement;
+      const isInsidePreviewCanvas =
+        target.closest('[data-preview-canvas]') !== null ||
+        target.closest('.video-preview-container') !== null ||
+        target.closest('.preview-canvas-area') !== null;
+
+      // If clicking outside the preview canvas, reset to select mode
+      if (!isInsidePreviewCanvas) {
+        setPreviewInteractionMode('select');
+      }
+    },
+    [previewInteractionMode, setPreviewInteractionMode],
+  );
 
   return (
     <ProjectGuard>
-      <div className="h-screen flex flex-col text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-900 p-4">
+      <div
+        className="h-screen flex flex-col text-zinc-900 bg-zinc-100 dark:text-zinc-100 dark:bg-zinc-900 p-4"
+        onMouseDown={handleLayoutClick}
+      >
         <TitleBar className="relative z-10 border-b border-accent -mx-4 px-4 -mt-4 py-2" />
 
         <div className="grid grid-cols-[auto_1fr] grid-rows-[55px_1fr_auto] flex-1 min-h-0">

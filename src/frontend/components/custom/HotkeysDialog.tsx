@@ -257,8 +257,15 @@ export const HotkeysDialog: React.FC<HotkeysDialogProps> = ({
     title: 'Mouse Interactions',
     hotkeys: [
       {
+        keys: [
+          ['Ctrl', 'Click'],
+          ['Cmd', 'Click'],
+        ],
+        description: 'Add/Remove from Selection (Multi-select)',
+      },
+      {
         keys: [['Shift', 'Click']],
-        description: 'Toggle Track Selection (Multi-select)',
+        description: 'Cycle Through Overlapping Elements (Preview)',
       },
     ],
   };

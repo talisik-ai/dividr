@@ -269,7 +269,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       (e: React.MouseEvent) => {
         if (isSplitModeActive || e.button === 2) return;
         e.stopPropagation();
-        onSelect(e.shiftKey);
+        // Support both Shift and Ctrl/Cmd for multi-selection (standard desktop behavior)
+        onSelect(e.shiftKey || e.ctrlKey || e.metaKey);
       },
       [isSplitModeActive, onSelect],
     );
@@ -316,7 +317,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         e.preventDefault();
 
         if (!isSelected) {
-          onSelect(e.shiftKey);
+          // Support both Shift and Ctrl/Cmd for multi-selection (standard desktop behavior)
+          onSelect(e.shiftKey || e.ctrlKey || e.metaKey);
         }
 
         const { startDraggingTrack } = useVideoEditorStore.getState();
@@ -413,7 +415,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           !hasAutoSelectedRef.current &&
           dragThresholdMetRef.current
         ) {
-          onSelect(e.shiftKey);
+          // Support both Shift and Ctrl/Cmd for multi-selection (standard desktop behavior)
+          onSelect(e.shiftKey || e.ctrlKey || e.metaKey);
           hasAutoSelectedRef.current = true;
         }
 
