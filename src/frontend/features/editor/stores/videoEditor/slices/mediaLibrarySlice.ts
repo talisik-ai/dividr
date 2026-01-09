@@ -60,6 +60,12 @@ export interface MediaLibrarySlice {
   ) => void;
   hideDuplicateDialog: () => void;
 
+  // Transcoding
+  isTranscoding: (mediaId: string) => boolean;
+  getTranscodingProgress: (mediaId: string) => number;
+  getTranscodedPreviewUrl: (mediaId: string) => string | undefined;
+  cancelTranscoding: (mediaId: string) => Promise<void>;
+
   // State management helpers
   markUnsavedChanges?: () => void;
   updateTrack?: (trackId: string, updates: any) => void;
@@ -133,6 +139,22 @@ export const createMediaLibrarySlice: StateCreator<
     if (!mediaItem) {
       console.warn(`Media item ${mediaId} not found`);
       return;
+    }
+
+    // Cancel any active transcoding for this media
+    if (
+      mediaItem.transcoding?.status === 'pending' ||
+      mediaItem.transcoding?.status === 'processing'
+    ) {
+      console.log(`🚫 Cancelling transcoding for media: ${mediaItem.name}`);
+      // Cancel via IPC - fire and forget
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        window.electronAPI
+          .transcodeCancelForMedia(mediaId)
+          .catch((error: Error) => {
+            console.warn('Failed to cancel transcoding:', error);
+          });
+      }
     }
 
     // Find all tracks that use this media (by source or tempFilePath)
@@ -731,6 +753,57 @@ export const createMediaLibrarySlice: StateCreator<
         }
       } catch (error) {
         console.error('Failed to update project thumbnail:', error);
+      }
+    }
+  },
+
+  // Transcoding methods
+  isTranscoding: (mediaId: string) => {
+    const state = get() as any;
+    const mediaItem = state.mediaLibrary.find(
+      (item: MediaLibraryItem) => item.id === mediaId,
+    );
+    return (
+      mediaItem?.transcoding?.status === 'pending' ||
+      mediaItem?.transcoding?.status === 'processing'
+    );
+  },
+
+  getTranscodingProgress: (mediaId: string) => {
+    const state = get() as any;
+    const mediaItem = state.mediaLibrary.find(
+      (item: MediaLibraryItem) => item.id === mediaId,
+    );
+    return mediaItem?.transcoding?.progress ?? 0;
+  },
+
+  getTranscodedPreviewUrl: (mediaId: string) => {
+    const state = get() as any;
+    const mediaItem = state.mediaLibrary.find(
+      (item: MediaLibraryItem) => item.id === mediaId,
+    );
+    // Return transcoded URL if available, otherwise original preview URL
+    if (
+      mediaItem?.transcoding?.status === 'completed' &&
+      mediaItem?.transcoding?.transcodedPreviewUrl
+    ) {
+      return mediaItem.transcoding.transcodedPreviewUrl;
+    }
+    return mediaItem?.previewUrl;
+  },
+
+  cancelTranscoding: async (mediaId: string) => {
+    const state = get() as any;
+    const mediaItem = state.mediaLibrary.find(
+      (item: MediaLibraryItem) => item.id === mediaId,
+    );
+
+    if (mediaItem?.transcoding?.jobId) {
+      try {
+        await window.electronAPI.transcodeCancel(mediaItem.transcoding.jobId);
+        console.log(`🚫 Cancelled transcoding for media: ${mediaId}`);
+      } catch (error) {
+        console.error(`Failed to cancel transcoding for ${mediaId}:`, error);
       }
     }
   },

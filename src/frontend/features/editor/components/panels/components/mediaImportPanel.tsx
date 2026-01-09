@@ -65,6 +65,11 @@ interface MediaItem {
   isGeneratingSubtitles?: boolean;
   subtitleProgress?: number;
   hasGeneratedKaraoke?: boolean;
+  // Transcoding status for AVI and other browser-incompatible formats
+  isTranscoding?: boolean;
+  transcodingProgress?: number;
+  transcodingFailed?: boolean;
+  transcodingError?: string;
 }
 
 const getTabLabel = (tabType: string, count: number) => {
@@ -793,163 +798,162 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     file: MediaItem;
     isAnyTranscribing: boolean;
   }> = React.memo(
-    ({ file, isAnyTranscribing }) => (
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="flex flex-col space-y-2">
-            <div
-              draggable={
-                !file.isOnTimeline &&
-                !file.isGeneratingSprites &&
-                !file.isGeneratingWaveform &&
-                !file.isGeneratingSubtitles
-              }
-              onDragStart={(e) => {
-                if (
+    ({ file, isAnyTranscribing }) => {
+      // Determine if media is busy (processing something)
+      const isBusy =
+        file.isGeneratingSprites ||
+        file.isGeneratingWaveform ||
+        file.isGeneratingSubtitles ||
+        file.isTranscoding;
+
+      return (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div className="flex flex-col space-y-2">
+              <div
+                draggable={!file.isOnTimeline && !isBusy}
+                onDragStart={(e) => {
+                  if (!file.isOnTimeline && !isBusy) {
+                    handleMediaDragStart(e, file.id);
+                  } else {
+                    e.preventDefault();
+                  }
+                }}
+                className={cn(
+                  'group relative h-[98px] rounded-md transition-all duration-200 overflow-hidden',
                   !file.isOnTimeline &&
-                  !file.isGeneratingSprites &&
-                  !file.isGeneratingWaveform &&
-                  !file.isGeneratingSubtitles
-                ) {
-                  handleMediaDragStart(e, file.id);
-                } else {
-                  e.preventDefault();
+                    !isBusy &&
+                    'cursor-grab active:cursor-grabbing',
+                  (file.isOnTimeline || isBusy) && 'cursor-default',
+                  isBusy && 'pointer-events-none',
+                )}
+                onClick={async () => {
+                  if (!file.isOnTimeline && !isBusy) {
+                    await handleAddToTimeline(file.id);
+                  }
+                }}
+                title={
+                  file.isTranscoding
+                    ? `Converting to MP4... ${Math.round(file.transcodingProgress || 0)}%`
+                    : file.transcodingFailed
+                      ? `Conversion failed: ${file.transcodingError || 'Unknown error'}`
+                      : file.isGeneratingSprites
+                        ? 'Generating sprite sheets...'
+                        : file.isGeneratingWaveform
+                          ? 'Generating waveform...'
+                          : file.isGeneratingSubtitles
+                            ? 'Generating subtitles...'
+                            : file.isOnTimeline
+                              ? 'Already on timeline'
+                              : 'Click or drag to add to timeline (starts at frame 0)'
                 }
-              }}
-              className={cn(
-                'group relative h-[98px] rounded-md transition-all duration-200 overflow-hidden',
-                !file.isOnTimeline &&
-                  !file.isGeneratingSprites &&
-                  !file.isGeneratingWaveform &&
-                  !file.isGeneratingSubtitles &&
-                  'cursor-grab active:cursor-grabbing',
-                (file.isOnTimeline ||
-                  file.isGeneratingSprites ||
+              >
+                <MediaCover file={file} />
+                {/* Unified processing indicator - sprites, waveform, or transcoding */}
+                {(file.isGeneratingSprites ||
                   file.isGeneratingWaveform ||
-                  file.isGeneratingSubtitles) &&
-                  'cursor-default',
-                (file.isGeneratingSprites ||
-                  file.isGeneratingWaveform ||
-                  file.isGeneratingSubtitles) &&
-                  'pointer-events-none',
-              )}
-              onClick={async () => {
-                if (
-                  !file.isOnTimeline &&
-                  !file.isGeneratingSprites &&
-                  !file.isGeneratingWaveform &&
-                  !file.isGeneratingSubtitles
-                ) {
-                  await handleAddToTimeline(file.id);
-                }
-              }}
-              title={
-                file.isGeneratingSprites
-                  ? 'Generating sprite sheets...'
-                  : file.isGeneratingWaveform
-                    ? 'Generating waveform...'
-                    : file.isGeneratingSubtitles
-                      ? 'Generating subtitles...'
-                      : file.isOnTimeline
-                        ? 'Already on timeline'
-                        : 'Click or drag to add to timeline (starts at frame 0)'
-              }
-            >
-              <MediaCover file={file} />
-              {(file.isGeneratingSprites || file.isGeneratingWaveform) && (
-                <div className="absolute bottom-0 p-2 left-0 right-0 h-8 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-end">
-                  <Loader2 className="w-5 h-5 animate-spin text-white drop-shadow-lg" />
+                  file.isTranscoding) && (
+                  <div className="absolute bottom-0 p-2 left-0 right-0 h-8 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-end">
+                    <Loader2 className="w-5 h-5 animate-spin text-white drop-shadow-lg" />
+                  </div>
+                )}
+                {file.isGeneratingSubtitles && (
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center">
+                    <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
+                      <circle
+                        cx="20"
+                        cy="20"
+                        r="16"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        fill="none"
+                        className="text-white/20"
+                      />
+                      <circle
+                        cx="20"
+                        cy="20"
+                        r="16"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        fill="none"
+                        strokeDasharray={`${2 * Math.PI * 16}`}
+                        strokeDashoffset={`${2 * Math.PI * 16 * (1 - (file.subtitleProgress || 0) / 100)}`}
+                        className="text-white transition-all duration-300"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                )}
+                {/* Transcoding failed indicator */}
+                {file.transcodingFailed && !file.isTranscoding && (
+                  <div className="absolute top-2 right-2">
+                    <Badge
+                      variant="destructive"
+                      className="text-[10px] px-1.5 py-0.5"
+                      title={file.transcodingError || 'Conversion failed'}
+                    >
+                      Failed
+                    </Badge>
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <div className="absolute bottom-1 right-2">
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFile(file.id);
+                      }}
+                      variant="ghost"
+                      size="sm"
+                      className="!size-5 !p-1.5 rounded-sm bg-accent/20"
+                      title="Remove from media library"
+                    >
+                      <Trash className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
-              )}
-              {file.isGeneratingSubtitles && (
-                <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center">
-                  <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
-                    <circle
-                      cx="20"
-                      cy="20"
-                      r="16"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      fill="none"
-                      className="text-white/20"
-                    />
-                    <circle
-                      cx="20"
-                      cy="20"
-                      r="16"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      fill="none"
-                      strokeDasharray={`${2 * Math.PI * 16}`}
-                      strokeDashoffset={`${2 * Math.PI * 16 * (1 - (file.subtitleProgress || 0) / 100)}`}
-                      className="text-white transition-all duration-300"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </div>
-              )}
-              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                <div className="absolute bottom-1 right-2">
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFile(file.id);
-                    }}
-                    variant="ghost"
-                    size="sm"
-                    className="!size-5 !p-1.5 rounded-sm bg-accent/20"
-                    title="Remove from media library"
-                  >
-                    <Trash className="h-3 w-3" />
-                  </Button>
-                </div>
+                {file.isOnTimeline && (
+                  <Badge className="absolute top-2 left-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
+                    Added
+                  </Badge>
+                )}
               </div>
-              {file.isOnTimeline && (
-                <Badge className="absolute top-2 left-2 bg-black/20 text-white group-hover:opacity-0 transition-opacity duration-200">
-                  Added
-                </Badge>
-              )}
+              <div className="px-1">
+                <p className="text-xs font-medium text-foreground truncate">
+                  {file.name}
+                </p>
+              </div>
             </div>
-            <div className="px-1">
-              <p className="text-xs font-medium text-foreground truncate">
-                {file.name}
-              </p>
-            </div>
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-fit !text-xs">
-          <ContextMenuItem
-            onClick={() => removeFile(file.id)}
-            className="group text-red-500 dark:text-red-400 focus:text-red-600 dark:focus:text-red-300 data-[highlighted]:bg-red-500/10 dark:data-[highlighted]:bg-red-400/20 data-[highlighted]:text-red-600 dark:data-[highlighted]:text-red-300"
-          >
-            <Trash2 className="h-3 w-3 text-current" />
-            <span>Delete</span>
-          </ContextMenuItem>
-          <ContextMenuItem
-            disabled={
-              file.isOnTimeline ||
-              file.isGeneratingSprites ||
-              file.isGeneratingWaveform ||
-              file.isGeneratingSubtitles
-            }
-            onClick={() => handleAddToTimeline(file.id)}
-          >
-            <PlusCircle className="h-4 w-4" />
-            <span>Add to Timeline</span>
-          </ContextMenuItem>
-          {(file.type.startsWith('video/') ||
-            file.type.startsWith('audio/')) && (
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-fit !text-xs">
             <ContextMenuItem
-              disabled={file.isGeneratingSubtitles || isAnyTranscribing}
-              onClick={() => handleGenerateKaraokeSubtitles(file.id)}
+              onClick={() => removeFile(file.id)}
+              className="group text-red-500 dark:text-red-400 focus:text-red-600 dark:focus:text-red-300 data-[highlighted]:bg-red-500/10 dark:data-[highlighted]:bg-red-400/20 data-[highlighted]:text-red-600 dark:data-[highlighted]:text-red-300"
             >
-              <KaraokeIcon className="h-4 w-4" />
-              <span>Generate Karaoke Subtitles</span>
+              <Trash2 className="h-3 w-3 text-current" />
+              <span>Delete</span>
             </ContextMenuItem>
-          )}
-        </ContextMenuContent>
-      </ContextMenu>
-    ),
+            <ContextMenuItem
+              disabled={file.isOnTimeline || isBusy}
+              onClick={() => handleAddToTimeline(file.id)}
+            >
+              <PlusCircle className="h-4 w-4" />
+              <span>Add to Timeline</span>
+            </ContextMenuItem>
+            {(file.type.startsWith('video/') ||
+              file.type.startsWith('audio/')) && (
+              <ContextMenuItem
+                disabled={file.isGeneratingSubtitles || isAnyTranscribing}
+                onClick={() => handleGenerateKaraokeSubtitles(file.id)}
+              >
+                <KaraokeIcon className="h-4 w-4" />
+                <span>Generate Karaoke Subtitles</span>
+              </ContextMenuItem>
+            )}
+          </ContextMenuContent>
+        </ContextMenu>
+      );
+    },
     (prevProps, nextProps) => {
       return (
         prevProps.file.id === nextProps.file.id &&
@@ -966,6 +970,10 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         prevProps.file.subtitleProgress === nextProps.file.subtitleProgress &&
         prevProps.file.hasGeneratedKaraoke ===
           nextProps.file.hasGeneratedKaraoke &&
+        prevProps.file.isTranscoding === nextProps.file.isTranscoding &&
+        prevProps.file.transcodingProgress ===
+          nextProps.file.transcodingProgress &&
+        prevProps.file.transcodingFailed === nextProps.file.transcodingFailed &&
         prevProps.isAnyTranscribing === nextProps.isAnyTranscribing
       );
     },
@@ -1019,6 +1027,13 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
       const trackId = sourceToTrackMap.get(item.source);
       const isUsed = !!trackId;
       const isTranscribing = currentTranscribingMediaId === item.id;
+
+      // Check transcoding status
+      const isTranscoding =
+        item.transcoding?.status === 'pending' ||
+        item.transcoding?.status === 'processing';
+      const transcodingFailed = item.transcoding?.status === 'failed';
+
       return {
         id: item.id,
         name: item.name,
@@ -1037,6 +1052,10 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         isGeneratingSubtitles: isTranscribing,
         subtitleProgress: isTranscribing ? transcriptionProgress?.progress : 0,
         hasGeneratedKaraoke: item.hasGeneratedKaraoke,
+        isTranscoding,
+        transcodingProgress: item.transcoding?.progress ?? 0,
+        transcodingFailed,
+        transcodingError: item.transcoding?.error,
       };
     });
   }, [

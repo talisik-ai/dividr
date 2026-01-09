@@ -92,4 +92,28 @@ export interface MediaLibraryItem {
     };
     generatedAt: number;
   };
+  /**
+   * Transcoding state for browser-incompatible formats (AVI, etc.)
+   * When a file requires transcoding, this tracks the conversion progress
+   */
+  transcoding?: {
+    /** Whether the file requires transcoding for browser playback */
+    required: boolean;
+    /** Current transcoding status */
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    /** Transcode job ID */
+    jobId?: string;
+    /** Progress percentage (0-100) */
+    progress: number;
+    /** Path to the transcoded file (available when completed) */
+    transcodedPath?: string;
+    /** Preview URL for the transcoded file */
+    transcodedPreviewUrl?: string;
+    /** Error message if transcoding failed */
+    error?: string;
+    /** Timestamp when transcoding started */
+    startedAt?: number;
+    /** Timestamp when transcoding completed */
+    completedAt?: number;
+  };
 }
