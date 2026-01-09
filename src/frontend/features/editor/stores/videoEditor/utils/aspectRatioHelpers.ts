@@ -1,4 +1,5 @@
 // Aspect ratio presets with their dimensions and labels
+// Organized in logical pairs: portrait ↔ landscape
 export const ASPECT_RATIO_PRESETS = [
   { label: '1:1', width: 1080, height: 1080, ratio: 1 },
   { label: '9:16', width: 1080, height: 1920, ratio: 9 / 16 },
@@ -8,6 +9,7 @@ export const ASPECT_RATIO_PRESETS = [
   { label: '3:4', width: 1080, height: 1440, ratio: 3 / 4 },
   { label: '4:3', width: 1440, height: 1080, ratio: 4 / 3 },
   { label: '2:3', width: 1080, height: 1620, ratio: 2 / 3 },
+  { label: '3:2', width: 1620, height: 1080, ratio: 3 / 2 },
 ] as const;
 
 /**
