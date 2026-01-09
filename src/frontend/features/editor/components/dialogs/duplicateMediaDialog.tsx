@@ -34,34 +34,34 @@ export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
 }) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="max-w-md">
-        <AlertDialogHeader>
+      <AlertDialogContent className="flex max-w-md flex-col">
+        <AlertDialogHeader className="flex-1 min-w-0">
           <AlertDialogTitle className="flex items-center gap-2">
             <Copy className="h-5 w-5 text-amber-500" />
             Duplicate Media Detected
           </AlertDialogTitle>
-          <AlertDialogDescription className="space-y-4">
+          <AlertDialogDescription className="flex-1 min-w-0 flex flex-col gap-4">
             <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-3">
               <p className="text-amber-600 dark:text-amber-400 font-medium text-sm">
                 This file appears to already exist in your media library.
               </p>
             </div>
 
-            <div className="space-y-3">
+            <div className="flex-1 min-w-0 flex flex-col gap-3">
               {/* Existing media info */}
-              <div className="flex items-start gap-3 p-3 rounded-md bg-muted/50">
+              <div className="flex items-start flex-1 gap-3 p-3 rounded-md bg-muted/50 min-w-0">
                 {existingMediaThumbnail ? (
                   <img
                     src={existingMediaThumbnail}
                     alt="Existing media"
-                    className="w-16 h-12 object-cover rounded"
+                    className="w-16 h-12 object-cover rounded flex-shrink-0"
                   />
                 ) : (
-                  <div className="w-16 h-12 bg-muted rounded flex items-center justify-center">
+                  <div className="w-16 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0">
                     <FileCheck className="h-6 w-6 text-muted-foreground" />
                   </div>
                 )}
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 overflow-hidden">
                   <p className="text-xs text-muted-foreground">
                     Already in library:
                   </p>
@@ -72,11 +72,11 @@ export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
               </div>
 
               {/* New file info */}
-              <div className="flex items-start gap-3 p-3 rounded-md border border-dashed">
-                <div className="w-16 h-12 bg-muted/30 rounded flex items-center justify-center">
+              <div className="flex items-start gap-3 p-3 rounded-md border border-dashed min-w-0">
+                <div className="w-16 h-12 bg-muted/30 rounded flex items-center justify-center flex-shrink-0">
                   <Copy className="h-6 w-6 text-muted-foreground" />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 overflow-hidden">
                   <p className="text-xs text-muted-foreground">Importing:</p>
                   <p className="text-sm font-medium text-foreground truncate">
                     {newFileName}
@@ -92,7 +92,14 @@ export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel
+            onClick={() => {
+              onUseExisting();
+              onOpenChange(false);
+            }}
+          >
+            Cancel
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
               onImportAsCopy();

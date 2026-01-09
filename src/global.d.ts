@@ -485,6 +485,139 @@ declare global {
        * Remove runtime download progress listener
        */
       removeRuntimeDownloadProgressListener: () => void;
+
+      // ========================================================================
+      // Transcode APIs (AVI to MP4 conversion)
+      // ========================================================================
+
+      /**
+       * Check if a file requires transcoding for browser playback
+       */
+      transcodeRequiresTranscoding: (filePath: string) => Promise<{
+        requiresTranscoding: boolean;
+        reason: string;
+      }>;
+
+      /**
+       * Start transcoding a file to MP4
+       */
+      transcodeStart: (options: {
+        mediaId: string;
+        inputPath: string;
+        videoBitrate?: string;
+        audioBitrate?: string;
+        crf?: number;
+      }) => Promise<{
+        success: boolean;
+        jobId?: string;
+        outputPath?: string;
+        error?: string;
+      }>;
+
+      /**
+       * Get transcode job status
+       */
+      transcodeStatus: (jobId: string) => Promise<{
+        success: boolean;
+        job?: {
+          id: string;
+          mediaId: string;
+          status:
+            | 'queued'
+            | 'processing'
+            | 'completed'
+            | 'failed'
+            | 'cancelled';
+          progress: number;
+          duration: number;
+          currentTime: number;
+          error?: string;
+        };
+        error?: string;
+      }>;
+
+      /**
+       * Cancel a transcode job
+       */
+      transcodeCancel: (jobId: string) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
+      /**
+       * Cancel all transcode jobs for a media ID
+       */
+      transcodeCancelForMedia: (mediaId: string) => Promise<{
+        success: boolean;
+        cancelled: number;
+      }>;
+
+      /**
+       * Get all active transcode jobs
+       */
+      transcodeGetActiveJobs: () => Promise<{
+        success: boolean;
+        jobs: Array<{
+          id: string;
+          mediaId: string;
+          status:
+            | 'queued'
+            | 'processing'
+            | 'completed'
+            | 'failed'
+            | 'cancelled';
+          progress: number;
+          duration: number;
+          currentTime: number;
+        }>;
+      }>;
+
+      /**
+       * Cleanup old transcode files
+       */
+      transcodeCleanup: (maxAgeMs?: number) => Promise<{
+        success: boolean;
+        cleaned?: number;
+        error?: string;
+      }>;
+
+      /**
+       * Listen for transcode progress updates
+       */
+      onTranscodeProgress: (
+        callback: (progress: {
+          jobId: string;
+          mediaId: string;
+          status:
+            | 'queued'
+            | 'processing'
+            | 'completed'
+            | 'failed'
+            | 'cancelled';
+          progress: number;
+          currentTime: number;
+          duration: number;
+        }) => void,
+      ) => void;
+
+      /**
+       * Listen for transcode completion
+       */
+      onTranscodeCompleted: (
+        callback: (result: {
+          jobId: string;
+          mediaId: string;
+          success: boolean;
+          outputPath?: string;
+          previewUrl?: string;
+          error?: string;
+        }) => void,
+      ) => void;
+
+      /**
+       * Remove transcode listeners
+       */
+      removeTranscodeListeners: () => void;
     };
     appControl: {
       showWindow: () => Promise<boolean>;

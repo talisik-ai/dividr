@@ -25,7 +25,7 @@ export interface SelectionHitTestLayerProps {
   tracks: VideoTrack[];
   currentFrame: number;
   selectedTrackIds: string[];
-  onSelect: (trackId: string) => void;
+  onSelect: (trackId: string, multiSelect?: boolean) => void;
   onDeselect?: () => void;
   onHover?: (trackId: string | null) => void;
   onDoubleClick?: (trackId: string) => void;
@@ -442,8 +442,12 @@ export const SelectionHitTestLayer: React.FC<SelectionHitTestLayerProps> = ({
       e.stopPropagation();
       e.preventDefault();
 
-      // Shift+Click: Cycle through overlapping elements at this point
-      if (e.shiftKey && elementsAtPoint.length > 1) {
+      // Check for multi-select modifier (Ctrl/Cmd)
+      const isMultiSelectModifier = e.ctrlKey || e.metaKey;
+
+      // Shift+Click: Cycle through overlapping elements at this point (when multiple elements overlap)
+      // Note: Shift is used for cycling, Ctrl/Cmd is used for multi-selection
+      if (e.shiftKey && elementsAtPoint.length > 1 && !isMultiSelectModifier) {
         const last = lastCycleClickRef.current;
 
         // Check if this is a continuation of the same cycle click
@@ -459,12 +463,20 @@ export const SelectionHitTestLayer: React.FC<SelectionHitTestLayerProps> = ({
         }
 
         lastCycleClickRef.current = { x, y, time: now, index: cycleIndex };
-        onSelect(elementsAtPoint[cycleIndex].trackId);
+        onSelect(elementsAtPoint[cycleIndex].trackId, false);
         return;
       }
 
-      // Normal click: Select the topmost element that was spatially hit
-      onSelect(topElement.trackId);
+      // Ctrl/Cmd+Click: Multi-selection (add/remove from selection)
+      // Standard desktop behavior for multi-selection
+      if (isMultiSelectModifier) {
+        onSelect(topElement.trackId, true);
+        lastCycleClickRef.current = null;
+        return;
+      }
+
+      // Normal click: Select the topmost element that was spatially hit (replace selection)
+      onSelect(topElement.trackId, false);
 
       // Reset cycle tracking for non-shift clicks
       lastCycleClickRef.current = null;

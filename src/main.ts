@@ -2577,6 +2577,477 @@ ipcMain.handle('media:has-audio', async (event, filePath: string) => {
   }
 });
 
+// =============================================================================
+// TRANSCODE SERVICE - AVI to MP4 background transcoding
+// =============================================================================
+
+// Formats that need transcoding for browser playback
+const FORMATS_REQUIRING_TRANSCODE = [
+  '.avi',
+  '.wmv',
+  '.flv',
+  '.divx',
+  '.xvid',
+  '.asf',
+  '.rm',
+  '.rmvb',
+  '.3gp',
+  '.3g2',
+];
+
+// Codecs that browsers can't decode
+const UNSUPPORTED_CODECS = [
+  'xvid',
+  'divx',
+  'mpeg4',
+  'msmpeg4',
+  'wmv1',
+  'wmv2',
+  'wmv3',
+  'vc1',
+  'rv10',
+  'rv20',
+  'rv30',
+  'rv40',
+];
+
+// Active transcode jobs
+interface TranscodeJob {
+  id: string;
+  mediaId: string;
+  inputPath: string;
+  outputPath: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  duration: number;
+  currentTime: number;
+  error?: string;
+  startedAt?: number;
+  completedAt?: number;
+  process?: ReturnType<typeof spawn>;
+}
+
+const activeTranscodeJobs = new Map<string, TranscodeJob>();
+const transcodeOutputDir = path.join(os.tmpdir(), 'dividr-transcode');
+
+// Ensure transcode output directory exists
+if (!fs.existsSync(transcodeOutputDir)) {
+  fs.mkdirSync(transcodeOutputDir, { recursive: true });
+}
+console.log(`📁 Transcode output directory: ${transcodeOutputDir}`);
+
+// IPC Handler to check if a file requires transcoding
+ipcMain.handle(
+  'transcode:requires-transcoding',
+  async (event, filePath: string) => {
+    console.log(
+      '🔍 MAIN PROCESS: transcode:requires-transcoding handler called',
+    );
+    console.log('   File path:', filePath);
+
+    const ext = path.extname(filePath).toLowerCase();
+
+    // Check if extension requires transcoding
+    if (FORMATS_REQUIRING_TRANSCODE.includes(ext)) {
+      console.log(`   ✅ File requires transcoding (${ext} format)`);
+      return { requiresTranscoding: true, reason: `${ext} format` };
+    }
+
+    // For other formats, check the actual codec
+    if (!ffprobePath?.path) {
+      console.log('   ⚠️ FFprobe not available, cannot check codec');
+      return { requiresTranscoding: false, reason: 'Cannot detect codec' };
+    }
+
+    try {
+      const codecResult = await new Promise<string | null>((resolve) => {
+        const ffprobe = spawn(ffprobePath.path, [
+          '-v',
+          'quiet',
+          '-select_streams',
+          'v:0',
+          '-show_entries',
+          'stream=codec_name',
+          '-of',
+          'default=noprint_wrappers=1:nokey=1',
+          filePath,
+        ]);
+
+        let output = '';
+        ffprobe.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        ffprobe.on('close', (code) => {
+          if (code === 0 && output.trim()) {
+            resolve(output.trim().toLowerCase());
+          } else {
+            resolve(null);
+          }
+        });
+
+        ffprobe.on('error', () => resolve(null));
+      });
+
+      if (
+        codecResult &&
+        UNSUPPORTED_CODECS.some((c) => codecResult.includes(c))
+      ) {
+        console.log(`   ✅ File requires transcoding (${codecResult} codec)`);
+        return { requiresTranscoding: true, reason: `${codecResult} codec` };
+      }
+
+      console.log(
+        `   ❌ File does not require transcoding (codec: ${codecResult || 'unknown'})`,
+      );
+      return { requiresTranscoding: false, reason: 'Supported format' };
+    } catch (error) {
+      console.warn('   ⚠️ Could not detect codec:', error);
+      return { requiresTranscoding: false, reason: 'Cannot detect codec' };
+    }
+  },
+);
+
+// IPC Handler to start transcoding
+ipcMain.handle(
+  'transcode:start',
+  async (
+    event,
+    options: {
+      mediaId: string;
+      inputPath: string;
+      videoBitrate?: string;
+      audioBitrate?: string;
+      crf?: number;
+    },
+  ) => {
+    console.log('🎬 MAIN PROCESS: transcode:start handler called');
+    console.log('   Media ID:', options.mediaId);
+    console.log('   Input path:', options.inputPath);
+
+    if (!ffmpegPath) {
+      return { success: false, error: 'FFmpeg not available' };
+    }
+
+    // Generate job ID and output path
+    const jobId = crypto.randomUUID();
+    const outputFileName = `${jobId}.mp4`;
+    const outputPath = path.join(transcodeOutputDir, outputFileName);
+
+    // Get video metadata first
+    let duration = 0;
+    if (ffprobePath?.path) {
+      try {
+        duration = await new Promise<number>((resolve) => {
+          const ffprobe = spawn(ffprobePath.path, [
+            '-v',
+            'quiet',
+            '-print_format',
+            'json',
+            '-show_format',
+            options.inputPath,
+          ]);
+
+          let output = '';
+          ffprobe.stdout.on('data', (data) => {
+            output += data.toString();
+          });
+
+          ffprobe.on('close', () => {
+            try {
+              const metadata = JSON.parse(output);
+              resolve(parseFloat(metadata.format?.duration || '0'));
+            } catch {
+              resolve(0);
+            }
+          });
+
+          ffprobe.on('error', () => resolve(0));
+        });
+      } catch {
+        duration = 0;
+      }
+    }
+
+    // Create job
+    const job: TranscodeJob = {
+      id: jobId,
+      mediaId: options.mediaId,
+      inputPath: options.inputPath,
+      outputPath,
+      status: 'processing',
+      progress: 0,
+      duration,
+      currentTime: 0,
+      startedAt: Date.now(),
+    };
+
+    activeTranscodeJobs.set(jobId, job);
+
+    console.log(`   Job ID: ${jobId}`);
+    console.log(`   Output path: ${outputPath}`);
+    console.log(`   Duration: ${duration.toFixed(2)}s`);
+
+    // Build FFmpeg arguments
+    const args = [
+      '-i',
+      options.inputPath,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      String(options.crf || 23),
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-b:a',
+      options.audioBitrate || '192k',
+      '-ac',
+      '2',
+      '-movflags',
+      '+faststart',
+      '-progress',
+      'pipe:1',
+      '-y',
+      outputPath,
+    ];
+
+    console.log(`   FFmpeg command: ffmpeg ${args.join(' ')}`);
+
+    // Start FFmpeg process
+    const ffmpegProcess = spawn(ffmpegPath, args);
+    job.process = ffmpegProcess;
+
+    let stderrOutput = '';
+
+    ffmpegProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+
+      // Parse progress
+      const timeMatch = output.match(/out_time_ms=(\d+)/);
+      if (timeMatch) {
+        const currentTimeMs = parseInt(timeMatch[1], 10);
+        job.currentTime = currentTimeMs / 1000000;
+
+        if (job.duration > 0) {
+          job.progress = Math.min(100, (job.currentTime / job.duration) * 100);
+        }
+
+        // Send progress to renderer
+        mainWindow?.webContents.send('transcode:progress', {
+          jobId: job.id,
+          mediaId: job.mediaId,
+          status: job.status,
+          progress: job.progress,
+          currentTime: job.currentTime,
+          duration: job.duration,
+        });
+      }
+    });
+
+    ffmpegProcess.stderr.on('data', (data) => {
+      stderrOutput += data.toString();
+    });
+
+    ffmpegProcess.on('close', (code) => {
+      if (code === 0) {
+        job.status = 'completed';
+        job.progress = 100;
+        job.completedAt = Date.now();
+
+        const processingTime =
+          job.completedAt - (job.startedAt || job.completedAt);
+        console.log(
+          `✅ Transcode completed: ${jobId} in ${(processingTime / 1000).toFixed(1)}s`,
+        );
+
+        // Create preview URL for the transcoded file
+        const previewUrl = `http://localhost:${MEDIA_SERVER_PORT}/${encodeURIComponent(outputPath)}`;
+
+        mainWindow?.webContents.send('transcode:completed', {
+          jobId: job.id,
+          mediaId: job.mediaId,
+          success: true,
+          outputPath,
+          previewUrl,
+        });
+      } else if (job.status === 'cancelled') {
+        console.log(`🚫 Transcode cancelled: ${jobId}`);
+
+        // Clean up output file
+        if (fs.existsSync(outputPath)) {
+          try {
+            fs.unlinkSync(outputPath);
+          } catch (e) {
+            console.warn('   Could not delete incomplete transcode file');
+          }
+        }
+
+        mainWindow?.webContents.send('transcode:completed', {
+          jobId: job.id,
+          mediaId: job.mediaId,
+          success: false,
+          error: 'Cancelled',
+        });
+      } else {
+        job.status = 'failed';
+        job.error =
+          stderrOutput.slice(-500) || `FFmpeg exited with code ${code}`;
+
+        console.error(`❌ Transcode failed: ${jobId}`);
+        console.error(`   Error: ${job.error}`);
+
+        mainWindow?.webContents.send('transcode:completed', {
+          jobId: job.id,
+          mediaId: job.mediaId,
+          success: false,
+          error: job.error,
+        });
+      }
+
+      // Clean up process reference
+      delete job.process;
+    });
+
+    ffmpegProcess.on('error', (error) => {
+      job.status = 'failed';
+      job.error = error.message;
+
+      console.error(`❌ Transcode process error: ${jobId}`);
+      console.error(`   Error: ${error.message}`);
+
+      mainWindow?.webContents.send('transcode:completed', {
+        jobId: job.id,
+        mediaId: job.mediaId,
+        success: false,
+        error: error.message,
+      });
+    });
+
+    return {
+      success: true,
+      jobId,
+      outputPath,
+    };
+  },
+);
+
+// IPC Handler to get transcode job status
+ipcMain.handle('transcode:status', async (event, jobId: string) => {
+  const job = activeTranscodeJobs.get(jobId);
+  if (!job) {
+    return { success: false, error: 'Job not found' };
+  }
+
+  return {
+    success: true,
+    job: {
+      id: job.id,
+      mediaId: job.mediaId,
+      status: job.status,
+      progress: job.progress,
+      duration: job.duration,
+      currentTime: job.currentTime,
+      error: job.error,
+    },
+  };
+});
+
+// IPC Handler to cancel transcode job
+ipcMain.handle('transcode:cancel', async (event, jobId: string) => {
+  console.log('🛑 MAIN PROCESS: transcode:cancel handler called');
+  console.log('   Job ID:', jobId);
+
+  const job = activeTranscodeJobs.get(jobId);
+  if (!job) {
+    return { success: false, error: 'Job not found' };
+  }
+
+  if (job.process && !job.process.killed) {
+    job.status = 'cancelled';
+    job.process.kill('SIGTERM');
+    console.log(`   Cancelled job: ${jobId}`);
+    return { success: true };
+  }
+
+  return { success: false, error: 'Job not running' };
+});
+
+// IPC Handler to cancel all transcode jobs for a media ID
+ipcMain.handle('transcode:cancel-for-media', async (event, mediaId: string) => {
+  console.log('🛑 MAIN PROCESS: transcode:cancel-for-media handler called');
+  console.log('   Media ID:', mediaId);
+
+  let cancelled = 0;
+  for (const [jobId, job] of activeTranscodeJobs.entries()) {
+    if (
+      job.mediaId === mediaId &&
+      (job.status === 'queued' || job.status === 'processing')
+    ) {
+      if (job.process && !job.process.killed) {
+        job.status = 'cancelled';
+        job.process.kill('SIGTERM');
+        cancelled++;
+      }
+    }
+  }
+
+  console.log(`   Cancelled ${cancelled} jobs`);
+  return { success: true, cancelled };
+});
+
+// IPC Handler to get all active transcode jobs
+ipcMain.handle('transcode:get-active-jobs', async () => {
+  const jobs = Array.from(activeTranscodeJobs.values())
+    .filter((job) => job.status === 'queued' || job.status === 'processing')
+    .map((job) => ({
+      id: job.id,
+      mediaId: job.mediaId,
+      status: job.status,
+      progress: job.progress,
+      duration: job.duration,
+      currentTime: job.currentTime,
+    }));
+
+  return { success: true, jobs };
+});
+
+// IPC Handler to cleanup old transcode files
+ipcMain.handle(
+  'transcode:cleanup',
+  async (event, maxAgeMs: number = 24 * 60 * 60 * 1000) => {
+    console.log('🧹 MAIN PROCESS: transcode:cleanup handler called');
+
+    try {
+      const files = fs.readdirSync(transcodeOutputDir);
+      const now = Date.now();
+      let cleaned = 0;
+
+      for (const file of files) {
+        const filePath = path.join(transcodeOutputDir, file);
+        const stats = fs.statSync(filePath);
+        const age = now - stats.mtimeMs;
+
+        if (age > maxAgeMs) {
+          fs.unlinkSync(filePath);
+          cleaned++;
+        }
+      }
+
+      console.log(`   Cleaned ${cleaned} old transcode files`);
+      return { success: true, cleaned };
+    } catch (error) {
+      console.error('   Error cleaning up:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  },
+);
+
 const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 1280,

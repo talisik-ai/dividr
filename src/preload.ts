@@ -370,6 +370,115 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Remove runtime download progress listener
   removeRuntimeDownloadProgressListener: () =>
     ipcRenderer.removeAllListeners('runtime:download-progress'),
+
+  // =========================================================================
+  // Transcode APIs (AVI to MP4 conversion)
+  // =========================================================================
+
+  // Check if a file requires transcoding
+  transcodeRequiresTranscoding: (filePath: string) =>
+    ipcRenderer.invoke('transcode:requires-transcoding', filePath) as Promise<{
+      requiresTranscoding: boolean;
+      reason: string;
+    }>,
+
+  // Start transcoding a file
+  transcodeStart: (options: {
+    mediaId: string;
+    inputPath: string;
+    videoBitrate?: string;
+    audioBitrate?: string;
+    crf?: number;
+  }) =>
+    ipcRenderer.invoke('transcode:start', options) as Promise<{
+      success: boolean;
+      jobId?: string;
+      outputPath?: string;
+      error?: string;
+    }>,
+
+  // Get transcode job status
+  transcodeStatus: (jobId: string) =>
+    ipcRenderer.invoke('transcode:status', jobId) as Promise<{
+      success: boolean;
+      job?: {
+        id: string;
+        mediaId: string;
+        status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+        progress: number;
+        duration: number;
+        currentTime: number;
+        error?: string;
+      };
+      error?: string;
+    }>,
+
+  // Cancel a transcode job
+  transcodeCancel: (jobId: string) =>
+    ipcRenderer.invoke('transcode:cancel', jobId) as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
+
+  // Cancel all transcode jobs for a media ID
+  transcodeCancelForMedia: (mediaId: string) =>
+    ipcRenderer.invoke('transcode:cancel-for-media', mediaId) as Promise<{
+      success: boolean;
+      cancelled: number;
+    }>,
+
+  // Get all active transcode jobs
+  transcodeGetActiveJobs: () =>
+    ipcRenderer.invoke('transcode:get-active-jobs') as Promise<{
+      success: boolean;
+      jobs: Array<{
+        id: string;
+        mediaId: string;
+        status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+        progress: number;
+        duration: number;
+        currentTime: number;
+      }>;
+    }>,
+
+  // Cleanup old transcode files
+  transcodeCleanup: (maxAgeMs?: number) =>
+    ipcRenderer.invoke('transcode:cleanup', maxAgeMs) as Promise<{
+      success: boolean;
+      cleaned?: number;
+      error?: string;
+    }>,
+
+  // Listen for transcode progress updates
+  onTranscodeProgress: (
+    callback: (progress: {
+      jobId: string;
+      mediaId: string;
+      status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+      progress: number;
+      currentTime: number;
+      duration: number;
+    }) => void,
+  ) =>
+    ipcRenderer.on('transcode:progress', (_, progress) => callback(progress)),
+
+  // Listen for transcode completion
+  onTranscodeCompleted: (
+    callback: (result: {
+      jobId: string;
+      mediaId: string;
+      success: boolean;
+      outputPath?: string;
+      previewUrl?: string;
+      error?: string;
+    }) => void,
+  ) => ipcRenderer.on('transcode:completed', (_, result) => callback(result)),
+
+  // Remove transcode listeners
+  removeTranscodeListeners: () => {
+    ipcRenderer.removeAllListeners('transcode:progress');
+    ipcRenderer.removeAllListeners('transcode:completed');
+  },
 });
 
 contextBridge.exposeInMainWorld('appControl', {

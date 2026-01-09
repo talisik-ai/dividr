@@ -5,7 +5,9 @@ import { VideoPreviewWrapper } from './preview/VideoPreviewWrapper';
 import { useVideoEditorStore } from './stores/videoEditor/index';
 
 import { NavigationBlockerDialog } from '@/frontend/components/custom/NavigationAlertDialog';
+import { useTranscodeListener } from '@/frontend/hooks/useTranscodeListener';
 import { useUnsavedChangesWarning } from '@/frontend/hooks/useUnsavedChangesWarning';
+
 interface VideoEditorProps {
   className?: string;
 }
@@ -13,6 +15,9 @@ interface VideoEditorProps {
 const VideoEditor: React.FC<VideoEditorProps> = ({ className }) => {
   const { importMediaFromFiles, timeline, isSaving } = useVideoEditorStore();
   const { blocker } = useUnsavedChangesWarning();
+
+  // Listen for transcode progress and completion events
+  useTranscodeListener();
 
   // Legacy file import for drag & drop (will show warning)
   const handleFileImport = useCallback(
