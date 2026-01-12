@@ -17,8 +17,8 @@ import { Copy, Minus, Plus, Square, Upload, X } from 'lucide-react';
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import packageJson from '../../../package.json';
 import { AutosaveIndicator } from '../features/editor/components/autoSaveIndicator';
-
 interface TitleBarProps {
   className?: string;
 }
@@ -107,6 +107,7 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
                 alt="Dividr Logo"
               />
             </Link>
+
             {isInVideoEditor && <AutosaveIndicator />}
           </div>
 
@@ -140,15 +141,20 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
               </div>
             )}
 
+            {/* Version Badge */}
+            <span className="text-xs text-muted-foreground font-medium px-2 py-0.5 rounded-md bg-muted/50">
+              v{packageJson.version}
+            </span>
             {/* Dark Mode/Light Mode Toggle */}
             <div className="flex items-center gap-7">
-              {/* {process.env.NODE_ENV === 'development' && ( */}
-              <Link to="/dev-tools">
-                <Button variant="ghost" size="sm" title="Test Tools">
-                  Test Tools
-                </Button>
-              </Link>
-              {/* )} */}
+              {/* Test Tools - Only show in development */}
+              {process.env.NODE_ENV === 'development' && (
+                <Link to="/dev-tools">
+                  <Button variant="ghost" size="sm" title="Test Tools">
+                    Test Tools
+                  </Button>
+                </Link>
+              )}
               <ModeToggle />
             </div>
 
