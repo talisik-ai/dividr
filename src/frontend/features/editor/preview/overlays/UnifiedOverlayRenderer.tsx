@@ -732,10 +732,19 @@ function renderSubtitleContent(
   // Layer 0: Glow layer (blurred, expanded text behind everything)
   // Layer 1: Background layer (if background color is set)
   // Layer 2: Text layer (main text with stroke/shadow)
+  //
+  // We use CSS Grid with grid-area to stack all layers perfectly on top of each other.
+  // This ensures layers remain aligned at all zoom levels (unlike position: absolute).
   if (style.hasGlow) {
     // Scale glow parameters with the effective scale (renderScale * userScale)
     const glowBlurAmount = GLOW_BLUR_MULTIPLIER * effectiveScale;
     const glowSpread = GLOW_SPREAD_MULTIPLIER * effectiveScale;
+
+    // Common layer style - all layers use the same grid cell to stack perfectly
+    const layerStyle: React.CSSProperties = {
+      gridArea: '1 / 1 / 2 / 2', // All layers occupy the same grid cell
+      maxWidth: 'none',
+    };
 
     if (hasBackground) {
       // Triple-layer: glow + background + text
@@ -747,21 +756,17 @@ function renderSubtitleContent(
             onSelect(track.id);
           }}
         >
-          <div style={{ position: 'relative', display: 'inline-block' }}>
-            {/* Glow Layer - furthest back */}
+          <div style={{ display: 'inline-grid' }}>
+            {/* Glow Layer - furthest back (rendered first = lowest z-order) */}
             <div
               style={{
                 ...base,
-                position: 'absolute',
-                top: 0,
-                left: 0,
+                ...layerStyle,
                 color: glowColor,
                 backgroundColor: style.backgroundColor,
                 opacity: 0.75,
                 filter: `blur(${glowBlurAmount}px)`,
                 boxShadow: `0 0 ${glowSpread}px ${glowColor}, 0 0 ${glowSpread * 1.5}px ${glowColor}`,
-                zIndex: 0,
-                maxWidth: 'none',
               }}
               aria-hidden="true"
             >
@@ -771,30 +776,24 @@ function renderSubtitleContent(
             <div
               style={{
                 ...base,
-                position: 'absolute',
-                top: 0,
-                left: 0,
+                ...layerStyle,
                 color: 'transparent',
                 backgroundColor: style.backgroundColor,
                 opacity: style.opacity,
-                zIndex: 1,
-                maxWidth: 'none',
               }}
               aria-hidden="true"
             >
               {track.subtitleText}
             </div>
-            {/* Text Layer - topmost */}
+            {/* Text Layer - topmost (rendered last = highest z-order) */}
             <div
               style={{
                 ...base,
-                position: 'relative',
+                ...layerStyle,
                 color: style.color,
                 backgroundColor: 'transparent',
                 opacity: style.opacity,
                 textShadow: shadow,
-                zIndex: 2,
-                maxWidth: 'none',
               }}
             >
               {track.subtitleText}
@@ -813,38 +812,32 @@ function renderSubtitleContent(
           onSelect(track.id);
         }}
       >
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          {/* Glow Layer - furthest back */}
+        <div style={{ display: 'inline-grid' }}>
+          {/* Glow Layer - furthest back (rendered first = lowest z-order) */}
           <div
             style={{
               ...base,
-              position: 'absolute',
-              top: 0,
-              left: 0,
+              ...layerStyle,
               color: glowColor,
               backgroundColor: 'transparent',
               opacity: 0.75,
               filter: `blur(${glowBlurAmount}px)`,
               textShadow: `0 0 ${glowSpread}px ${glowColor}, 0 0 ${glowSpread * 1.5}px ${glowColor}`,
               WebkitTextStroke: `${glowSpread * 0.75}px ${glowColor}`,
-              zIndex: 0,
-              maxWidth: 'none',
             }}
             aria-hidden="true"
           >
             {track.subtitleText}
           </div>
-          {/* Text Layer - topmost */}
+          {/* Text Layer - topmost (rendered last = highest z-order) */}
           <div
             style={{
               ...base,
-              position: 'relative',
+              ...layerStyle,
               color: style.color,
               backgroundColor: 'transparent',
               opacity: style.opacity,
               textShadow: shadow,
-              zIndex: 1,
-              maxWidth: 'none',
             }}
           >
             {track.subtitleText}
@@ -1032,6 +1025,9 @@ function renderTextTrack(
   // Layer 0: Glow layer (blurred, expanded text behind everything)
   // Layer 1: Background layer (if background color is set)
   // Layer 2: Text layer (main text with stroke/shadow)
+  //
+  // We use CSS Grid with grid-area to stack all layers perfectly on top of each other.
+  // This ensures layers remain aligned at all zoom levels (unlike position: absolute).
   const renderTextContent = () => {
     if (!style.hasGlow) {
       // No glow - render simple single layer
@@ -1043,23 +1039,25 @@ function renderTextTrack(
     const glowBlurAmount = GLOW_BLUR_MULTIPLIER * effScale;
     const glowSpread = GLOW_SPREAD_MULTIPLIER * effScale;
 
+    // Common layer style - all layers use the same grid cell to stack perfectly
+    const layerStyle: React.CSSProperties = {
+      gridArea: '1 / 1 / 2 / 2', // All layers occupy the same grid cell
+    };
+
     if (hasBackground) {
       // Triple-layer: glow + background + text
       return (
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          {/* Glow Layer - furthest back */}
+        <div style={{ display: 'inline-grid' }}>
+          {/* Glow Layer - furthest back (rendered first = lowest z-order) */}
           <div
             style={{
               ...base,
-              position: 'absolute',
-              top: 0,
-              left: 0,
+              ...layerStyle,
               color: style.glowColor,
               backgroundColor: style.backgroundColor,
               opacity: 0.75,
               filter: `blur(${glowBlurAmount}px)`,
               boxShadow: `0 0 ${glowSpread}px ${style.glowColor}, 0 0 ${glowSpread * 1.5}px ${style.glowColor}`,
-              zIndex: 0,
             }}
             aria-hidden="true"
           >
@@ -1069,28 +1067,24 @@ function renderTextTrack(
           <div
             style={{
               ...base,
-              position: 'absolute',
-              top: 0,
-              left: 0,
+              ...layerStyle,
               color: 'transparent',
               backgroundColor: style.backgroundColor,
               opacity: style.opacity,
-              zIndex: 1,
             }}
             aria-hidden="true"
           >
             {track.textContent}
           </div>
-          {/* Text Layer - topmost */}
+          {/* Text Layer - topmost (rendered last = highest z-order) */}
           <div
             style={{
               ...base,
-              position: 'relative',
+              ...layerStyle,
               color: style.color,
               backgroundColor: 'transparent',
               opacity: style.opacity,
               textShadow: shadow,
-              zIndex: 2,
             }}
           >
             {track.textContent}
@@ -1101,36 +1095,32 @@ function renderTextTrack(
 
     // Double-layer: glow + text (no background)
     return (
-      <div style={{ position: 'relative', display: 'inline-block' }}>
-        {/* Glow Layer - furthest back */}
+      <div style={{ display: 'inline-grid' }}>
+        {/* Glow Layer - furthest back (rendered first = lowest z-order) */}
         <div
           style={{
             ...base,
-            position: 'absolute',
-            top: 0,
-            left: 0,
+            ...layerStyle,
             color: style.glowColor,
             backgroundColor: 'transparent',
             opacity: 0.75,
             filter: `blur(${glowBlurAmount}px)`,
             textShadow: `0 0 ${glowSpread}px ${style.glowColor}, 0 0 ${glowSpread * 1.5}px ${style.glowColor}`,
             WebkitTextStroke: `${glowSpread * 0.75}px ${style.glowColor}`,
-            zIndex: 0,
           }}
           aria-hidden="true"
         >
           {track.textContent}
         </div>
-        {/* Text Layer - topmost */}
+        {/* Text Layer - topmost (rendered last = highest z-order) */}
         <div
           style={{
             ...base,
-            position: 'relative',
+            ...layerStyle,
             color: style.color,
             backgroundColor: 'transparent',
             opacity: style.opacity,
             textShadow: shadow,
-            zIndex: 1,
           }}
         >
           {track.textContent}
