@@ -113,6 +113,11 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
 
           {/* Right Side Controls */}
           <div className="flex items-center gap-7 no-drag text-gray-800 dark:text-gray-100 ml-auto">
+            {/* Version Badge */}
+            <span className="text-xs text-muted-foreground font-medium px-2 py-0.5 rounded-md bg-muted/50">
+              v{packageJson.version}
+            </span>
+
             {/* New Project Button - Only show when not in video editor */}
             {!isInVideoEditor && projects.length !== 0 && (
               <div className="flex items-center gap-2">
@@ -141,10 +146,6 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
               </div>
             )}
 
-            {/* Version Badge */}
-            <span className="text-xs text-muted-foreground font-medium px-2 py-0.5 rounded-md bg-muted/50">
-              v{packageJson.version}
-            </span>
             {/* Dark Mode/Light Mode Toggle */}
             <div className="flex items-center gap-7">
               {/* Test Tools - Only show in development */}
