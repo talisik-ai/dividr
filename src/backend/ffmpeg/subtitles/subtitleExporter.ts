@@ -69,6 +69,7 @@ export interface SubtitleExportOptions {
   filename: string;
   textStyle?: TextStyleOptions;
   videoDimensions?: { width: number; height: number };
+  scale?: number; // Global scaling factor to multiply font sizes
 }
 
 /**
@@ -700,6 +701,7 @@ export function generateASSContent(
   segments: SubtitleSegment[],
   textStyle?: TextStyleOptions,
   videoDimensions?: { width: number; height: number },
+  globalScale?: number,
 ): { content: string; fontFamilies: string[] } {
   if (segments.length === 0) {
     return { content: '', fontFamilies: [] };
@@ -729,11 +731,13 @@ export function generateASSContent(
   segments.forEach((segment) => {
     // Merge global style with segment-specific style
     const mergedStyle = mergeTextStyles(textStyle, segment.style);
-    const scale = segment.position?.scale || 1;
+    const segmentScale = segment.position?.scale || 1;
+    // Apply global scale factor from payload, multiplied with per-segment scale
+    const effectiveScale = (globalScale || 1) * segmentScale;
     const styleParams = computeASSStyleParams(
       mergedStyle,
       videoDimensions,
-      scale,
+      effectiveScale,
     );
     const styleKey = createStyleKey(styleParams);
 
@@ -844,11 +848,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const endTime = formatTimeForASS(segment.endTime);
       const styleName = segmentStyleNames[index];
       const mergedStyle = mergeTextStyles(textStyle, segment.style);
-      const scale = segment.position?.scale || 1;
+      const segmentScale = segment.position?.scale || 1;
+      // Apply global scale factor from payload, multiplied with per-segment scale
+      const effectiveScale = (globalScale || 1) * segmentScale;
       const computedParams = computeASSStyleParams(
         mergedStyle,
         videoDimensions,
-        scale,
+        effectiveScale,
       );
       const styleKey = createStyleKey(computedParams);
       const styleParams = styleMap.get(styleKey)?.params;
@@ -1256,6 +1262,7 @@ export async function createSubtitleFile(
         segments,
         options.textStyle,
         options.videoDimensions,
+        options.scale,
       );
       content = assResult.content;
       break;
