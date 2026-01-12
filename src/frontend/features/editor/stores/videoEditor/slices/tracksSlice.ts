@@ -319,6 +319,27 @@ export interface TracksSlice {
     updates: { volumeDb?: number; noiseReductionEnabled?: boolean },
   ) => void;
 
+  // ==========================================================================
+  // Generic Property Updates (Batch-Safe for Slider Drag)
+  // ==========================================================================
+  /**
+   * Begin a batch property update transaction.
+   * Call this before slider/knob drag starts to group all changes into a single undo entry.
+   * Must be paired with endPropertyUpdate().
+   */
+  beginPropertyUpdate: (actionName?: string) => void;
+  /**
+   * End a batch property update transaction.
+   * Call this when slider/knob drag ends to commit the grouped changes.
+   */
+  endPropertyUpdate: () => void;
+  /**
+   * Update track properties without creating individual undo entries.
+   * Safe to call during slider drag (between beginPropertyUpdate/endPropertyUpdate).
+   * Does not call recordAction - relies on the grouping mechanism.
+   */
+  updateTrackProperty: (trackId: string, updates: Partial<VideoTrack>) => void;
+
   // State management helpers
   markUnsavedChanges?: () => void;
   updateProjectThumbnailFromTimeline?: () => Promise<void>;
@@ -2253,6 +2274,48 @@ export const createTracksSlice: StateCreator<
               }),
             }
           : track,
+      ),
+    }));
+
+    const state = get() as any;
+    state.markUnsavedChanges?.();
+  },
+
+  // ==========================================================================
+  // Generic Property Updates (Batch-Safe for Slider Drag)
+  // ==========================================================================
+
+  beginPropertyUpdate: (actionName = 'Update Property') => {
+    const state = get() as any;
+    // Use the undo/redo grouping mechanism to batch slider/knob updates
+    state.beginGroup?.(actionName);
+  },
+
+  endPropertyUpdate: () => {
+    const state = get() as any;
+    // End the grouping - this creates a single undo entry for all changes
+    state.endGroup?.();
+  },
+
+  updateTrackProperty: (trackId, updates) => {
+    // This method does NOT call recordAction - it relies on being inside
+    // a beginGroup/endGroup transaction (via beginPropertyUpdate/endPropertyUpdate)
+    // for batch-safe slider/knob updates.
+
+    // CRITICAL: Prevent mutation of sourceFps - it must remain immutable
+    let safeUpdates = updates;
+    if ('sourceFps' in updates) {
+      console.warn(
+        `⚠️ Attempted to mutate sourceFps on track ${trackId}. sourceFps is immutable and cannot be changed. Ignoring this update.`,
+      );
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { sourceFps: _removed, ...rest } = updates as any;
+      safeUpdates = rest;
+    }
+
+    set((state: any) => ({
+      tracks: state.tracks.map((track: VideoTrack) =>
+        track.id === trackId ? { ...track, ...safeUpdates } : track,
       ),
     }));
 

@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/frontend/components/ui/tooltip';
 import { RotateCcw } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 
 interface ImagePropertiesProps {
@@ -35,6 +35,18 @@ const ImagePropertiesComponent: React.FC<ImagePropertiesProps> = ({
 }) => {
   const tracks = useVideoEditorStore((state) => state.tracks);
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
+  const updateTrackProperty = useVideoEditorStore(
+    (state) => state.updateTrackProperty,
+  );
+  const beginPropertyUpdate = useVideoEditorStore(
+    (state) => state.beginPropertyUpdate,
+  );
+  const endPropertyUpdate = useVideoEditorStore(
+    (state) => state.endPropertyUpdate,
+  );
+
+  // Track if we're in a slider/knob drag to avoid multiple beginGroup calls
+  const isDraggingRef = useRef(false);
 
   // Get selected image tracks
   const selectedImageTracks = useMemo(
@@ -55,7 +67,7 @@ const ImagePropertiesComponent: React.FC<ImagePropertiesProps> = ({
   const selectedTrack = selectedImageTracks[0];
   const currentTransform = selectedTrack.textTransform || DEFAULT_TRANSFORM;
 
-  // Helper function to update transform for selected tracks
+  // Helper function to update transform for selected tracks (creates undo entry)
   const updateTransform = useCallback(
     (transformUpdates: Partial<typeof DEFAULT_TRANSFORM>) => {
       selectedImageTracks.forEach((track) => {
@@ -71,6 +83,22 @@ const ImagePropertiesComponent: React.FC<ImagePropertiesProps> = ({
     [selectedImageTracks, updateTrack],
   );
 
+  // Helper function to update transform during drag (batch-safe, no individual undo entries)
+  const updateTransformDrag = useCallback(
+    (transformUpdates: Partial<typeof DEFAULT_TRANSFORM>) => {
+      selectedImageTracks.forEach((track) => {
+        const currentTrackTransform = track.textTransform || DEFAULT_TRANSFORM;
+        updateTrackProperty(track.id, {
+          textTransform: {
+            ...currentTrackTransform,
+            ...transformUpdates,
+          },
+        });
+      });
+    },
+    [selectedImageTracks, updateTrackProperty],
+  );
+
   // Check if transform has changed from default
   const hasTransformChanged = useMemo(() => {
     return (
@@ -81,11 +109,27 @@ const ImagePropertiesComponent: React.FC<ImagePropertiesProps> = ({
     );
   }, [currentTransform]);
 
+  // Handle slider drag start (begin batch transaction)
+  const handleSliderDragStart = useCallback(() => {
+    if (!isDraggingRef.current) {
+      isDraggingRef.current = true;
+      beginPropertyUpdate('Update Transform');
+    }
+  }, [beginPropertyUpdate]);
+
+  // Handle slider drag end (end batch transaction)
+  const handleSliderDragEnd = useCallback(() => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      endPropertyUpdate();
+    }
+  }, [endPropertyUpdate]);
+
   const handleScaleSliderChange = useCallback(
     (values: number[]) => {
-      updateTransform({ scale: values[0] / 100 });
+      updateTransformDrag({ scale: values[0] / 100 });
     },
-    [updateTransform],
+    [updateTransformDrag],
   );
 
   const handleScaleInputChange = useCallback(
@@ -179,8 +223,10 @@ const ImagePropertiesComponent: React.FC<ImagePropertiesProps> = ({
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.preventDefault();
       setIsDraggingKnob(true);
+      // Begin batch transaction for rotation knob drag
+      beginPropertyUpdate('Update Rotation');
     },
-    [],
+    [beginPropertyUpdate],
   );
 
   React.useEffect(() => {
@@ -213,12 +259,15 @@ const ImagePropertiesComponent: React.FC<ImagePropertiesProps> = ({
       const newRotation = currentTransform.rotation + delta;
       lastAngle = normalizedAngle;
 
-      updateTransform({ rotation: newRotation });
+      // Use drag version during knob drag (no individual undo entries)
+      updateTransformDrag({ rotation: newRotation });
     };
 
     const handleMouseUp = () => {
       setIsDraggingKnob(false);
       document.body.style.cursor = '';
+      // End batch transaction for rotation knob drag
+      endPropertyUpdate();
     };
 
     // Set cursor to grabbing while dragging
@@ -234,7 +283,8 @@ const ImagePropertiesComponent: React.FC<ImagePropertiesProps> = ({
     };
   }, [
     isDraggingKnob,
-    updateTransform,
+    updateTransformDrag,
+    endPropertyUpdate,
     displayRotation,
     currentTransform.rotation,
   ]);
@@ -306,6 +356,8 @@ const ImagePropertiesComponent: React.FC<ImagePropertiesProps> = ({
                 <Slider
                   value={[currentTransform.scale * 100]}
                   onValueChange={handleScaleSliderChange}
+                  onPointerDown={handleSliderDragStart}
+                  onValueCommit={handleSliderDragEnd}
                   min={0}
                   max={200}
                   step={1}

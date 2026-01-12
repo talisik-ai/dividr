@@ -37,7 +37,7 @@ import {
   RotateCcw,
   Underline,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
 import { FontSelector } from '../shared/fontSelector';
@@ -94,8 +94,20 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
+  const updateTrackProperty = useVideoEditorStore(
+    (state) => state.updateTrackProperty,
+  );
+  const beginPropertyUpdate = useVideoEditorStore(
+    (state) => state.beginPropertyUpdate,
+  );
+  const endPropertyUpdate = useVideoEditorStore(
+    (state) => state.endPropertyUpdate,
+  );
   const addRecentColor = useVideoEditorStore((state) => state.addRecentColor);
   const addRecentFont = useVideoEditorStore((state) => state.addRecentFont);
+
+  // Track if we're in a slider drag to avoid multiple beginGroup calls
+  const isDraggingRef = useRef(false);
 
   // Get selected text tracks
   const selectedTextTracks = tracks.filter(
@@ -115,7 +127,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
   const selectedTrack = selectedTextTracks[0];
   const currentStyle = selectedTrack.textStyle || DEFAULT_TEXT_STYLE;
 
-  // Helper function to update text style for selected tracks
+  // Helper function to update text style for selected tracks (creates undo entry)
   const updateTextStyle = useCallback(
     (styleUpdates: Partial<typeof DEFAULT_TEXT_STYLE>) => {
       selectedTextTracks.forEach((track) => {
@@ -130,6 +142,38 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
     },
     [selectedTextTracks, updateTrack],
   );
+
+  // Helper function to update text style during drag (batch-safe, no individual undo entries)
+  const updateTextStyleDrag = useCallback(
+    (styleUpdates: Partial<typeof DEFAULT_TEXT_STYLE>) => {
+      selectedTextTracks.forEach((track) => {
+        const currentTrackStyle = track.textStyle || DEFAULT_TEXT_STYLE;
+        updateTrackProperty(track.id, {
+          textStyle: {
+            ...currentTrackStyle,
+            ...styleUpdates,
+          },
+        });
+      });
+    },
+    [selectedTextTracks, updateTrackProperty],
+  );
+
+  // Handle slider drag start (begin batch transaction)
+  const handleSliderDragStart = useCallback(() => {
+    if (!isDraggingRef.current) {
+      isDraggingRef.current = true;
+      beginPropertyUpdate('Update Text Style');
+    }
+  }, [beginPropertyUpdate]);
+
+  // Handle slider drag end (end batch transaction)
+  const handleSliderDragEnd = useCallback(() => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      endPropertyUpdate();
+    }
+  }, [endPropertyUpdate]);
 
   // Check if any styles have changed from default
   const hasStylesChanged = useMemo(() => {
@@ -235,9 +279,9 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
 
   const handleOpacitySliderChange = useCallback(
     (values: number[]) => {
-      updateTextStyle({ opacity: values[0] });
+      updateTextStyleDrag({ opacity: values[0] });
     },
-    [updateTextStyle],
+    [updateTextStyleDrag],
   );
 
   return (
@@ -738,6 +782,8 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
           <Slider
             value={[currentStyle.opacity]}
             onValueChange={handleOpacitySliderChange}
+            onPointerDown={handleSliderDragStart}
+            onValueCommit={handleSliderDragEnd}
             min={0}
             max={100}
             step={1}
