@@ -20,6 +20,10 @@ export interface TextStyleResult {
   lineHeight: number;
   opacity: number;
   hasGlow: boolean;
+  /** The color to use for glow effect (uses text color by default) */
+  glowColor: string;
+  /** The stroke color for outline effects */
+  strokeColor: string;
 }
 
 /**
@@ -57,6 +61,9 @@ export function getTextStyleForTextClip(track: VideoTrack): TextStyleResult {
     fontStyle = 'italic';
   }
 
+  const textColor = style.fillColor || '#FFFFFF';
+  const strokeColorValue = style.strokeColor || '#000000';
+
   return {
     fontFamily: style.fontFamily || '"Arial", sans-serif',
     fontWeight,
@@ -64,7 +71,7 @@ export function getTextStyleForTextClip(track: VideoTrack): TextStyleResult {
     textTransform: style.textTransform || 'none',
     textAlign: style.textAlign || 'center',
     fontSize: `${style.fontSize || 40}px`,
-    color: style.fillColor || '#FFFFFF',
+    color: textColor,
     backgroundColor: style.backgroundColor || 'transparent',
     textDecoration: style.isUnderline ? 'underline' : 'none',
     textShadow: shadowEffects.join(', '),
@@ -72,6 +79,9 @@ export function getTextStyleForTextClip(track: VideoTrack): TextStyleResult {
     lineHeight: style.lineSpacing || 1.2,
     opacity: (style.opacity || 100) / 100,
     hasGlow: style.hasGlow || false,
+    // Glow uses text color for the glow effect (matching FFmpeg behavior)
+    glowColor: textColor,
+    strokeColor: strokeColorValue,
   };
 }
 
