@@ -127,6 +127,7 @@ export const useExportJob = () => {
         sortedTracks,
         timelineFps,
         mediaLibrary,
+        textStyle.globalSubtitlePosition,
       );
 
       // Calculate the earliest start frame across all tracks (for subtitle time offset)
@@ -484,6 +485,13 @@ function convertTracksToFFmpegInputs(
     tempFilePath?: string;
     extractedAudio?: { audioPath: string };
   }[],
+  globalSubtitlePosition?: {
+    x: number;
+    y: number;
+    scale?: number;
+    width?: number;
+    height?: number;
+  },
 ): TrackInfo[] {
   return tracks.map((track) => {
     const trackDurationSeconds = track.duration / timelineFps;
@@ -586,18 +594,23 @@ function convertTracksToFFmpegInputs(
     }
 
     // Add subtitle transform for subtitle tracks (no rotation support)
-    if (track.type === 'subtitle' && track.subtitleTransform) {
-      trackInfo.subtitleTransform = {
-        x: track.subtitleTransform.x,
-        y: track.subtitleTransform.y,
-        scale: track.subtitleTransform.scale,
-        rotation: 0, // Subtitles don't support rotation
-        width: track.subtitleTransform.width,
-        height: track.subtitleTransform.height,
-      };
-      console.log(
-        `📝 Subtitle transform for "${track.name}": pos=(${track.subtitleTransform.x.toFixed(2)}, ${track.subtitleTransform.y.toFixed(2)}), scale=${track.subtitleTransform.scale.toFixed(2)}, size=${track.subtitleTransform.width}x${track.subtitleTransform.height}`,
-      );
+    // Fall back to global subtitle position if track doesn't have its own transform
+    if (track.type === 'subtitle') {
+      const transform = track.subtitleTransform || globalSubtitlePosition;
+      if (transform) {
+        const subtitleScale = transform.scale ?? 1;
+        trackInfo.subtitleTransform = {
+          x: transform.x,
+          y: transform.y,
+          scale: subtitleScale,
+          rotation: 0, // Subtitles don't support rotation
+          width: transform.width,
+          height: transform.height,
+        };
+        console.log(
+          `📝 Subtitle transform for "${track.name}": pos=(${transform.x.toFixed(2)}, ${transform.y.toFixed(2)}), scale=${subtitleScale.toFixed(2)}, size=${transform.width ?? 0}x${transform.height ?? 0}`,
+        );
+      }
     }
 
     return trackInfo;
