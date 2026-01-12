@@ -712,6 +712,9 @@ export function generateASSContent(
     JSON.stringify(textStyle, null, 2),
   );
   console.log(
+    `📝 generateASSContent received global scale: ${globalScale || 1}`,
+  );
+  console.log(
     '📝 generateASSContent processing',
     segments.length,
     'segments with individual styles',
@@ -870,11 +873,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       );
       console.log(`   - Style: ${styleName}`);
       console.log(`   - Layer offset: ${layerOffset}`);
-      if (segment.position) {
-        console.log(
-          `   - Position: x=${segment.position.x?.toFixed(3)}, y=${segment.position.y?.toFixed(3)}, scale=${segment.position.scale}`,
-        );
-      }
+
+      // Log position and scale information (always show, even if defaults)
+      const x =
+        segment.position?.x !== undefined ? segment.position.x : undefined;
+      const y =
+        segment.position?.y !== undefined ? segment.position.y : undefined;
+
+      console.log(`   - Transform:`);
+      console.log(
+        `     * Position: x=${x !== undefined ? x.toFixed(3) : 'default'}, y=${y !== undefined ? y.toFixed(3) : 'default'}`,
+      );
+      console.log(`     * Segment scale: ${segmentScale}`);
+      console.log(`     * Global scale: ${globalScale || 1}`);
+      console.log(
+        `     * Effective scale: ${effectiveScale.toFixed(3)} (applied to font size)`,
+      );
 
       // Apply text transformations if specified
       let text = segment.text;
