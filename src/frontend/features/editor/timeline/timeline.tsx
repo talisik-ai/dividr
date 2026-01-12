@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { KaraokeConfirmationDialog } from '../components/dialogs/karaokeConfirmationDialog';
+import { importMediaUnified } from '../services/mediaImportService';
 import { useTrackDragRecording } from '../stores/videoEditor/hooks/useTrackDragRecording';
 import { useUndoRedoShortcuts } from '../stores/videoEditor/hooks/useUndoRedoShortcuts';
 import {
@@ -160,6 +161,12 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
     );
     const addTrackFromMediaLibrary = useVideoEditorStore(
       (state) => state.addTrackFromMediaLibrary,
+    );
+    const importMediaFromDrop = useVideoEditorStore(
+      (state) => state.importMediaFromDrop,
+    );
+    const importMediaToTimeline = useVideoEditorStore(
+      (state) => state.importMediaToTimeline,
     );
     const beginGroup = useVideoEditorStore((state) => state.beginGroup);
     const endGroup = useVideoEditorStore((state) => state.endGroup);
@@ -672,8 +679,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         e.stopPropagation();
         setDropActive(false);
 
-        const payload = parseMediaDropPayload(e.dataTransfer);
-        if (!payload || !tracksRef.current) {
+        if (!tracksRef.current) {
           return;
         }
 
@@ -684,67 +690,92 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
         const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
 
-        const rowBounds = buildInteractionRowBounds(
-          dynamicRowsWithPlaceholders,
-          visibleTrackRows,
-          48,
-        );
+        // Try to parse as media library drag first
+        const payload = parseMediaDropPayload(e.dataTransfer);
 
-        const insertion = detectInsertionPoint(
-          cursorY,
-          rowBounds,
-          (payload.type as VideoTrack['type']) || 'video',
-          tracks,
-        );
-
-        let targetRowIndex: number | null = null;
-        if (insertion) {
-          targetRowIndex =
-            insertion.existingRowId &&
-            parseRowId(insertion.existingRowId)?.rowIndex !== undefined
-              ? parseRowId(insertion.existingRowId)?.rowIndex || null
-              : insertion.targetRowIndex;
-        }
-
-        if (targetRowIndex === null) {
-          const fallbackRow = rowBounds.find(
-            (row) =>
-              row.type === ((payload.type as VideoTrack['type']) || 'video'),
+        if (payload) {
+          // Handle media library drops
+          const rowBounds = buildInteractionRowBounds(
+            dynamicRowsWithPlaceholders,
+            visibleTrackRows,
+            48,
           );
-          targetRowIndex = fallbackRow?.rowIndex ?? 0;
-        }
 
-        const mediaItem = mediaLibrary?.find(
-          (item) => item.id === payload.mediaId,
-        );
-        const isSubtitleDrop =
-          payload.type === 'subtitle' ||
-          mediaItem?.type === 'subtitle' ||
-          (mediaItem?.name || '').toLowerCase().endsWith('.srt') ||
-          (mediaItem?.name || '').toLowerCase().endsWith('.vtt');
+          const insertion = detectInsertionPoint(
+            cursorY,
+            rowBounds,
+            (payload.type as VideoTrack['type']) || 'video',
+            tracks,
+          );
 
-        const existingGeneratedSubtitles = tracks.filter(
-          (track) =>
-            track.type === 'subtitle' && track.subtitleType === 'karaoke',
-        );
+          let targetRowIndex: number | null = null;
+          if (insertion) {
+            targetRowIndex =
+              insertion.existingRowId &&
+              parseRowId(insertion.existingRowId)?.rowIndex !== undefined
+                ? parseRowId(insertion.existingRowId)?.rowIndex || null
+                : insertion.targetRowIndex;
+          }
 
-        if (isSubtitleDrop && existingGeneratedSubtitles.length > 0) {
-          setSubtitleImportConfirmation({
-            show: true,
-            mediaId: payload.mediaId,
-            mediaName: mediaItem?.name || 'Subtitles',
+          if (targetRowIndex === null) {
+            const fallbackRow = rowBounds.find(
+              (row) =>
+                row.type === ((payload.type as VideoTrack['type']) || 'video'),
+            );
+            targetRowIndex = fallbackRow?.rowIndex ?? 0;
+          }
+
+          const mediaItem = mediaLibrary?.find(
+            (item) => item.id === payload.mediaId,
+          );
+          const isSubtitleDrop =
+            payload.type === 'subtitle' ||
+            mediaItem?.type === 'subtitle' ||
+            (mediaItem?.name || '').toLowerCase().endsWith('.srt') ||
+            (mediaItem?.name || '').toLowerCase().endsWith('.vtt');
+
+          const existingGeneratedSubtitles = tracks.filter(
+            (track) =>
+              track.type === 'subtitle' && track.subtitleType === 'karaoke',
+          );
+
+          if (isSubtitleDrop && existingGeneratedSubtitles.length > 0) {
+            setSubtitleImportConfirmation({
+              show: true,
+              mediaId: payload.mediaId,
+              mediaName: mediaItem?.name || 'Subtitles',
+              targetFrame,
+              targetRowIndex: targetRowIndex ?? 0,
+              generatedSubtitleIds: existingGeneratedSubtitles.map((t) => t.id),
+            });
+            return;
+          }
+
+          addTrackFromMediaLibrary(
+            payload.mediaId,
             targetFrame,
-            targetRowIndex: targetRowIndex ?? 0,
-            generatedSubtitleIds: existingGeneratedSubtitles.map((t) => t.id),
-          });
+            targetRowIndex ?? 0,
+          ).catch(console.error);
           return;
         }
 
-        addTrackFromMediaLibrary(
-          payload.mediaId,
-          targetFrame,
-          targetRowIndex ?? 0,
-        ).catch(console.error);
+        // Handle external file drops from OS file browser
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          const fileArray = Array.from(files);
+
+          // Import all dropped files to timeline using the unified import pipeline
+          await importMediaUnified(
+            fileArray,
+            'timeline-drop',
+            {
+              importMediaFromDrop,
+              importMediaToTimeline,
+              addTrackFromMediaLibrary,
+            },
+            { addToTimeline: true, showToasts: true },
+          );
+        }
       },
       [
         addTrackFromMediaLibrary,
@@ -754,6 +785,8 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         frameWidth,
         tracks,
         mediaLibrary,
+        importMediaFromDrop,
+        importMediaToTimeline,
       ],
     );
 
