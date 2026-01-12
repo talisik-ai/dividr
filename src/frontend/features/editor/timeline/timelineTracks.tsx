@@ -967,11 +967,108 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
       });
     }, [tracks, scrollX, frameWidth, zoomLevel]);
 
-    const handleDragOver = useCallback((e: React.DragEvent) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-      setIsDragOver(true);
-    }, []);
+    const handleDragOver = useCallback(
+      (e: React.DragEvent) => {
+        e.preventDefault();
+
+        // Helper to detect subtitle files by extension
+        const isSubtitleFile = (fileName: string): boolean => {
+          const subtitleExtensions = [
+            '.srt',
+            '.vtt',
+            '.ass',
+            '.ssa',
+            '.sub',
+            '.sbv',
+            '.lrc',
+          ];
+          return subtitleExtensions.some((ext) =>
+            fileName.toLowerCase().endsWith(ext),
+          );
+        };
+
+        // Check if this is an internal media drag (has application/json or text/plain)
+        const hasMediaId = e.dataTransfer.types.includes('text/plain');
+        const hasJson = e.dataTransfer.types.includes('application/json');
+        const hasFiles = e.dataTransfer.types.includes('Files');
+
+        // For internal drags, always allow (drop handler will validate)
+        if (hasMediaId || hasJson) {
+          e.dataTransfer.dropEffect = 'copy';
+          setIsDragOver(true);
+          return;
+        }
+
+        // For external file drops, check if any file matches this row's type
+        if (hasFiles) {
+          const items = e.dataTransfer.items;
+          let hasValidFile = false;
+
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.kind === 'file') {
+              const file = item.getAsFile();
+              const mimeType = item.type;
+
+              // Check if file matches row type
+              if (
+                rowDef.trackTypes.includes('video') &&
+                mimeType.startsWith('video/')
+              ) {
+                hasValidFile = true;
+                break;
+              }
+              if (
+                rowDef.trackTypes.includes('audio') &&
+                mimeType.startsWith('audio/')
+              ) {
+                hasValidFile = true;
+                break;
+              }
+              if (
+                rowDef.trackTypes.includes('image') &&
+                mimeType.startsWith('image/')
+              ) {
+                hasValidFile = true;
+                break;
+              }
+              if (rowDef.trackTypes.includes('subtitle') && file) {
+                if (
+                  isSubtitleFile(file.name) ||
+                  mimeType === 'text/plain' ||
+                  mimeType === 'application/x-subrip' ||
+                  mimeType === 'text/vtt'
+                ) {
+                  hasValidFile = true;
+                  break;
+                }
+              }
+              if (
+                rowDef.trackTypes.includes('text') &&
+                mimeType.startsWith('text/')
+              ) {
+                hasValidFile = true;
+                break;
+              }
+            }
+          }
+
+          if (hasValidFile) {
+            e.dataTransfer.dropEffect = 'copy';
+            setIsDragOver(true);
+          } else {
+            e.dataTransfer.dropEffect = 'none';
+            setIsDragOver(false);
+          }
+          return;
+        }
+
+        // Default: allow drop
+        e.dataTransfer.dropEffect = 'copy';
+        setIsDragOver(true);
+      },
+      [rowDef.trackTypes],
+    );
 
     const handleDragLeave = useCallback((e: React.DragEvent) => {
       e.preventDefault();
@@ -1519,15 +1616,48 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
 
         if (!rowDef) return;
 
+        // Helper to detect subtitle files by extension
+        const isSubtitleFile = (fileName: string): boolean => {
+          const subtitleExtensions = [
+            '.srt',
+            '.vtt',
+            '.ass',
+            '.ssa',
+            '.sub',
+            '.sbv',
+            '.lrc',
+          ];
+          return subtitleExtensions.some((ext) =>
+            fileName.toLowerCase().endsWith(ext),
+          );
+        };
+
+        // Validate files based on target row type
         const validFiles = fileArray.filter((file) => {
+          // Check video track types
           if (rowDef.trackTypes.includes('video')) {
             return file.type.startsWith('video/');
           }
+          // Check audio track types
           if (rowDef.trackTypes.includes('audio')) {
             return file.type.startsWith('audio/');
           }
+          // Check image track types
           if (rowDef.trackTypes.includes('image')) {
             return file.type.startsWith('image/');
+          }
+          // Check subtitle track types (detect by extension since MIME types vary)
+          if (rowDef.trackTypes.includes('subtitle')) {
+            return (
+              isSubtitleFile(file.name) ||
+              file.type === 'text/plain' ||
+              file.type === 'application/x-subrip' ||
+              file.type === 'text/vtt'
+            );
+          }
+          // Check text track types (allow text files)
+          if (rowDef.trackTypes.includes('text')) {
+            return file.type.startsWith('text/');
           }
           return false;
         });
@@ -1654,59 +1784,80 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       setPlaceholderHoverId(null);
 
       const payload = parseMediaDragPayload(e.dataTransfer);
-      if (!payload) return;
 
-      const scrollContainer = (e.currentTarget as HTMLElement).closest(
-        '.overflow-auto',
-      ) as HTMLElement | null;
-      const scrollLeft = scrollContainer?.scrollLeft || 0;
-      const scrollTop = scrollContainer?.scrollTop || 0;
-      const rect =
-        scrollContainer?.getBoundingClientRect() ||
-        (e.currentTarget as HTMLElement).getBoundingClientRect();
+      if (payload) {
+        // Handle media library drops
+        const scrollContainer = (e.currentTarget as HTMLElement).closest(
+          '.overflow-auto',
+        ) as HTMLElement | null;
+        const scrollLeft = scrollContainer?.scrollLeft || 0;
+        const scrollTop = scrollContainer?.scrollTop || 0;
+        const rect =
+          scrollContainer?.getBoundingClientRect() ||
+          (e.currentTarget as HTMLElement).getBoundingClientRect();
 
-      const cursorX = e.clientX - rect.left + scrollLeft;
-      const cursorY = e.clientY - rect.top + scrollTop;
+        const cursorX = e.clientX - rect.left + scrollLeft;
+        const cursorY = e.clientY - rect.top + scrollTop;
 
-      const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
+        const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
 
-      const rowBounds = calculateRowBoundsWithPlaceholders(
-        dynamicRows,
-        visibleTrackRows,
-        placeholderRowsAbove,
-        placeholderRowsBelow,
-        PLACEHOLDER_ROW_HEIGHT,
-      );
-
-      const insertion = detectInsertionPoint(
-        cursorY,
-        rowBounds,
-        (payload.type as VideoTrack['type']) || 'video',
-        tracks,
-      );
-
-      let targetRowIndex: number | null = null;
-      if (insertion) {
-        targetRowIndex =
-          insertion.existingRowId &&
-          parseRowId(insertion.existingRowId)?.rowIndex !== undefined
-            ? parseRowId(insertion.existingRowId)?.rowIndex || null
-            : insertion.targetRowIndex;
-      }
-
-      if (targetRowIndex === null) {
-        const fallbackRow = rowBounds.find(
-          (row) =>
-            row.type === ((payload.type as VideoTrack['type']) || 'video'),
+        const rowBounds = calculateRowBoundsWithPlaceholders(
+          dynamicRows,
+          visibleTrackRows,
+          placeholderRowsAbove,
+          placeholderRowsBelow,
+          PLACEHOLDER_ROW_HEIGHT,
         );
-        targetRowIndex = fallbackRow?.rowIndex ?? 0;
+
+        const insertion = detectInsertionPoint(
+          cursorY,
+          rowBounds,
+          (payload.type as VideoTrack['type']) || 'video',
+          tracks,
+        );
+
+        let targetRowIndex: number | null = null;
+        if (insertion) {
+          targetRowIndex =
+            insertion.existingRowId &&
+            parseRowId(insertion.existingRowId)?.rowIndex !== undefined
+              ? parseRowId(insertion.existingRowId)?.rowIndex || null
+              : insertion.targetRowIndex;
+        }
+
+        if (targetRowIndex === null) {
+          const fallbackRow = rowBounds.find(
+            (row) =>
+              row.type === ((payload.type as VideoTrack['type']) || 'video'),
+          );
+          targetRowIndex = fallbackRow?.rowIndex ?? 0;
+        }
+
+        addTrackFromMediaLibrary(
+          payload.mediaId,
+          targetFrame,
+          targetRowIndex ?? 0,
+        ).catch(console.error);
+        return;
       }
 
-      addTrackFromMediaLibrary(
-        payload.mediaId,
-        targetFrame,
-        targetRowIndex ?? 0,
-      ).catch(console.error);
+      // Handle external file drops from OS file browser
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        const fileArray = Array.from(files);
+
+        // Import all dropped files to timeline using the unified import pipeline
+        await importMediaUnified(
+          fileArray,
+          'timeline-drop',
+          {
+            importMediaFromDrop,
+            importMediaToTimeline,
+            addTrackFromMediaLibrary,
+          },
+          { addToTimeline: true, showToasts: true },
+        );
+      }
     };
 
     return (

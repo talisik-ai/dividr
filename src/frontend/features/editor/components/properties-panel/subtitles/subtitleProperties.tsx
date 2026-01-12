@@ -38,7 +38,7 @@ import {
   RotateCcw,
   Underline,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
 import { FontSelector } from '../shared/fontSelector';
@@ -86,6 +86,11 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const snapshotStylesToSelectedTracks = useVideoEditorStore(
     (state) => state.snapshotStylesToSelectedTracks,
   );
+  const beginGroup = useVideoEditorStore((state) => state.beginGroup);
+  const endGroup = useVideoEditorStore((state) => state.endGroup);
+
+  // Track if we're in a slider drag to avoid multiple beginGroup calls
+  const isDraggingRef = useRef(false);
 
   // Get selected subtitle tracks
   const selectedSubtitleTracks = tracks.filter(
@@ -259,6 +264,22 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
     },
     [setOpacity],
   );
+
+  // Handle slider drag start (begin batch transaction)
+  const handleSliderDragStart = useCallback(() => {
+    if (!isDraggingRef.current) {
+      isDraggingRef.current = true;
+      beginGroup('Update Subtitle Style');
+    }
+  }, [beginGroup]);
+
+  // Handle slider drag end (end batch transaction)
+  const handleSliderDragEnd = useCallback(() => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      endGroup();
+    }
+  }, [endGroup]);
 
   const handleOpacitySliderChange = useCallback(
     (values: number[]) => {
@@ -751,6 +772,8 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
             <Slider
               value={[activeSubtitleStyle.opacity]}
               onValueChange={handleOpacitySliderChange}
+              onPointerDown={handleSliderDragStart}
+              onValueCommit={handleSliderDragEnd}
               min={0}
               max={100}
               step={1}

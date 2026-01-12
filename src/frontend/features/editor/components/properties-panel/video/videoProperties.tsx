@@ -15,7 +15,7 @@ import {
 } from '@/frontend/components/ui/tooltip';
 import { cn } from '@/frontend/utils/utils';
 import { RotateCcw } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { AudioProperties } from '../audio/audioProperties';
 
@@ -37,6 +37,18 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
 }) => {
   const tracks = useVideoEditorStore((state) => state.tracks);
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
+  const updateTrackProperty = useVideoEditorStore(
+    (state) => state.updateTrackProperty,
+  );
+  const beginPropertyUpdate = useVideoEditorStore(
+    (state) => state.beginPropertyUpdate,
+  );
+  const endPropertyUpdate = useVideoEditorStore(
+    (state) => state.endPropertyUpdate,
+  );
+
+  // Track if we're in a slider/knob drag to avoid multiple beginGroup calls
+  const isDraggingRef = useRef(false);
 
   // Get selected video tracks
   const selectedVideoTracks = useMemo(
@@ -106,7 +118,7 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
     return selectedTrack.id;
   }, [linkedAudioTrack, selectedTrack.id]);
 
-  // Helper function to update transform for selected tracks
+  // Helper function to update transform for selected tracks (creates undo entry)
   const updateTransform = useCallback(
     (transformUpdates: Partial<typeof DEFAULT_TRANSFORM>) => {
       selectedVideoTracks.forEach((track) => {
@@ -122,6 +134,22 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
     [selectedVideoTracks, updateTrack],
   );
 
+  // Helper function to update transform during drag (batch-safe, no individual undo entries)
+  const updateTransformDrag = useCallback(
+    (transformUpdates: Partial<typeof DEFAULT_TRANSFORM>) => {
+      selectedVideoTracks.forEach((track) => {
+        const currentTrackTransform = track.textTransform || DEFAULT_TRANSFORM;
+        updateTrackProperty(track.id, {
+          textTransform: {
+            ...currentTrackTransform,
+            ...transformUpdates,
+          },
+        });
+      });
+    },
+    [selectedVideoTracks, updateTrackProperty],
+  );
+
   // Check if transform has changed from default
   const hasTransformChanged = useMemo(() => {
     return (
@@ -132,11 +160,27 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
     );
   }, [currentTransform]);
 
+  // Handle slider drag start (begin batch transaction)
+  const handleSliderDragStart = useCallback(() => {
+    if (!isDraggingRef.current) {
+      isDraggingRef.current = true;
+      beginPropertyUpdate('Update Transform');
+    }
+  }, [beginPropertyUpdate]);
+
+  // Handle slider drag end (end batch transaction)
+  const handleSliderDragEnd = useCallback(() => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      endPropertyUpdate();
+    }
+  }, [endPropertyUpdate]);
+
   const handleScaleSliderChange = useCallback(
     (values: number[]) => {
-      updateTransform({ scale: values[0] / 100 });
+      updateTransformDrag({ scale: values[0] / 100 });
     },
-    [updateTransform],
+    [updateTransformDrag],
   );
 
   const handleScaleInputChange = useCallback(
@@ -226,8 +270,10 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.preventDefault();
       setIsDraggingKnob(true);
+      // Begin batch transaction for rotation knob drag
+      beginPropertyUpdate('Update Rotation');
     },
-    [],
+    [beginPropertyUpdate],
   );
 
   React.useEffect(() => {
@@ -260,12 +306,15 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
       const newRotation = currentTransform.rotation + delta;
       lastAngle = normalizedAngle;
 
-      updateTransform({ rotation: newRotation });
+      // Use drag version during knob drag (no individual undo entries)
+      updateTransformDrag({ rotation: newRotation });
     };
 
     const handleMouseUp = () => {
       setIsDraggingKnob(false);
       document.body.style.cursor = '';
+      // End batch transaction for rotation knob drag
+      endPropertyUpdate();
     };
 
     // Set cursor to grabbing while dragging
@@ -281,7 +330,8 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
     };
   }, [
     isDraggingKnob,
-    updateTransform,
+    updateTransformDrag,
+    endPropertyUpdate,
     displayRotation,
     currentTransform.rotation,
   ]);
@@ -390,6 +440,8 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
                       <Slider
                         value={[currentTransform.scale * 100]}
                         onValueChange={handleScaleSliderChange}
+                        onPointerDown={handleSliderDragStart}
+                        onValueCommit={handleSliderDragEnd}
                         min={0}
                         max={200}
                         step={1}
@@ -611,6 +663,8 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
                     <Slider
                       value={[currentTransform.scale * 100]}
                       onValueChange={handleScaleSliderChange}
+                      onPointerDown={handleSliderDragStart}
+                      onValueCommit={handleSliderDragEnd}
                       min={0}
                       max={200}
                       step={1}

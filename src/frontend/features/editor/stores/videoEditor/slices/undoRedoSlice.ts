@@ -22,6 +22,28 @@ export interface UndoableState {
     canvasHeight: number;
     backgroundColor: string;
   };
+  // Text style global controls for subtitle styling (undo/redo support)
+  textStyle: {
+    activeStyle: string;
+    styleApplicationMode: 'all' | 'selected';
+    globalControls: {
+      fontFamily: string;
+      isBold: boolean;
+      isItalic: boolean;
+      isUnderline: boolean;
+      textTransform: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
+      textAlign: 'left' | 'center' | 'right' | 'justify';
+      fontSize: number;
+      fillColor: string;
+      strokeColor: string;
+      backgroundColor: string;
+      hasShadow: boolean;
+      letterSpacing: number;
+      lineSpacing: number;
+      hasGlow: boolean;
+      opacity: number;
+    };
+  };
 }
 
 /**
@@ -108,6 +130,13 @@ export const createUndoRedoSlice: StateCreator<
         canvasHeight: state.preview.canvasHeight,
         backgroundColor: state.preview.backgroundColor,
       },
+      textStyle: {
+        activeStyle: state.textStyle?.activeStyle || 'default',
+        styleApplicationMode: state.textStyle?.styleApplicationMode || 'all',
+        globalControls: JSON.parse(
+          JSON.stringify(state.textStyle?.globalControls || {}),
+        ),
+      },
     };
   },
 
@@ -130,6 +159,14 @@ export const createUndoRedoSlice: StateCreator<
         canvasWidth: undoableState.preview.canvasWidth,
         canvasHeight: undoableState.preview.canvasHeight,
         backgroundColor: undoableState.preview.backgroundColor,
+      },
+      textStyle: {
+        ...state.textStyle,
+        activeStyle: undoableState.textStyle.activeStyle,
+        styleApplicationMode: undoableState.textStyle.styleApplicationMode,
+        globalControls: JSON.parse(
+          JSON.stringify(undoableState.textStyle.globalControls),
+        ),
       },
     }));
   },

@@ -144,13 +144,33 @@ export function generateSubtitleContent(
             .replace(/\r\n/g, '\n')
             .replace(/\r/g, '\n');
 
+          // Extract transform/position data from subtitleTransform or fall back to global position
+          // Convert coordinates from [-1,1] (frontend) to [0,1] (ASS generator)
+          // This ensures parity with how textLayerUtils.ts handles text transforms
+          const transform =
+            track.subtitleTransform || textStyle.globalSubtitlePosition;
+          const position = transform
+            ? {
+                x: (transform.x + 1) / 2, // Convert from [-1,1] to [0,1]
+                y: (transform.y + 1) / 2, // Convert from [-1,1] to [0,1]
+                scale: transform.scale ?? 1, // Default to 1 if not set
+              }
+            : undefined;
+
+          // Log position data for debugging
+          if (position) {
+            console.log(
+              `📍 [Export Payload] Track ${index + 1} position: x=${position.x.toFixed(3)}, y=${position.y.toFixed(3)}, scale=${position.scale}`,
+            );
+          }
+
           return {
             startTime,
             endTime,
             text: cleanText,
             index: index + 1,
             style,
-            isTextClip: false,
+            position, // Include position data for ASS positioning
           };
         })
       : [];

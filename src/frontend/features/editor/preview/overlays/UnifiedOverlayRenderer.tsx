@@ -13,6 +13,8 @@ import { SubtitleTransformBoundary } from '../components/SubtitleTransformBounda
 import { TextTransformBoundary } from '../components/TextTransformBoundary';
 import { VideoTransformBoundary } from '../components/VideoTransformBoundary';
 import {
+  GLOW_BLUR_MULTIPLIER,
+  GLOW_SPREAD_MULTIPLIER,
   SUBTITLE_PADDING_HORIZONTAL,
   SUBTITLE_PADDING_VERTICAL,
   TEXT_CLIP_PADDING_HORIZONTAL,
@@ -21,7 +23,10 @@ import {
 import { OverlayRenderProps } from '../core/types';
 import { createVirtualTimeline } from '../services/VirtualTimelineManager';
 import { scaleTextShadow } from '../utils/scalingUtils';
-import { getTextStyleForTextClip } from '../utils/textStyleUtils';
+import {
+  getTextStyleForTextClip,
+  hasActualBackground,
+} from '../utils/textStyleUtils';
 import {
   getActiveVisualTracksAtFrame,
   getTrackZIndex,
@@ -697,6 +702,10 @@ function renderSubtitleContent(
   const padV = SUBTITLE_PADDING_VERTICAL * effectiveScale;
   const padH = SUBTITLE_PADDING_HORIZONTAL * effectiveScale;
   const shadow = scaleTextShadow(style.textShadow, effectiveScale);
+  const hasBackground = hasActualBackground(style.backgroundColor);
+
+  // Glow uses text color for the glow effect (matching FFmpeg behavior)
+  const glowColor = style.color || '#FFFFFF';
 
   const base: React.CSSProperties = {
     fontSize: `${fontSize}px`,
@@ -718,6 +727,127 @@ function renderSubtitleContent(
     padding: `${padV}px ${padH}px`,
   };
 
+  // Check if glow is enabled for this subtitle
+  // Glow uses a multi-layer approach to match FFmpeg export:
+  // Layer 0: Glow layer (blurred, expanded text behind everything)
+  // Layer 1: Background layer (if background color is set)
+  // Layer 2: Text layer (main text with stroke/shadow)
+  //
+  // We use CSS Grid with grid-area to stack all layers perfectly on top of each other.
+  // This ensures layers remain aligned at all zoom levels (unlike position: absolute).
+  if (style.hasGlow) {
+    // Scale glow parameters with the effective scale (renderScale * userScale)
+    const glowBlurAmount = GLOW_BLUR_MULTIPLIER * effectiveScale;
+    const glowSpread = GLOW_SPREAD_MULTIPLIER * effectiveScale;
+
+    // Common layer style - all layers use the same grid cell to stack perfectly
+    const layerStyle: React.CSSProperties = {
+      gridArea: '1 / 1 / 2 / 2', // All layers occupy the same grid cell
+      maxWidth: 'none',
+    };
+
+    if (hasBackground) {
+      // Triple-layer: glow + background + text
+      return (
+        <div
+          key={`sub-${track.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(track.id);
+          }}
+        >
+          <div style={{ display: 'inline-grid' }}>
+            {/* Glow Layer - furthest back (rendered first = lowest z-order) */}
+            <div
+              style={{
+                ...base,
+                ...layerStyle,
+                color: glowColor,
+                backgroundColor: style.backgroundColor,
+                opacity: 0.75,
+                filter: `blur(${glowBlurAmount}px)`,
+                boxShadow: `0 0 ${glowSpread}px ${glowColor}, 0 0 ${glowSpread * 1.5}px ${glowColor}`,
+              }}
+              aria-hidden="true"
+            >
+              {track.subtitleText}
+            </div>
+            {/* Background Layer */}
+            <div
+              style={{
+                ...base,
+                ...layerStyle,
+                color: 'transparent',
+                backgroundColor: style.backgroundColor,
+                opacity: style.opacity,
+              }}
+              aria-hidden="true"
+            >
+              {track.subtitleText}
+            </div>
+            {/* Text Layer - topmost (rendered last = highest z-order) */}
+            <div
+              style={{
+                ...base,
+                ...layerStyle,
+                color: style.color,
+                backgroundColor: 'transparent',
+                opacity: style.opacity,
+                textShadow: shadow,
+              }}
+            >
+              {track.subtitleText}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Double-layer: glow + text (no background)
+    return (
+      <div
+        key={`sub-${track.id}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(track.id);
+        }}
+      >
+        <div style={{ display: 'inline-grid' }}>
+          {/* Glow Layer - furthest back (rendered first = lowest z-order) */}
+          <div
+            style={{
+              ...base,
+              ...layerStyle,
+              color: glowColor,
+              backgroundColor: 'transparent',
+              opacity: 0.75,
+              filter: `blur(${glowBlurAmount}px)`,
+              textShadow: `0 0 ${glowSpread}px ${glowColor}, 0 0 ${glowSpread * 1.5}px ${glowColor}`,
+              WebkitTextStroke: `${glowSpread * 0.75}px ${glowColor}`,
+            }}
+            aria-hidden="true"
+          >
+            {track.subtitleText}
+          </div>
+          {/* Text Layer - topmost (rendered last = highest z-order) */}
+          <div
+            style={{
+              ...base,
+              ...layerStyle,
+              color: style.color,
+              backgroundColor: 'transparent',
+              opacity: style.opacity,
+              textShadow: shadow,
+            }}
+          >
+            {track.subtitleText}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No glow - render simple single layer
   return (
     <div
       key={`sub-${track.id}`}
@@ -862,6 +992,7 @@ function renderTextTrack(
   const padV = TEXT_CLIP_PADDING_VERTICAL * effScale;
   const padH = TEXT_CLIP_PADDING_HORIZONTAL * effScale;
   const shadow = scaleTextShadow(style.textShadow, effScale);
+  const hasBackground = hasActualBackground(style.backgroundColor);
 
   const base: React.CSSProperties = {
     fontSize: `${fontSize}px`,
@@ -887,6 +1018,115 @@ function renderTextTrack(
     color: style.color,
     backgroundColor: style.backgroundColor,
     opacity: style.opacity,
+  };
+
+  // Render text content with optional glow effect
+  // Glow uses a multi-layer approach to match FFmpeg export:
+  // Layer 0: Glow layer (blurred, expanded text behind everything)
+  // Layer 1: Background layer (if background color is set)
+  // Layer 2: Text layer (main text with stroke/shadow)
+  //
+  // We use CSS Grid with grid-area to stack all layers perfectly on top of each other.
+  // This ensures layers remain aligned at all zoom levels (unlike position: absolute).
+  const renderTextContent = () => {
+    if (!style.hasGlow) {
+      // No glow - render simple single layer
+      return <div style={complete}>{track.textContent}</div>;
+    }
+
+    // Glow effect enabled - render multi-layer
+    // Scale glow parameters with the effective scale (renderScale * clipScale)
+    const glowBlurAmount = GLOW_BLUR_MULTIPLIER * effScale;
+    const glowSpread = GLOW_SPREAD_MULTIPLIER * effScale;
+
+    // Common layer style - all layers use the same grid cell to stack perfectly
+    const layerStyle: React.CSSProperties = {
+      gridArea: '1 / 1 / 2 / 2', // All layers occupy the same grid cell
+    };
+
+    if (hasBackground) {
+      // Triple-layer: glow + background + text
+      return (
+        <div style={{ display: 'inline-grid' }}>
+          {/* Glow Layer - furthest back (rendered first = lowest z-order) */}
+          <div
+            style={{
+              ...base,
+              ...layerStyle,
+              color: style.glowColor,
+              backgroundColor: style.backgroundColor,
+              opacity: 0.75,
+              filter: `blur(${glowBlurAmount}px)`,
+              boxShadow: `0 0 ${glowSpread}px ${style.glowColor}, 0 0 ${glowSpread * 1.5}px ${style.glowColor}`,
+            }}
+            aria-hidden="true"
+          >
+            {track.textContent}
+          </div>
+          {/* Background Layer */}
+          <div
+            style={{
+              ...base,
+              ...layerStyle,
+              color: 'transparent',
+              backgroundColor: style.backgroundColor,
+              opacity: style.opacity,
+            }}
+            aria-hidden="true"
+          >
+            {track.textContent}
+          </div>
+          {/* Text Layer - topmost (rendered last = highest z-order) */}
+          <div
+            style={{
+              ...base,
+              ...layerStyle,
+              color: style.color,
+              backgroundColor: 'transparent',
+              opacity: style.opacity,
+              textShadow: shadow,
+            }}
+          >
+            {track.textContent}
+          </div>
+        </div>
+      );
+    }
+
+    // Double-layer: glow + text (no background)
+    return (
+      <div style={{ display: 'inline-grid' }}>
+        {/* Glow Layer - furthest back (rendered first = lowest z-order) */}
+        <div
+          style={{
+            ...base,
+            ...layerStyle,
+            color: style.glowColor,
+            backgroundColor: 'transparent',
+            opacity: 0.75,
+            filter: `blur(${glowBlurAmount}px)`,
+            textShadow: `0 0 ${glowSpread}px ${style.glowColor}, 0 0 ${glowSpread * 1.5}px ${style.glowColor}`,
+            WebkitTextStroke: `${glowSpread * 0.75}px ${style.glowColor}`,
+          }}
+          aria-hidden="true"
+        >
+          {track.textContent}
+        </div>
+        {/* Text Layer - topmost (rendered last = highest z-order) */}
+        <div
+          style={{
+            ...base,
+            ...layerStyle,
+            color: style.color,
+            backgroundColor: 'transparent',
+            opacity: style.opacity,
+            textShadow: shadow,
+          }}
+        >
+          {track.textContent}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -935,7 +1175,7 @@ function renderTextTrack(
         onEditStarted={onEditStarted}
         getTopElementAtPoint={getTopElementAtPoint}
       >
-        <div style={complete}>{track.textContent}</div>
+        {renderTextContent()}
       </TextTransformBoundary>
     </div>
   );

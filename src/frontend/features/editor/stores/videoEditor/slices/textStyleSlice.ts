@@ -15,6 +15,10 @@ const applyStyleUpdate = (state: any, updateKey: string, newValue: any) => {
 
   // If 'all' mode or no selection, update globally
   if (mode === 'all' || selectedTrackIds.length === 0) {
+    // Record action for undo/redo - textStyle.globalControls is now in UndoableState
+    // This captures the current state BEFORE the mutation so undo can restore it
+    state.recordAction?.(`Update Subtitle Style: ${updateKey}`);
+
     return {
       textStyle: {
         ...state.textStyle,
@@ -385,6 +389,8 @@ export const createTextStyleSlice: StateCreator<
   resetTextStyles: () =>
     set((state: any) => {
       state.markUnsavedChanges?.();
+      // Record action for undo/redo before resetting styles
+      state.recordAction?.('Reset Subtitle Styles');
       return {
         textStyle: {
           ...state.textStyle,
