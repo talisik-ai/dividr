@@ -73,14 +73,13 @@ When building the application for distribution, ensure Python dependencies are i
 The transcription feature requires:
 
 - `faster-whisper>=1.0.0` - Optimized Whisper implementation
-- `torch>=2.0.0` - PyTorch (CPU version)
+- `torch==2.8.0` - PyTorch (CPU version, required for DeepFilterNet compatibility)
 
 For GPU acceleration, install the CUDA-enabled version of PyTorch:
 
 ```bash
-pip install torch>=2.0.0+cu118  # For CUDA 11.8
-# or
-pip install torch>=2.0.0+cu121  # For CUDA 12.1
+pip install torch==2.8.0
+
 ```
 
 ## Development

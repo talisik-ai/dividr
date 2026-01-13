@@ -73,21 +73,15 @@ def run(input_path: str, output_path: str) -> None:
         output_path: Path to output audio file
     """
     # Step 1: Model Initialization
-    # Loads DeepFilterNet2 model from ~/.cache/DeepFilterNet/DeepFilterNet2/
-    # Initializes STFT/ISTFT processing state and ERB features
     model, df_state, _ = init_df(default_model='DeepFilterNet2')
     
     # Step 2: Audio Loading
-    # Uses load_audio which handles soundfile fallback for torchaudio 2.x compatibility
-    # Converts to PyTorch tensor format [C, T] and resamples to model's sample rate
     audio, _ = load_audio(input_path, sr=df_state.sr())
     
     # Step 3: Process with DeepFilterNet
     enhanced = enhance(model, df_state, audio)
     
     # Step 4: Normalize audio to prevent clipping and distortion
-    # DeepFilterNet output may exceed [-1.0, 1.0] range, causing distortion when saved
-    # We normalize by peak value to preserve relative levels while preventing clipping
     max_val = torch.abs(enhanced).max()
     if max_val > 1.0:
         # Normalize to [-1.0, 1.0] range if it exceeds
