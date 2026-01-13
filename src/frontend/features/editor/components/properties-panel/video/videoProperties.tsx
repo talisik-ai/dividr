@@ -118,36 +118,107 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
     return selectedTrack.id;
   }, [linkedAudioTrack, selectedTrack.id]);
 
+  // Sanitize transform values to ensure they are valid numbers
+  // This prevents NaN/Infinity from breaking the canvas rendering
+  const sanitizeTransform = useCallback(
+    (
+      transform: Partial<typeof DEFAULT_TRANSFORM>,
+    ): Partial<typeof DEFAULT_TRANSFORM> => {
+      const sanitized: Partial<typeof DEFAULT_TRANSFORM> = {};
+      if (transform.x !== undefined) {
+        sanitized.x = Number.isFinite(transform.x) ? transform.x : 0;
+      }
+      if (transform.y !== undefined) {
+        sanitized.y = Number.isFinite(transform.y) ? transform.y : 0;
+      }
+      if (transform.scale !== undefined) {
+        sanitized.scale =
+          Number.isFinite(transform.scale) && transform.scale > 0
+            ? transform.scale
+            : 1;
+      }
+      if (transform.rotation !== undefined) {
+        sanitized.rotation = Number.isFinite(transform.rotation)
+          ? transform.rotation
+          : 0;
+      }
+      if (transform.width !== undefined) {
+        sanitized.width =
+          Number.isFinite(transform.width) && transform.width > 0
+            ? transform.width
+            : 0;
+      }
+      if (transform.height !== undefined) {
+        sanitized.height =
+          Number.isFinite(transform.height) && transform.height > 0
+            ? transform.height
+            : 0;
+      }
+      return sanitized;
+    },
+    [],
+  );
+
+  // Helper function to get a proper default transform for a track
+  // This ensures width/height are never zero, which would cause invisible renders
+  const getDefaultTransformForTrack = useCallback(
+    (track: (typeof selectedVideoTracks)[0]) => ({
+      x: 0,
+      y: 0,
+      scale: 1,
+      rotation: 0,
+      width: track.width || 1920,
+      height: track.height || 1080,
+    }),
+    [],
+  );
+
   // Helper function to update transform for selected tracks (creates undo entry)
   const updateTransform = useCallback(
     (transformUpdates: Partial<typeof DEFAULT_TRANSFORM>) => {
+      const sanitizedUpdates = sanitizeTransform(transformUpdates);
       selectedVideoTracks.forEach((track) => {
-        const currentTrackTransform = track.textTransform || DEFAULT_TRANSFORM;
+        // Use track-specific defaults to ensure width/height are never zero
+        const currentTrackTransform =
+          track.textTransform || getDefaultTransformForTrack(track);
         updateTrack(track.id, {
           textTransform: {
             ...currentTrackTransform,
-            ...transformUpdates,
+            ...sanitizedUpdates,
           },
         });
       });
     },
-    [selectedVideoTracks, updateTrack],
+    [
+      selectedVideoTracks,
+      updateTrack,
+      sanitizeTransform,
+      getDefaultTransformForTrack,
+    ],
   );
 
   // Helper function to update transform during drag (batch-safe, no individual undo entries)
   const updateTransformDrag = useCallback(
     (transformUpdates: Partial<typeof DEFAULT_TRANSFORM>) => {
+      const sanitizedUpdates = sanitizeTransform(transformUpdates);
       selectedVideoTracks.forEach((track) => {
-        const currentTrackTransform = track.textTransform || DEFAULT_TRANSFORM;
+        // Use track-specific defaults to ensure width/height are never zero
+        const currentTrackTransform =
+          track.textTransform || getDefaultTransformForTrack(track);
         updateTrackProperty(track.id, {
           textTransform: {
             ...currentTrackTransform,
-            ...transformUpdates,
+            ...sanitizedUpdates,
           },
         });
       });
     },
-    [selectedVideoTracks, updateTrackProperty],
+    [
+      selectedVideoTracks,
+      updateTrackProperty,
+      sanitizeTransform,
+      getDefaultTransformForTrack,
+    ],
   );
 
   // Check if transform has changed from default
@@ -245,18 +316,27 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
       const newValue = e.target.value;
       setLocalRotation(newValue);
       const value = parseFloat(newValue);
-      if (!isNaN(value)) {
+      if (!isNaN(value) && Number.isFinite(value)) {
+        // Ensure currentTransform.rotation is valid, default to 0 if not
+        const safeCurrentRotation = Number.isFinite(currentTransform.rotation)
+          ? currentTransform.rotation
+          : 0;
+
         // Convert display rotation (-180 to 180) back to full rotation value
-        const currentNormalized =
-          ((currentTransform.rotation % 360) + 360) % 360;
+        const currentNormalized = ((safeCurrentRotation % 360) + 360) % 360;
         const currentDisplay =
           currentNormalized > 180 ? currentNormalized - 360 : currentNormalized;
 
         // Calculate the difference and apply it
         const rotationDelta = value - currentDisplay;
-        updateTransform({
-          rotation: currentTransform.rotation + rotationDelta,
-        });
+        const newRotation = safeCurrentRotation + rotationDelta;
+
+        // Final validation to ensure we never store NaN or Infinity
+        if (Number.isFinite(newRotation)) {
+          updateTransform({
+            rotation: newRotation,
+          });
+        }
       }
     },
     [updateTransform, currentTransform.rotation],
@@ -303,11 +383,18 @@ const VideoPropertiesComponent: React.FC<VideoPropertiesProps> = ({
       if (delta > 180) delta -= 360;
       if (delta < -180) delta += 360;
 
-      const newRotation = currentTransform.rotation + delta;
+      // Ensure currentTransform.rotation is valid, default to 0 if not
+      const safeCurrentRotation = Number.isFinite(currentTransform.rotation)
+        ? currentTransform.rotation
+        : 0;
+      const newRotation = safeCurrentRotation + delta;
       lastAngle = normalizedAngle;
 
       // Use drag version during knob drag (no individual undo entries)
-      updateTransformDrag({ rotation: newRotation });
+      // Only update if the result is valid
+      if (Number.isFinite(newRotation)) {
+        updateTransformDrag({ rotation: newRotation });
+      }
     };
 
     const handleMouseUp = () => {
