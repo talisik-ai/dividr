@@ -50,11 +50,33 @@ echo ""
 pip3 install -r requirements.txt
 
 echo ""
+echo "🔧 Applying DeepFilterNet compatibility patch..."
+echo ""
+
+# Run patch script if it exists and DeepFilterNet is installed
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PATCH_SCRIPT="${SCRIPT_DIR}/src/backend/python/scripts/patch_deepfilternet_io.py"
+
+if [ -f "$PATCH_SCRIPT" ]; then
+    # Run patch script (suppress stderr to avoid noise if DeepFilterNet not installed)
+    if python3 "$PATCH_SCRIPT" 2>/dev/null; then
+        echo "✅ DeepFilterNet patch applied successfully"
+    else
+        # Non-fatal: DeepFilterNet may not be installed or already patched
+        echo "⚠️  DeepFilterNet patch skipped (package may not be installed or already patched)"
+    fi
+else
+    echo "⚠️  Patch script not found at: $PATCH_SCRIPT"
+    echo "   Continuing anyway..."
+fi
+
+echo ""
 echo "=================================================="
 echo "✅ Setup Complete!"
 echo "=================================================="
 echo ""
-echo "🎤 Faster-Whisper is now installed"
+echo "🎤 Faster-Whisper and DeepFilterNet are now installed"
 echo ""
 echo "Next steps:"
 echo "  1. Run 'yarn start' to start Dividr in dev mode"

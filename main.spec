@@ -58,23 +58,24 @@ except ImportError:
     print("⚠️ Warning: faster-whisper not installed, transcription may not work")
 
 # -----------------------------------------------------------------------------
-# Noise reduction dependencies
+# Noise reduction dependencies (DeepFilterNet)
 # -----------------------------------------------------------------------------
 try:
-    import noisereduce
+    import df
+    import torchaudio
     import soundfile
-    import scipy
 
-    # Hidden imports for noise reduction
+    # Hidden imports for noise reduction (DeepFilterNet)
     hiddenimports_list.extend([
-        'noisereduce',
+        'df',
+        'df.enhance',
+        'df.io',
+        'deepfilternet',
+        'deepfilterlib',
+        'torchaudio',
         'soundfile',
-        'scipy',
-        'scipy.signal',
-        'scipy.fft',
-        'librosa',
     ])
-    print("✅ Noise reduction dependencies found")
+    print("✅ Noise reduction dependencies (DeepFilterNet) found")
 except ImportError as e:
     print(f"⚠️ Warning: noise reduction dependency missing: {e}")
 
