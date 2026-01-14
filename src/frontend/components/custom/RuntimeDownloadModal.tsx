@@ -1,6 +1,8 @@
 import {
+  ArrowUpCircle,
   CheckCircle2,
   Download,
+  ExternalLink,
   Loader2,
   RefreshCw,
   XCircle,
@@ -30,11 +32,14 @@ interface RuntimeDownloadModalProps {
 
 type ModalState = 'consent' | 'downloading' | 'success' | 'error';
 
+// GitHub repository for the runtime releases
+const GITHUB_REPO_URL = 'https://github.com/talisik-ai/dividr-binary/releases';
+
 /**
- * Modal dialog for downloading the runtime with consent and progress.
+ * Modal dialog for downloading/updating the runtime with consent and progress.
  *
  * States:
- * 1. Consent - Explain download, show size (~350 MB), Download/Cancel buttons
+ * 1. Consent - Explain download/update, show size, version info, Download/Cancel buttons
  * 2. Downloading - Progress bar, bytes/total, speed, Cancel button
  * 3. Success - Checkmark, "Installation complete", auto-close
  * 4. Error - Error message, Retry/Cancel buttons
@@ -45,11 +50,20 @@ export function RuntimeDownloadModal({
   onSuccess,
   featureName = 'this feature',
 }: RuntimeDownloadModalProps) {
-  const { isDownloading, downloadProgress, startDownload, cancelDownload } =
-    useRuntime();
+  const {
+    status,
+    isDownloading,
+    downloadProgress,
+    startDownload,
+    cancelDownload,
+  } = useRuntime();
 
   const [modalState, setModalState] = useState<ModalState>('consent');
   const [error, setError] = useState<string | null>(null);
+
+  // Determine if this is an update or fresh download
+  const isUpdate = status.installed && status.needsUpdate;
+  const actionWord = isUpdate ? 'Update' : 'Download';
 
   // Determine modal state based on download progress
   useEffect(() => {
@@ -66,7 +80,7 @@ export function RuntimeDownloadModal({
         setError(
           downloadProgress.error ||
             downloadProgress.message ||
-            'Download failed',
+            `${actionWord} failed`,
         );
       } else if (downloadProgress.stage === 'complete') {
         setModalState('success');
@@ -74,7 +88,7 @@ export function RuntimeDownloadModal({
         setModalState('downloading');
       }
     }
-  }, [isOpen, isDownloading, downloadProgress]);
+  }, [isOpen, isDownloading, downloadProgress, actionWord]);
 
   // Handle download start
   const handleDownload = useCallback(async () => {
@@ -92,9 +106,9 @@ export function RuntimeDownloadModal({
       }, 1500);
     } else {
       setModalState('error');
-      setError(result.error || 'Download failed');
+      setError(result.error || `${actionWord} failed`);
     }
-  }, [startDownload, onSuccess, onClose]);
+  }, [startDownload, onSuccess, onClose, actionWord]);
 
   // Handle cancel
   const handleCancel = useCallback(async () => {
@@ -120,15 +134,15 @@ export function RuntimeDownloadModal({
   const getStageMessage = (progress: DownloadProgress): string => {
     switch (progress.stage) {
       case 'fetching':
-        return 'Fetching release information...';
+        return 'Fetching release information from GitHub...';
       case 'downloading':
-        return progress.message || 'Downloading...';
+        return progress.message || 'Downloading runtime package...';
       case 'extracting':
         return 'Extracting files...';
       case 'verifying':
         return 'Verifying installation...';
       case 'complete':
-        return 'Installation complete!';
+        return `${actionWord} complete!`;
       case 'error':
         return progress.error || 'An error occurred';
       default:
@@ -151,25 +165,84 @@ export function RuntimeDownloadModal({
           <>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
-                <Download className="size-5 text-primary" />
-                Download Required
+                {isUpdate ? (
+                  <ArrowUpCircle className="size-5 text-primary" />
+                ) : (
+                  <Download className="size-5 text-primary" />
+                )}
+                {isUpdate ? 'Update Available' : 'Download Required'}
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-3 pt-2">
                   <p>
-                    <strong>{featureName}</strong> requires the AI runtime
-                    component to work.
+                    <strong>{featureName}</strong> requires the{' '}
+                    {isUpdate ? 'latest version of the' : ''} AI Media Tools
+                    runtime to work.
                   </p>
+
+                  {/* Version Information */}
+                  {isUpdate && status.version && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">
+                        Current: v{status.version}
+                      </span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium text-primary">
+                        v{status.requiredVersion}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* What's New for Updates */}
+                  {isUpdate && (
+                    <div className="space-y-1 rounded-md border border-primary/20 bg-primary/5 p-3">
+                      <p className="text-sm font-medium text-foreground">
+                        What&apos;s New in v{status.requiredVersion}:
+                      </p>
+                      <ul className="space-y-0.5 text-xs text-muted-foreground">
+                        <li>
+                          • Upgraded to DeepFilterNet for superior noise
+                          reduction
+                        </li>
+                        <li>• AI-powered deep learning model (vs FFT-based)</li>
+                        <li>• Better voice clarity and quality preservation</li>
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Download Details */}
                   <div className="space-y-1 rounded-md bg-muted/50 p-3">
                     <p className="text-sm font-medium text-foreground">
-                      Download Details:
+                      {actionWord} Details:
                     </p>
                     <ul className="space-y-0.5 text-xs text-muted-foreground">
-                      <li>Size: ~350 MB</li>
-                      <li>Source: GitHub Releases</li>
-                      <li>One-time download</li>
+                      <li>
+                        <strong>Package:</strong> dividr-tools v
+                        {status.requiredVersion}
+                      </li>
+                      <li>
+                        <strong>Size:</strong> ~210 MB
+                      </li>
+                      <li>
+                        <strong>Source:</strong> GitHub Releases (talisik-ai)
+                      </li>
+                      <li>
+                        <strong>Contains:</strong> Transcription
+                        (Faster-Whisper) + Noise Reduction (DeepFilterNet)
+                      </li>
                     </ul>
                   </div>
+
+                  {/* GitHub Link */}
+                  <a
+                    href={GITHUB_REPO_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+                  >
+                    <ExternalLink className="size-3" />
+                    View releases on GitHub
+                  </a>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -178,8 +251,12 @@ export function RuntimeDownloadModal({
                 Cancel
               </Button>
               <Button onClick={handleDownload}>
-                <Download className="size-4" />
-                Download Now
+                {isUpdate ? (
+                  <ArrowUpCircle className="size-4" />
+                ) : (
+                  <Download className="size-4" />
+                )}
+                {actionWord} Now
               </Button>
             </AlertDialogFooter>
           </>
@@ -191,7 +268,7 @@ export function RuntimeDownloadModal({
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <Loader2 className="size-5 animate-spin text-primary" />
-                Downloading Runtime
+                {isUpdate ? 'Updating' : 'Downloading'} Runtime
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-4 pt-2">
@@ -201,18 +278,22 @@ export function RuntimeDownloadModal({
                       value={downloadProgress.progress}
                       className="w-full"
                     />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>{downloadProgress.progress.toFixed(0)}%</span>
-                      {downloadProgress.bytesDownloaded &&
-                        downloadProgress.totalBytes && (
-                          <span>
-                            {formatBytes(downloadProgress.bytesDownloaded)} /{' '}
-                            {formatBytes(downloadProgress.totalBytes)}
-                          </span>
-                        )}
-                      {downloadProgress.speed && downloadProgress.speed > 0 && (
-                        <span>{formatSpeed(downloadProgress.speed)}</span>
-                      )}
+                    {/* Fixed: Use grid layout to prevent centering issue */}
+                    <div className="grid grid-cols-3 text-xs text-muted-foreground">
+                      <span className="text-left">
+                        {downloadProgress.progress.toFixed(0)}%
+                      </span>
+                      <span className="text-center">
+                        {downloadProgress.bytesDownloaded &&
+                        downloadProgress.totalBytes
+                          ? `${formatBytes(downloadProgress.bytesDownloaded)} / ${formatBytes(downloadProgress.totalBytes)}`
+                          : ''}
+                      </span>
+                      <span className="text-right">
+                        {downloadProgress.speed && downloadProgress.speed > 0
+                          ? formatSpeed(downloadProgress.speed)
+                          : ''}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -232,11 +313,12 @@ export function RuntimeDownloadModal({
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <CheckCircle2 className="size-5 text-green-500" />
-                Installation Complete
+                {isUpdate ? 'Update' : 'Installation'} Complete
               </AlertDialogTitle>
               <AlertDialogDescription>
-                The runtime has been installed successfully. {featureName} is
-                now ready to use.
+                The runtime has been {isUpdate ? 'updated' : 'installed'}{' '}
+                successfully to v{status.requiredVersion}. {featureName} is now
+                ready to use.
               </AlertDialogDescription>
             </AlertDialogHeader>
           </>
@@ -248,14 +330,24 @@ export function RuntimeDownloadModal({
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <XCircle className="size-5 text-red-500" />
-                Download Failed
+                {actionWord} Failed
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-3">
                   <p className="text-sm">{error}</p>
                   <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3">
                     <p className="text-xs text-destructive">
-                      Please check your internet connection and try again.
+                      Please check your internet connection and try again. If
+                      the problem persists, you can manually download from{' '}
+                      <a
+                        href={GITHUB_REPO_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        GitHub Releases
+                      </a>
+                      .
                     </p>
                   </div>
                 </div>
