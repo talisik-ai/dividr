@@ -48,11 +48,32 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
+echo 🔧 Applying DeepFilterNet compatibility patch...
+echo.
+
+REM Run patch script if it exists and DeepFilterNet is installed
+REM Get the directory where this batch file is located
+set "SCRIPT_DIR=%~dp0"
+set "PATCH_SCRIPT=%SCRIPT_DIR%src\backend\python\scripts\patch_deepfilternet_io.py"
+
+if exist "%PATCH_SCRIPT%" (
+    python "%PATCH_SCRIPT%" 2>nul
+    if %ERRORLEVEL% EQU 0 (
+        echo ✅ DeepFilterNet patch applied successfully
+    ) else (
+        echo ⚠️  DeepFilterNet patch skipped (package may not be installed or already patched)
+    )
+) else (
+    echo ⚠️  Patch script not found at: %PATCH_SCRIPT%
+    echo    Continuing anyway...
+)
+
+echo.
 echo ==================================================
 echo ✅ Setup Complete!
 echo ==================================================
 echo.
-echo 🎤 Faster-Whisper is now installed
+echo 🎤 Faster-Whisper and DeepFilterNet are now installed
 echo.
 echo Next steps:
 echo   1. Run 'yarn start' to start Dividr in dev mode

@@ -184,7 +184,7 @@ const detectMediaToolsExecutable = (): {
 };
 
 /**
- * Detect system Python installation
+ * Detect Python environment - prioritizes local venv over system Python
  */
 const detectPythonEnvironment = (): {
   executable: string;
@@ -193,6 +193,58 @@ const detectPythonEnvironment = (): {
 } | null => {
   const isWindows = process.platform === 'win32';
 
+  // Priority 1: Check for local venv in project (development mode)
+  if (!app.isPackaged) {
+    const venvPython = isWindows
+      ? path.join(
+          process.cwd(),
+          'src',
+          'backend',
+          'python',
+          'venv',
+          'Scripts',
+          'python.exe',
+        )
+      : path.join(
+          process.cwd(),
+          'src',
+          'backend',
+          'python',
+          'venv',
+          'bin',
+          'python',
+        );
+
+    if (fs.existsSync(venvPython)) {
+      try {
+        const result = execSync(`"${venvPython}" --version`, {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+
+        const versionMatch = result.match(/Python (\d+)\.(\d+)/);
+        if (versionMatch) {
+          const major = parseInt(versionMatch[1], 10);
+          const minor = parseInt(versionMatch[2], 10);
+
+          if (major === 3 && minor >= 9) {
+            console.log(
+              `✅ Found local venv Python ${major}.${minor} at: ${venvPython}`,
+            );
+            return {
+              executable: venvPython,
+              executableArgs: [],
+              isPythonScript: true,
+            };
+          }
+        }
+      } catch {
+        console.warn('⚠️ Local venv Python found but failed version check');
+      }
+    }
+  }
+
+  // Priority 2: Fall back to system Python
   const pythonCommands: Array<[string, string[]]> = isWindows
     ? [
         ['py', ['-3.13']],
@@ -327,7 +379,7 @@ export const initializeMediaTools = async (): Promise<void> => {
 const verifyPythonDependencies = async (): Promise<void> => {
   if (!pythonPath) return;
 
-  const dependencies = ['faster_whisper', 'noisereduce'];
+  const dependencies = ['faster_whisper', 'df'];
   const missing: string[] = [];
 
   for (const dep of dependencies) {
@@ -346,7 +398,7 @@ const verifyPythonDependencies = async (): Promise<void> => {
 
   if (missing.length === dependencies.length) {
     throw new Error(
-      `Required packages not installed: ${missing.join(', ')}\nRun: pip install faster-whisper noisereduce`,
+      `Required packages not installed: ${missing.join(', ')}\nRun: pip install faster-whisper deepfilternet`,
     );
   }
 };
@@ -717,7 +769,7 @@ export const checkCapability = async (
   // Check Python dependencies
   const depMap = {
     transcribe: 'faster_whisper',
-    'noise-reduce': 'noisereduce',
+    'noise-reduce': 'df',
   };
 
   const dep = depMap[capability];

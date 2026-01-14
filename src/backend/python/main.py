@@ -170,10 +170,7 @@ def main():
         elif args.command == "noise-reduce":
             noisereduction.run(
                 args.input,
-                args.output,
-                stationary=args.stationary,
-                prop_decrease=args.prop_decrease,
-                n_fft=args.n_fft
+                args.output
             )
         else:
             print(f"Unknown command: {args.command}", file=sys.stderr)
