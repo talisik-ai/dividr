@@ -763,10 +763,11 @@ function renderSubtitleContent(
                 ...base,
                 ...layerStyle,
                 color: glowColor,
-                backgroundColor: style.backgroundColor,
+                backgroundColor: 'transparent',
                 opacity: 0.75,
                 filter: `blur(${glowBlurAmount}px)`,
-                boxShadow: `0 0 ${glowSpread}px ${glowColor}, 0 0 ${glowSpread * 1.5}px ${glowColor}`,
+                textShadow: `0 0 ${glowSpread}px ${glowColor}, 0 0 ${glowSpread * 1.5}px ${glowColor}`,
+                WebkitTextStroke: `${glowSpread * 0.75}px ${glowColor}`,
               }}
               aria-hidden="true"
             >

@@ -90,10 +90,16 @@ export function getTextStyleForTextClip(track: VideoTrack): TextStyleResult {
  */
 export function hasActualBackground(backgroundColor?: string): boolean {
   if (!backgroundColor) return false;
+  if (backgroundColor === 'transparent') return false;
 
-  return (
-    backgroundColor !== 'transparent' &&
-    backgroundColor !== 'rgba(0,0,0,0)' &&
-    backgroundColor !== 'rgba(0, 0, 0, 0)'
+  // Check for rgba with zero alpha (handles 0, 0.0, 0.00, etc.)
+  const rgbaMatch = backgroundColor.match(
+    /rgba\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/,
   );
+  if (rgbaMatch) {
+    const alpha = parseFloat(rgbaMatch[1]);
+    if (alpha === 0) return false;
+  }
+
+  return true;
 }

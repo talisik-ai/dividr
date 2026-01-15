@@ -530,12 +530,18 @@ function mergeTextStyles(
  * Checks if a background color is effectively transparent or empty
  */
 function isTransparentBackground(backgroundColor?: string): boolean {
-  return (
-    !backgroundColor ||
-    backgroundColor === 'transparent' ||
-    backgroundColor === 'rgba(0,0,0,0)' ||
-    backgroundColor === 'rgba(0, 0, 0, 0)'
+  if (!backgroundColor || backgroundColor === 'transparent') return true;
+
+  // Check for rgba with zero alpha (handles 0, 0.0, 0.00, etc.)
+  const rgbaMatch = backgroundColor.match(
+    /rgba\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([\d.]+)\s*\)/,
   );
+  if (rgbaMatch) {
+    const alpha = parseFloat(rgbaMatch[1]);
+    if (alpha === 0) return true;
+  }
+
+  return false;
 }
 
 /**
