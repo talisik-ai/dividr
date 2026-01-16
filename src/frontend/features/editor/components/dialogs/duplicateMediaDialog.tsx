@@ -21,6 +21,7 @@ interface DuplicateMediaDialogProps {
   newFileName: string;
   onUseExisting: () => void;
   onImportAsCopy: () => void;
+  onCancel?: () => void;
 }
 
 export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
@@ -31,6 +32,7 @@ export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
   newFileName,
   onUseExisting,
   onImportAsCopy,
+  onCancel,
 }) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -94,7 +96,7 @@ export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
         <AlertDialogFooter>
           <AlertDialogCancel
             onClick={() => {
-              onUseExisting();
+              onCancel?.();
               onOpenChange(false);
             }}
           >

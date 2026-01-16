@@ -1242,7 +1242,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         open={duplicateDetection?.show ?? false}
         onOpenChange={(open) => {
           if (!open) {
-            duplicateDetection?.pendingResolve?.(false);
+            duplicateDetection?.pendingResolve?.('cancel');
             hideDuplicateDialog?.();
           }
         }}
@@ -1250,11 +1250,15 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         existingMediaThumbnail={duplicateDetection?.existingMedia?.thumbnail}
         newFileName={duplicateDetection?.pendingFile?.name ?? ''}
         onUseExisting={() => {
-          duplicateDetection?.pendingResolve?.(true);
+          duplicateDetection?.pendingResolve?.('use-existing');
           hideDuplicateDialog?.();
         }}
         onImportAsCopy={() => {
-          duplicateDetection?.pendingResolve?.(false);
+          duplicateDetection?.pendingResolve?.('import-copy');
+          hideDuplicateDialog?.();
+        }}
+        onCancel={() => {
+          duplicateDetection?.pendingResolve?.('cancel');
           hideDuplicateDialog?.();
         }}
       />

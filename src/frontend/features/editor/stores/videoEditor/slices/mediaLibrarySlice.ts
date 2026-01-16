@@ -8,13 +8,16 @@ import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
 import { MediaLibraryItem } from '../types';
 
+/** Duplicate detection user choice: 'use-existing' | 'import-copy' | 'cancel' */
+export type DuplicateChoice = 'use-existing' | 'import-copy' | 'cancel';
+
 /** State for duplicate detection dialog */
 export interface DuplicateDetectionState {
   show: boolean;
   existingMedia: MediaLibraryItem | null;
   pendingFile: File | null;
   pendingSignature: ContentSignature | null;
-  pendingResolve: ((useExisting: boolean) => void) | null;
+  pendingResolve: ((choice: DuplicateChoice) => void) | null;
 }
 
 export interface MediaLibrarySlice {
@@ -56,7 +59,7 @@ export interface MediaLibrarySlice {
     existingMedia: MediaLibraryItem,
     pendingFile: File,
     pendingSignature: ContentSignature,
-    resolve: (useExisting: boolean) => void,
+    resolve: (choice: DuplicateChoice) => void,
   ) => void;
   hideDuplicateDialog: () => void;
 
@@ -96,7 +99,7 @@ export const createMediaLibrarySlice: StateCreator<
     existingMedia: MediaLibraryItem,
     pendingFile: File,
     pendingSignature: ContentSignature,
-    resolve: (useExisting: boolean) => void,
+    resolve: (choice: DuplicateChoice) => void,
   ) => {
     set({
       duplicateDetection: {
