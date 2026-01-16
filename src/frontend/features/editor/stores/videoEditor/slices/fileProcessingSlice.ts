@@ -1546,31 +1546,42 @@ export const createFileProcessingSlice: StateCreator<
 
             // STEP 2: Add successfully imported media to timeline using addTrackFromMediaLibrary
             // This ensures we reuse cached sprites/waveforms and avoid duplicate track creation
+            // CRITICAL: Process SEQUENTIALLY to ensure each file gets a unique row index
+            // (especially important for subtitle files which need separate rows per file)
             if (mediaIdsToAddToTimeline.length > 0) {
               console.log(
                 `📍 Adding ${mediaIdsToAddToTimeline.length} files to timeline from media library...`,
               );
 
-              const timelineResults = await Promise.allSettled(
-                mediaIdsToAddToTimeline.map(async (mediaId) => {
-                  try {
-                    await (get() as any).addTrackFromMediaLibrary(mediaId, 0);
-                    return { success: true, mediaId };
-                  } catch (error: any) {
-                    console.error(
-                      `❌ Failed to add to timeline: ${mediaId}:`,
-                      error,
-                    );
-                    return { success: false, mediaId, error: error.message };
-                  }
-                }),
-              );
+              const timelineResults: Array<{
+                success: boolean;
+                mediaId: string;
+                error?: string;
+              }> = [];
+
+              // Process sequentially to ensure each file gets fresh state for row calculation
+              for (const mediaId of mediaIdsToAddToTimeline) {
+                try {
+                  await (get() as any).addTrackFromMediaLibrary(mediaId, 0);
+                  timelineResults.push({ success: true, mediaId });
+                } catch (error: any) {
+                  console.error(
+                    `❌ Failed to add to timeline: ${mediaId}:`,
+                    error,
+                  );
+                  timelineResults.push({
+                    success: false,
+                    mediaId,
+                    error: error.message,
+                  });
+                }
+              }
 
               // Log any timeline addition failures (shouldn't happen, but log for debugging)
               timelineResults.forEach((result) => {
-                if (result.status === 'fulfilled' && !result.value.success) {
+                if (!result.success) {
                   console.warn(
-                    `⚠️ Media imported to library but failed to add to timeline: ${result.value.mediaId}`,
+                    `⚠️ Media imported to library but failed to add to timeline: ${result.mediaId}`,
                   );
                 }
               });

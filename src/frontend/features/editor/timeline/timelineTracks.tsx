@@ -62,6 +62,7 @@ const getGridInterval = (frameWidth: number, fps: number): number => {
 
 type MediaDragPayload = {
   mediaId: string;
+  mediaIds?: string[]; // Support for multiple media items (future multi-selection)
   type?: VideoTrack['type'];
   duration?: number;
   mimeType?: string;
@@ -76,8 +77,13 @@ const parseMediaDragPayload = (
   if (jsonPayload) {
     try {
       const parsed = JSON.parse(jsonPayload);
-      if (parsed?.mediaId) {
-        return parsed;
+      // Support both single mediaId and array of mediaIds
+      if (parsed?.mediaId || parsed?.mediaIds) {
+        return {
+          ...parsed,
+          // Ensure mediaId is always set (use first from array if only array provided)
+          mediaId: parsed.mediaId || parsed.mediaIds?.[0],
+        };
       }
     } catch (error) {
       console.warn('Failed to parse drag payload', error);
@@ -914,6 +920,17 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
   }) => {
     const [isDragOver, setIsDragOver] = useState(false);
 
+    // Safety cleanup: ensure drag state is cleared when drag ends elsewhere
+    useEffect(() => {
+      const clearDragState = () => setIsDragOver(false);
+      document.addEventListener('dragend', clearDragState, true);
+      document.addEventListener('drop', clearDragState, true);
+      return () => {
+        document.removeEventListener('dragend', clearDragState, true);
+        document.removeEventListener('drop', clearDragState, true);
+      };
+    }, []);
+
     const transcribingSubtitleRowIndex = useVideoEditorStore(
       (state) => state.transcribingSubtitleRowIndex,
     );
@@ -999,7 +1016,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           return;
         }
 
-        // For external file drops, check if any file matches this row's type
+        // MIXED MEDIA SUPPORT: Accept any valid media file, not just those matching this row
+        // Files are routed to their appropriate track types automatically
         if (hasFiles) {
           const items = e.dataTransfer.items;
           let hasValidFile = false;
@@ -1010,43 +1028,25 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
               const file = item.getAsFile();
               const mimeType = item.type;
 
-              // Check if file matches row type
+              // Check if file is any valid media type (video, audio, image, subtitle, text)
               if (
-                rowDef.trackTypes.includes('video') &&
-                mimeType.startsWith('video/')
-              ) {
-                hasValidFile = true;
-                break;
-              }
-              if (
-                rowDef.trackTypes.includes('audio') &&
-                mimeType.startsWith('audio/')
-              ) {
-                hasValidFile = true;
-                break;
-              }
-              if (
-                rowDef.trackTypes.includes('image') &&
+                mimeType.startsWith('video/') ||
+                mimeType.startsWith('audio/') ||
                 mimeType.startsWith('image/')
               ) {
                 hasValidFile = true;
                 break;
               }
-              if (rowDef.trackTypes.includes('subtitle') && file) {
-                if (
-                  isSubtitleFile(file.name) ||
-                  mimeType === 'text/plain' ||
-                  mimeType === 'application/x-subrip' ||
-                  mimeType === 'text/vtt'
-                ) {
-                  hasValidFile = true;
-                  break;
-                }
-              }
               if (
-                rowDef.trackTypes.includes('text') &&
-                mimeType.startsWith('text/')
+                file &&
+                (isSubtitleFile(file.name) ||
+                  mimeType === 'application/x-subrip' ||
+                  mimeType === 'text/vtt')
               ) {
+                hasValidFile = true;
+                break;
+              }
+              if (mimeType.startsWith('text/')) {
                 hasValidFile = true;
                 break;
               }
@@ -1081,55 +1081,77 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
         e.stopPropagation();
         setIsDragOver(false);
 
-        const payload = parseMediaDragPayload(e.dataTransfer);
-        const parsedRow = parseRowId(rowDef.id);
-        const expectedType = parsedRow?.type || rowDef.trackTypes[0];
+        try {
+          const payload = parseMediaDragPayload(e.dataTransfer);
+          const parsedRow = parseRowId(rowDef.id);
 
-        if (payload) {
-          if (payload.type && expectedType && payload.type !== expectedType) {
+          if (payload) {
+            const rect = (
+              e.currentTarget as HTMLElement
+            ).getBoundingClientRect();
+            const cursorX = e.clientX - rect.left + scrollX;
+            const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
+
+            // Support multiple media items (for future multi-selection support)
+            // Process each mediaId, allowing mixed types to be routed to appropriate rows
+            const mediaIds = payload.mediaIds || [payload.mediaId];
+            const mediaLibrary = useVideoEditorStore.getState().mediaLibrary;
+
+            // Process each media item sequentially to ensure proper row allocation
+            for (const mediaId of mediaIds) {
+              const mediaItem = mediaLibrary?.find(
+                (item: { id: string; type?: string; name?: string }) =>
+                  item.id === mediaId,
+              );
+
+              if (!mediaItem) continue;
+
+              const isSubtitleDrop =
+                mediaItem.type === 'subtitle' ||
+                (mediaItem.name || '').toLowerCase().endsWith('.srt') ||
+                (mediaItem.name || '').toLowerCase().endsWith('.vtt');
+
+              // Determine target row index based on media type
+              // Each type goes to its own appropriate row, not the drop target row
+              const targetRowIndex =
+                mediaItem.type === parsedRow?.type
+                  ? (parsedRow?.rowIndex ?? 0)
+                  : undefined; // Let addTrackFromMediaLibrary determine the row
+
+              if (isSubtitleDrop && onSubtitleImportAttempt) {
+                const handled = await onSubtitleImportAttempt({
+                  mediaId,
+                  mediaName: mediaItem.name || 'Subtitles',
+                  targetFrame,
+                  targetRowIndex: targetRowIndex ?? 0,
+                });
+
+                if (handled) {
+                  continue; // Skip to next media item
+                }
+              }
+
+              try {
+                await addTrackFromMediaLibrary(
+                  mediaId,
+                  targetFrame,
+                  targetRowIndex,
+                );
+              } catch (error) {
+                console.error(
+                  `Failed to add media ${mediaId} to timeline:`,
+                  error,
+                );
+              }
+            }
             return;
           }
 
-          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          const cursorX = e.clientX - rect.left + scrollX;
-          const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
-          const targetRowIndex = parsedRow?.rowIndex ?? 0;
-
-          const mediaItem = useVideoEditorStore
-            .getState()
-            .mediaLibrary?.find(
-              (item: { id: string; type?: string; name?: string }) =>
-                item.id === payload.mediaId,
-            );
-          const isSubtitleDrop =
-            payload.type === 'subtitle' ||
-            mediaItem?.type === 'subtitle' ||
-            (mediaItem?.name || '').toLowerCase().endsWith('.srt') ||
-            (mediaItem?.name || '').toLowerCase().endsWith('.vtt');
-
-          if (isSubtitleDrop && onSubtitleImportAttempt) {
-            const handled = await onSubtitleImportAttempt({
-              mediaId: payload.mediaId,
-              mediaName: mediaItem?.name || 'Subtitles',
-              targetFrame,
-              targetRowIndex,
-            });
-
-            if (handled) {
-              return;
-            }
+          if (e.dataTransfer.files) {
+            onDrop(rowDef.id, e.dataTransfer.files);
           }
-
-          addTrackFromMediaLibrary(
-            payload.mediaId,
-            targetFrame,
-            targetRowIndex,
-          ).catch(console.error);
-          return;
-        }
-
-        if (e.dataTransfer.files) {
-          onDrop(rowDef.id, e.dataTransfer.files);
+        } catch (error) {
+          console.error('Error handling drop:', error);
         }
       },
       [
@@ -1632,47 +1654,47 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           );
         };
 
-        // Validate files based on target row type
+        // Helper to detect file type
+        const getFileMediaType = (
+          file: File,
+        ): 'video' | 'audio' | 'image' | 'subtitle' | 'text' | null => {
+          if (file.type.startsWith('video/')) return 'video';
+          if (file.type.startsWith('audio/')) return 'audio';
+          if (file.type.startsWith('image/')) return 'image';
+          if (
+            isSubtitleFile(file.name) ||
+            file.type === 'application/x-subrip' ||
+            file.type === 'text/vtt'
+          ) {
+            return 'subtitle';
+          }
+          if (file.type.startsWith('text/')) return 'text';
+          return null;
+        };
+
+        // MIXED MEDIA SUPPORT: Accept ALL valid media files, not just those matching the target row
+        // Files are routed to their appropriate track types automatically by addTrackFromMediaLibrary
+        // This enables dropping mixed selections (video + subtitle, etc.) on any row
         const validFiles = fileArray.filter((file) => {
-          // Check video track types
-          if (rowDef.trackTypes.includes('video')) {
-            return file.type.startsWith('video/');
-          }
-          // Check audio track types
-          if (rowDef.trackTypes.includes('audio')) {
-            return file.type.startsWith('audio/');
-          }
-          // Check image track types
-          if (rowDef.trackTypes.includes('image')) {
-            return file.type.startsWith('image/');
-          }
-          // Check subtitle track types (detect by extension since MIME types vary)
-          if (rowDef.trackTypes.includes('subtitle')) {
-            return (
-              isSubtitleFile(file.name) ||
-              file.type === 'text/plain' ||
-              file.type === 'application/x-subrip' ||
-              file.type === 'text/vtt'
-            );
-          }
-          // Check text track types (allow text files)
-          if (rowDef.trackTypes.includes('text')) {
-            return file.type.startsWith('text/');
-          }
-          return false;
+          const mediaType = getFileMediaType(file);
+          return mediaType !== null;
         });
 
         if (validFiles.length > 0) {
-          await importMediaUnified(
-            validFiles,
-            'timeline-drop',
-            {
-              importMediaFromDrop,
-              importMediaToTimeline,
-              addTrackFromMediaLibrary,
-            },
-            { addToTimeline: true, showToasts: true },
-          );
+          try {
+            await importMediaUnified(
+              validFiles,
+              'timeline-drop',
+              {
+                importMediaFromDrop,
+                importMediaToTimeline,
+                addTrackFromMediaLibrary,
+              },
+              { addToTimeline: true, showToasts: true },
+            );
+          } catch (error) {
+            console.error('Failed to import dropped files:', error);
+          }
         }
       },
       [
@@ -1783,80 +1805,103 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
       e.stopPropagation();
       setPlaceholderHoverId(null);
 
-      const payload = parseMediaDragPayload(e.dataTransfer);
+      try {
+        const payload = parseMediaDragPayload(e.dataTransfer);
 
-      if (payload) {
-        // Handle media library drops
-        const scrollContainer = (e.currentTarget as HTMLElement).closest(
-          '.overflow-auto',
-        ) as HTMLElement | null;
-        const scrollLeft = scrollContainer?.scrollLeft || 0;
-        const scrollTop = scrollContainer?.scrollTop || 0;
-        const rect =
-          scrollContainer?.getBoundingClientRect() ||
-          (e.currentTarget as HTMLElement).getBoundingClientRect();
+        if (payload) {
+          // Handle media library drops (supports multiple media items)
+          const scrollContainer = (e.currentTarget as HTMLElement).closest(
+            '.overflow-auto',
+          ) as HTMLElement | null;
+          const scrollLeft = scrollContainer?.scrollLeft || 0;
+          const scrollTop = scrollContainer?.scrollTop || 0;
+          const rect =
+            scrollContainer?.getBoundingClientRect() ||
+            (e.currentTarget as HTMLElement).getBoundingClientRect();
 
-        const cursorX = e.clientX - rect.left + scrollLeft;
-        const cursorY = e.clientY - rect.top + scrollTop;
+          const cursorX = e.clientX - rect.left + scrollLeft;
+          const cursorY = e.clientY - rect.top + scrollTop;
 
-        const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
+          const targetFrame = Math.max(0, Math.floor(cursorX / frameWidth));
 
-        const rowBounds = calculateRowBoundsWithPlaceholders(
-          dynamicRows,
-          visibleTrackRows,
-          placeholderRowsAbove,
-          placeholderRowsBelow,
-          PLACEHOLDER_ROW_HEIGHT,
-        );
-
-        const insertion = detectInsertionPoint(
-          cursorY,
-          rowBounds,
-          (payload.type as VideoTrack['type']) || 'video',
-          tracks,
-        );
-
-        let targetRowIndex: number | null = null;
-        if (insertion) {
-          targetRowIndex =
-            insertion.existingRowId &&
-            parseRowId(insertion.existingRowId)?.rowIndex !== undefined
-              ? parseRowId(insertion.existingRowId)?.rowIndex || null
-              : insertion.targetRowIndex;
-        }
-
-        if (targetRowIndex === null) {
-          const fallbackRow = rowBounds.find(
-            (row) =>
-              row.type === ((payload.type as VideoTrack['type']) || 'video'),
+          const rowBounds = calculateRowBoundsWithPlaceholders(
+            dynamicRows,
+            visibleTrackRows,
+            placeholderRowsAbove,
+            placeholderRowsBelow,
+            PLACEHOLDER_ROW_HEIGHT,
           );
-          targetRowIndex = fallbackRow?.rowIndex ?? 0;
+
+          // Support multiple media items (for future multi-selection support)
+          const mediaIds = payload.mediaIds || [payload.mediaId];
+          const mediaLibrary = useVideoEditorStore.getState().mediaLibrary;
+
+          // Process each media item sequentially for proper row allocation
+          for (const mediaId of mediaIds) {
+            const mediaItem = mediaLibrary?.find(
+              (item: { id: string; type?: string }) => item.id === mediaId,
+            );
+            const mediaType =
+              (mediaItem?.type as VideoTrack['type']) || 'video';
+
+            const insertion = detectInsertionPoint(
+              cursorY,
+              rowBounds,
+              mediaType,
+              tracks,
+            );
+
+            let targetRowIndex: number | null = null;
+            if (insertion) {
+              targetRowIndex =
+                insertion.existingRowId &&
+                parseRowId(insertion.existingRowId)?.rowIndex !== undefined
+                  ? parseRowId(insertion.existingRowId)?.rowIndex || null
+                  : insertion.targetRowIndex;
+            }
+
+            if (targetRowIndex === null) {
+              const fallbackRow = rowBounds.find(
+                (row) => row.type === mediaType,
+              );
+              targetRowIndex = fallbackRow?.rowIndex ?? 0;
+            }
+
+            try {
+              await addTrackFromMediaLibrary(
+                mediaId,
+                targetFrame,
+                targetRowIndex ?? 0,
+              );
+            } catch (error) {
+              console.error(
+                `Failed to add media ${mediaId} to timeline:`,
+                error,
+              );
+            }
+          }
+          return;
         }
 
-        addTrackFromMediaLibrary(
-          payload.mediaId,
-          targetFrame,
-          targetRowIndex ?? 0,
-        ).catch(console.error);
-        return;
-      }
+        // Handle external file drops from OS file browser
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          const fileArray = Array.from(files);
 
-      // Handle external file drops from OS file browser
-      const files = e.dataTransfer.files;
-      if (files && files.length > 0) {
-        const fileArray = Array.from(files);
-
-        // Import all dropped files to timeline using the unified import pipeline
-        await importMediaUnified(
-          fileArray,
-          'timeline-drop',
-          {
-            importMediaFromDrop,
-            importMediaToTimeline,
-            addTrackFromMediaLibrary,
-          },
-          { addToTimeline: true, showToasts: true },
-        );
+          // Import all dropped files to timeline using the unified import pipeline
+          await importMediaUnified(
+            fileArray,
+            'timeline-drop',
+            {
+              importMediaFromDrop,
+              importMediaToTimeline,
+              addTrackFromMediaLibrary,
+            },
+            { addToTimeline: true, showToasts: true },
+          );
+        }
+      } catch (error) {
+        console.error('Error handling placeholder drop:', error);
       }
     };
 
