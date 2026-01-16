@@ -8,7 +8,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/frontend/components/ui/select';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
@@ -48,6 +47,7 @@ import React, {
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
 import { FontSelector } from '../shared/fontSelector';
+import { FONT_SIZE_PRESETS, NumericInput } from '../shared/numericInput';
 
 interface SubtitlePropertiesProps {
   selectedTrackIds: string[];
@@ -343,30 +343,18 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               className="flex-1"
             />
 
-            <Select
-              value={String(activeSubtitleStyle.fontSize)}
-              onValueChange={(value) => setFontSize(Number(value))}
-            >
-              <SelectTrigger className="w-20" size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="12">12</SelectItem>
-                <SelectItem value="14">14</SelectItem>
-                <SelectItem value="16">16</SelectItem>
-                <SelectItem value="18">18</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="24">24</SelectItem>
-                <SelectItem value="28">28</SelectItem>
-                <SelectItem value="32">32</SelectItem>
-                <SelectItem value="36">36</SelectItem>
-                <SelectItem value="40">40</SelectItem>
-                <SelectItem value="48">48</SelectItem>
-                <SelectItem value="56">56</SelectItem>
-                <SelectItem value="64">64</SelectItem>
-                <SelectItem value="72">72</SelectItem>
-              </SelectContent>
-            </Select>
+            <NumericInput
+              value={activeSubtitleStyle.fontSize}
+              onChange={(value) => setFontSize(value)}
+              onChangeStart={() => beginGroup('Font Size')}
+              onChangeEnd={endGroup}
+              min={1}
+              max={999}
+              step={1}
+              presets={FONT_SIZE_PRESETS}
+              className="w-24"
+              ariaLabel="Font size"
+            />
           </div>
 
           <div className="flex items-center justify-between">
