@@ -639,42 +639,54 @@ const processImportedFile = async (
 
     // Generate waveform for video files (coordinated with audio extraction)
     if (generateWaveformFn) {
-      // Run waveform generation with smart retry logic to coordinate with audio extraction
+      // Run waveform generation with optimized retry logic
+      // Uses shorter initial delay with exponential backoff for faster response
       const generateWaveformWithRetry = async () => {
-        let retries = 6; // Allow up to 6 retries (30 seconds max)
-        const retryDelay = 5000; // 5 second intervals
+        const maxRetries = 8; // More retries with shorter delays
+        let retryDelay = 500; // Start with 500ms (was 5000ms)
+        const maxDelay = 4000; // Cap at 4 seconds
 
-        while (retries > 0) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             const result = await generateWaveformFn(mediaId);
             if (result) {
+              console.log(
+                `✅ Waveform generated for ${fileInfo.name} on attempt ${attempt}`,
+              );
               return;
             }
           } catch (error) {
             console.warn(
-              `⚠️ Waveform generation attempt failed for ${fileInfo.name}:`,
+              `⚠️ Waveform generation attempt ${attempt}/${maxRetries} failed for ${fileInfo.name}:`,
               error,
             );
           }
 
-          retries--;
-          if (retries > 0) {
-            await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          if (attempt < maxRetries) {
+            // Exponential backoff with jitter for better coordination
+            const jitter = Math.random() * 200;
+            await new Promise((resolve) =>
+              setTimeout(resolve, retryDelay + jitter),
+            );
+            retryDelay = Math.min(retryDelay * 1.5, maxDelay); // Exponential backoff
           }
         }
 
         console.warn(
-          `⚠️ Waveform generation failed after all retries for ${fileInfo.name}`,
+          `⚠️ Waveform generation failed after ${maxRetries} retries for ${fileInfo.name}`,
         );
       };
 
       // Start generation with retry logic (non-blocking)
-      generateWaveformWithRetry().catch((error) => {
-        console.warn(
-          `⚠️ Waveform generation retry handler failed for ${fileInfo.name}:`,
-          error,
-        );
-      });
+      // Add small initial delay to allow audio extraction to start first
+      setTimeout(() => {
+        generateWaveformWithRetry().catch((error) => {
+          console.warn(
+            `⚠️ Waveform generation retry handler failed for ${fileInfo.name}:`,
+            error,
+          );
+        });
+      }, 100); // Small delay to let audio extraction start
     }
   }
 

@@ -401,13 +401,13 @@ export const createMediaLibrarySlice: StateCreator<
       return true; // Not an error, just not applicable
     }
 
-    // Skip if waveform already exists
-    if (mediaItem.waveform?.success) {
+    // Skip if waveform already exists and has valid peaks
+    if (mediaItem.waveform?.success && mediaItem.waveform?.peaks?.length > 0) {
       console.log(`Waveform already exists for: ${mediaItem.name}`);
       return true;
     }
 
-    // Skip if already generating
+    // Skip if already generating (check both store state and active job)
     if (get().isGeneratingWaveform(mediaId)) {
       console.log(`Waveform already generating for: ${mediaItem.name}`);
       return true;
@@ -440,6 +440,12 @@ export const createMediaLibrarySlice: StateCreator<
       return true; // Skip but don't error
     }
 
+    // Check if waveform generator already has an active job for this path
+    if (AudioWaveformGenerator.isJobActive(audioPath)) {
+      console.log(`Waveform job already active for: ${mediaItem.name}`);
+      return true;
+    }
+
     console.log(
       `🎵 Generating waveform for media library item: ${mediaItem.name}`,
     );
@@ -450,15 +456,17 @@ export const createMediaLibrarySlice: StateCreator<
       // Mark as generating
       get().setGeneratingWaveform(mediaId, true);
 
+      // Use optimized parameters for fast generation
+      // 50 peaks/sec provides good visual quality while being fast
       const result = await AudioWaveformGenerator.generateWaveform({
         audioPath,
         duration: mediaItem.duration,
-        sampleRate: 8000, // Good balance between quality and performance
-        peaksPerSecond: 30, // 30 peaks per second for better timeline accuracy
+        sampleRate: 8000, // Low sample rate for fast processing
+        peaksPerSecond: 50, // Optimized for speed while maintaining quality
       });
 
       if (result.success) {
-        // Update media library item with waveform data
+        // Update media library item with waveform data including LOD tiers
         set((state: any) => ({
           mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
             item.id === mediaId
@@ -470,6 +478,7 @@ export const createMediaLibrarySlice: StateCreator<
                     duration: result.duration,
                     sampleRate: result.sampleRate,
                     cacheKey: result.cacheKey,
+                    lodTiers: result.lodTiers, // Include LOD tiers for efficient zoom rendering
                     generatedAt: Date.now(),
                   },
                 }
@@ -481,6 +490,7 @@ export const createMediaLibrarySlice: StateCreator<
         state.markUnsavedChanges?.();
 
         console.log(`✅ Waveform generated and cached for: ${mediaItem.name}`);
+        console.log(`📈 Generated ${result.peaks.length} peaks with ${result.lodTiers?.length || 0} LOD tiers`);
         return true;
       } else {
         console.error(

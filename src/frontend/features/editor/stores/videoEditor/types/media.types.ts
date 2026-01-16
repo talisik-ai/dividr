@@ -39,6 +39,12 @@ export interface MediaLibraryItem {
     sampleRate: number;
     cacheKey: string;
     generatedAt?: number;
+    // LOD (Level of Detail) tiers for efficient zoom rendering
+    lodTiers?: Array<{
+      level: number;
+      peaksPerSecond: number;
+      peaks: number[];
+    }>;
   };
   spriteSheets?: {
     success: boolean;
