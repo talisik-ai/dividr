@@ -11,7 +11,7 @@ import {
   VideoTrack,
 } from '../types';
 import { detectAspectRatio } from '../utils/aspectRatioHelpers';
-import { DuplicateChoice } from './mediaLibrarySlice';
+import { DuplicateChoice, DuplicateItem } from './mediaLibrarySlice';
 
 // Track colors for visual differentiation
 const TRACK_COLORS = [
@@ -926,43 +926,116 @@ export const createFileProcessingSlice: StateCreator<
       state.beginGroup?.('Import Media');
 
       try {
-        // Process only valid files and add to media library
-        // CRITICAL: Process SEQUENTIALLY to handle duplicate dialogs properly
-        // (only one dialog can be shown at a time, so parallel processing breaks when multiple duplicates are detected)
-        for (const index of validFileIndices) {
-          const fileInfo = result.files[index];
+        // Get valid files to process
+        const validFiles = validFileIndices.map((i) => result.files[i]);
+
+        // STEP 1: Scan ALL files for duplicates first
+        const storeState = get() as any;
+        const duplicatesToHandle: DuplicateItem[] = [];
+        const fileSignatures = new Map<
+          string,
+          { signature: any; existingMedia: any }
+        >();
+
+        for (const fileInfo of validFiles) {
           try {
-            const storeState = get() as any;
+            const signature = await generateContentSignatureFromPath(
+              fileInfo.path,
+            );
+            if (signature) {
+              const existingMedia =
+                storeState.findDuplicateBySignature(signature);
+              if (existingMedia) {
+                duplicatesToHandle.push({
+                  id: `dup-${fileInfo.name}-${Date.now()}-${Math.random()}`,
+                  pendingFileName: fileInfo.name,
+                  pendingFilePath: fileInfo.path,
+                  existingMedia,
+                  signature,
+                });
+              }
+              fileSignatures.set(fileInfo.path, { signature, existingMedia });
+            }
+          } catch (error) {
+            console.warn(
+              `⚠️ Failed to check duplicate for ${fileInfo.name}:`,
+              error,
+            );
+          }
+        }
+
+        // STEP 2: If duplicates found, show batch dialog
+        let duplicateChoices = new Map<string, DuplicateChoice>();
+        if (duplicatesToHandle.length > 0) {
+          console.log(
+            `🔄 Found ${duplicatesToHandle.length} duplicate(s), showing batch dialog...`,
+          );
+
+          duplicateChoices = await new Promise<Map<string, DuplicateChoice>>(
+            (resolve) => {
+              storeState.showBatchDuplicateDialog(duplicatesToHandle, resolve);
+            },
+          );
+
+          storeState.hideBatchDuplicateDialog();
+        }
+
+        // Create a map of file path -> choice
+        const pathToChoice = new Map<string, DuplicateChoice>();
+        duplicatesToHandle.forEach((dup) => {
+          if (dup.pendingFilePath) {
+            pathToChoice.set(
+              dup.pendingFilePath,
+              duplicateChoices.get(dup.id) || 'cancel',
+            );
+          }
+        });
+
+        // STEP 3: Process files with pre-determined duplicate choices
+        for (const fileInfo of validFiles) {
+          try {
+            const sigInfo = fileSignatures.get(fileInfo.path);
+            const duplicateChoice = pathToChoice.get(fileInfo.path);
+
+            // If duplicate and user chose cancel, skip
+            if (duplicateChoice === 'cancel') {
+              console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
+              continue;
+            }
+
+            // If duplicate and user chose use-existing, add existing to results
+            if (duplicateChoice === 'use-existing' && sigInfo?.existingMedia) {
+              console.log(
+                `✅ Using existing media: ${sigInfo.existingMedia.name}`,
+              );
+              importedFiles.push({
+                id: sigInfo.existingMedia.id,
+                name: sigInfo.existingMedia.name,
+                type: sigInfo.existingMedia.mimeType,
+                size: sigInfo.existingMedia.size,
+                url:
+                  sigInfo.existingMedia.previewUrl ||
+                  sigInfo.existingMedia.source,
+              });
+              continue;
+            }
+
+            // Otherwise, import the file
+            const currentState = get() as any;
             const fileData = await processImportedFile(
               fileInfo,
-              storeState.addToMediaLibrary,
+              currentState.addToMediaLibrary,
               undefined, // No timeline addition
-              () => storeState.timeline.fps,
-              storeState.generateSpriteSheetForMedia,
-              storeState.generateThumbnailForMedia,
-              storeState.generateWaveformForMedia,
-              storeState.updateMediaLibraryItem,
-              // Duplicate detection callbacks
-              storeState.findDuplicateBySignature,
-              async (existingMedia, signature) => {
-                // Show dialog and wait for user choice
-                return new Promise<DuplicateChoice>((resolve) => {
-                  // Create a dummy File object for the dialog
-                  const pendingFile = new File([], fileInfo.name);
-                  storeState.showDuplicateDialog(
-                    existingMedia,
-                    pendingFile,
-                    signature,
-                    resolve,
-                  );
-                });
-              },
+              () => currentState.timeline.fps,
+              currentState.generateSpriteSheetForMedia,
+              currentState.generateThumbnailForMedia,
+              currentState.generateWaveformForMedia,
+              currentState.updateMediaLibraryItem,
+              undefined, // Skip duplicate detection - already handled
+              undefined,
             );
 
-            // Handle cancelled imports (user clicked Cancel in duplicate dialog)
             if (fileData === null) {
-              // User cancelled - skip this file silently
-              console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
               continue;
             }
 
@@ -1242,40 +1315,122 @@ export const createFileProcessingSlice: StateCreator<
           state.beginGroup?.('Import Media');
 
           try {
-            // Process files and add to media library
-            // CRITICAL: Process SEQUENTIALLY to handle duplicate dialogs properly
-            // (only one dialog can be shown at a time, so parallel processing breaks when multiple duplicates are detected)
+            // STEP 1: Scan ALL files for duplicates first (before processing any)
+            const storeState = get() as any;
+            const duplicatesToHandle: DuplicateItem[] = [];
+            const fileSignatures = new Map<
+              string,
+              { signature: any; existingMedia: any }
+            >();
+
             for (const fileInfo of result.files) {
               try {
-                const storeState = get() as any;
+                const signature = await generateContentSignatureFromPath(
+                  fileInfo.path,
+                );
+                if (signature) {
+                  const existingMedia =
+                    storeState.findDuplicateBySignature(signature);
+                  if (existingMedia) {
+                    duplicatesToHandle.push({
+                      id: `dup-${fileInfo.name}-${Date.now()}-${Math.random()}`,
+                      pendingFileName: fileInfo.name,
+                      pendingFilePath: fileInfo.path,
+                      existingMedia,
+                      signature,
+                    });
+                  }
+                  fileSignatures.set(fileInfo.path, {
+                    signature,
+                    existingMedia,
+                  });
+                }
+              } catch (error) {
+                console.warn(
+                  `⚠️ Failed to check duplicate for ${fileInfo.name}:`,
+                  error,
+                );
+              }
+            }
+
+            // STEP 2: If duplicates found, show batch dialog
+            let duplicateChoices = new Map<string, DuplicateChoice>();
+            if (duplicatesToHandle.length > 0) {
+              console.log(
+                `🔄 Found ${duplicatesToHandle.length} duplicate(s), showing batch dialog...`,
+              );
+
+              duplicateChoices = await new Promise<
+                Map<string, DuplicateChoice>
+              >((resolve) => {
+                storeState.showBatchDuplicateDialog(
+                  duplicatesToHandle,
+                  resolve,
+                );
+              });
+
+              storeState.hideBatchDuplicateDialog();
+            }
+
+            // Create a map of file path -> choice
+            const pathToChoice = new Map<string, DuplicateChoice>();
+            duplicatesToHandle.forEach((dup) => {
+              if (dup.pendingFilePath) {
+                pathToChoice.set(
+                  dup.pendingFilePath,
+                  duplicateChoices.get(dup.id) || 'cancel',
+                );
+              }
+            });
+
+            // STEP 3: Process files with pre-determined duplicate choices
+            for (const fileInfo of result.files) {
+              try {
+                const sigInfo = fileSignatures.get(fileInfo.path);
+                const duplicateChoice = pathToChoice.get(fileInfo.path);
+
+                // If duplicate and user chose cancel, skip
+                if (duplicateChoice === 'cancel') {
+                  console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
+                  continue;
+                }
+
+                // If duplicate and user chose use-existing, add existing to results
+                if (
+                  duplicateChoice === 'use-existing' &&
+                  sigInfo?.existingMedia
+                ) {
+                  console.log(
+                    `✅ Using existing media: ${sigInfo.existingMedia.name}`,
+                  );
+                  importedFiles.push({
+                    id: sigInfo.existingMedia.id,
+                    name: sigInfo.existingMedia.name,
+                    type: sigInfo.existingMedia.mimeType,
+                    size: sigInfo.existingMedia.size,
+                    url:
+                      sigInfo.existingMedia.previewUrl ||
+                      sigInfo.existingMedia.source,
+                  });
+                  continue;
+                }
+
+                // Otherwise, import the file
+                const currentState = get() as any;
                 const fileData = await processImportedFile(
                   fileInfo,
-                  storeState.addToMediaLibrary,
+                  currentState.addToMediaLibrary,
                   undefined, // No timeline addition
-                  () => storeState.timeline.fps,
-                  storeState.generateSpriteSheetForMedia,
-                  storeState.generateThumbnailForMedia,
-                  storeState.generateWaveformForMedia,
-                  storeState.updateMediaLibraryItem,
-                  // Duplicate detection callbacks
-                  storeState.findDuplicateBySignature,
-                  async (existingMedia, signature) => {
-                    return new Promise<DuplicateChoice>((resolve) => {
-                      const pendingFile = new File([], fileInfo.name);
-                      storeState.showDuplicateDialog(
-                        existingMedia,
-                        pendingFile,
-                        signature,
-                        resolve,
-                      );
-                    });
-                  },
+                  () => currentState.timeline.fps,
+                  currentState.generateSpriteSheetForMedia,
+                  currentState.generateThumbnailForMedia,
+                  currentState.generateWaveformForMedia,
+                  currentState.updateMediaLibraryItem,
+                  undefined, // Skip duplicate detection - already handled
+                  undefined,
                 );
 
-                // Handle cancelled imports (user clicked Cancel in duplicate dialog)
                 if (fileData === null) {
-                  // User cancelled - skip this file silently
-                  console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
                   continue;
                 }
 
@@ -1445,6 +1600,7 @@ export const createFileProcessingSlice: StateCreator<
             size: number;
             url: string;
             thumbnail?: string;
+            isDuplicate?: boolean;
           }> = [];
 
           // Start undo group for batch import to timeline
@@ -1452,51 +1608,133 @@ export const createFileProcessingSlice: StateCreator<
           state.beginGroup?.('Import Media to Timeline');
 
           try {
-            // STEP 1: Process files and add to media library ONLY
-            // CRITICAL: Process SEQUENTIALLY to handle duplicate dialogs properly
-            // (only one dialog can be shown at a time, so parallel processing breaks when multiple duplicates are detected)
+            // STEP 1: Scan ALL files for duplicates first (before processing any)
+            const storeState = get() as any;
+            const duplicatesToHandle: DuplicateItem[] = [];
+            const fileSignatures = new Map<
+              string,
+              { signature: any; existingMedia: any }
+            >();
+
+            // Generate signatures and check for duplicates
+            for (const fileInfo of result.files) {
+              try {
+                const signature = await generateContentSignatureFromPath(
+                  fileInfo.path,
+                );
+                if (signature) {
+                  const existingMedia =
+                    storeState.findDuplicateBySignature(signature);
+                  if (existingMedia) {
+                    duplicatesToHandle.push({
+                      id: `dup-${fileInfo.name}-${Date.now()}`,
+                      pendingFileName: fileInfo.name,
+                      pendingFilePath: fileInfo.path,
+                      existingMedia,
+                      signature,
+                    });
+                  }
+                  fileSignatures.set(fileInfo.path, {
+                    signature,
+                    existingMedia,
+                  });
+                }
+              } catch (error) {
+                console.warn(
+                  `⚠️ Failed to check duplicate for ${fileInfo.name}:`,
+                  error,
+                );
+              }
+            }
+
+            // STEP 2: If duplicates found, show batch dialog and get all choices at once
+            let duplicateChoices = new Map<string, DuplicateChoice>();
+            if (duplicatesToHandle.length > 0) {
+              console.log(
+                `🔄 Found ${duplicatesToHandle.length} duplicate(s), showing batch dialog...`,
+              );
+
+              duplicateChoices = await new Promise<
+                Map<string, DuplicateChoice>
+              >((resolve) => {
+                storeState.showBatchDuplicateDialog(
+                  duplicatesToHandle,
+                  resolve,
+                );
+              });
+
+              storeState.hideBatchDuplicateDialog();
+            }
+
+            // Create a map of file path -> choice for quick lookup
+            const pathToChoice = new Map<string, DuplicateChoice>();
+            duplicatesToHandle.forEach((dup) => {
+              if (dup.pendingFilePath) {
+                pathToChoice.set(
+                  dup.pendingFilePath,
+                  duplicateChoices.get(dup.id) || 'cancel',
+                );
+              }
+            });
+
+            // STEP 3: Process files with pre-determined duplicate choices
             const mediaIdsToAddToTimeline: string[] = [];
 
             for (const fileInfo of result.files) {
               try {
-                const storeState = get() as any;
-                const fileData = await processImportedFile(
-                  fileInfo,
-                  storeState.addToMediaLibrary,
-                  undefined, // Do NOT add to timeline yet - we'll do that separately
-                  () => storeState.timeline.fps,
-                  storeState.generateSpriteSheetForMedia,
-                  storeState.generateThumbnailForMedia,
-                  storeState.generateWaveformForMedia,
-                  storeState.updateMediaLibraryItem,
-                  // Duplicate detection callbacks
-                  storeState.findDuplicateBySignature,
-                  async (existingMedia, signature) => {
-                    return new Promise<DuplicateChoice>((resolve) => {
-                      const pendingFile = new File([], fileInfo.name);
-                      storeState.showDuplicateDialog(
-                        existingMedia,
-                        pendingFile,
-                        signature,
-                        resolve,
-                      );
-                    });
-                  },
-                );
+                const sigInfo = fileSignatures.get(fileInfo.path);
+                const duplicateChoice = pathToChoice.get(fileInfo.path);
 
-                // Handle cancelled imports (user clicked Cancel in duplicate dialog)
-                if (fileData === null) {
-                  // User cancelled - skip this file silently
+                // If this is a duplicate and user chose to cancel, skip it
+                if (duplicateChoice === 'cancel') {
                   console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
                   continue;
                 }
 
-                importedFiles.push(fileData);
-
-                // Only add to timeline if NOT a duplicate (user chose "use existing" means skip timeline add)
-                if (!fileData.isDuplicate) {
-                  mediaIdsToAddToTimeline.push(fileData.id);
+                // If this is a duplicate and user chose to use existing, add existing to results
+                if (
+                  duplicateChoice === 'use-existing' &&
+                  sigInfo?.existingMedia
+                ) {
+                  console.log(
+                    `✅ Using existing media: ${sigInfo.existingMedia.name}`,
+                  );
+                  importedFiles.push({
+                    id: sigInfo.existingMedia.id,
+                    name: sigInfo.existingMedia.name,
+                    type: sigInfo.existingMedia.mimeType,
+                    size: sigInfo.existingMedia.size,
+                    url:
+                      sigInfo.existingMedia.previewUrl ||
+                      sigInfo.existingMedia.source,
+                    isDuplicate: true,
+                  });
+                  // Don't add to timeline - user chose to skip
+                  continue;
                 }
+
+                // Otherwise, import the file (either not a duplicate, or user chose import-copy)
+                const currentState = get() as any;
+                const fileData = await processImportedFile(
+                  fileInfo,
+                  currentState.addToMediaLibrary,
+                  undefined, // Do NOT add to timeline yet - we'll do that separately
+                  () => currentState.timeline.fps,
+                  currentState.generateSpriteSheetForMedia,
+                  currentState.generateThumbnailForMedia,
+                  currentState.generateWaveformForMedia,
+                  currentState.updateMediaLibraryItem,
+                  // Skip duplicate detection since we already handled it
+                  undefined,
+                  undefined,
+                );
+
+                if (fileData === null) {
+                  continue;
+                }
+
+                importedFiles.push(fileData);
+                mediaIdsToAddToTimeline.push(fileData.id);
               } catch (error: any) {
                 console.error(`❌ Failed to import ${fileInfo.name}:`, error);
                 rejectedFiles.push({

@@ -49,6 +49,7 @@ import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { VideoTrack } from '../../../stores/videoEditor/types';
 import { isSubtitleFile } from '../../../stores/videoEditor/utils/subtitleParser';
 import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
+import { BatchDuplicateMediaDialog } from '../../dialogs/batchDuplicateMediaDialog';
 import { DuplicateMediaDialog } from '../../dialogs/duplicateMediaDialog';
 import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
 interface MediaItem {
@@ -124,12 +125,20 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     (state) => state.transcriptionProgress,
   );
 
-  // Duplicate detection state
+  // Duplicate detection state (legacy single-file)
   const duplicateDetection = useVideoEditorStore(
     (state) => state.duplicateDetection,
   );
   const hideDuplicateDialog = useVideoEditorStore(
     (state) => state.hideDuplicateDialog,
+  );
+
+  // Batch duplicate detection state (multiple files)
+  const batchDuplicateDetection = useVideoEditorStore(
+    (state) => state.batchDuplicateDetection,
+  );
+  const hideBatchDuplicateDialog = useVideoEditorStore(
+    (state) => state.hideBatchDuplicateDialog,
   );
 
   // Check if any transcription is in progress (from media library or timeline)
@@ -1238,6 +1247,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         }}
       />
 
+      {/* Legacy single-file duplicate dialog (kept for backwards compatibility) */}
       <DuplicateMediaDialog
         open={duplicateDetection?.show ?? false}
         onOpenChange={(open) => {
@@ -1260,6 +1270,36 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         onCancel={() => {
           duplicateDetection?.pendingResolve?.('cancel');
           hideDuplicateDialog?.();
+        }}
+      />
+
+      {/* Batch duplicate dialog for multiple files */}
+      <BatchDuplicateMediaDialog
+        open={batchDuplicateDetection?.show ?? false}
+        onOpenChange={(open) => {
+          if (!open) {
+            // Cancel all duplicates if dialog closed
+            const cancelChoices = new Map<string, 'cancel'>();
+            batchDuplicateDetection?.duplicates?.forEach((dup) => {
+              cancelChoices.set(dup.id, 'cancel');
+            });
+            batchDuplicateDetection?.pendingResolve?.(cancelChoices);
+            hideBatchDuplicateDialog?.();
+          }
+        }}
+        duplicates={batchDuplicateDetection?.duplicates ?? []}
+        onConfirm={(choices) => {
+          batchDuplicateDetection?.pendingResolve?.(choices);
+          hideBatchDuplicateDialog?.();
+        }}
+        onCancel={() => {
+          // Cancel all duplicates
+          const cancelChoices = new Map<string, 'cancel'>();
+          batchDuplicateDetection?.duplicates?.forEach((dup) => {
+            cancelChoices.set(dup.id, 'cancel');
+          });
+          batchDuplicateDetection?.pendingResolve?.(cancelChoices);
+          hideBatchDuplicateDialog?.();
         }}
       />
 

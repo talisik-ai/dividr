@@ -11,7 +11,24 @@ import { MediaLibraryItem } from '../types';
 /** Duplicate detection user choice: 'use-existing' | 'import-copy' | 'cancel' */
 export type DuplicateChoice = 'use-existing' | 'import-copy' | 'cancel';
 
-/** State for duplicate detection dialog */
+/** Single duplicate item for batch processing */
+export interface DuplicateItem {
+  id: string;
+  pendingFileName: string;
+  pendingFilePath?: string;
+  existingMedia: MediaLibraryItem;
+  signature: ContentSignature;
+  choice?: DuplicateChoice;
+}
+
+/** Batch duplicate detection state - for handling multiple duplicates at once */
+export interface BatchDuplicateDetectionState {
+  show: boolean;
+  duplicates: DuplicateItem[];
+  pendingResolve: ((choices: Map<string, DuplicateChoice>) => void) | null;
+}
+
+/** State for duplicate detection dialog (legacy single-file support) */
 export interface DuplicateDetectionState {
   show: boolean;
   existingMedia: MediaLibraryItem | null;
@@ -25,6 +42,7 @@ export interface MediaLibrarySlice {
   generatingSpriteSheets: Set<string>;
   generatingWaveforms: Set<string>;
   duplicateDetection: DuplicateDetectionState | null;
+  batchDuplicateDetection: BatchDuplicateDetectionState | null;
   addToMediaLibrary: (item: Omit<MediaLibraryItem, 'id'>) => string;
   removeFromMediaLibrary: (mediaId: string, force?: boolean) => void;
   updateMediaLibraryItem: (
@@ -51,7 +69,7 @@ export interface MediaLibrarySlice {
   setGeneratingWaveform: (mediaId: string, isGenerating: boolean) => void;
   generateWaveformForMedia: (mediaId: string) => Promise<boolean>;
 
-  // Duplicate detection
+  // Duplicate detection (legacy single-file)
   findDuplicateBySignature: (
     signature: ContentSignature,
   ) => MediaLibraryItem | undefined;
@@ -62,6 +80,13 @@ export interface MediaLibrarySlice {
     resolve: (choice: DuplicateChoice) => void,
   ) => void;
   hideDuplicateDialog: () => void;
+
+  // Batch duplicate detection (multiple files at once)
+  showBatchDuplicateDialog: (
+    duplicates: DuplicateItem[],
+    resolve: (choices: Map<string, DuplicateChoice>) => void,
+  ) => void;
+  hideBatchDuplicateDialog: () => void;
 
   // Transcoding
   isTranscoding: (mediaId: string) => boolean;
@@ -85,6 +110,7 @@ export const createMediaLibrarySlice: StateCreator<
   generatingSpriteSheets: new Set<string>(),
   generatingWaveforms: new Set<string>(),
   duplicateDetection: null,
+  batchDuplicateDetection: null,
 
   findDuplicateBySignature: (signature: ContentSignature) => {
     const state = get() as any;
@@ -114,6 +140,23 @@ export const createMediaLibrarySlice: StateCreator<
 
   hideDuplicateDialog: () => {
     set({ duplicateDetection: null });
+  },
+
+  showBatchDuplicateDialog: (
+    duplicates: DuplicateItem[],
+    resolve: (choices: Map<string, DuplicateChoice>) => void,
+  ) => {
+    set({
+      batchDuplicateDetection: {
+        show: true,
+        duplicates,
+        pendingResolve: resolve,
+      },
+    });
+  },
+
+  hideBatchDuplicateDialog: () => {
+    set({ batchDuplicateDetection: null });
   },
 
   addToMediaLibrary: (itemData) => {
