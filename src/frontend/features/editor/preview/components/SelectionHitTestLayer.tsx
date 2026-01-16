@@ -389,14 +389,13 @@ export const SelectionHitTestLayer: React.FC<SelectionHitTestLayerProps> = ({
       // SPATIAL HIT-TEST: Only elements whose bounds contain the cursor can be selected
       const elementsAtPoint = getElementsAtPoint(x, y);
 
-      // If no elements are under the cursor, deselect all and stop propagation
-      // This handles clicking on empty space to deselect
+      // If no elements are under the cursor, do NOT deselect
+      // CHANGED: Clicking on empty space should preserve selection
+      // This matches professional editor UX (CapCut, Premiere Pro, After Effects)
+      // where selection persists during preview canvas interactions
+      // User must explicitly deselect via Escape key or selecting a different item
       if (elementsAtPoint.length === 0) {
-        if (selectedTrackIds.length > 0) {
-          e.stopPropagation();
-          e.preventDefault();
-          onDeselect?.();
-        }
+        // Don't deselect - just return without action
         return;
       }
 

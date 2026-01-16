@@ -597,22 +597,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   );
 
   // Handle deselection from hit-test layer (clicking on empty space)
+  // CHANGED: This handler is now a no-op for empty space clicks
+  // Selection should only be cleared via:
+  // - Escape key (handled by keyboard shortcuts)
+  // - Selecting a different item
+  // This matches professional editor UX (CapCut, Premiere Pro, After Effects)
   const handleHitTestDeselect = useCallback(() => {
-    // Only deselect if there are interactive layers selected
-    const hasInteractiveLayerSelected = timeline.selectedTrackIds.some((id) => {
-      const track = tracks.find((t) => t.id === id);
-      return (
-        track?.type === 'text' ||
-        track?.type === 'image' ||
-        track?.type === 'subtitle' ||
-        track?.type === 'video'
-      );
-    });
-
-    if (hasInteractiveLayerSelected) {
-      setSelectedTracks([]);
-    }
-  }, [timeline.selectedTrackIds, tracks, setSelectedTracks]);
+    // No-op: Empty space clicks should not deselect
+    // This preserves the Properties Panel state during preview interactions
+  }, []);
 
   // Callback for transform boundaries to check if another element should receive a click
   // This enables proper spatial hit-testing across all element types
@@ -756,27 +749,17 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         return;
       }
 
+      // CHANGED: In select mode, clicking on empty space should NOT deselect
+      // This matches professional editor UX (CapCut, Premiere Pro, After Effects)
+      // where selection persists during preview canvas interactions
+      // User must explicitly deselect via:
+      // - Pressing Escape key
+      // - Selecting a different item
+      // - Clicking on another clip in the timeline or preview
       if (preview.interactionMode === 'select') {
-        if (
-          target === containerRef.current ||
-          target.classList.contains('preview-background') ||
-          target.tagName === 'VIDEO'
-        ) {
-          const hasInteractiveLayerSelected = timeline.selectedTrackIds.some(
-            (id) => {
-              const track = tracks.find((t) => t.id === id);
-              return (
-                track?.type === 'text' ||
-                track?.type === 'image' ||
-                track?.type === 'subtitle'
-              );
-            },
-          );
-
-          if (hasInteractiveLayerSelected) {
-            setSelectedTracks([]);
-          }
-        }
+        // Previously this would deselect when clicking on background/video
+        // Now we preserve selection to allow fluid property panel editing
+        // while interacting with the preview canvas
       }
     },
     [
