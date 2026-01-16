@@ -49,8 +49,7 @@ import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { VideoTrack } from '../../../stores/videoEditor/types';
 import { isSubtitleFile } from '../../../stores/videoEditor/utils/subtitleParser';
 import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
-import { BatchDuplicateMediaDialog } from '../../dialogs/batchDuplicateMediaDialog';
-import { DuplicateMediaDialog } from '../../dialogs/duplicateMediaDialog';
+import { DuplicateMediaDialog } from '../../dialogs/batchDuplicateMediaDialog';
 import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
 interface MediaItem {
   id: string;
@@ -125,15 +124,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     (state) => state.transcriptionProgress,
   );
 
-  // Duplicate detection state (legacy single-file)
-  const duplicateDetection = useVideoEditorStore(
-    (state) => state.duplicateDetection,
-  );
-  const hideDuplicateDialog = useVideoEditorStore(
-    (state) => state.hideDuplicateDialog,
-  );
-
-  // Batch duplicate detection state (multiple files)
+  // Duplicate detection state (unified for single or multiple files)
   const batchDuplicateDetection = useVideoEditorStore(
     (state) => state.batchDuplicateDetection,
   );
@@ -1247,43 +1238,17 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         }}
       />
 
-      {/* Legacy single-file duplicate dialog (kept for backwards compatibility) */}
+      {/* Unified duplicate media dialog - works for single or multiple duplicates */}
       <DuplicateMediaDialog
-        open={duplicateDetection?.show ?? false}
-        onOpenChange={(open) => {
-          if (!open) {
-            duplicateDetection?.pendingResolve?.('cancel');
-            hideDuplicateDialog?.();
-          }
-        }}
-        existingMediaName={duplicateDetection?.existingMedia?.name ?? ''}
-        existingMediaThumbnail={duplicateDetection?.existingMedia?.thumbnail}
-        newFileName={duplicateDetection?.pendingFile?.name ?? ''}
-        onUseExisting={() => {
-          duplicateDetection?.pendingResolve?.('use-existing');
-          hideDuplicateDialog?.();
-        }}
-        onImportAsCopy={() => {
-          duplicateDetection?.pendingResolve?.('import-copy');
-          hideDuplicateDialog?.();
-        }}
-        onCancel={() => {
-          duplicateDetection?.pendingResolve?.('cancel');
-          hideDuplicateDialog?.();
-        }}
-      />
-
-      {/* Batch duplicate dialog for multiple files */}
-      <BatchDuplicateMediaDialog
         open={batchDuplicateDetection?.show ?? false}
         onOpenChange={(open) => {
           if (!open) {
-            // Cancel all duplicates if dialog closed
-            const cancelChoices = new Map<string, 'cancel'>();
+            // Skip all duplicates if dialog closed (use existing)
+            const skipChoices = new Map<string, 'use-existing'>();
             batchDuplicateDetection?.duplicates?.forEach((dup) => {
-              cancelChoices.set(dup.id, 'cancel');
+              skipChoices.set(dup.id, 'use-existing');
             });
-            batchDuplicateDetection?.pendingResolve?.(cancelChoices);
+            batchDuplicateDetection?.pendingResolve?.(skipChoices);
             hideBatchDuplicateDialog?.();
           }
         }}
@@ -1293,12 +1258,12 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           hideBatchDuplicateDialog?.();
         }}
         onCancel={() => {
-          // Cancel all duplicates
-          const cancelChoices = new Map<string, 'cancel'>();
+          // Skip all duplicates (use existing)
+          const skipChoices = new Map<string, 'use-existing'>();
           batchDuplicateDetection?.duplicates?.forEach((dup) => {
-            cancelChoices.set(dup.id, 'cancel');
+            skipChoices.set(dup.id, 'use-existing');
           });
-          batchDuplicateDetection?.pendingResolve?.(cancelChoices);
+          batchDuplicateDetection?.pendingResolve?.(skipChoices);
           hideBatchDuplicateDialog?.();
         }}
       />

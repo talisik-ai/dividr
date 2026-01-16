@@ -8,8 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
 import { MediaLibraryItem } from '../types';
 
-/** Duplicate detection user choice: 'use-existing' | 'import-copy' | 'cancel' */
-export type DuplicateChoice = 'use-existing' | 'import-copy' | 'cancel';
+/** Duplicate detection user choice: 'use-existing' (skip) | 'import-copy' (keep both) */
+export type DuplicateChoice = 'use-existing' | 'import-copy';
 
 /** Single duplicate item for batch processing */
 export interface DuplicateItem {
@@ -490,7 +490,9 @@ export const createMediaLibrarySlice: StateCreator<
         state.markUnsavedChanges?.();
 
         console.log(`✅ Waveform generated and cached for: ${mediaItem.name}`);
-        console.log(`📈 Generated ${result.peaks.length} peaks with ${result.lodTiers?.length || 0} LOD tiers`);
+        console.log(
+          `📈 Generated ${result.peaks.length} peaks with ${result.lodTiers?.length || 0} LOD tiers`,
+        );
         return true;
       } else {
         console.error(

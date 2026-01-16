@@ -393,12 +393,6 @@ const processImportedFile = async (
               contentSignature,
             );
 
-            if (choice === 'cancel') {
-              // User cancelled - skip this file entirely
-              console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
-              return null;
-            }
-
             if (choice === 'use-existing') {
               // User chose to use existing - return existing media info
               // Don't add to timeline again since it's already there or user just wants to skip
@@ -998,7 +992,7 @@ export const createFileProcessingSlice: StateCreator<
           if (dup.pendingFilePath) {
             pathToChoice.set(
               dup.pendingFilePath,
-              duplicateChoices.get(dup.id) || 'cancel',
+              duplicateChoices.get(dup.id) || 'use-existing',
             );
           }
         });
@@ -1009,13 +1003,7 @@ export const createFileProcessingSlice: StateCreator<
             const sigInfo = fileSignatures.get(fileInfo.path);
             const duplicateChoice = pathToChoice.get(fileInfo.path);
 
-            // If duplicate and user chose cancel, skip
-            if (duplicateChoice === 'cancel') {
-              console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
-              continue;
-            }
-
-            // If duplicate and user chose use-existing, add existing to results
+            // If duplicate and user chose use-existing (skip), add existing to results
             if (duplicateChoice === 'use-existing' && sigInfo?.existingMedia) {
               console.log(
                 `✅ Using existing media: ${sigInfo.existingMedia.name}`,
@@ -1390,7 +1378,7 @@ export const createFileProcessingSlice: StateCreator<
               if (dup.pendingFilePath) {
                 pathToChoice.set(
                   dup.pendingFilePath,
-                  duplicateChoices.get(dup.id) || 'cancel',
+                  duplicateChoices.get(dup.id) || 'use-existing',
                 );
               }
             });
@@ -1402,10 +1390,6 @@ export const createFileProcessingSlice: StateCreator<
                 const duplicateChoice = pathToChoice.get(fileInfo.path);
 
                 // If duplicate and user chose cancel, skip
-                if (duplicateChoice === 'cancel') {
-                  console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
-                  continue;
-                }
 
                 // If duplicate and user chose use-existing, add existing to results
                 if (
@@ -1684,7 +1668,7 @@ export const createFileProcessingSlice: StateCreator<
               if (dup.pendingFilePath) {
                 pathToChoice.set(
                   dup.pendingFilePath,
-                  duplicateChoices.get(dup.id) || 'cancel',
+                  duplicateChoices.get(dup.id) || 'use-existing',
                 );
               }
             });
@@ -1698,10 +1682,6 @@ export const createFileProcessingSlice: StateCreator<
                 const duplicateChoice = pathToChoice.get(fileInfo.path);
 
                 // If this is a duplicate and user chose to cancel, skip it
-                if (duplicateChoice === 'cancel') {
-                  console.log(`🚫 Import cancelled for: ${fileInfo.name}`);
-                  continue;
-                }
 
                 // If this is a duplicate and user chose to use existing, add existing to results
                 if (

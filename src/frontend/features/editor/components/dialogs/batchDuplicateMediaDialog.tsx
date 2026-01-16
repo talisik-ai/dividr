@@ -8,17 +8,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/frontend/components/ui/alert-dialog';
-import { Button } from '@/frontend/components/ui/button';
+import { buttonVariants } from '@/frontend/components/ui/button';
+import { Checkbox } from '@/frontend/components/ui/checkbox';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
 import { cn } from '@/frontend/utils/utils';
-import { Check, Copy, FileCheck, SkipForward, X } from 'lucide-react';
+import { Copy, FileCheck } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   DuplicateChoice,
   DuplicateItem,
 } from '../../stores/videoEditor/slices/mediaLibrarySlice';
 
-interface BatchDuplicateMediaDialogProps {
+interface DuplicateMediaDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   duplicates: DuplicateItem[];
@@ -26,289 +27,278 @@ interface BatchDuplicateMediaDialogProps {
   onCancel: () => void;
 }
 
-type ChoiceButtonProps = {
-  choice: DuplicateChoice;
-  currentChoice?: DuplicateChoice;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  variant: 'use-existing' | 'import-copy' | 'cancel';
-};
-
-const ChoiceButton: React.FC<ChoiceButtonProps> = ({
-  choice,
-  currentChoice,
-  onClick,
-  icon,
-  label,
-  variant,
+export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
+  open,
+  onOpenChange,
+  duplicates,
+  onConfirm,
+  onCancel,
 }) => {
-  const isSelected = currentChoice === choice;
+  // Track which items should be kept (import as copy)
+  // Checked = Keep Both (import-copy), Unchecked = Skip (use-existing)
+  const [keepItems, setKeepItems] = useState<Set<string>>(new Set());
 
-  const variantStyles = {
-    'use-existing': isSelected
-      ? 'bg-green-500/20 border-green-500 text-green-600 dark:text-green-400'
-      : 'hover:bg-green-500/10 hover:border-green-500/50',
-    'import-copy': isSelected
-      ? 'bg-blue-500/20 border-blue-500 text-blue-600 dark:text-blue-400'
-      : 'hover:bg-blue-500/10 hover:border-blue-500/50',
-    cancel: isSelected
-      ? 'bg-red-500/20 border-red-500 text-red-600 dark:text-red-400'
-      : 'hover:bg-red-500/10 hover:border-red-500/50',
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-1 px-2 py-1 rounded border text-xs transition-colors',
-        'border-muted-foreground/20',
-        variantStyles[variant],
-      )}
-      aria-label={label}
-      tabIndex={0}
-    >
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  );
-};
-
-export const BatchDuplicateMediaDialog: React.FC<
-  BatchDuplicateMediaDialogProps
-> = ({ open, onOpenChange, duplicates, onConfirm, onCancel }) => {
-  // Track individual choices for each duplicate
-  const [choices, setChoices] = useState<Map<string, DuplicateChoice>>(
-    new Map(),
-  );
-
-  // Set choice for a single item
-  const handleSetChoice = useCallback((id: string, choice: DuplicateChoice) => {
-    setChoices((prev) => {
-      const newChoices = new Map(prev);
-      newChoices.set(id, choice);
-      return newChoices;
+  // Toggle a single item
+  const handleToggleItem = useCallback((id: string) => {
+    setKeepItems((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
     });
   }, []);
 
-  // Apply choice to all items
-  const handleApplyToAll = useCallback(
-    (choice: DuplicateChoice) => {
-      const newChoices = new Map<string, DuplicateChoice>();
-      duplicates.forEach((dup) => {
-        newChoices.set(dup.id, choice);
-      });
-      setChoices(newChoices);
-    },
-    [duplicates],
-  );
-
-  // Check if all items have a choice
-  const allChosen = useMemo(() => {
-    return duplicates.every((dup) => choices.has(dup.id));
-  }, [duplicates, choices]);
-
-  // Get count by choice type
-  const choiceCounts = useMemo(() => {
-    const counts = { 'use-existing': 0, 'import-copy': 0, cancel: 0 };
-    choices.forEach((choice) => {
-      counts[choice]++;
+  // Select/deselect all
+  const handleSelectAll = useCallback(() => {
+    const newSet = new Set<string>();
+    duplicates.forEach((dup) => {
+      newSet.add(dup.id);
     });
-    return counts;
-  }, [choices]);
+    setKeepItems(newSet);
+  }, [duplicates]);
 
+  const handleDeselectAll = useCallback(() => {
+    setKeepItems(new Set());
+  }, []);
+
+  // Check states for bulk actions
+  const allSelected = useMemo(() => {
+    return duplicates.length > 0 && keepItems.size === duplicates.length;
+  }, [duplicates, keepItems]);
+
+  const noneSelected = useMemo(() => {
+    return keepItems.size === 0;
+  }, [keepItems]);
+
+  // Build final choices map
   const handleConfirm = useCallback(() => {
-    // Fill in any unchoosen items with 'cancel' as default
     const finalChoices = new Map<string, DuplicateChoice>();
     duplicates.forEach((dup) => {
-      finalChoices.set(dup.id, choices.get(dup.id) || 'cancel');
+      // Checked = import-copy, Unchecked = use-existing (skip)
+      finalChoices.set(
+        dup.id,
+        keepItems.has(dup.id) ? 'import-copy' : 'use-existing',
+      );
     });
     onConfirm(finalChoices);
-    setChoices(new Map());
-  }, [duplicates, choices, onConfirm]);
+    setKeepItems(new Set());
+  }, [duplicates, keepItems, onConfirm]);
 
   const handleCancel = useCallback(() => {
     onCancel();
-    setChoices(new Map());
+    setKeepItems(new Set());
   }, [onCancel]);
 
-  // Reset choices when dialog opens with new duplicates
+  // Reset state when dialog opens
   React.useEffect(() => {
     if (open) {
-      setChoices(new Map());
+      setKeepItems(new Set());
     }
   }, [open, duplicates]);
 
+  const isSingleDuplicate = duplicates.length === 1;
+  const singleDuplicate = isSingleDuplicate ? duplicates[0] : null;
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="flex max-w-2xl flex-col max-h-[80vh]">
+      <AlertDialogContent
+        className={cn(
+          'flex flex-col max-h-[80vh]',
+          isSingleDuplicate ? 'max-w-md' : 'max-w-2xl',
+        )}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Copy className="h-5 w-5 text-amber-500" />
-            {duplicates.length} Duplicate{duplicates.length > 1 ? 's' : ''}{' '}
-            Detected
+            {isSingleDuplicate
+              ? 'Duplicate Detected'
+              : `${duplicates.length} Duplicates Detected`}
           </AlertDialogTitle>
-          <AlertDialogDescription>
-            <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-3 mb-4">
+          <AlertDialogDescription asChild>
+            <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-3">
               <p className="text-amber-600 dark:text-amber-400 font-medium text-sm">
-                {duplicates.length === 1
+                {isSingleDuplicate
                   ? 'This file already exists in your media library.'
-                  : 'These files already exist in your media library. Choose how to handle each one.'}
+                  : 'These files already exist in your media library.'}
               </p>
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {/* Bulk actions */}
-        {duplicates.length > 1 && (
-          <div className="flex items-center gap-2 pb-2 border-b">
-            <span className="text-xs text-muted-foreground">Apply to all:</span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs gap-1"
-              onClick={() => handleApplyToAll('use-existing')}
-            >
-              <FileCheck className="h-3 w-3" />
-              Skip All
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs gap-1"
-              onClick={() => handleApplyToAll('import-copy')}
-            >
-              <Copy className="h-3 w-3" />
-              Keep Both (All)
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs gap-1"
-              onClick={() => handleApplyToAll('cancel')}
-            >
-              <X className="h-3 w-3" />
-              Cancel All
-            </Button>
-          </div>
-        )}
-
         {/* Duplicate list */}
-        <ScrollArea className="flex-1 grid -mx-6 px-6 max-h-[40vh] min-w-0">
-          <div className="space-y-2 py-2 flex-1 grid min-w-0">
-            {duplicates.map((dup) => {
-              const currentChoice = choices.get(dup.id);
-              return (
-                <div
-                  key={dup.id}
+        <div className="flex-1 min-h-0 grid min-w-0">
+          {duplicates.length > 1 && (
+            <div className="flex items-center justify-between pb-2 mb-2 border-b">
+              <span className="text-xs text-muted-foreground">
+                Check to keep both versions, uncheck to skip
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
                   className={cn(
-                    'flex items-center flex-1 min-w-0 gap-3 p-3 rounded-md border transition-colors',
-                    currentChoice === 'use-existing' &&
-                      'bg-green-500/5 border-green-500/30',
-                    currentChoice === 'import-copy' &&
-                      'bg-blue-500/5 border-blue-500/30',
-                    currentChoice === 'cancel' &&
-                      'bg-red-500/5 border-red-500/30',
-                    !currentChoice && 'bg-muted/30 border-muted-foreground/20',
+                    'text-xs px-2 py-1 rounded transition-colors',
+                    allSelected
+                      ? 'text-muted-foreground'
+                      : 'text-primary hover:bg-primary/10',
                   )}
+                  disabled={allSelected}
+                  tabIndex={0}
+                  aria-label="Select all"
                 >
-                  {/* Thumbnail */}
-                  {dup.existingMedia.thumbnail ? (
-                    <img
-                      src={dup.existingMedia.thumbnail}
-                      alt={dup.existingMedia.name}
-                      className="w-12 h-9 object-cover rounded flex-shrink-0"
+                  Keep All
+                </button>
+                <span className="text-muted-foreground">|</span>
+                <button
+                  type="button"
+                  onClick={handleDeselectAll}
+                  className={cn(
+                    'text-xs px-2 py-1 rounded transition-colors',
+                    noneSelected
+                      ? 'text-muted-foreground'
+                      : 'text-primary hover:bg-primary/10',
+                  )}
+                  disabled={noneSelected}
+                  tabIndex={0}
+                  aria-label="Deselect all"
+                >
+                  Skip All
+                </button>
+              </div>
+            </div>
+          )}
+
+          <ScrollArea
+            className={cn(
+              '-mx-6 px-6 flex-1 grid min-w-0',
+              duplicates.length > 1 ? 'max-h-[40vh]' : '',
+            )}
+          >
+            <div className="space-y-2 grid flex-1 min-w-0 py-1">
+              {duplicates.map((dup) => {
+                const isChecked = keepItems.has(dup.id);
+                return (
+                  <label
+                    key={dup.id}
+                    htmlFor={`dup-${dup.id}`}
+                    className={cn(
+                      'flex items-center gap-3 p-3 min-w-0 flex-1 rounded-md border transition-colors cursor-pointer',
+                      isChecked
+                        ? 'bg-blue-500/5 border-blue-500/30'
+                        : 'bg-muted/30 border-muted-foreground/20 hover:bg-muted/50',
+                    )}
+                  >
+                    {/* Checkbox */}
+                    <Checkbox
+                      id={`dup-${dup.id}`}
+                      checked={isChecked}
+                      onCheckedChange={() => handleToggleItem(dup.id)}
+                      className="flex-shrink-0"
+                      aria-label={`Keep both versions of ${dup.pendingFileName}`}
                     />
-                  ) : (
-                    <div className="w-12 h-9 bg-muted rounded flex items-center justify-center flex-shrink-0">
-                      <FileCheck className="h-4 w-4 text-muted-foreground" />
+
+                    {/* Thumbnail */}
+                    {dup.existingMedia.thumbnail ? (
+                      <img
+                        src={dup.existingMedia.thumbnail}
+                        alt={dup.existingMedia.name}
+                        className="w-12 h-9 object-cover rounded flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-9 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                        <FileCheck className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+
+                    {/* File info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {dup.pendingFileName}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        Matches: {dup.existingMedia.name}
+                      </p>
                     </div>
-                  )}
 
-                  {/* File info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {dup.pendingFileName}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      Matches: {dup.existingMedia.name}
-                    </p>
-                  </div>
+                    {/* Status badge */}
+                    <span
+                      className={cn(
+                        'text-xs px-2 py-0.5 rounded-full flex-shrink-0',
+                        isChecked
+                          ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
+                          : 'bg-muted text-muted-foreground',
+                      )}
+                    >
+                      {isChecked ? 'Keep Both' : 'Skip'}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </div>
 
-                  {/* Choice buttons */}
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <ChoiceButton
-                      choice="use-existing"
-                      currentChoice={currentChoice}
-                      onClick={() => handleSetChoice(dup.id, 'use-existing')}
-                      icon={<SkipForward className="h-3 w-3" />}
-                      label="Skip"
-                      variant="use-existing"
-                    />
-                    <ChoiceButton
-                      choice="import-copy"
-                      currentChoice={currentChoice}
-                      onClick={() => handleSetChoice(dup.id, 'import-copy')}
-                      icon={<Copy className="h-3 w-3" />}
-                      label="Keep Both"
-                      variant="import-copy"
-                    />
-                    <ChoiceButton
-                      choice="cancel"
-                      currentChoice={currentChoice}
-                      onClick={() => handleSetChoice(dup.id, 'cancel')}
-                      icon={<X className="h-3 w-3" />}
-                      label="Cancel"
-                      variant="cancel"
-                    />
-                  </div>
-
-                  {/* Selected indicator */}
-                  {currentChoice && (
-                    <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </ScrollArea>
-
-        {/* Summary */}
-        {choices.size > 0 && (
+        {/* Summary for multiple items */}
+        {duplicates.length > 1 && (
           <div className="flex items-center gap-4 pt-2 border-t text-xs text-muted-foreground">
-            {choiceCounts['use-existing'] > 0 && (
-              <span className="text-green-600 dark:text-green-400">
-                {choiceCounts['use-existing']} to skip
-              </span>
-            )}
-            {choiceCounts['import-copy'] > 0 && (
-              <span className="text-blue-600 dark:text-blue-400">
-                {choiceCounts['import-copy']} to keep both
-              </span>
-            )}
-            {choiceCounts['cancel'] > 0 && (
-              <span className="text-red-600 dark:text-red-400">
-                {choiceCounts['cancel']} to cancel
-              </span>
-            )}
+            <span>
+              <span className="text-blue-600 dark:text-blue-400 font-medium">
+                {keepItems.size}
+              </span>{' '}
+              to keep both
+            </span>
+            <span>
+              <span className="text-muted-foreground font-medium">
+                {duplicates.length - keepItems.size}
+              </span>{' '}
+              to skip
+            </span>
           </div>
         )}
 
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={handleCancel}>
-            Cancel Import
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleConfirm}
-            disabled={!allChosen && duplicates.length > 1}
-          >
-            {allChosen
-              ? 'Confirm Choices'
-              : `Choose for ${duplicates.length - choices.size} remaining`}
-          </AlertDialogAction>
+          {!isSingleDuplicate && !singleDuplicate && (
+            <AlertDialogCancel onClick={handleCancel}>Cancel</AlertDialogCancel>
+          )}
+          {isSingleDuplicate && singleDuplicate ? (
+            <>
+              <AlertDialogAction
+                onClick={() => {
+                  // Skip = use existing
+                  const choices = new Map<string, DuplicateChoice>();
+                  choices.set(singleDuplicate.id, 'use-existing');
+                  onConfirm(choices);
+                  setKeepItems(new Set());
+                }}
+                className={cn(buttonVariants({ variant: 'outline' }))}
+              >
+                Skip
+              </AlertDialogAction>
+              <AlertDialogAction
+                onClick={() => {
+                  // Keep Both = import as copy
+                  const choices = new Map<string, DuplicateChoice>();
+                  choices.set(singleDuplicate.id, 'import-copy');
+                  onConfirm(choices);
+                  setKeepItems(new Set());
+                }}
+              >
+                Keep Both
+              </AlertDialogAction>
+            </>
+          ) : (
+            <AlertDialogAction onClick={handleConfirm}>
+              Confirm
+            </AlertDialogAction>
+          )}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );
 };
+
+// Re-export for backward compatibility
+export { DuplicateMediaDialog as BatchDuplicateMediaDialog };
