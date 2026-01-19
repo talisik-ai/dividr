@@ -273,7 +273,10 @@ export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
                   onConfirm(choices);
                   setKeepItems(new Set());
                 }}
-                className={cn(buttonVariants({ variant: 'outline' }))}
+                className={cn(
+                  buttonVariants({ variant: 'outline' }),
+                  'text-muted-foreground',
+                )}
               >
                 Skip
               </AlertDialogAction>
