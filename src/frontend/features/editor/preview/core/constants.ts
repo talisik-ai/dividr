@@ -48,6 +48,34 @@ export const TEXT_CLIP_PADDING_HORIZONTAL = 8;
 export const STROKE_WIDTH = 2;
 export const STROKE_DIRECTIONS = 8; // 8-direction outline for smooth stroke effect
 
+// Dynamic font sizing - resolution-aware defaults
+// Reference: 720p is the baseline, where 40px is the default font size
+// This ensures text scales proportionally across 720p, 1080p, 1440p, 4K
+export const FONT_SIZE_REFERENCE_HEIGHT = 720;
+export const FONT_SIZE_REFERENCE_VALUE = 40; // Base font size at 720p
+
+/**
+ * Calculate a resolution-aware default font size based on canvas height.
+ * This ensures text appears visually consistent relative to the canvas,
+ * regardless of resolution (720p, 1080p, 4K, etc.)
+ *
+ * @param canvasHeight - The current canvas/video height in pixels
+ * @returns The scaled font size appropriate for the resolution
+ *
+ * @example
+ * calculateDefaultFontSize(720)  // Returns 40 (720p baseline)
+ * calculateDefaultFontSize(1080) // Returns 60 (1080p - 1.5x scale)
+ * calculateDefaultFontSize(1440) // Returns 80 (1440p - 2x scale)
+ * calculateDefaultFontSize(2160) // Returns 120 (4K - 3x scale)
+ */
+export function calculateDefaultFontSize(canvasHeight: number): number {
+  if (!canvasHeight || canvasHeight <= 0) {
+    return FONT_SIZE_REFERENCE_VALUE;
+  }
+  const scaleFactor = canvasHeight / FONT_SIZE_REFERENCE_HEIGHT;
+  return Math.round(FONT_SIZE_REFERENCE_VALUE * scaleFactor);
+}
+
 // Z-index hierarchy for overlay layers
 // These ensure proper stacking order: Text > Subtitle > Image > Video > Audio
 export const Z_INDEX_SUBTITLE_OVERLAY =

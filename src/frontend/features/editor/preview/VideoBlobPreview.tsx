@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { cn } from '@/frontend/utils/utils';
-import { Type } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -1042,15 +1041,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       )}
 
       {/* Text Edit Mode Indicator */}
-      {hasTracks && preview.interactionMode === 'text-edit' && (
-        <div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg shadow-lg pointer-events-none z-[2000] flex items-center gap-2 text-xs"
-          style={{ fontWeight: 500 }}
-        >
-          <Type className="size-3" />
-          Text Tool — Click to edit or add new text
-        </div>
-      )}
+      {/* {hasTracks && preview.interactionMode === 'text-edit' && (
+        // <div
+        //   className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg shadow-lg pointer-events-none z-[2000] flex items-center gap-2 text-xs"
+        //   style={{ fontWeight: 500 }}
+        // >
+        //   <Type className="size-3" />
+        //   Text Tool — Click to edit or add new text
+        // </div>
+      //)}
 
       {/* Placeholder - only show when no tracks */}
       {!hasTracks && (

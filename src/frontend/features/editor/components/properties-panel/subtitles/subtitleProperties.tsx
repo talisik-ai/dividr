@@ -44,6 +44,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { calculateDefaultFontSize } from '../../../preview/core/constants';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
 import { FontSelector } from '../shared/fontSelector';
@@ -60,6 +61,15 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const tracks = useVideoEditorStore((state) => state.tracks);
   const textStyle = useVideoEditorStore((state) => state.textStyle);
   const colorHistory = useVideoEditorStore((state) => state.colorHistory);
+  const canvasHeight = useVideoEditorStore(
+    (state) => state.preview?.canvasHeight || 720,
+  );
+
+  // Calculate resolution-aware default font size
+  const dynamicDefaultFontSize = useMemo(
+    () => calculateDefaultFontSize(canvasHeight),
+    [canvasHeight],
+  );
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
@@ -107,7 +117,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const [editedText, setEditedText] = useState('');
   const [isEditingText, setIsEditingText] = useState(false);
 
-  // Check if any styles have changed from default
+  // Check if any styles have changed from default (using resolution-aware font size)
   const hasStylesChanged = useMemo(() => {
     const defaults = {
       isBold: false,
@@ -115,7 +125,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       isUnderline: false,
       textTransform: 'none',
       textAlign: 'center',
-      fontSize: 40,
+      fontSize: dynamicDefaultFontSize, // Resolution-aware default
       fillColor: '#FFFFFF',
       strokeColor: '#000000',
       backgroundColor: 'rgba(0, 0, 0, 0)',
@@ -145,7 +155,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       current.opacity !== defaults.opacity ||
       textStyle.activeStyle !== 'default'
     );
-  }, [textStyle]);
+  }, [textStyle, dynamicDefaultFontSize]);
 
   // Don't render if no subtitle tracks are selected
   if (selectedSubtitleTracks.length === 0) {

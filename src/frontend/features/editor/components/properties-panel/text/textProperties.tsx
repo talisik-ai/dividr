@@ -43,6 +43,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { calculateDefaultFontSize } from '../../../preview/core/constants';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
 import { FontSelector } from '../shared/fontSelector';
@@ -97,6 +98,15 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
   const tracks = useVideoEditorStore((state) => state.tracks);
   const colorHistory = useVideoEditorStore((state) => state.colorHistory);
   const recentFonts = useVideoEditorStore((state) => state.recentFonts);
+  const canvasHeight = useVideoEditorStore(
+    (state) => state.preview?.canvasHeight || 720,
+  );
+
+  // Calculate resolution-aware default font size
+  const dynamicDefaultFontSize = useMemo(
+    () => calculateDefaultFontSize(canvasHeight),
+    [canvasHeight],
+  );
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
@@ -181,7 +191,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
     }
   }, [endPropertyUpdate]);
 
-  // Check if any styles have changed from default
+  // Check if any styles have changed from default (using resolution-aware font size)
   const hasStylesChanged = useMemo(() => {
     return (
       currentStyle.isBold !== DEFAULT_TEXT_STYLE.isBold ||
@@ -189,7 +199,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
       currentStyle.isUnderline !== DEFAULT_TEXT_STYLE.isUnderline ||
       currentStyle.textTransform !== DEFAULT_TEXT_STYLE.textTransform ||
       currentStyle.textAlign !== DEFAULT_TEXT_STYLE.textAlign ||
-      currentStyle.fontSize !== DEFAULT_TEXT_STYLE.fontSize ||
+      currentStyle.fontSize !== dynamicDefaultFontSize ||
       currentStyle.fillColor !== DEFAULT_TEXT_STYLE.fillColor ||
       currentStyle.strokeColor !== DEFAULT_TEXT_STYLE.strokeColor ||
       currentStyle.backgroundColor !== DEFAULT_TEXT_STYLE.backgroundColor ||
@@ -199,7 +209,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
       currentStyle.hasGlow !== DEFAULT_TEXT_STYLE.hasGlow ||
       currentStyle.opacity !== DEFAULT_TEXT_STYLE.opacity
     );
-  }, [currentStyle]);
+  }, [currentStyle, dynamicDefaultFontSize]);
 
   // Check if opacity has changed from default
   const hasOpacityChanged = useMemo(() => {
@@ -268,8 +278,12 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
   }, [isEditingText, selectedTrack.id, selectedTrack.textContent]);
 
   const handleReset = useCallback(() => {
-    updateTextStyle(DEFAULT_TEXT_STYLE);
-  }, [updateTextStyle]);
+    // Reset with resolution-aware default font size
+    updateTextStyle({
+      ...DEFAULT_TEXT_STYLE,
+      fontSize: dynamicDefaultFontSize,
+    });
+  }, [updateTextStyle, dynamicDefaultFontSize]);
 
   const handleResetOpacity = useCallback(() => {
     updateTextStyle({ opacity: 100 });

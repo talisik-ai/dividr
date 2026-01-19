@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { StateCreator } from 'zustand';
+import { calculateDefaultFontSize } from '../../../preview/core/constants';
 import { VideoTrack } from '../types';
 
 export interface TextClipsSlice {
@@ -82,6 +83,10 @@ export const createTextClipsSlice: StateCreator<
     // Default duration: 5 seconds
     const defaultDuration = fps * 5;
 
+    // Calculate resolution-aware font size based on current canvas height
+    const canvasHeight = state.preview?.canvasHeight || 720;
+    const dynamicFontSize = calculateDefaultFontSize(canvasHeight);
+
     // Create a new text track with per-clip styling and transform
     const textTrack: Omit<VideoTrack, 'id'> = {
       type: 'text',
@@ -95,7 +100,10 @@ export const createTextClipsSlice: StateCreator<
       color: getTrackColor(state.tracks?.length || 0),
       textContent: textType === 'heading' ? 'Heading Text' : 'Body Text',
       textType,
-      textStyle: { ...DEFAULT_TEXT_STYLE },
+      textStyle: {
+        ...DEFAULT_TEXT_STYLE,
+        fontSize: dynamicFontSize, // Resolution-aware default font size
+      },
       textTransform: {
         x: 0, // Centered horizontally (normalized: 0 = center)
         y: textType === 'heading' ? -0.3 : 0, // Heading slightly above center, body at center (normalized: -1 to 1)
