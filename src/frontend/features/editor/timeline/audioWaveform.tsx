@@ -1116,7 +1116,9 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
           </style>
           <div className="relative flex items-center gap-1 z-10">
             <Loader2 className="w-3 h-3 animate-spin text-purple-400" />
-            <span className="text-[10px] text-purple-400/80">Generating...</span>
+            <span className="text-[10px] text-purple-400/80">
+              Generating...
+            </span>
           </div>
         </div>
       );

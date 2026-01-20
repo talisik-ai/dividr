@@ -43,6 +43,14 @@ export interface UndoableState {
       hasGlow: boolean;
       opacity: number;
     };
+    // Global subtitle position for transform undo/redo support
+    globalSubtitlePosition: {
+      x: number;
+      y: number;
+      scale: number;
+      width: number;
+      height: number;
+    };
   };
 }
 
@@ -136,6 +144,13 @@ export const createUndoRedoSlice: StateCreator<
         globalControls: JSON.parse(
           JSON.stringify(state.textStyle?.globalControls || {}),
         ),
+        globalSubtitlePosition: {
+          x: state.textStyle?.globalSubtitlePosition?.x ?? 0,
+          y: state.textStyle?.globalSubtitlePosition?.y ?? 0.7,
+          scale: state.textStyle?.globalSubtitlePosition?.scale ?? 1,
+          width: state.textStyle?.globalSubtitlePosition?.width ?? 0,
+          height: state.textStyle?.globalSubtitlePosition?.height ?? 0,
+        },
       },
     };
   },
@@ -167,6 +182,13 @@ export const createUndoRedoSlice: StateCreator<
         globalControls: JSON.parse(
           JSON.stringify(undoableState.textStyle.globalControls),
         ),
+        globalSubtitlePosition: {
+          x: undoableState.textStyle.globalSubtitlePosition?.x ?? 0,
+          y: undoableState.textStyle.globalSubtitlePosition?.y ?? 0.7,
+          scale: undoableState.textStyle.globalSubtitlePosition?.scale ?? 1,
+          width: undoableState.textStyle.globalSubtitlePosition?.width ?? 0,
+          height: undoableState.textStyle.globalSubtitlePosition?.height ?? 0,
+        },
       },
     }));
   },

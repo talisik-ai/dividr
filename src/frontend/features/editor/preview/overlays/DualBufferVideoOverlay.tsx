@@ -2120,6 +2120,10 @@ export const DualBufferVideo = forwardRef<
       const video = videoARef.current;
       if (!video) return;
 
+      // Capture current slot values at start to avoid type narrowing issues in async callbacks
+      const currentActiveSlot: 'A' | 'B' = activeSlot;
+      const currentVisualSlot: 'A' | 'B' = visualSlot;
+
       logFrameHold('VideoA seeked: Seek complete', {
         readyState: video.readyState,
         currentTime: video.currentTime.toFixed(3),
@@ -2127,14 +2131,18 @@ export const DualBufferVideo = forwardRef<
 
       // If video is ready after seek and this is the active slot,
       // ensure visual slot is synced
-      if (video.readyState >= 2 && activeSlot === 'A') {
+      if (video.readyState >= 2 && currentActiveSlot === 'A') {
         frameConfirmedReadyRef.current.A = true;
-        if (visualSlot !== 'A') {
+        if (currentVisualSlot !== 'A') {
           // Use double RAF to ensure frame is decoded before showing
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              if (activeSlot === 'A' && visualSlot !== 'A') {
-                logFrameHold('VideoA seeked: Syncing visual slot after seek', {});
+              // Re-check activeSlot in case it changed during async operations
+              if (currentActiveSlot === 'A') {
+                logFrameHold(
+                  'VideoA seeked: Syncing visual slot after seek',
+                  {},
+                );
                 setVisualSlot('A');
               }
             });
@@ -2147,6 +2155,10 @@ export const DualBufferVideo = forwardRef<
       const video = videoBRef.current;
       if (!video) return;
 
+      // Capture current slot values at start to avoid type narrowing issues in async callbacks
+      const currentActiveSlot: 'A' | 'B' = activeSlot;
+      const currentVisualSlot: 'A' | 'B' = visualSlot;
+
       logFrameHold('VideoB seeked: Seek complete', {
         readyState: video.readyState,
         currentTime: video.currentTime.toFixed(3),
@@ -2154,14 +2166,18 @@ export const DualBufferVideo = forwardRef<
 
       // If video is ready after seek and this is the active slot,
       // ensure visual slot is synced
-      if (video.readyState >= 2 && activeSlot === 'B') {
+      if (video.readyState >= 2 && currentActiveSlot === 'B') {
         frameConfirmedReadyRef.current.B = true;
-        if (visualSlot !== 'B') {
+        if (currentVisualSlot !== 'B') {
           // Use double RAF to ensure frame is decoded before showing
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              if (activeSlot === 'B' && visualSlot !== 'B') {
-                logFrameHold('VideoB seeked: Syncing visual slot after seek', {});
+              // Re-check activeSlot in case it changed during async operations
+              if (currentActiveSlot === 'B') {
+                logFrameHold(
+                  'VideoB seeked: Syncing visual slot after seek',
+                  {},
+                );
                 setVisualSlot('B');
               }
             });

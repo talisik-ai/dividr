@@ -123,6 +123,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const endDraggingTransform = useVideoEditorStore(
     (state) => state.endDraggingTransform,
   );
+
   const [isEditing, setIsEditing] = useState(false);
   const [activeHandle, setActiveHandle] = useState<HandleType>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(

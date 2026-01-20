@@ -43,8 +43,8 @@ import {
 } from './backend/runtime/runtimeDownloadManager';
 
 // Import file I/O manager for controlled concurrency
-import { fileIOManager } from './backend/io/FileIOManager';
 import { backgroundTaskQueue } from './backend/io/BackgroundTaskQueue';
+import { fileIOManager } from './backend/io/FileIOManager';
 
 // Backward compatible type alias
 type WhisperProgress = MediaToolsProgress;
@@ -1013,7 +1013,9 @@ ipcMain.handle(
               }
             } catch (statError) {
               const errorMessage =
-                statError instanceof Error ? statError.message : 'Unknown error';
+                statError instanceof Error
+                  ? statError.message
+                  : 'Unknown error';
               console.error(
                 '❌ Failed to verify extracted audio file:',
                 errorMessage,
@@ -1619,7 +1621,11 @@ ipcMain.handle(
       const BATCH_SIZE = 3;
       const totalFiles = fileBuffers.length;
 
-      for (let batchStart = 0; batchStart < totalFiles; batchStart += BATCH_SIZE) {
+      for (
+        let batchStart = 0;
+        batchStart < totalFiles;
+        batchStart += BATCH_SIZE
+      ) {
         const batchEnd = Math.min(batchStart + BATCH_SIZE, totalFiles);
         const batch = fileBuffers.slice(batchStart, batchEnd);
 
@@ -1647,10 +1653,14 @@ ipcMain.handle(
             // Determine file type based on extension
             const extension = ext.toLowerCase().slice(1);
             let type: 'video' | 'audio' | 'image' = 'video';
-            if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(extension)) {
+            if (
+              ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(extension)
+            ) {
               type = 'audio';
             } else if (
-              ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'].includes(extension)
+              ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'].includes(
+                extension,
+              )
             ) {
               type = 'image';
             }
@@ -1673,7 +1683,8 @@ ipcMain.handle(
               },
             };
           } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown error';
             console.error(
               `❌ [${globalIndex + 1}/${totalFiles}] Failed to write: ${fileData.name}:`,
               errorMessage,
@@ -1730,7 +1741,8 @@ ipcMain.handle(
       };
     } catch (error) {
       console.error('Failed to process dropped files:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       return { success: false, error: errorMessage };
     }
   },
@@ -1779,7 +1791,8 @@ ipcMain.handle('cleanup-temp-files', async (event, filePaths: string[]) => {
     };
   } catch (error) {
     console.error('Failed to cleanup temporary files:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     return { success: false, error: errorMessage };
   }
 });
@@ -1802,7 +1815,8 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
 
     return content;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     console.error(`❌ Failed to read file ${filePath}:`, errorMessage);
 
     // Provide helpful error message for EMFILE
@@ -1837,8 +1851,12 @@ ipcMain.handle('read-file-as-buffer', async (event, filePath: string) => {
       buffer.byteOffset + buffer.byteLength,
     );
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`❌ Failed to read file as buffer ${filePath}:`, errorMessage);
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    console.error(
+      `❌ Failed to read file as buffer ${filePath}:`,
+      errorMessage,
+    );
 
     // Provide helpful error message for EMFILE
     if (isEMFILEError(error)) {
@@ -3361,7 +3379,8 @@ ipcMain.handle(
       if (isEMFILEError(error)) {
         return {
           success: false,
-          error: 'System file limit reached during cleanup. Please try again later.',
+          error:
+            'System file limit reached during cleanup. Please try again later.',
         };
       }
 

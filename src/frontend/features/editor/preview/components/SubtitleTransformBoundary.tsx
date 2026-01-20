@@ -129,6 +129,7 @@ export const SubtitleTransformBoundary: React.FC<
   const endDraggingTransform = useVideoEditorStore(
     (state) => state.endDraggingTransform,
   );
+
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
     null,
   );

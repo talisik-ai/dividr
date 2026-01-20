@@ -74,7 +74,11 @@ export const calculateElementBounds = (
   // Subtitles use global position instead of per-track transform
   if (track.type === 'subtitle') {
     const position = globalSubtitlePosition || { x: 0, y: 0 };
-    const subtitleTransform = track.subtitleTransform || { scale: 1, width: 0, height: 0 };
+    const subtitleTransform = track.subtitleTransform || {
+      scale: 1,
+      width: 0,
+      height: 0,
+    };
     const scale = subtitleTransform.scale ?? 1;
 
     // Use actual stored dimensions if available, otherwise estimate
@@ -91,9 +95,7 @@ export const calculateElementBounds = (
         ? storedWidth * renderScale
         : Math.min(baseVideoWidth * 0.9, 600) * renderScale * scale;
     const elementHeight =
-      storedHeight > 0
-        ? storedHeight * renderScale
-        : 100 * renderScale * scale;
+      storedHeight > 0 ? storedHeight * renderScale : 100 * renderScale * scale;
 
     // Position from center (normalized coords converted to pixels)
     const offsetX = position.x * (actualWidth / 2);
