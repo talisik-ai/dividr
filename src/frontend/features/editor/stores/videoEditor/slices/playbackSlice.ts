@@ -36,7 +36,7 @@ export const createPlaybackSlice: StateCreator<
   [],
   [],
   PlaybackSlice
-> = (set) => ({
+> = (set, get) => ({
   playback: {
     isPlaying: false,
     isLooping: false,
@@ -224,20 +224,25 @@ export const createPlaybackSlice: StateCreator<
       };
     }),
 
-  startDraggingTransform: () =>
-    set((state: any) => {
-      const wasPlaying = state.playback.isPlaying;
+  startDraggingTransform: () => {
+    const state = get() as any;
+    // Begin undo grouping for transform operations
+    state.beginGroup?.('Transform Object');
+
+    set((current: any) => {
+      const wasPlaying = current.playback.isPlaying;
       return {
         playback: {
-          ...state.playback,
+          ...current.playback,
           isDraggingTransform: true,
           wasPlayingBeforeTransformDrag: wasPlaying,
           isPlaying: false, // Pause playback during transform drag
         },
       };
-    }),
+    });
+  },
 
-  endDraggingTransform: () =>
+  endDraggingTransform: () => {
     set((state: any) => {
       const shouldResume = state.playback.wasPlayingBeforeTransformDrag;
       return {
@@ -248,5 +253,10 @@ export const createPlaybackSlice: StateCreator<
           wasPlayingBeforeTransformDrag: false,
         },
       };
-    }),
+    });
+
+    // End undo grouping for transform operations
+    const state = get() as any;
+    state.endGroup?.();
+  },
 });
