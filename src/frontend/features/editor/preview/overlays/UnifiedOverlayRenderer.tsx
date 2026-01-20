@@ -477,6 +477,37 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
       subtitleTransform: globalSubtitlePosition,
     };
 
+    // Compute the applied style for the editable text area
+    // This ensures cursor/caret scales correctly with subtitle styling
+    const editableSubtitle = selectedSub || activeSubtitles[0];
+    const style = getTextStyleForSubtitle(
+      activeStyle,
+      editableSubtitle?.subtitleStyle,
+    );
+    const effectiveScale = renderScale * (globalSubtitlePosition.scale ?? 1);
+    const fontSize = (parseFloat(style.fontSize) || 40) * effectiveScale;
+    const appliedEditStyle: React.CSSProperties = {
+      fontSize: `${fontSize}px`,
+      fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
+      fontStyle: style.fontStyle,
+      textTransform: style.textTransform,
+      textDecoration: style.textDecoration,
+      textAlign: style.textAlign,
+      lineHeight: style.lineHeight,
+      letterSpacing: style.letterSpacing
+        ? `${parseFloat(String(style.letterSpacing)) * effectiveScale}px`
+        : undefined,
+      color: style.color,
+      padding: `${SUBTITLE_PADDING_VERTICAL * effectiveScale}px ${SUBTITLE_PADDING_HORIZONTAL * effectiveScale}px`,
+      // Text layout properties to match rendered subtitle appearance
+      // These prevent unwanted wrapping during edit mode
+      display: 'inline-block',
+      whiteSpace: 'pre',
+      wordBreak: 'keep-all',
+      overflowWrap: 'normal',
+    };
+
     return (
       <SubtitleTransformBoundary
         key="global-subtitle-transform"
@@ -511,6 +542,8 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         onDragStateChange={onDragStateChange}
         onEditModeChange={handleEditModeChange}
         getTopElementAtPoint={getTopElementAtPoint}
+        selectedTrack={selectedSub}
+        appliedStyle={appliedEditStyle}
       >
         {activeSubtitles.map((track) =>
           renderSubtitleContent(

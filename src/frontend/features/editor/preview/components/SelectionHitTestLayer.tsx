@@ -74,11 +74,26 @@ export const calculateElementBounds = (
   // Subtitles use global position instead of per-track transform
   if (track.type === 'subtitle') {
     const position = globalSubtitlePosition || { x: 0, y: 0 };
+    const subtitleTransform = track.subtitleTransform || { scale: 1, width: 0, height: 0 };
+    const scale = subtitleTransform.scale ?? 1;
 
-    // Subtitle dimensions are estimated based on text content
-    // This is approximate but sufficient for hit-testing
-    const estimatedWidth = Math.min(baseVideoWidth * 0.9, 600) * renderScale;
-    const estimatedHeight = 100 * renderScale;
+    // Use actual stored dimensions if available, otherwise estimate
+    // Dimensions are stored in video space (pixels at base resolution)
+    // Need to multiply by renderScale to convert to screen space
+    const storedWidth = subtitleTransform.width || 0;
+    const storedHeight = subtitleTransform.height || 0;
+
+    // If we have stored dimensions, use them; otherwise estimate
+    // Note: Subtitle uses font-based scaling, so dimensions already include scale
+    // (unlike text layers which use CSS scale transform)
+    const elementWidth =
+      storedWidth > 0
+        ? storedWidth * renderScale
+        : Math.min(baseVideoWidth * 0.9, 600) * renderScale * scale;
+    const elementHeight =
+      storedHeight > 0
+        ? storedHeight * renderScale
+        : 100 * renderScale * scale;
 
     // Position from center (normalized coords converted to pixels)
     const offsetX = position.x * (actualWidth / 2);
@@ -87,8 +102,8 @@ export const calculateElementBounds = (
     const centerX = actualWidth / 2 + offsetX;
     const centerY = actualHeight / 2 + offsetY;
 
-    const halfWidth = estimatedWidth / 2;
-    const halfHeight = estimatedHeight / 2;
+    const halfWidth = elementWidth / 2;
+    const halfHeight = elementHeight / 2;
 
     return {
       trackId: track.id,
