@@ -25,6 +25,7 @@ interface TextTransformBoundaryProps {
       width?: number;
       height?: number;
     },
+    options?: { skipRecord?: boolean },
   ) => void;
   onSelect: (trackId: string) => void;
   onTextUpdate?: (trackId: string, newText: string) => void;
@@ -195,12 +196,17 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         x: rawTransform.x,
         y: rawTransform.y,
       });
-      onTransformUpdate(track.id, {
-        x: normalized.x,
-        y: normalized.y,
-        width: rawTransform.width,
-        height: rawTransform.height,
-      });
+      // Skip recording for migration - it's a system-generated coordinate fix
+      onTransformUpdate(
+        track.id,
+        {
+          x: normalized.x,
+          y: normalized.y,
+          width: rawTransform.width,
+          height: rawTransform.height,
+        },
+        { skipRecord: true },
+      );
       return {
         ...rawTransform,
         x: normalized.x,
@@ -440,20 +446,25 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
       // If user has defined width via left/right handles, don't auto-update width
       // But still update height so container adjusts to text reflow
+      // IMPORTANT: Pass skipRecord: true to prevent these automatic dimension
+      // recalculations from creating undo entries
       if (hasUserDefinedWidthRef.current) {
         // Only update height when user has defined width
         if (heightChanged) {
-          onTransformUpdate(track.id, {
-            height: videoSpaceHeight,
-          });
+          onTransformUpdate(
+            track.id,
+            { height: videoSpaceHeight },
+            { skipRecord: true },
+          );
         }
       } else {
         // Normal behavior: update both width and height
         if (widthChanged || heightChanged) {
-          onTransformUpdate(track.id, {
-            width: videoSpaceWidth,
-            height: videoSpaceHeight,
-          });
+          onTransformUpdate(
+            track.id,
+            { width: videoSpaceWidth, height: videoSpaceHeight },
+            { skipRecord: true },
+          );
         }
       }
     }

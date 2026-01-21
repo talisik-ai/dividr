@@ -81,7 +81,7 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   onSubtitleTextUpdate?: (trackId: string, newText: string) => void;
   onImageTransformUpdate: (trackId: string, transform: any) => void;
   onImageSelect: (trackId: string) => void;
-  onTextTransformUpdate: (trackId: string, transform: any) => void;
+  onTextTransformUpdate: (trackId: string, transform: any, options?: { skipRecord?: boolean }) => void;
   onTextSelect: (trackId: string) => void;
   onTextUpdate: (trackId: string, newText: string) => void;
   pendingEditTextId?: string | null;
@@ -535,9 +535,10 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         }}
         onSelect={() => onSubtitleSelect(activeSubtitles[0]?.id)}
         onTextUpdate={
-          selectedSub
-            ? (_, text) => onSubtitleTextUpdate?.(selectedSub.id, text)
-            : undefined
+          // Always provide onTextUpdate to allow inline editing
+          // Use the trackId passed from SubtitleTransformBoundary rather than closure-captured selectedSub.id
+          // This ensures the correct track is updated even if selection changes during editing
+          (trackId, text) => onSubtitleTextUpdate?.(trackId, text)
         }
         onDragStateChange={onDragStateChange}
         onEditModeChange={handleEditModeChange}
@@ -1009,7 +1010,7 @@ function renderTextTrack(
   panY: number,
   interactionMode: InteractionMode | undefined,
   isTextEditMode: boolean,
-  onTransformUpdate: (id: string, t: any) => void,
+  onTransformUpdate: (id: string, t: any, options?: { skipRecord?: boolean }) => void,
   onSelect: (id: string) => void,
   onTextUpdate: (id: string, text: string) => void,
   onRotationStateChange: (r: boolean) => void,

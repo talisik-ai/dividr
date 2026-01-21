@@ -265,6 +265,17 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
     snapshotStylesToSelectedTracks,
   ]);
 
+  // Cleanup: end any active group on component unmount
+  // This prevents stuck grouping state when user switches tracks or panels mid-drag
+  useEffect(() => {
+    return () => {
+      if (isDraggingRef.current) {
+        endGroup();
+        isDraggingRef.current = false;
+      }
+    };
+  }, [endGroup]);
+
   const handleReset = useCallback(() => {
     resetTextStyles();
   }, [resetTextStyles]);
@@ -282,14 +293,31 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   );
 
   // Handle slider drag start (begin batch transaction)
+  // Also sets up global pointer listeners to ensure group ends reliably
   const handleSliderDragStart = useCallback(() => {
-    if (!isDraggingRef.current) {
-      isDraggingRef.current = true;
-      beginGroup('Update Subtitle Style');
-    }
-  }, [beginGroup]);
+    if (isDraggingRef.current) return;
+
+    isDraggingRef.current = true;
+    beginGroup('Update Subtitle Style');
+
+    // Add global pointer listeners to handle edge cases where onValueCommit doesn't fire
+    // (e.g., pointer released outside component, or value didn't change)
+    const handleGlobalPointerUp = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        endGroup();
+      }
+      // Clean up listeners
+      document.removeEventListener('pointerup', handleGlobalPointerUp);
+      document.removeEventListener('pointercancel', handleGlobalPointerUp);
+    };
+
+    document.addEventListener('pointerup', handleGlobalPointerUp);
+    document.addEventListener('pointercancel', handleGlobalPointerUp);
+  }, [beginGroup, endGroup]);
 
   // Handle slider drag end (end batch transaction)
+  // This may be called before the global listener, which is fine - the ref prevents double-end
   const handleSliderDragEnd = useCallback(() => {
     if (isDraggingRef.current) {
       isDraggingRef.current = false;

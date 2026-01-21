@@ -72,11 +72,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     setPreviewScale,
     setPreviewInteractionMode,
     updateTrack,
+    updateTrackProperty,
     setSelectedTracks,
     currentTranscribingTrackId,
     transcriptionProgress,
     addTextClip,
     removeTrack,
+    beginGroup,
+    endGroup,
   } = useVideoEditorStore();
 
   const hasTracks = tracks.length > 0;
@@ -254,8 +257,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   ]);
 
   // Transform handlers - only needed when tracks exist
+  // Third parameter `options` allows skipping undo recording for auto-size updates
   const handleTextTransformUpdate = useCallback(
-    (trackId: string, transform: any) => {
+    (trackId: string, transform: any, options?: { skipRecord?: boolean }) => {
       const track = tracks.find((t) => t.id === trackId);
       if (!track || track.type !== 'text') return;
 
@@ -268,11 +272,17 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         height: 0,
       };
 
-      updateTrack(trackId, {
-        textTransform: { ...currentTransform, ...transform },
-      });
+      const newTransform = { ...currentTransform, ...transform };
+
+      // For auto-size updates (width/height only), skip undo recording
+      // These are system-generated updates from ResizeObserver, not user actions
+      if (options?.skipRecord) {
+        updateTrackProperty(trackId, { textTransform: newTransform });
+      } else {
+        updateTrack(trackId, { textTransform: newTransform });
+      }
     },
-    [tracks, updateTrack],
+    [tracks, updateTrack, updateTrackProperty],
   );
 
   const handleImageTransformUpdate = useCallback(
@@ -724,25 +734,31 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           const normalizedX = clickXRelativeToContent / (actualWidth / 2);
           const normalizedY = clickYRelativeToContent / (actualHeight / 2);
 
-          const trackId = await addTextClip('body', timeline.currentFrame);
+          // Group text creation + initial content/transform update as single undoable action
+          beginGroup('Create Text');
+          try {
+            const trackId = await addTextClip('body', timeline.currentFrame);
 
-          if (trackId) {
-            updateTrack(trackId, {
-              textTransform: {
-                x: normalizedX,
-                y: normalizedY,
-                scale: 1,
-                rotation: 0,
-                width: 800,
-                height: 100,
-              },
-              textContent: 'New Text',
-            });
+            if (trackId) {
+              updateTrack(trackId, {
+                textTransform: {
+                  x: normalizedX,
+                  y: normalizedY,
+                  scale: 1,
+                  rotation: 0,
+                  width: 800,
+                  height: 100,
+                },
+                textContent: 'New Text',
+              });
 
-            setSelectedTracks([trackId]);
-            setPreviewInteractionMode('text-edit');
-            setPendingEditTextId(trackId);
-            setPendingEmptyTextId(trackId);
+              setSelectedTracks([trackId]);
+              setPreviewInteractionMode('text-edit');
+              setPendingEditTextId(trackId);
+              setPendingEmptyTextId(trackId);
+            }
+          } finally {
+            endGroup();
           }
         }
         return;
@@ -778,6 +794,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       updateTrack,
       setPreviewInteractionMode,
       getTopElementAtPoint,
+      beginGroup,
+      endGroup,
     ],
   );
 

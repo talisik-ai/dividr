@@ -242,6 +242,14 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const dragGhostForHandles = useVideoEditorStore(
       (state) => state.playback.dragGhost,
     );
+
+    // Tool mode subscriptions for resetting text-edit mode on track interaction
+    const previewInteractionMode = useVideoEditorStore(
+      (state) => state.preview.interactionMode,
+    );
+    const setPreviewInteractionMode = useVideoEditorStore(
+      (state) => state.setPreviewInteractionMode,
+    );
     const isThisOrLinkedTrackBeingDragged =
       dragGhostForHandles?.isActive &&
       dragGhostForHandles.selectedTrackIds &&
@@ -274,16 +282,35 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
     const handleClick = useCallback(
       (e: React.MouseEvent) => {
         if (isSplitModeActive || e.button === 2) return;
+
+        // Reset text tool mode when selecting tracks
+        // This ensures the preview cursor mode doesn't stay stuck in text-edit mode
+        if (previewInteractionMode !== 'select') {
+          setPreviewInteractionMode('select');
+        }
+
         e.stopPropagation();
         // Support both Shift and Ctrl/Cmd for multi-selection (standard desktop behavior)
         onSelect(e.shiftKey || e.ctrlKey || e.metaKey);
       },
-      [isSplitModeActive, onSelect],
+      [
+        isSplitModeActive,
+        onSelect,
+        previewInteractionMode,
+        setPreviewInteractionMode,
+      ],
     );
 
     const handleMouseDown = useCallback(
       (e: React.MouseEvent) => {
         if (track.locked || isSplitModeActive || e.button === 2) return;
+
+        // Reset text tool mode when interacting with tracks
+        // This ensures the preview cursor mode doesn't stay stuck in text-edit mode
+        if (previewInteractionMode !== 'select') {
+          setPreviewInteractionMode('select');
+        }
+
         e.stopPropagation();
 
         const { startDraggingTrack } = useVideoEditorStore.getState();
@@ -313,6 +340,8 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         track.id,
         track.type,
         isSplitModeActive,
+        previewInteractionMode,
+        setPreviewInteractionMode,
       ],
     );
 

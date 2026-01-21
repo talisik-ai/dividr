@@ -89,6 +89,7 @@ export interface UndoRedoSlice {
   // Batch transaction grouping
   beginGroup: (actionName: string) => void;
   endGroup: () => void;
+  forceEndGroup: () => void; // Emergency cleanup for stuck grouping state
 
   // Internal helpers
   captureUndoableState: () => UndoableState;
@@ -232,9 +233,23 @@ export const createUndoRedoSlice: StateCreator<
   beginGroup: (actionName: string) => {
     const state = get() as any;
 
-    // Don't start a group if we're already in one or not recording
-    if (state.isGrouping || !state.isRecording) {
-      console.warn('⚠️ Cannot begin group: already grouping or not recording');
+    // If already grouping, force end the previous group to prevent stuck state
+    // This can happen if a component unmounts during a drag operation
+    if (state.isGrouping) {
+      console.warn(
+        `⚠️ Already grouping (${state.groupActionName}), forcing end before starting new group: ${actionName}`,
+      );
+      // Force end the previous group without recording (cleanup only)
+      set({
+        isGrouping: false,
+        groupStartState: null,
+        groupActionName: null,
+      });
+    }
+
+    // Don't start a group if not recording
+    if (!state.isRecording) {
+      console.warn('⚠️ Cannot begin group: not recording');
       return;
     }
 
@@ -305,6 +320,24 @@ export const createUndoRedoSlice: StateCreator<
         `⏭️ End group: ${state.groupActionName} (no state change, not recorded)`,
       );
     }
+  },
+
+  forceEndGroup: () => {
+    const state = get() as any;
+
+    if (!state.isGrouping) {
+      return; // Nothing to clean up
+    }
+
+    console.warn(
+      `⚠️ Force ending group: ${state.groupActionName} (cleanup from stuck state)`,
+    );
+
+    set({
+      isGrouping: false,
+      groupStartState: null,
+      groupActionName: null,
+    });
   },
 
   undo: () => {
