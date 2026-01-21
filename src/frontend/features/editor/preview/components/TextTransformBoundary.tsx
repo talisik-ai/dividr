@@ -305,6 +305,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setIsDragging(false);
       setDragStart(null);
 
+      // CRITICAL: End any active transform drag before entering edit mode
+      // This ensures the undo group is properly closed before text editing starts
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
+
       // If not selected, select first then enter edit mode
       if (!isSelected) {
         onSelect(track.id);
@@ -317,7 +324,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       // Enter edit mode on double-click, select all text for immediate typing
       enterEditMode(true);
     },
-    [isSelected, track.id, onSelect, enterEditMode],
+    [isSelected, track.id, onSelect, enterEditMode, endDraggingTransform],
   );
 
   // Handle single click - enters edit mode ONLY when text edit mode is active
@@ -328,6 +335,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
       e.stopPropagation();
       e.preventDefault();
+
+      // End any active transform drag before entering edit mode
+      // This ensures any undo group is properly closed
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
 
       if (!isSelected) {
         onSelect(track.id);
@@ -342,6 +356,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       isSelected,
       track.id,
       onSelect,
+      endDraggingTransform,
       enterEditMode,
       interactionMode,
     ],

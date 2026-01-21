@@ -519,6 +519,13 @@ export const SubtitleTransformBoundary: React.FC<
       e.stopPropagation();
       e.preventDefault();
 
+      // End any active transform drag before entering edit mode
+      // This ensures any undo group is properly closed
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
+
       if (!isSelected) {
         onSelect(track.id);
         return;
@@ -533,6 +540,7 @@ export const SubtitleTransformBoundary: React.FC<
       onSelect,
       enterEditMode,
       interactionMode,
+      endDraggingTransform,
     ],
   );
 
@@ -550,6 +558,14 @@ export const SubtitleTransformBoundary: React.FC<
       setIsDragging(false);
       setDragStart(null);
 
+      // CRITICAL: End any active transform drag before entering edit mode
+      // This ensures the undo group from the second mousedown is properly closed
+      // Otherwise, isGrouping stays true and text edits won't be recorded
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
+
       if (!isSelected) {
         onSelect(track.id);
         setTimeout(() => {
@@ -560,7 +576,7 @@ export const SubtitleTransformBoundary: React.FC<
 
       enterEditMode(true);
     },
-    [isSelected, track.id, onSelect, enterEditMode],
+    [isSelected, track.id, onSelect, enterEditMode, endDraggingTransform],
   );
 
   // Handle mouse move for all interactions
@@ -820,6 +836,8 @@ export const SubtitleTransformBoundary: React.FC<
     editingTrack.subtitleText,
     onTextUpdate,
     onEditModeChange,
+    selectedTrack?.id,
+    track.id,
   ]);
 
   // Handle keyboard events in edit mode

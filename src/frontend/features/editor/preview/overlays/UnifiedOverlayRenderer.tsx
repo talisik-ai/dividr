@@ -535,10 +535,15 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         }}
         onSelect={() => onSubtitleSelect(activeSubtitles[0]?.id)}
         onTextUpdate={
-          // Always provide onTextUpdate to allow inline editing
-          // Use the trackId passed from SubtitleTransformBoundary rather than closure-captured selectedSub.id
-          // This ensures the correct track is updated even if selection changes during editing
-          (trackId, text) => onSubtitleTextUpdate?.(trackId, text)
+          // CRITICAL: Do NOT use trackId from SubtitleTransformBoundary - it could be "global-subtitle-transform"
+          // which is a fake track used for unified transform, not a real subtitle track.
+          // Instead, use the actual selected subtitle ID or fall back to the first active subtitle.
+          (_, text) => {
+            const actualTrackId = selectedSub?.id || activeSubtitles[0]?.id;
+            if (actualTrackId) {
+              onSubtitleTextUpdate?.(actualTrackId, text);
+            }
+          }
         }
         onDragStateChange={onDragStateChange}
         onEditModeChange={handleEditModeChange}
