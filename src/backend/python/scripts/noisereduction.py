@@ -65,8 +65,9 @@ def run(input_path: str, output_path: str) -> None:
     
     Uses DeepFilterNet2 model with automatic audio loading that handles:
     - Compatibility patches for torchaudio 2.x (uses soundfile fallback)
-    - Automatic resampling to model sample rate (48000 Hz)
+    - Explicit resampling to 48000 Hz
     - Proper PyTorch tensor conversion [C, T] format
+    - Audio segmentation into 3-minute chunks to prevent memory issues
     
     Args:
         input_path: Path to input audio file
@@ -75,13 +76,43 @@ def run(input_path: str, output_path: str) -> None:
     # Step 1: Model Initialization
     model, df_state, _ = init_df(default_model='DeepFilterNet2')
     
-    # Step 2: Audio Loading
-    audio, _ = load_audio(input_path, sr=df_state.sr())
+    # Step 2: Audio Loading with explicit resampling to 48kHz
+    target_sample_rate = 48000
+    audio, _ = load_audio(input_path, sr=target_sample_rate)
     
-    # Step 3: Process with DeepFilterNet
-    enhanced = enhance(model, df_state, audio)
+    # Step 3: Calculate chunk size (3 minutes = 180 seconds)
+    sample_rate = target_sample_rate
+    chunk_duration_seconds = 180  # 3 minutes
+    chunk_size_samples = int(chunk_duration_seconds * sample_rate)
     
-    # Step 4: Normalize audio to prevent clipping and distortion
+    # Get audio dimensions: [C, T]
+    num_channels, total_samples = audio.shape
+    
+    # Step 4: Process audio in chunks if it exceeds chunk size
+    if total_samples <= chunk_size_samples:
+        # Audio is short enough, process directly
+        enhanced = enhance(model, df_state, audio)
+    else:
+        # Process in chunks
+        enhanced_chunks = []
+        num_chunks = (total_samples + chunk_size_samples - 1) // chunk_size_samples
+        
+        for i in range(num_chunks):
+            start_idx = i * chunk_size_samples
+            end_idx = min(start_idx + chunk_size_samples, total_samples)
+            
+            # Extract chunk: [C, T]
+            audio_chunk = audio[:, start_idx:end_idx]
+            
+            # Process chunk with DeepFilterNet
+            enhanced_chunk = enhance(model, df_state, audio_chunk)
+            
+            enhanced_chunks.append(enhanced_chunk)
+        
+        # Concatenate all processed chunks along time dimension (dim=1)
+        enhanced = torch.cat(enhanced_chunks, dim=1)
+    
+    # Step 5: Normalize audio to prevent clipping and distortion
     max_val = torch.abs(enhanced).max()
     if max_val > 1.0:
         # Normalize to [-1.0, 1.0] range if it exceeds
@@ -90,11 +121,11 @@ def run(input_path: str, output_path: str) -> None:
         # Clip any values that might be slightly outside range
         enhanced = torch.clamp(enhanced, -1.0, 1.0)
     
-    # Step 5: Save enhanced audio using custom function with soundfile fallback
+    # Step 6: Save enhanced audio using custom function with soundfile fallback
     # This ensures compatibility across different DeepFilterNet/torchaudio versions
-    save_audio_with_fallback(output_path, enhanced, df_state.sr(), dtype=torch.float32)
+    save_audio_with_fallback(output_path, enhanced, sample_rate, dtype=torch.float32)
     
-    # Step 6: Notify completion (for IPC communication)
+    # Step 7: Notify completion (for IPC communication)
     print(f"RESULT_SAVED|{output_path}", flush=True)
 
 
