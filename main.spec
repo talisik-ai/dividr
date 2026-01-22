@@ -109,6 +109,25 @@ except ImportError as e:
     print(f"[WARN] Warning: noise reduction dependency missing: {e}")
 
 # -----------------------------------------------------------------------------
+# Collect DeepFilterNet Model Assets (Local Cache)
+# -----------------------------------------------------------------------------
+# DeepFilterNet downloads models to %LOCALAPPDATA%\DeepFilterNet\DeepFilterNet\Cache
+# We must bundle these for the standalone binary to work offline/clean
+try:
+    local_app_data = os.environ.get('LOCALAPPDATA')
+    if local_app_data:
+        df_cache_path = Path(local_app_data) / 'DeepFilterNet' / 'DeepFilterNet' / 'Cache' / 'DeepFilterNet2'
+        
+        if df_cache_path.exists():
+            # Bundle into 'df_assets/DeepFilterNet2' inside the executable
+            datas_list.append((str(df_cache_path), 'df_assets/DeepFilterNet2'))
+            print(f"[OK] Including DeepFilterNet assets from: {df_cache_path}")
+        else:
+            print(f"[WARN] DeepFilterNet assets not found at {df_cache_path} - Run the tool once locally to download models")
+except Exception as e:
+    print(f"[WARN] Failed to resolve DeepFilterNet assets: {e}")
+
+# -----------------------------------------------------------------------------
 # Common dependencies
 # -----------------------------------------------------------------------------
 hiddenimports_list.extend([

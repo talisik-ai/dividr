@@ -227,11 +227,10 @@ export function RuntimeDownloadModal({
                       </p>
                       <ul className="space-y-0.5 text-xs text-muted-foreground">
                         <li>
-                          • Upgraded to DeepFilterNet for superior noise
-                          reduction
+                          • Fixed compatibility issues on machines without Python
                         </li>
-                        <li>• AI-powered deep learning model (vs FFT-based)</li>
-                        <li>• Better voice clarity and quality preservation</li>
+                        <li>• Complete bundling of all native dependencies</li>
+                        <li>• Resolved missing module errors for noise reduction</li>
                       </ul>
                     </div>
                   )}
@@ -247,7 +246,7 @@ export function RuntimeDownloadModal({
                         {status.requiredVersion}
                       </li>
                       <li>
-                        <strong>Size:</strong> ~210 MB
+                        <strong>Size:</strong> ~222 MB
                       </li>
                       <li>
                         <strong>Source:</strong> GitHub Releases (talisik-ai)
