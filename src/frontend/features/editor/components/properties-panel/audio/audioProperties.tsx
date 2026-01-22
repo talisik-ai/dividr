@@ -1,4 +1,13 @@
 import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/frontend/components/ui/alert-dialog';
 import { Button } from '@/frontend/components/ui/button';
 import { Input } from '@/frontend/components/ui/input';
 import { Progress } from '@/frontend/components/ui/progress';
@@ -247,6 +256,10 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   const [nrProgress, setNrProgress] = useState(0);
   const [nrError, setNrError] = useState<string | null>(null);
 
+  // Temporary state for error modal (for debugging)
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorDetails, setErrorDetails] = useState<string>('');
+
   // Get source URL for the selected track
   const sourceUrl = useMemo(() => {
     return selectedTrack?.previewUrl || selectedTrack?.source || null;
@@ -291,6 +304,20 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           }
         } catch (error) {
           console.error('Failed to check runtime status:', error);
+
+          // TEMPORARY: Show complete error details in modal for debugging
+          const errorMessage =
+            error instanceof Error
+              ? `${error.name}: ${error.message}\n\nStack:\n${
+                  error.stack || 'No stack trace available'
+                }`
+              : typeof error === 'string'
+                ? error
+                : JSON.stringify(error, null, 2);
+
+          setErrorDetails(`Runtime Status Check Error:\n\n${errorMessage}`);
+          setShowErrorModal(true);
+
           // Continue anyway - the actual noise reduction will fail with a clearer error
         }
 
@@ -320,6 +347,20 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           endAudioUpdate();
         } catch (error) {
           console.error('Noise reduction processing failed:', error);
+
+          // TEMPORARY: Show complete error details in modal for debugging
+          const errorMessage =
+            error instanceof Error
+              ? `${error.name}: ${error.message}\n\nStack:\n${
+                  error.stack || 'No stack trace available'
+                }`
+              : typeof error === 'string'
+                ? error
+                : JSON.stringify(error, null, 2);
+
+          setErrorDetails(errorMessage);
+          setShowErrorModal(true);
+
           // Error is already stored in cache - UI will update via subscription
           // Don't enable the flag on error
         }
@@ -550,6 +591,25 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
         onSuccess={handleRuntimeDownloadSuccess}
         featureName="Noise Reduction"
       />
+
+      {/* TEMPORARY: Error Debug Modal */}
+      <AlertDialog open={showErrorModal} onOpenChange={setShowErrorModal}>
+        <AlertDialogContent className="min-w-[60vw] max-h-[80vh] overflow-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Noise Reduction Error Details</AlertDialogTitle>
+            <AlertDialogDescription className="text-left">
+              <pre className="mt-4 p-4 bg-muted rounded-md text-xs overflow-auto whitespace-pre-wrap break-words">
+                {errorDetails || 'No error details available'}
+              </pre>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowErrorModal(false)}>
+              Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

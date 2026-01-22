@@ -80,7 +80,7 @@ type ProgressCallback = (progress: DownloadProgress) => void;
 // ============================================================================
 
 // The required runtime version - update this when releasing new app versions
-const REQUIRED_VERSION = '1.0.2';
+const REQUIRED_VERSION = '1.0.3';
 
 // GitHub repository for dividr-tools releases
 // Format: owner/repo
