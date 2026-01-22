@@ -132,13 +132,14 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       // This ensures waveform matches what the user hears in preview/export
       if (effectiveAudioSource) {
         // Try to get cached waveform for processed audio
+        // Use optimized 50 peaks/sec (matches the new default in generator)
         const processedWaveform = AudioWaveformGenerator.getCachedWaveform(
           effectiveAudioSource,
           track.sourceDuration
             ? track.sourceDuration / displayFps
             : trackMetrics.durationSeconds,
           8000,
-          200,
+          50,
         );
 
         if (processedWaveform?.success && processedWaveform.peaks.length > 0) {
@@ -288,13 +289,14 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
       if (isSegment) {
         const audioPath = track.previewUrl || track.source;
+        // Use optimized 50 peaks/sec (matches the new default in generator)
         const cachedSegment = AudioWaveformGenerator.getCachedWaveformSegment(
           audioPath,
           fullDuration,
           segmentStartTime,
           segmentEndTime,
           8000,
-          30,
+          50,
         );
 
         if (cachedSegment?.success && cachedSegment.peaks.length > 0) {
@@ -360,12 +362,13 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
       let cachedWaveform = null;
 
+      // Use optimized 50 peaks/sec (matches the new default in generator)
       for (const pathToTry of pathsToTry) {
         cachedWaveform = AudioWaveformGenerator.getCachedWaveform(
           pathToTry,
           fullDuration,
           8000,
-          30,
+          50,
         );
 
         if (cachedWaveform?.success) {
@@ -557,11 +560,12 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       );
       setIsGeneratingNrWaveform(true);
 
+      // Use optimized 50 peaks/sec for faster generation
       AudioWaveformGenerator.generateWaveform({
         audioPath: effectiveAudioSource,
         duration,
         sampleRate: 8000,
-        peaksPerSecond: 200,
+        peaksPerSecond: 50,
       })
         .then((result) => {
           if (result.success) {
@@ -1048,15 +1052,22 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     if (isLoading || isGeneratingNrWaveform) {
       return (
         <div
-          className="flex items-center justify-center bg-secondary/10 border border-secondary/20 rounded"
+          className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden"
           style={{ width, height }}
         >
-          <Loader2 className="w-4 h-4 animate-spin text-green-400" />
-          <span className="ml-1 text-xs text-green-400">
-            {isGeneratingNrWaveform
-              ? 'Processing waveform...'
-              : 'Loading waveform...'}
-          </span>
+          {/* Animated gradient placeholder that suggests waveform shape */}
+          <div
+            className="absolute inset-0 bg-gradient-to-r from-gray-400/10 via-gray-300/20 to-gray-400/10 animate-pulse"
+            style={{
+              backgroundSize: '200% 100%',
+            }}
+          />
+          <div className="relative flex items-center gap-1 z-10">
+            <Loader2 className="w-3 h-3 animate-spin text-green-400" />
+            <span className="text-[10px] text-green-400/80">
+              {isGeneratingNrWaveform ? 'Processing...' : 'Loading...'}
+            </span>
+          </div>
         </div>
       );
     }
@@ -1068,22 +1079,47 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       if (hasExistingWaveform) {
         return (
           <div
-            className="flex text-xs gap-2 px-2 items-center"
+            className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden"
             style={{ width, height }}
           >
-            <Loader2 className="size-3 animate-spin" />
-            <span className="truncate">Loading waveform...</span>
+            <div className="absolute inset-0 bg-gradient-to-r from-gray-400/10 via-gray-300/20 to-gray-400/10 animate-pulse" />
+            <div className="relative flex items-center gap-1 z-10">
+              <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+              <span className="text-[10px] text-gray-400/80">Loading...</span>
+            </div>
           </div>
         );
       }
 
       return (
         <div
-          className="flex text-xs gap-2 px-2 items-center"
+          className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden"
           style={{ width, height }}
         >
-          <Loader2 className="size-3 animate-spin" />
-          <span className="truncate">Generating waveform...</span>
+          {/* Animated shimmer effect during generation */}
+          <div
+            className="absolute inset-0 overflow-hidden"
+            style={{
+              background:
+                'linear-gradient(90deg, transparent 0%, rgba(156, 163, 175, 0.1) 50%, transparent 100%)',
+              backgroundSize: '200% 100%',
+              animation: 'shimmer 1.5s infinite',
+            }}
+          />
+          <style>
+            {`
+              @keyframes shimmer {
+                0% { background-position: 200% 0; }
+                100% { background-position: -200% 0; }
+              }
+            `}
+          </style>
+          <div className="relative flex items-center gap-1 z-10">
+            <Loader2 className="w-3 h-3 animate-spin text-purple-400" />
+            <span className="text-[10px] text-purple-400/80">
+              Generating...
+            </span>
+          </div>
         </div>
       );
     }

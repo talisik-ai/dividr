@@ -59,6 +59,29 @@ def save_audio_with_fallback(
         sf.write(file, audio_np, sr, subtype='PCM_32')  # Use 32-bit float
 
 
+import sys
+from pathlib import Path
+
+def get_df_model_path() -> str:
+    """
+    Resolve DeepFilterNet model path.
+    Prioritizes bundled assets in PyInstaller _MEIPASS, falls back to default.
+    """
+    # Check if running in PyInstaller bundle
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base_path = Path(sys._MEIPASS)
+        bundled_model_path = base_path / 'df_assets' / 'DeepFilterNet2'
+        
+        if bundled_model_path.exists():
+            # print(f"[DEBUG] Using bundled DeepFilterNet model at: {bundled_model_path}", file=sys.stderr)
+            return str(bundled_model_path)
+        else:
+            print(f"ERROR|Bundled DeepFilterNet assets not found at: {bundled_model_path}", file=sys.stderr)
+            # Fail hard if we expect to be standalone but assets are missing
+            raise FileNotFoundError(f"Bundled assets missing: {bundled_model_path}")
+            
+    return None  # Let init_df use default logic (system cache)
+
 def run(input_path: str, output_path: str) -> None:
     """
     Apply noise reduction to an audio file using DeepFilterNet.

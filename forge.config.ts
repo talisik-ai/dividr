@@ -53,6 +53,11 @@ const config: ForgeConfig = {
       /^\/\.env\//,
       /^\/requirements\.txt$/,
       /^\/setup-python\.(bat|sh)$/,
+      // Python venv inside src/backend/python (development only)
+      /^\/src\/backend\/python\/venv\//,
+      /^\/src\/backend\/python\/\.venv\//,
+      /^\/src\/backend\/python\/dividr-tools-bin\//,
+      /^\/src\/backend\/python\/.*\.zip$/,
 
       // Public assets that aren't needed in production
       /^\/public\/sprite-sheets\//,

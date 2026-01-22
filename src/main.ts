@@ -42,6 +42,10 @@ import {
   verifyInstallation,
 } from './backend/runtime/runtimeDownloadManager';
 
+// Import file I/O manager for controlled concurrency
+import { backgroundTaskQueue } from './backend/io/BackgroundTaskQueue';
+import { fileIOManager } from './backend/io/FileIOManager';
+
 // Backward compatible type alias
 type WhisperProgress = MediaToolsProgress;
 
@@ -903,10 +907,10 @@ ipcMain.handle(
       // Create a unique output directory for extracted audio files
       const audioOutputDir =
         outputDir || path.join(os.tmpdir(), 'dividr-audio-extracts');
-      if (!fs.existsSync(audioOutputDir)) {
-        fs.mkdirSync(audioOutputDir, { recursive: true });
-        console.log('📁 Created audio extraction directory:', audioOutputDir);
-      }
+
+      // Use fileIOManager for directory creation with EMFILE protection
+      await fileIOManager.mkdir(audioOutputDir, 'normal');
+      console.log('📁 Audio extraction directory ready:', audioOutputDir);
 
       // Generate unique filename for extracted audio
       const videoBaseName = path.basename(videoPath, path.extname(videoPath));
@@ -960,8 +964,28 @@ ipcMain.handle(
           if (code === 0) {
             try {
               // Verify that the audio file was created and has content
-              const stats = fs.statSync(audioOutputPath);
-              if (stats.size > 0) {
+              // Use async stat with retry for EMFILE protection
+              let stats: fs.Stats | null = null;
+              let lastError: Error | null = null;
+
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                  stats = fs.statSync(audioOutputPath);
+                  break;
+                } catch (statErr) {
+                  lastError = statErr as Error;
+                  if (isEMFILEError(statErr) && attempt < 3) {
+                    console.warn(
+                      `⚠️ EMFILE during audio file verification, retry ${attempt}/3`,
+                    );
+                    await new Promise((r) => setTimeout(r, 500 * attempt));
+                  } else {
+                    throw statErr;
+                  }
+                }
+              }
+
+              if (stats && stats.size > 0) {
                 // Create preview URL for the extracted audio
                 // Use the same logic as the create-preview-url handler
                 const previewUrl = `http://localhost:${MEDIA_SERVER_PORT}/${encodeURIComponent(audioOutputPath)}`;
@@ -988,14 +1012,28 @@ ipcMain.handle(
                 });
               }
             } catch (statError) {
+              const errorMessage =
+                statError instanceof Error
+                  ? statError.message
+                  : 'Unknown error';
               console.error(
                 '❌ Failed to verify extracted audio file:',
-                statError,
+                errorMessage,
               );
-              resolve({
-                success: false,
-                error: `Audio extraction failed: ${statError.message}`,
-              });
+
+              // Provide helpful EMFILE message
+              if (isEMFILEError(statError)) {
+                resolve({
+                  success: false,
+                  error:
+                    'System file limit reached during audio verification. Please try again.',
+                });
+              } else {
+                resolve({
+                  success: false,
+                  error: `Audio extraction failed: ${errorMessage}`,
+                });
+              }
             }
           } else {
             console.error('❌ Audio extraction failed with exit code:', code);
@@ -1049,21 +1087,29 @@ ipcMain.handle(
       };
     }
 
-    // Ensure output directory exists
+    // Ensure output directory exists using fileIOManager for EMFILE protection
     const absoluteOutputDir = path.isAbsolute(outputDir)
       ? outputDir
       : path.resolve(outputDir);
 
     try {
-      if (!fs.existsSync(absoluteOutputDir)) {
-        fs.mkdirSync(absoluteOutputDir, { recursive: true });
-        console.log('📁 Created output directory:', absoluteOutputDir);
-      }
+      await fileIOManager.mkdir(absoluteOutputDir, 'high');
+      console.log('📁 Output directory ready:', absoluteOutputDir);
     } catch (dirError) {
-      console.error('❌ Failed to create output directory:', dirError);
+      const errorMessage =
+        dirError instanceof Error ? dirError.message : 'Unknown error';
+      console.error('❌ Failed to create output directory:', errorMessage);
+
+      if (isEMFILEError(dirError)) {
+        return {
+          success: false,
+          error: 'System file limit reached. Please wait and try again.',
+        };
+      }
+
       return {
         success: false,
-        error: `Failed to create output directory: ${dirError.message}`,
+        error: `Failed to create output directory: ${errorMessage}`,
       };
     }
 
@@ -1251,22 +1297,14 @@ async function processSpriteSheetsInBackground(
   jobId: string,
   job: SpriteSheetJob,
 ) {
-  const path = require('path');
-  const fs = require('fs');
-
   try {
-    // Ensure output directory exists
+    // Ensure output directory exists using fileIOManager for EMFILE protection
     const absoluteOutputDir = path.isAbsolute(job.outputDir)
       ? job.outputDir
       : path.resolve(job.outputDir);
 
-    if (!fs.existsSync(absoluteOutputDir)) {
-      fs.mkdirSync(absoluteOutputDir, { recursive: true });
-      console.log(
-        '📁 Created sprite sheet output directory:',
-        absoluteOutputDir,
-      );
-    }
+    await fileIOManager.mkdir(absoluteOutputDir, 'normal');
+    console.log('📁 Sprite sheet output directory ready:', absoluteOutputDir);
 
     // Process each command sequentially
     for (let i = 0; i < job.commands.length; i++) {
@@ -1412,15 +1450,34 @@ async function processSpriteSheetsInBackground(
         stage: 'Completed',
       };
 
-      // List generated files
+      // List generated files with EMFILE retry
       try {
-        const outputFiles = fs
-          .readdirSync(absoluteOutputDir)
-          .filter(
-            (file: string) =>
-              file.startsWith('sprite_') && file.endsWith('.jpg'),
-          )
-          .sort();
+        let outputFiles: string[] = [];
+        let lastError: Error | null = null;
+
+        // Retry logic for EMFILE protection
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            outputFiles = fs
+              .readdirSync(absoluteOutputDir)
+              .filter(
+                (file: string) =>
+                  file.startsWith('sprite_') && file.endsWith('.jpg'),
+              )
+              .sort();
+            break;
+          } catch (err) {
+            lastError = err as Error;
+            if (isEMFILEError(err) && attempt < 3) {
+              console.warn(
+                `⚠️ EMFILE listing sprite sheet files, retry ${attempt}/3`,
+              );
+              await new Promise((r) => setTimeout(r, 500 * attempt));
+            } else {
+              throw err;
+            }
+          }
+        }
 
         console.log(
           `✅ Generated ${outputFiles.length} sprite sheet files for job ${jobId}`,
@@ -1435,7 +1492,12 @@ async function processSpriteSheetsInBackground(
           });
         }
       } catch (listError) {
-        console.error('❌ Error listing sprite sheet output files:', listError);
+        const errorMessage =
+          listError instanceof Error ? listError.message : 'Unknown error';
+        console.error(
+          '❌ Error listing sprite sheet output files:',
+          errorMessage,
+        );
       }
 
       activeSpriteSheetJobs.delete(jobId);
@@ -1472,7 +1534,55 @@ ipcMain.handle('cancel-ffmpeg', async () => {
   }
 });
 
+// Helper function to check for EMFILE errors
+function isEMFILEError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const nodeError = error as NodeJS.ErrnoException;
+    return (
+      nodeError.code === 'EMFILE' ||
+      nodeError.code === 'ENFILE' ||
+      error.message.includes('too many open files')
+    );
+  }
+  return false;
+}
+
+// Helper function to write file with EMFILE retry
+async function writeFileWithRetry(
+  filePath: string,
+  data: Buffer,
+  maxRetries = 3,
+): Promise<void> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await fileIOManager.writeFile(filePath, data, {
+        priority: 'high',
+        createDir: true,
+      });
+      return;
+    } catch (error) {
+      lastError = error as Error;
+      if (isEMFILEError(error) && attempt < maxRetries) {
+        console.warn(
+          `⚠️ EMFILE error writing ${filePath}, retry ${attempt}/${maxRetries}`,
+        );
+        // Exponential backoff
+        await new Promise((resolve) =>
+          setTimeout(resolve, 500 * Math.pow(2, attempt - 1)),
+        );
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError || new Error('Write failed after retries');
+}
+
 // IPC Handler for processing dropped files by writing them to temp location
+// Uses controlled concurrency to prevent EMFILE errors
 ipcMain.handle(
   'process-dropped-files',
   async (
@@ -1486,122 +1596,251 @@ ipcMain.handle(
   ) => {
     try {
       console.log(
-        '🎯 Processing dropped files in main process:',
-        fileBuffers.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+        `🎯 Processing ${fileBuffers.length} dropped files in main process (controlled concurrency)`,
       );
 
       const tempDir = path.join(os.tmpdir(), 'dividr-uploads');
 
-      // Ensure temp directory exists
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
-      }
+      // Ensure temp directory exists using the file IO manager
+      await fileIOManager.mkdir(tempDir, 'high');
 
-      const processedFiles = [];
+      const processedFiles: Array<{
+        name: string;
+        originalName: string;
+        type: 'video' | 'audio' | 'image';
+        size: number;
+        extension: string;
+        path: string;
+        hasPath: boolean;
+        isTemporary: boolean;
+      }> = [];
 
-      for (const fileData of fileBuffers) {
-        // Create a unique filename to avoid conflicts
-        const timestamp = Date.now();
-        const random = Math.random().toString(36).substring(2, 8);
-        const ext = path.extname(fileData.name);
-        const baseName = path.basename(fileData.name, ext);
-        const uniqueFileName = `${baseName}_${timestamp}_${random}${ext}`;
-        const tempFilePath = path.join(tempDir, uniqueFileName);
+      const errors: string[] = [];
 
-        // Write the file buffer to temp location
-        const buffer = Buffer.from(fileData.buffer);
-        fs.writeFileSync(tempFilePath, buffer);
+      // Process files in batches to prevent EMFILE
+      const BATCH_SIZE = 3;
+      const totalFiles = fileBuffers.length;
 
-        // Determine file type based on extension
-        const extension = ext.toLowerCase().slice(1);
-        let type: 'video' | 'audio' | 'image' = 'video';
-        if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(extension)) {
-          type = 'audio';
-        } else if (
-          ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'].includes(
-            extension,
-          )
-        ) {
-          type = 'image';
-        }
-
-        processedFiles.push({
-          name: fileData.name,
-          originalName: fileData.name,
-          type,
-          size: fileData.size,
-          extension,
-          path: tempFilePath,
-          hasPath: true,
-          isTemporary: true,
-        });
+      for (
+        let batchStart = 0;
+        batchStart < totalFiles;
+        batchStart += BATCH_SIZE
+      ) {
+        const batchEnd = Math.min(batchStart + BATCH_SIZE, totalFiles);
+        const batch = fileBuffers.slice(batchStart, batchEnd);
 
         console.log(
-          `📁 Wrote temporary file: ${fileData.name} -> ${tempFilePath}`,
+          `📁 Processing batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(totalFiles / BATCH_SIZE)} (files ${batchStart + 1}-${batchEnd} of ${totalFiles})`,
         );
+
+        // Process batch in parallel (within concurrency limits)
+        const batchPromises = batch.map(async (fileData, batchIndex) => {
+          const globalIndex = batchStart + batchIndex;
+
+          try {
+            // Create a unique filename to avoid conflicts
+            const timestamp = Date.now();
+            const random = Math.random().toString(36).substring(2, 8);
+            const ext = path.extname(fileData.name);
+            const baseName = path.basename(fileData.name, ext);
+            const uniqueFileName = `${baseName}_${timestamp}_${random}${ext}`;
+            const tempFilePath = path.join(tempDir, uniqueFileName);
+
+            // Write the file buffer using controlled I/O manager
+            const buffer = Buffer.from(fileData.buffer);
+            await writeFileWithRetry(tempFilePath, buffer);
+
+            // Determine file type based on extension
+            const extension = ext.toLowerCase().slice(1);
+            let type: 'video' | 'audio' | 'image' = 'video';
+            if (
+              ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(extension)
+            ) {
+              type = 'audio';
+            } else if (
+              ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'].includes(
+                extension,
+              )
+            ) {
+              type = 'image';
+            }
+
+            console.log(
+              `✅ [${globalIndex + 1}/${totalFiles}] Wrote: ${fileData.name} -> ${tempFilePath}`,
+            );
+
+            return {
+              success: true as const,
+              file: {
+                name: fileData.name,
+                originalName: fileData.name,
+                type,
+                size: fileData.size,
+                extension,
+                path: tempFilePath,
+                hasPath: true,
+                isTemporary: true,
+              },
+            };
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown error';
+            console.error(
+              `❌ [${globalIndex + 1}/${totalFiles}] Failed to write: ${fileData.name}:`,
+              errorMessage,
+            );
+
+            return {
+              success: false as const,
+              error: `Failed to process ${fileData.name}: ${errorMessage}`,
+            };
+          }
+        });
+
+        // Wait for batch to complete
+        const batchResults = await Promise.all(batchPromises);
+
+        // Collect results
+        for (const result of batchResults) {
+          if (result.success) {
+            processedFiles.push(result.file);
+          } else {
+            errors.push(result.error);
+          }
+        }
+
+        // Small delay between batches to allow system to recover
+        if (batchEnd < totalFiles) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
       }
 
-      return { success: true, files: processedFiles };
+      // Log file I/O stats
+      const stats = fileIOManager.getStats();
+      console.log(
+        `📊 File I/O Stats - Completed: ${stats.completedOperations}, Failed: ${stats.failedOperations}, EMFILE errors: ${stats.emfileErrors}`,
+      );
+
+      if (processedFiles.length === 0 && errors.length > 0) {
+        return {
+          success: false,
+          error: errors.join('; '),
+          files: [],
+        };
+      }
+
+      return {
+        success: true,
+        files: processedFiles,
+        errors: errors.length > 0 ? errors : undefined,
+        stats: {
+          total: totalFiles,
+          processed: processedFiles.length,
+          failed: errors.length,
+        },
+      };
     } catch (error) {
       console.error('Failed to process dropped files:', error);
-      return { success: false, error: error.message };
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, error: errorMessage };
     }
   },
 );
 
-// IPC Handler for cleaning up temporary files
+// IPC Handler for cleaning up temporary files with controlled concurrency
 ipcMain.handle('cleanup-temp-files', async (event, filePaths: string[]) => {
   try {
     let cleanedCount = 0;
-    for (const filePath of filePaths) {
-      try {
-        if (fs.existsSync(filePath) && filePath.includes('dividr-uploads')) {
-          fs.unlinkSync(filePath);
-          cleanedCount++;
-          console.log(`🗑️ Cleaned up temporary file: ${filePath}`);
+    const errors: string[] = [];
+
+    // Process deletions in batches to avoid EMFILE
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+      const batch = filePaths.slice(i, i + BATCH_SIZE);
+
+      const batchPromises = batch.map(async (filePath) => {
+        try {
+          if (
+            fileIOManager.exists(filePath) &&
+            filePath.includes('dividr-uploads')
+          ) {
+            await fileIOManager.deleteFile(filePath, 'low');
+            console.log(`🗑️ Cleaned up temporary file: ${filePath}`);
+            return true;
+          }
+          return false;
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error';
+          console.warn(`⚠️ Failed to cleanup file ${filePath}:`, errorMessage);
+          errors.push(`${path.basename(filePath)}: ${errorMessage}`);
+          return false;
         }
-      } catch (error) {
-        console.warn(`⚠️ Failed to cleanup file ${filePath}:`, error);
-      }
+      });
+
+      const results = await Promise.all(batchPromises);
+      cleanedCount += results.filter(Boolean).length;
     }
-    return { success: true, cleanedCount };
+
+    return {
+      success: true,
+      cleanedCount,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   } catch (error) {
     console.error('Failed to cleanup temporary files:', error);
-    return { success: false, error: error.message };
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: errorMessage };
   }
 });
 
-// IPC Handler for reading file content
+// IPC Handler for reading file content with EMFILE protection
 ipcMain.handle('read-file', async (event, filePath: string) => {
   try {
     console.log(`📖 Reading file content from: ${filePath}`);
 
-    if (!fs.existsSync(filePath)) {
+    if (!fileIOManager.exists(filePath)) {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    // Read file content as UTF-8 text
-    const content = fs.readFileSync(filePath, 'utf-8');
+    // Read file content as UTF-8 text using controlled I/O manager
+    const content = await fileIOManager.readFile(filePath, {
+      encoding: 'utf-8',
+      priority: 'normal',
+    });
     console.log(`📄 Successfully read file, content length: ${content.length}`);
 
     return content;
   } catch (error) {
-    console.error(`❌ Failed to read file ${filePath}:`, error);
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    console.error(`❌ Failed to read file ${filePath}:`, errorMessage);
+
+    // Provide helpful error message for EMFILE
+    if (isEMFILEError(error)) {
+      throw new Error(
+        `System file limit reached while reading ${path.basename(filePath)}. Please wait and try again.`,
+      );
+    }
+
     throw error;
   }
 });
 
-// IPC Handler for reading file as ArrayBuffer (for validation)
+// IPC Handler for reading file as ArrayBuffer (for validation) with EMFILE protection
 ipcMain.handle('read-file-as-buffer', async (event, filePath: string) => {
   try {
     console.log(`📖 Reading file as buffer from: ${filePath}`);
 
-    if (!fs.existsSync(filePath)) {
+    if (!fileIOManager.exists(filePath)) {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    // Read file as Buffer
-    const buffer = fs.readFileSync(filePath);
+    // Read file as Buffer using controlled I/O manager
+    const buffer = await fileIOManager.readFileAsBuffer(filePath, 'normal');
     console.log(
       `📄 Successfully read file buffer, size: ${buffer.length} bytes`,
     );
@@ -1612,9 +1851,57 @@ ipcMain.handle('read-file-as-buffer', async (event, filePath: string) => {
       buffer.byteOffset + buffer.byteLength,
     );
   } catch (error) {
-    console.error(`❌ Failed to read file as buffer ${filePath}:`, error);
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    console.error(
+      `❌ Failed to read file as buffer ${filePath}:`,
+      errorMessage,
+    );
+
+    // Provide helpful error message for EMFILE
+    if (isEMFILEError(error)) {
+      throw new Error(
+        `System file limit reached while reading ${path.basename(filePath)}. Please wait and try again.`,
+      );
+    }
+
     throw error;
   }
+});
+
+// IPC Handler for getting file I/O and background task queue status
+ipcMain.handle('get-io-status', async () => {
+  const fileIOStats = fileIOManager.getStats();
+  const taskQueueStats = backgroundTaskQueue.getStats();
+
+  return {
+    fileIO: {
+      activeReads: fileIOStats.activeReads,
+      activeWrites: fileIOStats.activeWrites,
+      queuedReads: fileIOStats.queuedReads,
+      queuedWrites: fileIOStats.queuedWrites,
+      completedOperations: fileIOStats.completedOperations,
+      failedOperations: fileIOStats.failedOperations,
+      emfileErrors: fileIOStats.emfileErrors,
+      isUnderHeavyLoad: fileIOManager.isUnderHeavyLoad(),
+    },
+    taskQueue: {
+      pending: taskQueueStats.pending,
+      running: taskQueueStats.running,
+      completed: taskQueueStats.completed,
+      failed: taskQueueStats.failed,
+      cancelled: taskQueueStats.cancelled,
+      byType: taskQueueStats.byType,
+      isIdle: backgroundTaskQueue.isIdle(),
+    },
+  };
+});
+
+// IPC Handler for cancelling background tasks for a specific media
+ipcMain.handle('cancel-media-tasks', async (event, mediaId: string) => {
+  const cancelledCount = backgroundTaskQueue.cancelTasksForMedia(mediaId);
+  console.log(`🛑 Cancelled ${cancelledCount} tasks for media ${mediaId}`);
+  return { success: true, cancelledCount };
 });
 
 // IPC Handler for creating preview URLs from file paths
@@ -3014,35 +3301,92 @@ ipcMain.handle('transcode:get-active-jobs', async () => {
   return { success: true, jobs };
 });
 
-// IPC Handler to cleanup old transcode files
+// IPC Handler to cleanup old transcode files with EMFILE protection
 ipcMain.handle(
   'transcode:cleanup',
   async (event, maxAgeMs: number = 24 * 60 * 60 * 1000) => {
     console.log('🧹 MAIN PROCESS: transcode:cleanup handler called');
 
     try {
-      const files = fs.readdirSync(transcodeOutputDir);
-      const now = Date.now();
-      let cleaned = 0;
-
-      for (const file of files) {
-        const filePath = path.join(transcodeOutputDir, file);
-        const stats = fs.statSync(filePath);
-        const age = now - stats.mtimeMs;
-
-        if (age > maxAgeMs) {
-          fs.unlinkSync(filePath);
-          cleaned++;
+      // Read directory with retry for EMFILE protection
+      let files: string[] = [];
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          files = fs.readdirSync(transcodeOutputDir);
+          break;
+        } catch (err) {
+          if (isEMFILEError(err) && attempt < 3) {
+            console.warn(`⚠️ EMFILE reading transcode dir, retry ${attempt}/3`);
+            await new Promise((r) => setTimeout(r, 500 * attempt));
+          } else {
+            throw err;
+          }
         }
       }
 
+      const now = Date.now();
+      let cleaned = 0;
+      const errors: string[] = [];
+
+      // Process deletions in batches to prevent EMFILE
+      const BATCH_SIZE = 5;
+      const filesToDelete: string[] = [];
+
+      // First pass: identify files to delete
+      for (const file of files) {
+        const filePath = path.join(transcodeOutputDir, file);
+        try {
+          const stats = fs.statSync(filePath);
+          const age = now - stats.mtimeMs;
+          if (age > maxAgeMs) {
+            filesToDelete.push(filePath);
+          }
+        } catch (statErr) {
+          // Skip files we can't stat
+          console.warn(`⚠️ Could not stat ${file}:`, statErr);
+        }
+      }
+
+      // Second pass: delete in batches
+      for (let i = 0; i < filesToDelete.length; i += BATCH_SIZE) {
+        const batch = filesToDelete.slice(i, i + BATCH_SIZE);
+        const batchPromises = batch.map(async (filePath) => {
+          try {
+            await fileIOManager.deleteFile(filePath, 'low');
+            return true;
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Unknown';
+            errors.push(`${path.basename(filePath)}: ${errorMessage}`);
+            return false;
+          }
+        });
+
+        const results = await Promise.all(batchPromises);
+        cleaned += results.filter(Boolean).length;
+      }
+
       console.log(`   Cleaned ${cleaned} old transcode files`);
-      return { success: true, cleaned };
+      return {
+        success: true,
+        cleaned,
+        errors: errors.length > 0 ? errors : undefined,
+      };
     } catch (error) {
-      console.error('   Error cleaning up:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      console.error('   Error cleaning up:', errorMessage);
+
+      if (isEMFILEError(error)) {
+        return {
+          success: false,
+          error:
+            'System file limit reached during cleanup. Please try again later.',
+        };
+      }
+
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: errorMessage,
       };
     }
   },

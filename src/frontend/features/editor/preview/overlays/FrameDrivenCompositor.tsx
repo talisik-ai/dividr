@@ -226,23 +226,42 @@ export const FrameDrivenCompositor = forwardRef<
         const scaleY = canvasHeight / baseVideoHeight;
         const scale = Math.min(scaleX, scaleY);
 
-        const drawWidth = transform.width * scale * transform.scale;
-        const drawHeight = transform.height * scale * transform.scale;
+        // Validate transform values to prevent NaN/Infinity breaking canvas state
+        const safeScale = Number.isFinite(transform.scale)
+          ? transform.scale
+          : 1;
+        const safeWidth = Number.isFinite(transform.width)
+          ? transform.width
+          : baseVideoWidth;
+        const safeHeight = Number.isFinite(transform.height)
+          ? transform.height
+          : baseVideoHeight;
+        const safeX = Number.isFinite(transform.x) ? transform.x : 0;
+        const safeY = Number.isFinite(transform.y) ? transform.y : 0;
+        const safeRotation = Number.isFinite(transform.rotation)
+          ? transform.rotation
+          : 0;
+        const safeOpacity = Number.isFinite(opacity)
+          ? Math.max(0, Math.min(1, opacity))
+          : 1;
+
+        const drawWidth = safeWidth * scale * safeScale;
+        const drawHeight = safeHeight * scale * safeScale;
         const centerX = canvasWidth / 2;
         const centerY = canvasHeight / 2;
-        const offsetX = transform.x * (canvasWidth / 2);
-        const offsetY = transform.y * (canvasHeight / 2);
+        const offsetX = safeX * (canvasWidth / 2);
+        const offsetY = safeY * (canvasHeight / 2);
         const drawX = centerX + offsetX - drawWidth / 2;
         const drawY = centerY + offsetY - drawHeight / 2;
 
         ctx.save();
-        ctx.globalAlpha = opacity;
+        ctx.globalAlpha = safeOpacity;
 
-        if (transform.rotation !== 0) {
+        if (safeRotation !== 0) {
           const rotationCenterX = drawX + drawWidth / 2;
           const rotationCenterY = drawY + drawHeight / 2;
           ctx.translate(rotationCenterX, rotationCenterY);
-          ctx.rotate((transform.rotation * Math.PI) / 180);
+          ctx.rotate((safeRotation * Math.PI) / 180);
           ctx.translate(-rotationCenterX, -rotationCenterY);
         }
 
@@ -460,20 +479,41 @@ export const FrameDrivenCompositor = forwardRef<
       }
     }, [isPlaying, currentFrame, compositeFrame, onFrameRendered]);
 
-    // Re-render when tracks change while paused (for transform updates)
+    // Re-render when tracks change (for transform updates)
+    // CRITICAL: This must work during BOTH playback AND when paused
+    // During playback, track changes (like rotation) must be reflected immediately
+    // Without this, Properties Panel rotation updates would not render until playback stops
     const prevTracksRef = useRef(tracks);
+    const prevTracksJsonRef = useRef<string>('');
     useEffect(() => {
-      if (isPlaying) {
-        prevTracksRef.current = tracks;
+      // Quick reference check first
+      if (prevTracksRef.current === tracks) {
         return;
       }
+      prevTracksRef.current = tracks;
 
-      // Check if tracks actually changed (not just reference)
-      if (prevTracksRef.current !== tracks) {
-        prevTracksRef.current = tracks;
+      // For transform changes (position, scale, rotation), we need to detect actual changes
+      // since the track reference changes on any store update
+      // Compare relevant transform properties to detect actual visual changes
+      const currentTracksTransformKey = tracks
+        .filter((t) => t.type === 'video' && t.visible)
+        .map((t) => {
+          const transform = t.textTransform;
+          const x = transform?.x ?? 0;
+          const y = transform?.y ?? 0;
+          const scale = transform?.scale ?? 1;
+          const rotation = transform?.rotation ?? 0;
+          return `${t.id}:${x},${y},${scale},${rotation}`;
+        })
+        .join('|');
+
+      if (prevTracksJsonRef.current !== currentTracksTransformKey) {
+        prevTracksJsonRef.current = currentTracksTransformKey;
+        // Force re-composite with the latest tracks
+        // This ensures rotation changes from Properties Panel are reflected immediately
         compositeFrame(currentFrame, false);
       }
-    }, [tracks, isPlaying, currentFrame, compositeFrame]);
+    }, [tracks, currentFrame, compositeFrame]);
 
     // Playback render loop
     useEffect(() => {

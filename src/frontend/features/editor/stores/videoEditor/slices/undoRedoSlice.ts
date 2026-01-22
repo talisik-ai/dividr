@@ -43,6 +43,14 @@ export interface UndoableState {
       hasGlow: boolean;
       opacity: number;
     };
+    // Global subtitle position for transform undo/redo support
+    globalSubtitlePosition: {
+      x: number;
+      y: number;
+      scale: number;
+      width: number;
+      height: number;
+    };
   };
 }
 
@@ -81,6 +89,7 @@ export interface UndoRedoSlice {
   // Batch transaction grouping
   beginGroup: (actionName: string) => void;
   endGroup: () => void;
+  forceEndGroup: () => void; // Emergency cleanup for stuck grouping state
 
   // Internal helpers
   captureUndoableState: () => UndoableState;
@@ -136,6 +145,13 @@ export const createUndoRedoSlice: StateCreator<
         globalControls: JSON.parse(
           JSON.stringify(state.textStyle?.globalControls || {}),
         ),
+        globalSubtitlePosition: {
+          x: state.textStyle?.globalSubtitlePosition?.x ?? 0,
+          y: state.textStyle?.globalSubtitlePosition?.y ?? 0.7,
+          scale: state.textStyle?.globalSubtitlePosition?.scale ?? 1,
+          width: state.textStyle?.globalSubtitlePosition?.width ?? 0,
+          height: state.textStyle?.globalSubtitlePosition?.height ?? 0,
+        },
       },
     };
   },
@@ -167,6 +183,13 @@ export const createUndoRedoSlice: StateCreator<
         globalControls: JSON.parse(
           JSON.stringify(undoableState.textStyle.globalControls),
         ),
+        globalSubtitlePosition: {
+          x: undoableState.textStyle.globalSubtitlePosition?.x ?? 0,
+          y: undoableState.textStyle.globalSubtitlePosition?.y ?? 0.7,
+          scale: undoableState.textStyle.globalSubtitlePosition?.scale ?? 1,
+          width: undoableState.textStyle.globalSubtitlePosition?.width ?? 0,
+          height: undoableState.textStyle.globalSubtitlePosition?.height ?? 0,
+        },
       },
     }));
   },
@@ -210,9 +233,23 @@ export const createUndoRedoSlice: StateCreator<
   beginGroup: (actionName: string) => {
     const state = get() as any;
 
-    // Don't start a group if we're already in one or not recording
-    if (state.isGrouping || !state.isRecording) {
-      console.warn('⚠️ Cannot begin group: already grouping or not recording');
+    // If already grouping, force end the previous group to prevent stuck state
+    // This can happen if a component unmounts during a drag operation
+    if (state.isGrouping) {
+      console.warn(
+        `⚠️ Already grouping (${state.groupActionName}), forcing end before starting new group: ${actionName}`,
+      );
+      // Force end the previous group without recording (cleanup only)
+      set({
+        isGrouping: false,
+        groupStartState: null,
+        groupActionName: null,
+      });
+    }
+
+    // Don't start a group if not recording
+    if (!state.isRecording) {
+      console.warn('⚠️ Cannot begin group: not recording');
       return;
     }
 
@@ -283,6 +320,24 @@ export const createUndoRedoSlice: StateCreator<
         `⏭️ End group: ${state.groupActionName} (no state change, not recorded)`,
       );
     }
+  },
+
+  forceEndGroup: () => {
+    const state = get() as any;
+
+    if (!state.isGrouping) {
+      return; // Nothing to clean up
+    }
+
+    console.warn(
+      `⚠️ Force ending group: ${state.groupActionName} (cleanup from stuck state)`,
+    );
+
+    set({
+      isGrouping: false,
+      groupStartState: null,
+      groupActionName: null,
+    });
   },
 
   undo: () => {

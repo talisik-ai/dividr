@@ -25,6 +25,7 @@ interface TextTransformBoundaryProps {
       width?: number;
       height?: number;
     },
+    options?: { skipRecord?: boolean },
   ) => void;
   onSelect: (trackId: string) => void;
   onTextUpdate?: (trackId: string, newText: string) => void;
@@ -123,6 +124,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const endDraggingTransform = useVideoEditorStore(
     (state) => state.endDraggingTransform,
   );
+
   const [isEditing, setIsEditing] = useState(false);
   const [activeHandle, setActiveHandle] = useState<HandleType>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
@@ -194,12 +196,17 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
         x: rawTransform.x,
         y: rawTransform.y,
       });
-      onTransformUpdate(track.id, {
-        x: normalized.x,
-        y: normalized.y,
-        width: rawTransform.width,
-        height: rawTransform.height,
-      });
+      // Skip recording for migration - it's a system-generated coordinate fix
+      onTransformUpdate(
+        track.id,
+        {
+          x: normalized.x,
+          y: normalized.y,
+          width: rawTransform.width,
+          height: rawTransform.height,
+        },
+        { skipRecord: true },
+      );
       return {
         ...rawTransform,
         x: normalized.x,
@@ -298,6 +305,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       setIsDragging(false);
       setDragStart(null);
 
+      // CRITICAL: End any active transform drag before entering edit mode
+      // This ensures the undo group is properly closed before text editing starts
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
+
       // If not selected, select first then enter edit mode
       if (!isSelected) {
         onSelect(track.id);
@@ -310,7 +324,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       // Enter edit mode on double-click, select all text for immediate typing
       enterEditMode(true);
     },
-    [isSelected, track.id, onSelect, enterEditMode],
+    [isSelected, track.id, onSelect, enterEditMode, endDraggingTransform],
   );
 
   // Handle single click - enters edit mode ONLY when text edit mode is active
@@ -321,6 +335,13 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
       e.stopPropagation();
       e.preventDefault();
+
+      // End any active transform drag before entering edit mode
+      // This ensures any undo group is properly closed
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
 
       if (!isSelected) {
         onSelect(track.id);
@@ -335,6 +356,7 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
       isSelected,
       track.id,
       onSelect,
+      endDraggingTransform,
       enterEditMode,
       interactionMode,
     ],
@@ -439,20 +461,25 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
 
       // If user has defined width via left/right handles, don't auto-update width
       // But still update height so container adjusts to text reflow
+      // IMPORTANT: Pass skipRecord: true to prevent these automatic dimension
+      // recalculations from creating undo entries
       if (hasUserDefinedWidthRef.current) {
         // Only update height when user has defined width
         if (heightChanged) {
-          onTransformUpdate(track.id, {
-            height: videoSpaceHeight,
-          });
+          onTransformUpdate(
+            track.id,
+            { height: videoSpaceHeight },
+            { skipRecord: true },
+          );
         }
       } else {
         // Normal behavior: update both width and height
         if (widthChanged || heightChanged) {
-          onTransformUpdate(track.id, {
-            width: videoSpaceWidth,
-            height: videoSpaceHeight,
-          });
+          onTransformUpdate(
+            track.id,
+            { width: videoSpaceWidth, height: videoSpaceHeight },
+            { skipRecord: true },
+          );
         }
       }
     }

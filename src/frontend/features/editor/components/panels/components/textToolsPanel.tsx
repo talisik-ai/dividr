@@ -18,6 +18,8 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   const currentFrame = useVideoEditorStore(
     (state) => state.timeline.currentFrame,
   );
+  const beginGroup = useVideoEditorStore((state) => state.beginGroup);
+  const endGroup = useVideoEditorStore((state) => state.endGroup);
 
   // Get font display names
   const recentFontItems = recentFonts
@@ -56,20 +58,26 @@ export const TextToolsPanel: React.FC<CustomPanelProps> = ({ className }) => {
   };
 
   const handleAddHeading = async () => {
+    beginGroup('Add Heading Text');
     try {
       await addTextClip('heading', currentFrame);
       console.log('✅ Added heading text clip at frame:', currentFrame);
     } catch (error) {
       console.error('❌ Error adding heading text clip:', error);
+    } finally {
+      endGroup();
     }
   };
 
   const handleAddBody = async () => {
+    beginGroup('Add Body Text');
     try {
       await addTextClip('body', currentFrame);
       console.log('✅ Added body text clip at frame:', currentFrame);
     } catch (error) {
       console.error('❌ Error adding body text clip:', error);
+    } finally {
+      endGroup();
     }
   };
 

@@ -65,6 +65,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFileAsBuffer: (filePath: string) =>
     ipcRenderer.invoke('read-file-as-buffer', filePath),
 
+  // File I/O and background task queue status
+  getIOStatus: () => ipcRenderer.invoke('get-io-status'),
+  cancelMediaTasks: (mediaId: string) =>
+    ipcRenderer.invoke('cancel-media-tasks', mediaId),
+
   // FFmpeg API
   ffmpegRun: (job: VideoEditJob) => ipcRenderer.invoke('ffmpegRun', job),
   runFfmpeg: (job: VideoEditJob) => ipcRenderer.invoke('run-ffmpeg', job),

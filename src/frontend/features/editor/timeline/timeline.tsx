@@ -71,6 +71,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
       x: number;
       y: number;
       hasMoved: boolean;
+      clearSelectionOnDrag?: boolean;
     } | null>(null);
     const lastClickTimeRef = useRef<number>(0);
     const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1442,12 +1443,20 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
 
           if (deltaX > 3 || deltaY > 3) {
             // User is dragging, activate marquee immediately
+            const shouldClearSelection =
+              marqueeStartRef.current.clearSelectionOnDrag;
             marqueeStartRef.current.hasMoved = true;
 
             // Clear any pending seek to prevent conflict
             if (clickTimeoutRef.current) {
               clearTimeout(clickTimeoutRef.current);
               clickTimeoutRef.current = null;
+            }
+
+            // NOW clear selection since user is actually creating a marquee
+            // This deferred clearing matches professional editor UX
+            if (shouldClearSelection) {
+              setSelectedTracks([]);
             }
 
             setMarqueeSelection({
@@ -1588,7 +1597,7 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
         onStartMarquee: (
           startX: number,
           startY: number,
-          clearSelection: boolean,
+          clearSelectionOnDrag: boolean,
         ) => {
           const currentTime = Date.now();
           const timeSinceLastClick = currentTime - lastClickTimeRef.current;
@@ -1609,9 +1618,16 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
               currentX: startX,
               currentY: startY,
             });
-            marqueeStartRef.current = { x: startX, y: startY, hasMoved: true };
+            marqueeStartRef.current = {
+              x: startX,
+              y: startY,
+              hasMoved: true,
+              clearSelectionOnDrag,
+            };
 
-            if (clearSelection) {
+            // CHANGED: Only clear selection when marquee actually activates (double-click)
+            // This matches professional editor UX where clicking timeline doesn't deselect
+            if (clearSelectionOnDrag) {
               setSelectedTracks([]);
             }
             return;
@@ -1620,11 +1636,16 @@ export const Timeline: React.FC<TimelineProps> = React.memo(
           // Store the start position but don't activate marquee yet
           // Marquee will activate only if user drags (mousemove)
           // startX and startY are already in content coordinates (include scroll offset)
-          marqueeStartRef.current = { x: startX, y: startY, hasMoved: false };
+          // CHANGED: Store clearSelectionOnDrag flag but DON'T clear selection yet
+          // Selection will only be cleared when user actually drags to create marquee
+          marqueeStartRef.current = {
+            x: startX,
+            y: startY,
+            hasMoved: false,
+            clearSelectionOnDrag,
+          };
 
-          if (clearSelection) {
-            setSelectedTracks([]);
-          }
+          // REMOVED: setSelectedTracks([]) was here - now deferred to actual marquee drag
         },
         onSelectTrack: () => {
           // This is handled by the track component itself

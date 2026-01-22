@@ -8,13 +8,33 @@ import { v4 as uuidv4 } from 'uuid';
 import { StateCreator } from 'zustand';
 import { MediaLibraryItem } from '../types';
 
-/** State for duplicate detection dialog */
+/** Duplicate detection user choice: 'use-existing' (skip) | 'import-copy' (keep both) */
+export type DuplicateChoice = 'use-existing' | 'import-copy';
+
+/** Single duplicate item for batch processing */
+export interface DuplicateItem {
+  id: string;
+  pendingFileName: string;
+  pendingFilePath?: string;
+  existingMedia: MediaLibraryItem;
+  signature: ContentSignature;
+  choice?: DuplicateChoice;
+}
+
+/** Batch duplicate detection state - for handling multiple duplicates at once */
+export interface BatchDuplicateDetectionState {
+  show: boolean;
+  duplicates: DuplicateItem[];
+  pendingResolve: ((choices: Map<string, DuplicateChoice>) => void) | null;
+}
+
+/** State for duplicate detection dialog (legacy single-file support) */
 export interface DuplicateDetectionState {
   show: boolean;
   existingMedia: MediaLibraryItem | null;
   pendingFile: File | null;
   pendingSignature: ContentSignature | null;
-  pendingResolve: ((useExisting: boolean) => void) | null;
+  pendingResolve: ((choice: DuplicateChoice) => void) | null;
 }
 
 export interface MediaLibrarySlice {
@@ -22,6 +42,7 @@ export interface MediaLibrarySlice {
   generatingSpriteSheets: Set<string>;
   generatingWaveforms: Set<string>;
   duplicateDetection: DuplicateDetectionState | null;
+  batchDuplicateDetection: BatchDuplicateDetectionState | null;
   addToMediaLibrary: (item: Omit<MediaLibraryItem, 'id'>) => string;
   removeFromMediaLibrary: (mediaId: string, force?: boolean) => void;
   updateMediaLibraryItem: (
@@ -48,7 +69,7 @@ export interface MediaLibrarySlice {
   setGeneratingWaveform: (mediaId: string, isGenerating: boolean) => void;
   generateWaveformForMedia: (mediaId: string) => Promise<boolean>;
 
-  // Duplicate detection
+  // Duplicate detection (legacy single-file)
   findDuplicateBySignature: (
     signature: ContentSignature,
   ) => MediaLibraryItem | undefined;
@@ -56,9 +77,16 @@ export interface MediaLibrarySlice {
     existingMedia: MediaLibraryItem,
     pendingFile: File,
     pendingSignature: ContentSignature,
-    resolve: (useExisting: boolean) => void,
+    resolve: (choice: DuplicateChoice) => void,
   ) => void;
   hideDuplicateDialog: () => void;
+
+  // Batch duplicate detection (multiple files at once)
+  showBatchDuplicateDialog: (
+    duplicates: DuplicateItem[],
+    resolve: (choices: Map<string, DuplicateChoice>) => void,
+  ) => void;
+  hideBatchDuplicateDialog: () => void;
 
   // Transcoding
   isTranscoding: (mediaId: string) => boolean;
@@ -82,6 +110,7 @@ export const createMediaLibrarySlice: StateCreator<
   generatingSpriteSheets: new Set<string>(),
   generatingWaveforms: new Set<string>(),
   duplicateDetection: null,
+  batchDuplicateDetection: null,
 
   findDuplicateBySignature: (signature: ContentSignature) => {
     const state = get() as any;
@@ -96,7 +125,7 @@ export const createMediaLibrarySlice: StateCreator<
     existingMedia: MediaLibraryItem,
     pendingFile: File,
     pendingSignature: ContentSignature,
-    resolve: (useExisting: boolean) => void,
+    resolve: (choice: DuplicateChoice) => void,
   ) => {
     set({
       duplicateDetection: {
@@ -111,6 +140,23 @@ export const createMediaLibrarySlice: StateCreator<
 
   hideDuplicateDialog: () => {
     set({ duplicateDetection: null });
+  },
+
+  showBatchDuplicateDialog: (
+    duplicates: DuplicateItem[],
+    resolve: (choices: Map<string, DuplicateChoice>) => void,
+  ) => {
+    set({
+      batchDuplicateDetection: {
+        show: true,
+        duplicates,
+        pendingResolve: resolve,
+      },
+    });
+  },
+
+  hideBatchDuplicateDialog: () => {
+    set({ batchDuplicateDetection: null });
   },
 
   addToMediaLibrary: (itemData) => {
@@ -355,13 +401,13 @@ export const createMediaLibrarySlice: StateCreator<
       return true; // Not an error, just not applicable
     }
 
-    // Skip if waveform already exists
-    if (mediaItem.waveform?.success) {
+    // Skip if waveform already exists and has valid peaks
+    if (mediaItem.waveform?.success && mediaItem.waveform?.peaks?.length > 0) {
       console.log(`Waveform already exists for: ${mediaItem.name}`);
       return true;
     }
 
-    // Skip if already generating
+    // Skip if already generating (check both store state and active job)
     if (get().isGeneratingWaveform(mediaId)) {
       console.log(`Waveform already generating for: ${mediaItem.name}`);
       return true;
@@ -394,6 +440,12 @@ export const createMediaLibrarySlice: StateCreator<
       return true; // Skip but don't error
     }
 
+    // Check if waveform generator already has an active job for this path
+    if (AudioWaveformGenerator.isJobActive(audioPath)) {
+      console.log(`Waveform job already active for: ${mediaItem.name}`);
+      return true;
+    }
+
     console.log(
       `🎵 Generating waveform for media library item: ${mediaItem.name}`,
     );
@@ -404,15 +456,17 @@ export const createMediaLibrarySlice: StateCreator<
       // Mark as generating
       get().setGeneratingWaveform(mediaId, true);
 
+      // Use optimized parameters for fast generation
+      // 50 peaks/sec provides good visual quality while being fast
       const result = await AudioWaveformGenerator.generateWaveform({
         audioPath,
         duration: mediaItem.duration,
-        sampleRate: 8000, // Good balance between quality and performance
-        peaksPerSecond: 30, // 30 peaks per second for better timeline accuracy
+        sampleRate: 8000, // Low sample rate for fast processing
+        peaksPerSecond: 50, // Optimized for speed while maintaining quality
       });
 
       if (result.success) {
-        // Update media library item with waveform data
+        // Update media library item with waveform data including LOD tiers
         set((state: any) => ({
           mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
             item.id === mediaId
@@ -424,6 +478,7 @@ export const createMediaLibrarySlice: StateCreator<
                     duration: result.duration,
                     sampleRate: result.sampleRate,
                     cacheKey: result.cacheKey,
+                    lodTiers: result.lodTiers, // Include LOD tiers for efficient zoom rendering
                     generatedAt: Date.now(),
                   },
                 }
@@ -435,6 +490,9 @@ export const createMediaLibrarySlice: StateCreator<
         state.markUnsavedChanges?.();
 
         console.log(`✅ Waveform generated and cached for: ${mediaItem.name}`);
+        console.log(
+          `📈 Generated ${result.peaks.length} peaks with ${result.lodTiers?.length || 0} LOD tiers`,
+        );
         return true;
       } else {
         console.error(

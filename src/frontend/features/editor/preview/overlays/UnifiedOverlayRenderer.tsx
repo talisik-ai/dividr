@@ -81,7 +81,7 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   onSubtitleTextUpdate?: (trackId: string, newText: string) => void;
   onImageTransformUpdate: (trackId: string, transform: any) => void;
   onImageSelect: (trackId: string) => void;
-  onTextTransformUpdate: (trackId: string, transform: any) => void;
+  onTextTransformUpdate: (trackId: string, transform: any, options?: { skipRecord?: boolean }) => void;
   onTextSelect: (trackId: string) => void;
   onTextUpdate: (trackId: string, newText: string) => void;
   pendingEditTextId?: string | null;
@@ -477,6 +477,37 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
       subtitleTransform: globalSubtitlePosition,
     };
 
+    // Compute the applied style for the editable text area
+    // This ensures cursor/caret scales correctly with subtitle styling
+    const editableSubtitle = selectedSub || activeSubtitles[0];
+    const style = getTextStyleForSubtitle(
+      activeStyle,
+      editableSubtitle?.subtitleStyle,
+    );
+    const effectiveScale = renderScale * (globalSubtitlePosition.scale ?? 1);
+    const fontSize = (parseFloat(style.fontSize) || 40) * effectiveScale;
+    const appliedEditStyle: React.CSSProperties = {
+      fontSize: `${fontSize}px`,
+      fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
+      fontStyle: style.fontStyle,
+      textTransform: style.textTransform,
+      textDecoration: style.textDecoration,
+      textAlign: style.textAlign,
+      lineHeight: style.lineHeight,
+      letterSpacing: style.letterSpacing
+        ? `${parseFloat(String(style.letterSpacing)) * effectiveScale}px`
+        : undefined,
+      color: style.color,
+      padding: `${SUBTITLE_PADDING_VERTICAL * effectiveScale}px ${SUBTITLE_PADDING_HORIZONTAL * effectiveScale}px`,
+      // Text layout properties to match rendered subtitle appearance
+      // These prevent unwanted wrapping during edit mode
+      display: 'inline-block',
+      whiteSpace: 'pre',
+      wordBreak: 'keep-all',
+      overflowWrap: 'normal',
+    };
+
     return (
       <SubtitleTransformBoundary
         key="global-subtitle-transform"
@@ -504,13 +535,21 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         }}
         onSelect={() => onSubtitleSelect(activeSubtitles[0]?.id)}
         onTextUpdate={
-          selectedSub
-            ? (_, text) => onSubtitleTextUpdate?.(selectedSub.id, text)
-            : undefined
+          // CRITICAL: Do NOT use trackId from SubtitleTransformBoundary - it could be "global-subtitle-transform"
+          // which is a fake track used for unified transform, not a real subtitle track.
+          // Instead, use the actual selected subtitle ID or fall back to the first active subtitle.
+          (_, text) => {
+            const actualTrackId = selectedSub?.id || activeSubtitles[0]?.id;
+            if (actualTrackId) {
+              onSubtitleTextUpdate?.(actualTrackId, text);
+            }
+          }
         }
         onDragStateChange={onDragStateChange}
         onEditModeChange={handleEditModeChange}
         getTopElementAtPoint={getTopElementAtPoint}
+        selectedTrack={selectedSub}
+        appliedStyle={appliedEditStyle}
       >
         {activeSubtitles.map((track) =>
           renderSubtitleContent(
@@ -763,10 +802,11 @@ function renderSubtitleContent(
                 ...base,
                 ...layerStyle,
                 color: glowColor,
-                backgroundColor: style.backgroundColor,
+                backgroundColor: 'transparent',
                 opacity: 0.75,
                 filter: `blur(${glowBlurAmount}px)`,
-                boxShadow: `0 0 ${glowSpread}px ${glowColor}, 0 0 ${glowSpread * 1.5}px ${glowColor}`,
+                textShadow: `0 0 ${glowSpread}px ${glowColor}, 0 0 ${glowSpread * 1.5}px ${glowColor}`,
+                WebkitTextStroke: `${glowSpread * 0.75}px ${glowColor}`,
               }}
               aria-hidden="true"
             >
@@ -975,7 +1015,7 @@ function renderTextTrack(
   panY: number,
   interactionMode: InteractionMode | undefined,
   isTextEditMode: boolean,
-  onTransformUpdate: (id: string, t: any) => void,
+  onTransformUpdate: (id: string, t: any, options?: { skipRecord?: boolean }) => void,
   onSelect: (id: string) => void,
   onTextUpdate: (id: string, text: string) => void,
   onRotationStateChange: (r: boolean) => void,

@@ -7,7 +7,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/frontend/components/ui/select';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
@@ -37,10 +36,18 @@ import {
   RotateCcw,
   Underline,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { calculateDefaultFontSize } from '../../../preview/core/constants';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
 import { FontSelector } from '../shared/fontSelector';
+import { FONT_SIZE_PRESETS, NumericInput } from '../shared/numericInput';
 
 interface TextPropertiesProps {
   selectedTrackIds: string[];
@@ -91,6 +98,15 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
   const tracks = useVideoEditorStore((state) => state.tracks);
   const colorHistory = useVideoEditorStore((state) => state.colorHistory);
   const recentFonts = useVideoEditorStore((state) => state.recentFonts);
+  const canvasHeight = useVideoEditorStore(
+    (state) => state.preview?.canvasHeight || 720,
+  );
+
+  // Calculate resolution-aware default font size
+  const dynamicDefaultFontSize = useMemo(
+    () => calculateDefaultFontSize(canvasHeight),
+    [canvasHeight],
+  );
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
@@ -175,7 +191,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
     }
   }, [endPropertyUpdate]);
 
-  // Check if any styles have changed from default
+  // Check if any styles have changed from default (using resolution-aware font size)
   const hasStylesChanged = useMemo(() => {
     return (
       currentStyle.isBold !== DEFAULT_TEXT_STYLE.isBold ||
@@ -183,7 +199,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
       currentStyle.isUnderline !== DEFAULT_TEXT_STYLE.isUnderline ||
       currentStyle.textTransform !== DEFAULT_TEXT_STYLE.textTransform ||
       currentStyle.textAlign !== DEFAULT_TEXT_STYLE.textAlign ||
-      currentStyle.fontSize !== DEFAULT_TEXT_STYLE.fontSize ||
+      currentStyle.fontSize !== dynamicDefaultFontSize ||
       currentStyle.fillColor !== DEFAULT_TEXT_STYLE.fillColor ||
       currentStyle.strokeColor !== DEFAULT_TEXT_STYLE.strokeColor ||
       currentStyle.backgroundColor !== DEFAULT_TEXT_STYLE.backgroundColor ||
@@ -193,7 +209,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
       currentStyle.hasGlow !== DEFAULT_TEXT_STYLE.hasGlow ||
       currentStyle.opacity !== DEFAULT_TEXT_STYLE.opacity
     );
-  }, [currentStyle]);
+  }, [currentStyle, dynamicDefaultFontSize]);
 
   // Check if opacity has changed from default
   const hasOpacityChanged = useMemo(() => {
@@ -262,8 +278,12 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
   }, [isEditingText, selectedTrack.id, selectedTrack.textContent]);
 
   const handleReset = useCallback(() => {
-    updateTextStyle(DEFAULT_TEXT_STYLE);
-  }, [updateTextStyle]);
+    // Reset with resolution-aware default font size
+    updateTextStyle({
+      ...DEFAULT_TEXT_STYLE,
+      fontSize: dynamicDefaultFontSize,
+    });
+  }, [updateTextStyle, dynamicDefaultFontSize]);
 
   const handleResetOpacity = useCallback(() => {
     updateTextStyle({ opacity: 100 });
@@ -337,33 +357,19 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
             className="flex-1"
           />
 
-          <Select
-            value={String(currentStyle.fontSize)}
-            onValueChange={(value) =>
-              updateTextStyle({ fontSize: Number(value) })
-            }
+          <NumericInput
+            value={currentStyle.fontSize}
+            onChange={(value) => updateTextStyle({ fontSize: value })}
+            onChangeStart={() => beginPropertyUpdate('Font Size')}
+            onChangeEnd={endPropertyUpdate}
+            min={1}
+            max={999}
+            step={1}
+            presets={FONT_SIZE_PRESETS}
             disabled={isMultipleSelected}
-          >
-            <SelectTrigger className="w-20" size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="12">12</SelectItem>
-              <SelectItem value="14">14</SelectItem>
-              <SelectItem value="16">16</SelectItem>
-              <SelectItem value="18">18</SelectItem>
-              <SelectItem value="20">20</SelectItem>
-              <SelectItem value="24">24</SelectItem>
-              <SelectItem value="28">28</SelectItem>
-              <SelectItem value="32">32</SelectItem>
-              <SelectItem value="36">36</SelectItem>
-              <SelectItem value="40">40</SelectItem>
-              <SelectItem value="48">48</SelectItem>
-              <SelectItem value="56">56</SelectItem>
-              <SelectItem value="64">64</SelectItem>
-              <SelectItem value="72">72</SelectItem>
-            </SelectContent>
-          </Select>
+            className="w-24"
+            ariaLabel="Font size"
+          />
         </div>
 
         <div className="flex items-center justify-between">

@@ -72,7 +72,7 @@ export interface ProjectVersion {
   migrationNeeded: boolean;
 }
 
-export const PROJECT_VERSION = '1.0.2';
+export const PROJECT_VERSION = '1.0.3';
 export const PROJECT_DB_NAME = 'DividrProjects';
 export const PROJECT_STORE_NAME = 'projects';
 export const PROJECT_DB_VERSION = 1;

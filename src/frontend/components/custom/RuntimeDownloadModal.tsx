@@ -7,7 +7,7 @@ import {
   RefreshCw,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DownloadProgress,
   useRuntime,
@@ -60,6 +60,32 @@ export function RuntimeDownloadModal({
 
   const [modalState, setModalState] = useState<ModalState>('consent');
   const [error, setError] = useState<string | null>(null);
+
+  // Track last valid speed to prevent blinking when speed temporarily drops to 0
+  const lastValidSpeedRef = useRef<number>(0);
+  const [displaySpeed, setDisplaySpeed] = useState<number>(0);
+
+  // Update display speed with debouncing to prevent blinking
+  useEffect(() => {
+    if (downloadProgress?.speed && downloadProgress.speed > 0) {
+      lastValidSpeedRef.current = downloadProgress.speed;
+      setDisplaySpeed(downloadProgress.speed);
+    } else if (
+      downloadProgress?.stage === 'downloading' &&
+      lastValidSpeedRef.current > 0
+    ) {
+      // Keep showing last valid speed during brief drops
+      setDisplaySpeed(lastValidSpeedRef.current);
+    }
+  }, [downloadProgress?.speed, downloadProgress?.stage]);
+
+  // Reset speed when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      lastValidSpeedRef.current = 0;
+      setDisplaySpeed(0);
+    }
+  }, [isOpen]);
 
   // Determine if this is an update or fresh download
   const isUpdate = status.installed && status.needsUpdate;
@@ -201,11 +227,10 @@ export function RuntimeDownloadModal({
                       </p>
                       <ul className="space-y-0.5 text-xs text-muted-foreground">
                         <li>
-                          • Upgraded to DeepFilterNet for superior noise
-                          reduction
+                          • Fixed compatibility issues on machines without Python
                         </li>
-                        <li>• AI-powered deep learning model (vs FFT-based)</li>
-                        <li>• Better voice clarity and quality preservation</li>
+                        <li>• Complete bundling of all native dependencies</li>
+                        <li>• Resolved missing module errors for noise reduction</li>
                       </ul>
                     </div>
                   )}
@@ -221,7 +246,7 @@ export function RuntimeDownloadModal({
                         {status.requiredVersion}
                       </li>
                       <li>
-                        <strong>Size:</strong> ~210 MB
+                        <strong>Size:</strong> ~222 MB
                       </li>
                       <li>
                         <strong>Source:</strong> GitHub Releases (talisik-ai)
@@ -289,10 +314,8 @@ export function RuntimeDownloadModal({
                           ? `${formatBytes(downloadProgress.bytesDownloaded)} / ${formatBytes(downloadProgress.totalBytes)}`
                           : ''}
                       </span>
-                      <span className="text-right">
-                        {downloadProgress.speed && downloadProgress.speed > 0
-                          ? formatSpeed(downloadProgress.speed)
-                          : ''}
+                      <span className="text-right min-w-[70px]">
+                        {displaySpeed > 0 ? formatSpeed(displaySpeed) : '—'}
                       </span>
                     </div>
                   </div>

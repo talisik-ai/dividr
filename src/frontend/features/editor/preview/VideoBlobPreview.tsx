@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { cn } from '@/frontend/utils/utils';
-import { Type } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -73,11 +72,14 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
     setPreviewScale,
     setPreviewInteractionMode,
     updateTrack,
+    updateTrackProperty,
     setSelectedTracks,
     currentTranscribingTrackId,
     transcriptionProgress,
     addTextClip,
     removeTrack,
+    beginGroup,
+    endGroup,
   } = useVideoEditorStore();
 
   const hasTracks = tracks.length > 0;
@@ -255,8 +257,9 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   ]);
 
   // Transform handlers - only needed when tracks exist
+  // Third parameter `options` allows skipping undo recording for auto-size updates
   const handleTextTransformUpdate = useCallback(
-    (trackId: string, transform: any) => {
+    (trackId: string, transform: any, options?: { skipRecord?: boolean }) => {
       const track = tracks.find((t) => t.id === trackId);
       if (!track || track.type !== 'text') return;
 
@@ -269,11 +272,17 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
         height: 0,
       };
 
-      updateTrack(trackId, {
-        textTransform: { ...currentTransform, ...transform },
-      });
+      const newTransform = { ...currentTransform, ...transform };
+
+      // For auto-size updates (width/height only), skip undo recording
+      // These are system-generated updates from ResizeObserver, not user actions
+      if (options?.skipRecord) {
+        updateTrackProperty(trackId, { textTransform: newTransform });
+      } else {
+        updateTrack(trackId, { textTransform: newTransform });
+      }
     },
-    [tracks, updateTrack],
+    [tracks, updateTrack, updateTrackProperty],
   );
 
   const handleImageTransformUpdate = useCallback(
@@ -597,22 +606,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
   );
 
   // Handle deselection from hit-test layer (clicking on empty space)
+  // CHANGED: This handler is now a no-op for empty space clicks
+  // Selection should only be cleared via:
+  // - Escape key (handled by keyboard shortcuts)
+  // - Selecting a different item
+  // This matches professional editor UX (CapCut, Premiere Pro, After Effects)
   const handleHitTestDeselect = useCallback(() => {
-    // Only deselect if there are interactive layers selected
-    const hasInteractiveLayerSelected = timeline.selectedTrackIds.some((id) => {
-      const track = tracks.find((t) => t.id === id);
-      return (
-        track?.type === 'text' ||
-        track?.type === 'image' ||
-        track?.type === 'subtitle' ||
-        track?.type === 'video'
-      );
-    });
-
-    if (hasInteractiveLayerSelected) {
-      setSelectedTracks([]);
-    }
-  }, [timeline.selectedTrackIds, tracks, setSelectedTracks]);
+    // No-op: Empty space clicks should not deselect
+    // This preserves the Properties Panel state during preview interactions
+  }, []);
 
   // Callback for transform boundaries to check if another element should receive a click
   // This enables proper spatial hit-testing across all element types
@@ -732,51 +734,47 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
           const normalizedX = clickXRelativeToContent / (actualWidth / 2);
           const normalizedY = clickYRelativeToContent / (actualHeight / 2);
 
-          const trackId = await addTextClip('body', timeline.currentFrame);
+          // Group text creation + initial content/transform update as single undoable action
+          beginGroup('Create Text');
+          try {
+            const trackId = await addTextClip('body', timeline.currentFrame);
 
-          if (trackId) {
-            updateTrack(trackId, {
-              textTransform: {
-                x: normalizedX,
-                y: normalizedY,
-                scale: 1,
-                rotation: 0,
-                width: 800,
-                height: 100,
-              },
-              textContent: 'New Text',
-            });
+            if (trackId) {
+              updateTrack(trackId, {
+                textTransform: {
+                  x: normalizedX,
+                  y: normalizedY,
+                  scale: 1,
+                  rotation: 0,
+                  width: 800,
+                  height: 100,
+                },
+                textContent: 'New Text',
+              });
 
-            setSelectedTracks([trackId]);
-            setPreviewInteractionMode('text-edit');
-            setPendingEditTextId(trackId);
-            setPendingEmptyTextId(trackId);
+              setSelectedTracks([trackId]);
+              setPreviewInteractionMode('text-edit');
+              setPendingEditTextId(trackId);
+              setPendingEmptyTextId(trackId);
+            }
+          } finally {
+            endGroup();
           }
         }
         return;
       }
 
+      // CHANGED: In select mode, clicking on empty space should NOT deselect
+      // This matches professional editor UX (CapCut, Premiere Pro, After Effects)
+      // where selection persists during preview canvas interactions
+      // User must explicitly deselect via:
+      // - Pressing Escape key
+      // - Selecting a different item
+      // - Clicking on another clip in the timeline or preview
       if (preview.interactionMode === 'select') {
-        if (
-          target === containerRef.current ||
-          target.classList.contains('preview-background') ||
-          target.tagName === 'VIDEO'
-        ) {
-          const hasInteractiveLayerSelected = timeline.selectedTrackIds.some(
-            (id) => {
-              const track = tracks.find((t) => t.id === id);
-              return (
-                track?.type === 'text' ||
-                track?.type === 'image' ||
-                track?.type === 'subtitle'
-              );
-            },
-          );
-
-          if (hasInteractiveLayerSelected) {
-            setSelectedTracks([]);
-          }
-        }
+        // Previously this would deselect when clicking on background/video
+        // Now we preserve selection to allow fluid property panel editing
+        // while interacting with the preview canvas
       }
     },
     [
@@ -796,6 +794,8 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       updateTrack,
       setPreviewInteractionMode,
       getTopElementAtPoint,
+      beginGroup,
+      endGroup,
     ],
   );
 
@@ -1059,15 +1059,15 @@ export const VideoBlobPreview: React.FC<VideoBlobPreviewProps> = ({
       )}
 
       {/* Text Edit Mode Indicator */}
-      {hasTracks && preview.interactionMode === 'text-edit' && (
-        <div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg shadow-lg pointer-events-none z-[2000] flex items-center gap-2 text-xs"
-          style={{ fontWeight: 500 }}
-        >
-          <Type className="size-3" />
-          Text Tool — Click to edit or add new text
-        </div>
-      )}
+      {/* {hasTracks && preview.interactionMode === 'text-edit' && (
+        // <div
+        //   className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg shadow-lg pointer-events-none z-[2000] flex items-center gap-2 text-xs"
+        //   style={{ fontWeight: 500 }}
+        // >
+        //   <Type className="size-3" />
+        //   Text Tool — Click to edit or add new text
+        // </div>
+      //)}
 
       {/* Placeholder - only show when no tracks */}
       {!hasTracks && (

@@ -41,6 +41,16 @@ interface SubtitleTransformBoundaryProps {
   boundaryOnly?: boolean; // Whether to only render the boundary, not the content
   contentOnly?: boolean; // Whether to only render the content, not the boundary
   /**
+   * The actual selected subtitle track (when different from the global transform track).
+   * Used to get the correct subtitle text when editing.
+   */
+  selectedTrack?: VideoTrack;
+  /**
+   * Applied style for the editable text area (font size, family, etc.).
+   * This ensures the cursor/caret scales correctly with the subtitle styling.
+   */
+  appliedStyle?: React.CSSProperties;
+  /**
    * Callback to check if another element should receive this interaction.
    * Used for proper spatial hit-testing when elements overlap.
    * Returns the trackId that should receive the click, or null if this element should handle it.
@@ -84,6 +94,8 @@ export const SubtitleTransformBoundary: React.FC<
   children,
   boundaryOnly = false,
   contentOnly = false,
+  selectedTrack,
+  appliedStyle,
   getTopElementAtPoint,
 }) => {
   // Use renderScale if provided (from coordinate system), otherwise fall back to previewScale
@@ -117,6 +129,7 @@ export const SubtitleTransformBoundary: React.FC<
   const endDraggingTransform = useVideoEditorStore(
     (state) => state.endDraggingTransform,
   );
+
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -506,6 +519,13 @@ export const SubtitleTransformBoundary: React.FC<
       e.stopPropagation();
       e.preventDefault();
 
+      // End any active transform drag before entering edit mode
+      // This ensures any undo group is properly closed
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
+
       if (!isSelected) {
         onSelect(track.id);
         return;
@@ -520,6 +540,7 @@ export const SubtitleTransformBoundary: React.FC<
       onSelect,
       enterEditMode,
       interactionMode,
+      endDraggingTransform,
     ],
   );
 
@@ -537,6 +558,14 @@ export const SubtitleTransformBoundary: React.FC<
       setIsDragging(false);
       setDragStart(null);
 
+      // CRITICAL: End any active transform drag before entering edit mode
+      // This ensures the undo group from the second mousedown is properly closed
+      // Otherwise, isGrouping stays true and text edits won't be recorded
+      if (transformDragStartedRef.current) {
+        transformDragStartedRef.current = false;
+        endDraggingTransform();
+      }
+
       if (!isSelected) {
         onSelect(track.id);
         setTimeout(() => {
@@ -547,7 +576,7 @@ export const SubtitleTransformBoundary: React.FC<
 
       enterEditMode(true);
     },
-    [isSelected, track.id, onSelect, enterEditMode],
+    [isSelected, track.id, onSelect, enterEditMode, endDraggingTransform],
   );
 
   // Handle mouse move for all interactions
@@ -788,6 +817,8 @@ export const SubtitleTransformBoundary: React.FC<
   ]);
 
   // Handle text editing completion
+  // Use selectedTrack when available (for multi-subtitle scenarios)
+  const editingTrack = selectedTrack || track;
   const handleBlur = useCallback(() => {
     if (!editableRef.current) return;
 
@@ -795,12 +826,19 @@ export const SubtitleTransformBoundary: React.FC<
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n');
 
-    if (newText !== track.subtitleText) {
-      onTextUpdate?.(track.id, newText);
+    if (newText !== editingTrack.subtitleText) {
+      onTextUpdate?.(editingTrack.id, newText);
     }
     setIsEditing(false);
     onEditModeChange?.(false);
-  }, [track.id, track.subtitleText, onTextUpdate, onEditModeChange]);
+  }, [
+    editingTrack.id,
+    editingTrack.subtitleText,
+    onTextUpdate,
+    onEditModeChange,
+    selectedTrack?.id,
+    track.id,
+  ]);
 
   // Handle keyboard events in edit mode
   const handleKeyDown = useCallback(
@@ -810,14 +848,14 @@ export const SubtitleTransformBoundary: React.FC<
         handleBlur();
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        if (editableRef.current && track.subtitleText) {
-          editableRef.current.innerText = track.subtitleText;
+        if (editableRef.current && editingTrack.subtitleText) {
+          editableRef.current.innerText = editingTrack.subtitleText;
         }
         setIsEditing(false);
         onEditModeChange?.(false);
       }
     },
-    [handleBlur, track.subtitleText, onEditModeChange],
+    [handleBlur, editingTrack.subtitleText, onEditModeChange],
   );
 
   // Get cursor style based on state
@@ -922,6 +960,9 @@ export const SubtitleTransformBoundary: React.FC<
               outline: 'none',
               minWidth: '20px',
               minHeight: '20px',
+              // Apply the subtitle styling for correct cursor/caret scaling
+              // This ensures the caret height matches the font size
+              ...appliedStyle,
               cursor: 'text',
               userSelect: 'text',
               WebkitUserSelect: 'text',
@@ -933,8 +974,8 @@ export const SubtitleTransformBoundary: React.FC<
               }),
             }}
           >
-            {/* Show subtitle text when editing */}
-            {(children as any)?.props?.children?.[0]?.props?.children || ''}
+            {/* Use editingTrack which prefers selectedTrack over global track */}
+            {editingTrack.subtitleText || ''}
           </div>
         ) : userDefinedWidth ? (
           // When user has defined width, wrap children to force text wrapping

@@ -8,7 +8,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/frontend/components/ui/select';
 import { Separator } from '@/frontend/components/ui/separator';
 import { Slider } from '@/frontend/components/ui/slider';
@@ -38,10 +37,18 @@ import {
   RotateCcw,
   Underline,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { calculateDefaultFontSize } from '../../../preview/core/constants';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { ColorPickerPopover } from '../shared/colorPickerPopover';
 import { FontSelector } from '../shared/fontSelector';
+import { FONT_SIZE_PRESETS, NumericInput } from '../shared/numericInput';
 
 interface SubtitlePropertiesProps {
   selectedTrackIds: string[];
@@ -54,6 +61,15 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const tracks = useVideoEditorStore((state) => state.tracks);
   const textStyle = useVideoEditorStore((state) => state.textStyle);
   const colorHistory = useVideoEditorStore((state) => state.colorHistory);
+  const canvasHeight = useVideoEditorStore(
+    (state) => state.preview?.canvasHeight || 720,
+  );
+
+  // Calculate resolution-aware default font size
+  const dynamicDefaultFontSize = useMemo(
+    () => calculateDefaultFontSize(canvasHeight),
+    [canvasHeight],
+  );
 
   // Action subscriptions (these don't cause re-renders)
   const updateTrack = useVideoEditorStore((state) => state.updateTrack);
@@ -101,7 +117,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const [editedText, setEditedText] = useState('');
   const [isEditingText, setIsEditingText] = useState(false);
 
-  // Check if any styles have changed from default
+  // Check if any styles have changed from default (using resolution-aware font size)
   const hasStylesChanged = useMemo(() => {
     const defaults = {
       isBold: false,
@@ -109,7 +125,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       isUnderline: false,
       textTransform: 'none',
       textAlign: 'center',
-      fontSize: 40,
+      fontSize: dynamicDefaultFontSize, // Resolution-aware default
       fillColor: '#FFFFFF',
       strokeColor: '#000000',
       backgroundColor: 'rgba(0, 0, 0, 0)',
@@ -139,7 +155,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       current.opacity !== defaults.opacity ||
       textStyle.activeStyle !== 'default'
     );
-  }, [textStyle]);
+  }, [textStyle, dynamicDefaultFontSize]);
 
   // Don't render if no subtitle tracks are selected
   if (selectedSubtitleTracks.length === 0) {
@@ -249,6 +265,17 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
     snapshotStylesToSelectedTracks,
   ]);
 
+  // Cleanup: end any active group on component unmount
+  // This prevents stuck grouping state when user switches tracks or panels mid-drag
+  useEffect(() => {
+    return () => {
+      if (isDraggingRef.current) {
+        endGroup();
+        isDraggingRef.current = false;
+      }
+    };
+  }, [endGroup]);
+
   const handleReset = useCallback(() => {
     resetTextStyles();
   }, [resetTextStyles]);
@@ -266,14 +293,31 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   );
 
   // Handle slider drag start (begin batch transaction)
+  // Also sets up global pointer listeners to ensure group ends reliably
   const handleSliderDragStart = useCallback(() => {
-    if (!isDraggingRef.current) {
-      isDraggingRef.current = true;
-      beginGroup('Update Subtitle Style');
-    }
-  }, [beginGroup]);
+    if (isDraggingRef.current) return;
+
+    isDraggingRef.current = true;
+    beginGroup('Update Subtitle Style');
+
+    // Add global pointer listeners to handle edge cases where onValueCommit doesn't fire
+    // (e.g., pointer released outside component, or value didn't change)
+    const handleGlobalPointerUp = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        endGroup();
+      }
+      // Clean up listeners
+      document.removeEventListener('pointerup', handleGlobalPointerUp);
+      document.removeEventListener('pointercancel', handleGlobalPointerUp);
+    };
+
+    document.addEventListener('pointerup', handleGlobalPointerUp);
+    document.addEventListener('pointercancel', handleGlobalPointerUp);
+  }, [beginGroup, endGroup]);
 
   // Handle slider drag end (end batch transaction)
+  // This may be called before the global listener, which is fine - the ref prevents double-end
   const handleSliderDragEnd = useCallback(() => {
     if (isDraggingRef.current) {
       isDraggingRef.current = false;
@@ -337,30 +381,18 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
               className="flex-1"
             />
 
-            <Select
-              value={String(activeSubtitleStyle.fontSize)}
-              onValueChange={(value) => setFontSize(Number(value))}
-            >
-              <SelectTrigger className="w-20" size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="12">12</SelectItem>
-                <SelectItem value="14">14</SelectItem>
-                <SelectItem value="16">16</SelectItem>
-                <SelectItem value="18">18</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="24">24</SelectItem>
-                <SelectItem value="28">28</SelectItem>
-                <SelectItem value="32">32</SelectItem>
-                <SelectItem value="36">36</SelectItem>
-                <SelectItem value="40">40</SelectItem>
-                <SelectItem value="48">48</SelectItem>
-                <SelectItem value="56">56</SelectItem>
-                <SelectItem value="64">64</SelectItem>
-                <SelectItem value="72">72</SelectItem>
-              </SelectContent>
-            </Select>
+            <NumericInput
+              value={activeSubtitleStyle.fontSize}
+              onChange={(value) => setFontSize(value)}
+              onChangeStart={() => beginGroup('Font Size')}
+              onChangeEnd={endGroup}
+              min={1}
+              max={999}
+              step={1}
+              presets={FONT_SIZE_PRESETS}
+              className="w-24"
+              ariaLabel="Font size"
+            />
           </div>
 
           <div className="flex items-center justify-between">

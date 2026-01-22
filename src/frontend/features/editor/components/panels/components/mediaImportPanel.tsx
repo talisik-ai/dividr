@@ -49,7 +49,7 @@ import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { VideoTrack } from '../../../stores/videoEditor/types';
 import { isSubtitleFile } from '../../../stores/videoEditor/utils/subtitleParser';
 import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
-import { DuplicateMediaDialog } from '../../dialogs/duplicateMediaDialog';
+import { DuplicateMediaDialog } from '../../dialogs/batchDuplicateMediaDialog';
 import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
 interface MediaItem {
   id: string;
@@ -124,12 +124,12 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     (state) => state.transcriptionProgress,
   );
 
-  // Duplicate detection state
-  const duplicateDetection = useVideoEditorStore(
-    (state) => state.duplicateDetection,
+  // Duplicate detection state (unified for single or multiple files)
+  const batchDuplicateDetection = useVideoEditorStore(
+    (state) => state.batchDuplicateDetection,
   );
-  const hideDuplicateDialog = useVideoEditorStore(
-    (state) => state.hideDuplicateDialog,
+  const hideBatchDuplicateDialog = useVideoEditorStore(
+    (state) => state.hideBatchDuplicateDialog,
   );
 
   // Check if any transcription is in progress (from media library or timeline)
@@ -1238,24 +1238,33 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         }}
       />
 
+      {/* Unified duplicate media dialog - works for single or multiple duplicates */}
       <DuplicateMediaDialog
-        open={duplicateDetection?.show ?? false}
+        open={batchDuplicateDetection?.show ?? false}
         onOpenChange={(open) => {
           if (!open) {
-            duplicateDetection?.pendingResolve?.(false);
-            hideDuplicateDialog?.();
+            // Skip all duplicates if dialog closed (use existing)
+            const skipChoices = new Map<string, 'use-existing'>();
+            batchDuplicateDetection?.duplicates?.forEach((dup) => {
+              skipChoices.set(dup.id, 'use-existing');
+            });
+            batchDuplicateDetection?.pendingResolve?.(skipChoices);
+            hideBatchDuplicateDialog?.();
           }
         }}
-        existingMediaName={duplicateDetection?.existingMedia?.name ?? ''}
-        existingMediaThumbnail={duplicateDetection?.existingMedia?.thumbnail}
-        newFileName={duplicateDetection?.pendingFile?.name ?? ''}
-        onUseExisting={() => {
-          duplicateDetection?.pendingResolve?.(true);
-          hideDuplicateDialog?.();
+        duplicates={batchDuplicateDetection?.duplicates ?? []}
+        onConfirm={(choices) => {
+          batchDuplicateDetection?.pendingResolve?.(choices);
+          hideBatchDuplicateDialog?.();
         }}
-        onImportAsCopy={() => {
-          duplicateDetection?.pendingResolve?.(false);
-          hideDuplicateDialog?.();
+        onCancel={() => {
+          // Skip all duplicates (use existing)
+          const skipChoices = new Map<string, 'use-existing'>();
+          batchDuplicateDetection?.duplicates?.forEach((dup) => {
+            skipChoices.set(dup.id, 'use-existing');
+          });
+          batchDuplicateDetection?.pendingResolve?.(skipChoices);
+          hideBatchDuplicateDialog?.();
         }}
       />
 

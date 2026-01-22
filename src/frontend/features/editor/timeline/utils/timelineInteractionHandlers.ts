@@ -130,12 +130,15 @@ export const handleTimelineMouseDown = (
   // PRIORITY 4: Empty space interactions (seek by default, marquee on drag)
   if (target === 'empty-space' && !isSplitModeActive) {
     // Single click on empty space seeks the playhead
+    // IMPORTANT: Do NOT clear selection here - this matches professional editor UX
+    // (CapCut, Premiere Pro, After Effects) where selection persists during scrubbing
     handlers.onSeek(frame);
 
     // Also prepare for potential marquee selection if user drags
+    // Selection clearing is now deferred until marquee actually activates (user drags)
     const { startX, startY } = clickInfo as any;
-    const clearSelection = !shiftKey && !ctrlKey && !metaKey;
-    handlers.onStartMarquee(startX, startY, clearSelection);
+    const clearSelectionOnMarqueeDrag = !shiftKey && !ctrlKey && !metaKey;
+    handlers.onStartMarquee(startX, startY, clearSelectionOnMarqueeDrag);
 
     return { shouldStopPropagation: true };
   }

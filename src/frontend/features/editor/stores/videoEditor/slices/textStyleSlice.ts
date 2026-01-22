@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { StateCreator } from 'zustand';
+import {
+  calculateDefaultFontSize,
+  FONT_SIZE_REFERENCE_VALUE,
+} from '../../../preview/core/constants';
 import { TextStyleSlice, TextStyleState } from '../types';
 
 /**
@@ -59,7 +63,7 @@ const DEFAULT_GLOBAL_CONTROLS = {
   isUnderline: false,
   textTransform: 'none' as const,
   textAlign: 'center' as const,
-  fontSize: 40,
+  fontSize: FONT_SIZE_REFERENCE_VALUE, // Base font size (40px at 720p reference)
   fillColor: '#FFFFFF',
   strokeColor: '#000000',
   backgroundColor: 'rgba(0, 0, 0, 0.0)',
@@ -69,6 +73,15 @@ const DEFAULT_GLOBAL_CONTROLS = {
   hasGlow: false,
   opacity: 100,
 };
+
+/**
+ * Get default global controls with resolution-aware font size
+ * @param canvasHeight - Current canvas height in pixels
+ */
+const getDynamicDefaultControls = (canvasHeight: number) => ({
+  ...DEFAULT_GLOBAL_CONTROLS,
+  fontSize: calculateDefaultFontSize(canvasHeight),
+});
 
 const DEFAULT_GLOBAL_SUBTITLE_POSITION = {
   x: 0, // Centered horizontally
@@ -391,11 +404,15 @@ export const createTextStyleSlice: StateCreator<
       state.markUnsavedChanges?.();
       // Record action for undo/redo before resetting styles
       state.recordAction?.('Reset Subtitle Styles');
+
+      // Calculate resolution-aware default font size
+      const canvasHeight = state.preview?.canvasHeight || 720;
+
       return {
         textStyle: {
           ...state.textStyle,
           activeStyle: 'default',
-          globalControls: DEFAULT_GLOBAL_CONTROLS,
+          globalControls: getDynamicDefaultControls(canvasHeight),
         },
       };
     }),

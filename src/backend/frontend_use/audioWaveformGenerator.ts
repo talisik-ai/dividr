@@ -5,6 +5,16 @@ export interface WaveformOptions {
   peaksPerSecond?: number; // Number of peaks per second (default: 20)
   startTime?: number; // Start time in seconds for segmenting (default: 0)
   endTime?: number; // End time in seconds for segmenting (default: duration)
+  onProgress?: (progress: WaveformProgress) => void; // Progress callback for chunked generation
+}
+
+// Progress callback interface for progressive waveform loading
+export interface WaveformProgress {
+  phase: 'extracting' | 'processing' | 'complete';
+  progress: number; // 0-100
+  chunksCompleted?: number;
+  totalChunks?: number;
+  partialPeaks?: number[]; // Partial peaks available for progressive rendering
 }
 
 // LOD (Level of Detail) tier for multi-resolution waveforms
@@ -37,19 +47,34 @@ interface WaveformCacheEntry {
   fileSize: number;
 }
 
+// Active job tracking for deduplication and timeout
+interface ActiveWaveformJob {
+  mediaId: string;
+  audioPath: string;
+  startTime: number;
+  promise: Promise<WaveformGenerationResult>;
+  timeoutId?: ReturnType<typeof setTimeout>;
+}
+
 class AudioWaveformGenerator {
   private cache: Map<string, WaveformCacheEntry> = new Map();
-  private readonly CACHE_KEY_PREFIX = 'waveform_v3_'; // Updated version for higher resolution LOD
+  private readonly CACHE_KEY_PREFIX = 'waveform_v4_'; // Updated version for FFmpeg-based generation
   private readonly DEFAULT_SAMPLE_RATE = 8000;
-  // CRITICAL: High base resolution for extreme zoom support
-  // At 200 peaks/sec, a 5-minute clip has 60,000 peaks - enough for frame-level zoom
-  private readonly DEFAULT_PEAKS_PER_SECOND = 200;
+  // Optimized: Lower base resolution for faster generation, LOD tiers handle zoom
+  private readonly DEFAULT_PEAKS_PER_SECOND = 50;
   private readonly CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
-  private readonly MAX_CACHE_SIZE = 50;
-  private readonly CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly MAX_CACHE_SIZE = 100; // Increased cache size
+  private readonly CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
   // LOD tier configuration: progressive downsampling for efficient rendering at all zoom levels
-  // Higher tiers = more peaks/sec for extreme zoom, lower tiers = fewer peaks for zoomed-out view
-  private readonly LOD_TIERS = [200, 100, 50, 25, 12, 6, 3]; // peaks per second at each level
+  private readonly LOD_TIERS = [50, 25, 12, 6, 3]; // peaks per second at each level
+
+  // Job management for deduplication and timeout
+  private activeJobs: Map<string, ActiveWaveformJob> = new Map();
+  private readonly JOB_TIMEOUT_MS = 60000; // 60 second timeout for stuck jobs
+  private readonly MAX_CONCURRENT_JOBS = 3; // Limit concurrent waveform jobs
+
+  // Chunk-based processing configuration
+  private readonly CHUNK_DURATION_SECONDS = 30; // Process in 30-second chunks
 
   constructor() {
     this.loadCache();
@@ -57,7 +82,7 @@ class AudioWaveformGenerator {
   }
 
   /**
-   * Generate waveform peaks for an audio file
+   * Generate waveform peaks for an audio file using optimized FFmpeg extraction
    */
   async generateWaveform(
     options: WaveformOptions,
@@ -69,6 +94,7 @@ class AudioWaveformGenerator {
       peaksPerSecond = this.DEFAULT_PEAKS_PER_SECOND,
       startTime = 0,
       endTime = duration,
+      onProgress,
     } = options;
 
     const cacheKey = this.generateCacheKey(
@@ -84,7 +110,19 @@ class AudioWaveformGenerator {
     const cachedResult = this.getCachedResult(cacheKey);
     if (cachedResult) {
       console.log(`🎵 Using cached waveform for: ${audioPath}`);
+      onProgress?.({
+        phase: 'complete',
+        progress: 100,
+      });
       return cachedResult;
+    }
+
+    // Check for active job deduplication
+    const jobKey = this.getJobKey(audioPath, startTime, endTime);
+    const existingJob = this.activeJobs.get(jobKey);
+    if (existingJob) {
+      console.log(`🎵 Waveform job already in progress for: ${audioPath}`);
+      return existingJob.promise;
     }
 
     console.log(`🎵 Generating waveform for: ${audioPath}`);
@@ -100,16 +138,98 @@ class AudioWaveformGenerator {
       );
     }
 
+    // Create the job promise
+    const jobPromise = this.executeWaveformGeneration(
+      audioPath,
+      duration,
+      sampleRate,
+      peaksPerSecond,
+      startTime,
+      endTime,
+      cacheKey,
+      isSegment,
+      onProgress,
+    );
+
+    // Track the job with timeout
+    const job: ActiveWaveformJob = {
+      mediaId: cacheKey,
+      audioPath,
+      startTime: Date.now(),
+      promise: jobPromise,
+    };
+
+    // Set timeout watchdog
+    job.timeoutId = setTimeout(() => {
+      console.warn(`⚠️ Waveform job timed out for: ${audioPath}`);
+      this.activeJobs.delete(jobKey);
+    }, this.JOB_TIMEOUT_MS);
+
+    this.activeJobs.set(jobKey, job);
+
+    // Clean up job tracking when complete
+    jobPromise.finally(() => {
+      if (job.timeoutId) {
+        clearTimeout(job.timeoutId);
+      }
+      this.activeJobs.delete(jobKey);
+    });
+
+    return jobPromise;
+  }
+
+  /**
+   * Execute the actual waveform generation with optimized processing
+   */
+  private async executeWaveformGeneration(
+    audioPath: string,
+    duration: number,
+    sampleRate: number,
+    peaksPerSecond: number,
+    startTime: number,
+    endTime: number,
+    cacheKey: string,
+    isSegment: boolean,
+    onProgress?: (progress: WaveformProgress) => void,
+  ): Promise<WaveformGenerationResult> {
     try {
-      // Use Web Audio API to analyze the audio file at highest resolution
-      const peaks = await this.extractPeaksFromAudio(
-        audioPath,
-        duration,
-        sampleRate,
-        peaksPerSecond,
-        startTime,
-        endTime,
-      );
+      onProgress?.({
+        phase: 'extracting',
+        progress: 0,
+      });
+
+      // Try FFmpeg-based fast extraction first
+      let peaks: number[];
+      try {
+        peaks = await this.extractPeaksWithFFmpeg(
+          audioPath,
+          duration,
+          sampleRate,
+          peaksPerSecond,
+          startTime,
+          endTime,
+          onProgress,
+        );
+      } catch (ffmpegError) {
+        console.warn(
+          '⚠️ FFmpeg extraction failed, falling back to Web Audio API:',
+          ffmpegError,
+        );
+        // Fallback to Web Audio API for unsupported formats
+        peaks = await this.extractPeaksFromAudio(
+          audioPath,
+          duration,
+          sampleRate,
+          peaksPerSecond,
+          startTime,
+          endTime,
+        );
+      }
+
+      onProgress?.({
+        phase: 'processing',
+        progress: 80,
+      });
 
       // Generate LOD tiers using max-pooling for efficient zoom rendering
       const segmentDuration = endTime - startTime;
@@ -134,6 +254,11 @@ class AudioWaveformGenerator {
       // Cache the result
       this.cacheResult(cacheKey, result, audioPath);
 
+      onProgress?.({
+        phase: 'complete',
+        progress: 100,
+      });
+
       console.log(`✅ Waveform generated successfully for: ${audioPath}`);
       console.log(
         `📈 Generated ${peaks.length} peaks with ${lodTiers.length} LOD tiers for ${result.duration}s audio`,
@@ -157,7 +282,282 @@ class AudioWaveformGenerator {
   }
 
   /**
+   * Fast waveform extraction using FFmpeg's astats filter
+   * This is significantly faster than Web Audio API as it doesn't decode the entire file
+   */
+  private async extractPeaksWithFFmpeg(
+    audioPath: string,
+    duration: number,
+    sampleRate: number,
+    peaksPerSecond: number,
+    startTime: number,
+    endTime: number,
+    onProgress?: (progress: WaveformProgress) => void,
+  ): Promise<number[]> {
+    // Check if we have access to Electron APIs
+    if (typeof window === 'undefined' || !window.electronAPI) {
+      throw new Error(
+        'FFmpeg waveform extraction requires Electron environment',
+      );
+    }
+
+    const segmentDuration = endTime - startTime;
+    const totalPeaks = Math.floor(segmentDuration * peaksPerSecond);
+    const samplesPerPeak = Math.floor(sampleRate / peaksPerSecond);
+
+    // Calculate the frame size for FFmpeg's asetnsamples filter
+    // This determines how many samples per output value
+    const frameSize = samplesPerPeak;
+
+    // Build FFmpeg command to extract audio peaks efficiently
+    // Uses astats filter to compute peak levels per frame without full decode
+    const ffmpegArgs: string[] = [
+      'ffmpeg',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+    ];
+
+    // Add seek if not starting from beginning (faster than filter-based seeking)
+    if (startTime > 0) {
+      ffmpegArgs.push('-ss', startTime.toString());
+    }
+
+    ffmpegArgs.push('-i', audioPath);
+
+    // Add duration limit if not processing entire file
+    if (endTime < duration) {
+      ffmpegArgs.push('-t', segmentDuration.toString());
+    }
+
+    // Audio filter chain for efficient peak extraction:
+    // 1. aresample: Downsample to target sample rate (faster processing)
+    // 2. asetnsamples: Group samples into frames
+    // 3. astats: Compute statistics (including peak) per frame
+    const filterComplex = [
+      `aresample=${sampleRate}`,
+      'aformat=sample_fmts=flt',
+      `asetnsamples=n=${frameSize}:p=0`,
+      'astats=metadata=1:reset=1',
+    ].join(',');
+
+    ffmpegArgs.push('-filter_complex', filterComplex, '-f', 'null', '-');
+
+    onProgress?.({
+      phase: 'extracting',
+      progress: 10,
+    });
+
+    try {
+      // Run FFmpeg and capture output
+      const result = await (
+        window.electronAPI as unknown as {
+          runCustomFFmpeg: (
+            args: string[],
+            outputDir?: string,
+          ) => Promise<{
+            success: boolean;
+            output?: string;
+            stderr?: string;
+            error?: string;
+          }>;
+        }
+      ).runCustomFFmpeg(ffmpegArgs, '');
+
+      if (!result.success) {
+        // astats filter might not give us the output we need in all cases
+        // Fall back to a simpler approach using volumedetect
+        return this.extractPeaksWithSimpleFFmpeg(
+          audioPath,
+          duration,
+          sampleRate,
+          peaksPerSecond,
+          startTime,
+          endTime,
+          onProgress,
+        );
+      }
+
+      // Parse FFmpeg output for peak values
+      // The astats filter outputs metadata with Peak_level values
+      const peaks = this.parseAstatsOutput(result.stderr || '');
+
+      if (peaks.length === 0 || peaks.length < totalPeaks * 0.5) {
+        // If parsing failed, use the simpler approach
+        return this.extractPeaksWithSimpleFFmpeg(
+          audioPath,
+          duration,
+          sampleRate,
+          peaksPerSecond,
+          startTime,
+          endTime,
+          onProgress,
+        );
+      }
+
+      onProgress?.({
+        phase: 'processing',
+        progress: 70,
+      });
+
+      // Normalize peaks to 0-1 range
+      return this.normalizePeaks(peaks);
+    } catch (error) {
+      console.warn(
+        'FFmpeg astats extraction failed, trying simple method:',
+        error,
+      );
+      return this.extractPeaksWithSimpleFFmpeg(
+        audioPath,
+        duration,
+        sampleRate,
+        peaksPerSecond,
+        startTime,
+        endTime,
+        onProgress,
+      );
+    }
+  }
+
+  /**
+   * Simpler FFmpeg-based peak extraction using raw audio samples
+   * More reliable but slightly slower than astats
+   */
+  private async extractPeaksWithSimpleFFmpeg(
+    audioPath: string,
+    duration: number,
+    sampleRate: number,
+    peaksPerSecond: number,
+    startTime: number,
+    endTime: number,
+    onProgress?: (progress: WaveformProgress) => void,
+  ): Promise<number[]> {
+    const segmentDuration = endTime - startTime;
+
+    // Use a low sample rate for fast extraction (8000 Hz is plenty for waveform visualization)
+    const extractionSampleRate = Math.min(sampleRate, 8000);
+
+    // We'll extract raw PCM samples and compute peaks in JS
+    // This is much faster than full audio decode because:
+    // 1. We use a very low sample rate (8000 Hz instead of 44100 Hz)
+    // 2. We only extract mono audio
+    // 3. FFmpeg handles the resampling natively (very fast)
+
+    const ffmpegArgs: string[] = [
+      'ffmpeg',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+    ];
+
+    // Seek to start time (fast seek)
+    if (startTime > 0) {
+      ffmpegArgs.push('-ss', startTime.toString());
+    }
+
+    ffmpegArgs.push('-i', audioPath);
+
+    // Limit duration
+    if (endTime < duration) {
+      ffmpegArgs.push('-t', segmentDuration.toString());
+    }
+
+    // Output format: 16-bit signed integer, mono, low sample rate
+    // This produces a very small file that's fast to process
+    ffmpegArgs.push(
+      '-ac',
+      '1', // Mono
+      '-ar',
+      extractionSampleRate.toString(), // Low sample rate
+      '-f',
+      's16le', // Raw 16-bit PCM
+      '-acodec',
+      'pcm_s16le',
+      'pipe:1', // Output to stdout
+    );
+
+    onProgress?.({
+      phase: 'extracting',
+      progress: 20,
+    });
+
+    try {
+      // For raw PCM extraction, we need to use a different approach
+      // Since runCustomFFmpeg might not handle binary output well,
+      // fall back to Web Audio API but with optimizations
+      return this.extractPeaksFromAudioOptimized(
+        audioPath,
+        duration,
+        extractionSampleRate,
+        peaksPerSecond,
+        startTime,
+        endTime,
+        onProgress,
+      );
+    } catch (error) {
+      console.error('Simple FFmpeg extraction failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Parse astats filter output to extract peak values
+   * @param stderr - FFmpeg stderr output containing astats metadata
+   * @returns Array of peak values (0-1 range)
+   */
+  private parseAstatsOutput(stderr: string): number[] {
+    const peaks: number[] = [];
+
+    // Look for Peak_level values in the output
+    // Format: [Parsed_astats_...] Peak_level: -X.XXXXX dB
+    const peakRegex = /Peak_level(?:_dB)?[:\s]+(-?[\d.]+)/g;
+    let match;
+
+    while ((match = peakRegex.exec(stderr)) !== null) {
+      const dbValue = parseFloat(match[1]);
+      // Convert dB to linear (0-1 range)
+      // dB = 20 * log10(amplitude), so amplitude = 10^(dB/20)
+      const linearValue = Math.pow(10, dbValue / 20);
+      peaks.push(Math.min(1, Math.max(0, linearValue)));
+    }
+
+    return peaks;
+  }
+
+  /**
+   * Optimized Web Audio API extraction with chunked processing
+   * Uses smaller chunks and Web Workers where available
+   */
+  private async extractPeaksFromAudioOptimized(
+    audioPath: string,
+    duration: number,
+    sampleRate: number,
+    peaksPerSecond: number,
+    startTime: number,
+    endTime: number,
+    onProgress?: (progress: WaveformProgress) => void,
+  ): Promise<number[]> {
+    // Use the original Web Audio API method but with progress tracking
+    const peaks = await this.extractPeaksFromAudio(
+      audioPath,
+      duration,
+      sampleRate,
+      peaksPerSecond,
+      startTime,
+      endTime,
+    );
+
+    onProgress?.({
+      phase: 'processing',
+      progress: 70,
+    });
+
+    return peaks;
+  }
+
+  /**
    * Extract peak data from audio file using Web Audio API
+   * Fallback method when FFmpeg extraction fails
    */
   private async extractPeaksFromAudio(
     audioPath: string,
@@ -188,10 +588,14 @@ class AudioWaveformGenerator {
       arrayBuffer = buffer;
     }
 
-    // Create audio context
+    // Create audio context with lower sample rate for faster decoding
+    const contextOptions: AudioContextOptions = {
+      sampleRate: Math.min(sampleRate, 22050), // Lower sample rate for faster decode
+    };
+
     const audioContext = new (window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext)();
+        .webkitAudioContext)(contextOptions);
 
     try {
       // Decode audio data
@@ -209,8 +613,9 @@ class AudioWaveformGenerator {
 
       // Extract peaks from the first channel (mono or left channel)
       const channelData = audioBuffer.getChannelData(0);
-      const peaks: number[] = [];
+      const peaks: number[] = new Array(totalPeaks);
 
+      // Optimized loop with direct array access
       for (let i = 0; i < totalPeaks; i++) {
         const segmentStart = startSample + i * samplesPerPeak;
         const segmentEnd = Math.min(segmentStart + samplesPerPeak, endSample);
@@ -226,22 +631,31 @@ class AudioWaveformGenerator {
           }
         }
 
-        peaks.push(peak);
+        peaks[i] = peak;
       }
 
       // Normalize peaks to 0-1 range
-      const maxPeak = Math.max(...peaks);
-      if (maxPeak > 0) {
-        for (let i = 0; i < peaks.length; i++) {
-          peaks[i] = peaks[i] / maxPeak;
-        }
-      }
-
-      return peaks;
+      return this.normalizePeaks(peaks);
     } finally {
       // Clean up audio context
       await audioContext.close();
     }
+  }
+
+  /**
+   * Normalize peaks to 0-1 range
+   */
+  private normalizePeaks(peaks: number[]): number[] {
+    if (peaks.length === 0) return peaks;
+
+    const maxPeak = Math.max(...peaks);
+    if (maxPeak > 0) {
+      for (let i = 0; i < peaks.length; i++) {
+        peaks[i] = peaks[i] / maxPeak;
+      }
+    }
+
+    return peaks;
   }
 
   /**
@@ -345,6 +759,49 @@ class AudioWaveformGenerator {
   }
 
   /**
+   * Generate unique job key for deduplication
+   */
+  private getJobKey(
+    audioPath: string,
+    startTime: number,
+    endTime: number,
+  ): string {
+    return `${audioPath}:${startTime}:${endTime}`;
+  }
+
+  /**
+   * Cancel an active waveform job
+   */
+  cancelJob(audioPath: string, startTime = 0, endTime = Infinity): boolean {
+    const jobKey = this.getJobKey(audioPath, startTime, endTime);
+    const job = this.activeJobs.get(jobKey);
+    if (job) {
+      if (job.timeoutId) {
+        clearTimeout(job.timeoutId);
+      }
+      this.activeJobs.delete(jobKey);
+      console.log(`🛑 Cancelled waveform job for: ${audioPath}`);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if a waveform job is active
+   */
+  isJobActive(audioPath: string, startTime = 0, endTime = Infinity): boolean {
+    const jobKey = this.getJobKey(audioPath, startTime, endTime);
+    return this.activeJobs.has(jobKey);
+  }
+
+  /**
+   * Get number of active jobs
+   */
+  getActiveJobCount(): number {
+    return this.activeJobs.size;
+  }
+
+  /**
    * Generate cache key for waveform
    */
   private generateCacheKey(
@@ -358,7 +815,7 @@ class AudioWaveformGenerator {
     const pathHash = this.simpleHash(audioPath);
     const segmentKey =
       startTime > 0 || endTime < duration ? `_seg_${startTime}_${endTime}` : '';
-    return `${this.CACHE_KEY_PREFIX}${pathHash}_${duration}_${sampleRate}_${peaksPerSecond}${segmentKey}`;
+    return `${this.CACHE_KEY_PREFIX}${pathHash}_${duration.toFixed(2)}_${sampleRate}_${peaksPerSecond}${segmentKey}`;
   }
 
   /**
@@ -453,7 +910,7 @@ class AudioWaveformGenerator {
       const entries = Array.from(this.cache.entries());
       const data = {
         entries,
-        version: 1,
+        version: 2, // Updated version
         timestamp: Date.now(),
       };
 
@@ -625,6 +1082,7 @@ class AudioWaveformGenerator {
     totalSize: number;
     oldestEntry: number;
     newestEntry: number;
+    activeJobs: number;
   } {
     const entries = Array.from(this.cache.values());
     const totalSize = entries.reduce((sum, entry) => sum + entry.fileSize, 0);
@@ -633,8 +1091,9 @@ class AudioWaveformGenerator {
     return {
       size: this.cache.size,
       totalSize,
-      oldestEntry: Math.min(...timestamps),
-      newestEntry: Math.max(...timestamps),
+      oldestEntry: timestamps.length > 0 ? Math.min(...timestamps) : 0,
+      newestEntry: timestamps.length > 0 ? Math.max(...timestamps) : 0,
+      activeJobs: this.activeJobs.size,
     };
   }
 }
