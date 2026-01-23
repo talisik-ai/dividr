@@ -33,6 +33,7 @@ export interface NoiseReductionCacheEntry {
   error: string | null;
   refCount: number;
   processedAt: number | null;
+  engine: 'ffmpeg' | 'deepfilter';
 }
 
 type SubscriptionCallback = () => void;
@@ -84,9 +85,15 @@ class NoiseReductionCacheImpl {
   /**
    * Check if source has cached processed audio.
    */
-  hasCached(sourceId: string): boolean {
+  hasCached(sourceId: string, engine?: 'ffmpeg' | 'deepfilter'): boolean {
     const normalizedId = this.normalizeSourceId(sourceId);
     const entry = this.cache.get(normalizedId);
+
+    // If engine is specified, require it to match
+    if (engine && entry && entry.engine !== engine) {
+      return false;
+    }
+
     return entry?.state === 'cached' && entry?.processedPreviewUrl !== null;
   }
 
@@ -94,9 +101,18 @@ class NoiseReductionCacheImpl {
    * Get processed audio URL for playback.
    * Returns null if not cached.
    */
-  getProcessedUrl(sourceId: string): string | null {
+  getProcessedUrl(
+    sourceId: string,
+    engine?: 'ffmpeg' | 'deepfilter',
+  ): string | null {
     const normalizedId = this.normalizeSourceId(sourceId);
     const entry = this.cache.get(normalizedId);
+
+    // If engine is specified, require it to match
+    if (engine && entry && entry.engine !== engine) {
+      return null;
+    }
+
     if (entry?.state === 'cached' && entry?.processedPreviewUrl) {
       return entry.processedPreviewUrl;
     }
@@ -176,8 +192,17 @@ class NoiseReductionCacheImpl {
     // Check if already cached
     const existing = this.cache.get(normalizedId);
     if (existing?.state === 'cached' && existing.processedPreviewUrl) {
-      logCache('Using cached result', { sourceId: normalizedId });
-      return existing.processedPreviewUrl;
+      // If engine is specified, require it to match
+      const reqEngine = options?.engine || 'ffmpeg'; // Default assumption if not provided
+      if (existing.engine === reqEngine) {
+        logCache('Using cached result', { sourceId: normalizedId });
+        return existing.processedPreviewUrl;
+      } else {
+        logCache('Cache engine mismatch, reprocessing', {
+          cached: existing.engine,
+          requested: reqEngine,
+        });
+      }
     }
 
     // Check if already processing
@@ -227,6 +252,7 @@ class NoiseReductionCacheImpl {
       error: null,
       refCount: 1,
       processedAt: null,
+      engine: options?.engine || 'ffmpeg',
     });
 
     try {
@@ -313,6 +339,7 @@ class NoiseReductionCacheImpl {
             progress: 100,
             error: null,
             processedAt: Date.now(),
+            engine: options?.engine || 'ffmpeg',
           });
         }
 

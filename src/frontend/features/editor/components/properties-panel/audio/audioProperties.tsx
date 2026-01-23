@@ -283,6 +283,8 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
       setNrCacheState(NoiseReductionCache.getState(sourceId));
       setNrProgress(NoiseReductionCache.getProgress(sourceId));
       setNrError(NoiseReductionCache.getError(sourceId));
+      // Note: We don't filter by engine here because we want to see ANY activity on this source
+      // If we switch engines, the state will update accordingly when processing starts
     };
 
     // Initialize state
@@ -308,7 +310,7 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
       const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
 
       // Check if already cached - just enable the flag
-      if (NoiseReductionCache.hasCached(sourceId)) {
+      if (NoiseReductionCache.hasCached(sourceId, engine)) {
         beginAudioUpdate();
         updateAudioProperties({ noiseReductionEnabled: true });
         endAudioUpdate();
