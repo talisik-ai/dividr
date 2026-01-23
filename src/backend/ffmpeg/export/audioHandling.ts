@@ -184,7 +184,7 @@ export type GetVolumeDbCallback = (segment: ProcessedTimelineSegment) => number;
  * Handles trimming, positioning, padding, and mixing of audio streams
  * @param audioTimeline - Processed audio timeline with segments
  * @param categorizedInputs - Categorized input files
- * @param hasVideoInputs - Whether video inputs exist (skip audio if false)
+ * @param hasVideoInputs - Whether video or image inputs exist (both produce video output, skip audio if false)
  * @param totalVideoDuration - Total duration of the video in seconds
  * @param createAudioTrimFilters - Function to create audio trim filters
  * @param getVolumeDb - Optional callback to get volume adjustment in decibels per segment
@@ -203,9 +203,48 @@ export function processAudioTimeline(
 
   if (!hasVideoInputs) {
     console.log(
-      'ℹ️ Skipping audio processing - only image inputs detected (no video inputs)',
+      'ℹ️ Skipping audio processing - no video or image inputs detected',
     );
     return { audioFilters, audioConcatInputs };
+  }
+
+  // ============================================
+  // RAM OPTIMIZATION: Analyze duplicate audio inputs
+  // Note: We DON'T use asplit filters because they require buffering the entire stream
+  // Instead, we rely on FFmpeg's internal optimization for sequential access
+  // ============================================
+  const audioInputUsageCount = new Map<number, number>();
+
+  // Count how many times each audio input is used (for logging)
+  for (const segment of audioTimeline.segments) {
+    if (!isGapInput(segment.input.path)) {
+      const fileIndex = findFileIndexForSegment(
+        segment,
+        categorizedInputs,
+        'audio',
+      );
+      if (fileIndex !== undefined) {
+        audioInputUsageCount.set(
+          fileIndex,
+          (audioInputUsageCount.get(fileIndex) || 0) + 1,
+        );
+      }
+    }
+  }
+
+  // Log duplicate usage (but don't create asplit filters)
+  if (audioInputUsageCount.size > 0) {
+    const duplicateCount = Array.from(audioInputUsageCount.values()).filter(
+      (count) => count > 1,
+    ).length;
+    if (duplicateCount > 0) {
+      console.log(
+        `\n💾 INFO: Found ${duplicateCount} audio file(s) used multiple times in timeline`,
+      );
+      console.log(
+        `   Using direct input references for better memory efficiency (no asplit buffering)\n`,
+      );
+    }
   }
 
   // Group audio segments by time to detect overlaps
@@ -239,11 +278,15 @@ export function processAudioTimeline(
           `🎵 Processing audio segment ${segmentIndex} with fileIndex ${fileIndex}`,
         );
 
+        // Always use direct input reference - FFmpeg handles sequential access efficiently
+        // asplit filters would require buffering the entire stream, increasing RAM usage
+        const inputStreamRef = `[${fileIndex}:a]`;
+
         const context = {
           trackInfo,
           originalIndex: segmentIndex,
           fileIndex,
-          inputStreamRef: `[${fileIndex}:a]`,
+          inputStreamRef,
         };
 
         const trimResult = createAudioTrimFilters(context);
@@ -332,20 +375,29 @@ export function processAudioTimeline(
           fadedRef = fadeOutRef;
         }
 
-        // Trim all audio streams to totalVideoDuration to prevent amix from extending beyond video duration
-        // This fixes the issue where adelay extends stream duration and amix matches the longest stream
-        // We pad first to ensure streams are at least totalVideoDuration, then trim to exact duration
-        const paddedRef = `[a${segmentIndex}_padded]`;
+        // Trim audio streams to their actual duration (no pre-padding)
+        // The amix filter will handle timing via adelay and pad automatically to match the longest stream
+        // This is RAM-efficient as we don't create full-duration buffers for each stream
         const finalRef = `[a${segmentIndex}_final]`;
-        audioFilters.push(
-          `${fadedRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedRef}`,
-        );
-        audioFilters.push(
-          `${paddedRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalRef}`,
-        );
-        console.log(
-          `🎵 Padded and trimmed audio stream ${segmentIndex} to exact ${totalVideoDuration.toFixed(3)}s to match video duration`,
-        );
+
+        // Only trim if the segment would extend beyond total video duration
+        // Otherwise, let it be its natural length and amix will handle it
+        const segmentEndTime = segment.startTime + segment.duration;
+        if (segmentEndTime > totalVideoDuration) {
+          const trimDuration = totalVideoDuration - segment.startTime;
+          audioFilters.push(
+            `${fadedRef}atrim=duration=${trimDuration.toFixed(6)}${finalRef}`,
+          );
+          console.log(
+            `🎵 Trimmed audio stream ${segmentIndex} to ${trimDuration.toFixed(3)}s (would exceed video duration)`,
+          );
+        } else {
+          // No trimming needed, just copy
+          audioFilters.push(`${fadedRef}acopy${finalRef}`);
+          console.log(
+            `🎵 Audio stream ${segmentIndex} kept at natural duration ${segment.duration.toFixed(3)}s (RAM-efficient, no padding)`,
+          );
+        }
 
         audioSegmentsWithTiming.push({
           segment,
@@ -386,21 +438,27 @@ export function processAudioTimeline(
 
       // amix filter: inputs=N:duration=longest:dropout_transition=0
       // - inputs=N: number of input streams
-      // - duration=longest: output duration is the longest input (all streams are padded to totalVideoDuration)
+      // - duration=longest: output duration is the longest input (considering adelay offsets)
       // - dropout_transition=0: no fade when streams start/end
-      // NOTE: All streams are padded to totalVideoDuration before mixing, so longest will match video duration
+      // - normalize=0: don't normalize volume (preserve original levels)
+      // RAM-efficient: amix handles padding internally, no need to pre-pad each stream
       audioFilters.push(
         `${mixInputs}amix=inputs=${audioSegmentsWithTiming.length}:duration=longest:dropout_transition=0:normalize=0${mixRef}`,
       );
 
+      // Pad the mixed output to totalVideoDuration if needed, then trim to exact duration
       // This ensures the audio duration matches the video duration exactly
+      const paddedMixRef = '[audio_mixed_padded]';
       const finalAudioRef = '[audio]';
       audioFilters.push(
-        `${mixRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalAudioRef}`,
+        `${mixRef}apad=pad_dur=${totalVideoDuration.toFixed(6)}${paddedMixRef}`,
+      );
+      audioFilters.push(
+        `${paddedMixRef}atrim=duration=${totalVideoDuration.toFixed(6)}${finalAudioRef}`,
       );
       audioConcatInputs.push(finalAudioRef);
       console.log(
-        `✅ Created audio mix with ${audioSegmentsWithTiming.length} overlapping streams, trimmed to exact ${totalVideoDuration.toFixed(3)}s`,
+        `✅ Created audio mix with ${audioSegmentsWithTiming.length} overlapping streams, padded and trimmed to exact ${totalVideoDuration.toFixed(3)}s (RAM-efficient: only final mix padded)`,
       );
     }
   }

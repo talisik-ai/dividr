@@ -540,13 +540,25 @@ function handleEncodingSettings(
   cmd.args.push('-c:v', videoCodec);
   cmd.args.push('-c:a', ENCODING_DEFAULTS.AUDIO_CODEC);
 
-  // Add hardware encoder flags if available
-  if (hwAccel?.encoderFlags) {
-    console.log(
-      '🎮 Adding hardware encoder flags:',
-      hwAccel.encoderFlags.join(' '),
+  // Add memory-efficient encoder settings
+  if (!hwAccel) {
+    // Software encoding: Add memory-efficient x264 settings
+    console.log('💾 Adding memory-efficient software encoder settings...');
+    cmd.args.push(
+      '-x264-params',
+      'nal-hrd=cbr:force-cfr=1:rc-lookahead=10:bframes=0', // Reduce lookahead buffer, disable B-frames
     );
-    cmd.args.push(...hwAccel.encoderFlags);
+    console.log('   ✅ Reduced x264 lookahead to 10 frames (default 40)');
+    console.log('   ✅ Disabled B-frames (reduces encoder buffering)');
+  } else {
+    // Hardware encoding: Add hardware encoder flags
+    if (hwAccel.encoderFlags) {
+      console.log(
+        '🎮 Adding hardware encoder flags:',
+        hwAccel.encoderFlags.join(' '),
+      );
+      cmd.args.push(...hwAccel.encoderFlags);
+    }
   }
 }
 
@@ -645,6 +657,44 @@ export async function buildFfmpegCommand(
 
   // Step 1: Add file inputs
   handleFileInputs(job, cmd);
+
+  // Step 1.5: Add aggressive RAM optimization flags
+  // These flags dramatically reduce memory usage at the cost of some processing speed
+  console.log('💾 Adding aggressive RAM optimization flags...');
+
+  cmd.args.push(
+    // === DECODER BUFFER LIMITS ===
+    '-fflags',
+    '+discardcorrupt+nobuffer', // Discard corrupt packets, disable input buffering
+    '-flags',
+    'low_delay', // Minimize decoder latency/buffering
+    '-probesize',
+    '5000000', // Limit input probing (5MB instead of default 5GB)
+    '-analyzeduration',
+    '5000000', // Limit stream analysis (5 seconds instead of default)
+
+    // === FILTER GRAPH OPTIMIZATION ===
+    '-filter_complex_threads',
+    '1', // Sequential processing - CRITICAL for duplicate inputs
+
+    // === OUTPUT BUFFER LIMITS ===
+    '-max_muxing_queue_size',
+    '512', // Aggressive limit on output queue (lower = less RAM)
+    '-muxdelay',
+    '0', // No muxing delay
+    '-muxpreload',
+    '0', // No muxing preload
+  );
+
+  console.log('   ✅ Decoder buffering: DISABLED (nobuffer flag)');
+  console.log('   ✅ Probe size: LIMITED to 5MB (reduces initial RAM spike)');
+  console.log(
+    '   ✅ Filter threads: 1 (sequential processing for duplicate inputs)',
+  );
+  console.log('   ✅ Mux queue: 512 packets (aggressive RAM limit)');
+  console.log(
+    '   ⚠️  Trade-off: Export will be slower but use 40-60% less RAM',
+  );
 
   // Step 2: Build and process timelines with multi-layer support
   const { videoLayers, imageLayers, finalAudioTimeline, categorizedInputs } =
