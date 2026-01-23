@@ -55,9 +55,26 @@ function logCache(message: string, data?: unknown) {
 // =============================================================================
 
 class NoiseReductionCacheImpl {
+  // Cache is keyed by composite key: "sourceId:engine"
   private cache: Map<string, NoiseReductionCacheEntry> = new Map();
+  // Subscriptions are keyed by composite key to allow specific listening
   private subscriptions: Map<string, Set<SubscriptionCallback>> = new Map();
   private pendingProcessing: Map<string, Promise<string>> = new Map();
+
+  // =========================================================================
+  // KEY HELPERS
+  // =========================================================================
+
+  /**
+   * generate composite cache key
+   */
+  private getCacheKey(
+    sourceId: string,
+    engine: 'ffmpeg' | 'deepfilter',
+  ): string {
+    const normalizedId = this.normalizeSourceId(sourceId);
+    return `${normalizedId}:${engine}`;
+  }
 
   // =========================================================================
   // SOURCE IDENTIFICATION
@@ -86,13 +103,9 @@ class NoiseReductionCacheImpl {
    * Check if source has cached processed audio.
    */
   hasCached(sourceId: string, engine?: 'ffmpeg' | 'deepfilter'): boolean {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
-
-    // If engine is specified, require it to match
-    if (engine && entry && entry.engine !== engine) {
-      return false;
-    }
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
 
     return entry?.state === 'cached' && entry?.processedPreviewUrl !== null;
   }
@@ -105,13 +118,9 @@ class NoiseReductionCacheImpl {
     sourceId: string,
     engine?: 'ffmpeg' | 'deepfilter',
   ): string | null {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
-
-    // If engine is specified, require it to match
-    if (engine && entry && entry.engine !== engine) {
-      return null;
-    }
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
 
     if (entry?.state === 'cached' && entry?.processedPreviewUrl) {
       return entry.processedPreviewUrl;
@@ -124,9 +133,13 @@ class NoiseReductionCacheImpl {
    * Returns null if not cached.
    * Use this for FFmpeg export pipeline instead of getProcessedUrl.
    */
-  getProcessedPath(sourceId: string): string | null {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
+  getProcessedPath(
+    sourceId: string,
+    engine?: 'ffmpeg' | 'deepfilter',
+  ): string | null {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
     if (entry?.state === 'cached' && entry?.processedPath) {
       return entry.processedPath;
     }
@@ -136,36 +149,46 @@ class NoiseReductionCacheImpl {
   /**
    * Get processing state for a source.
    */
-  getState(sourceId: string): ProcessingState {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
+  getState(
+    sourceId: string,
+    engine?: 'ffmpeg' | 'deepfilter',
+  ): ProcessingState {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
     return entry?.state ?? 'idle';
   }
 
   /**
    * Get processing progress (0-100).
    */
-  getProgress(sourceId: string): number {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
+  getProgress(sourceId: string, engine?: 'ffmpeg' | 'deepfilter'): number {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
     return entry?.progress ?? 0;
   }
 
   /**
    * Get error message if processing failed.
    */
-  getError(sourceId: string): string | null {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
+  getError(sourceId: string, engine?: 'ffmpeg' | 'deepfilter'): string | null {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
     return entry?.error ?? null;
   }
 
   /**
    * Get full cache entry for a source.
    */
-  getEntry(sourceId: string): NoiseReductionCacheEntry | null {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    return this.cache.get(normalizedId) ?? null;
+  getEntry(
+    sourceId: string,
+    engine?: 'ffmpeg' | 'deepfilter',
+  ): NoiseReductionCacheEntry | null {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    return this.cache.get(key) ?? null;
   }
 
   // =========================================================================
@@ -185,46 +208,41 @@ class NoiseReductionCacheImpl {
       onProgress?: (progress: NoiseReductionProgress) => void;
     },
   ): Promise<string> {
-    const normalizedId = this.normalizeSourceId(sourceId);
+    const targetEngine = options?.engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
 
-    logCache('processSource called', { sourceId: normalizedId, originalUrl });
+    logCache('processSource called', {
+      sourceId: this.normalizeSourceId(sourceId),
+      originalUrl,
+      engine: targetEngine,
+    });
 
     // Check if already cached
-    const existing = this.cache.get(normalizedId);
+    const existing = this.cache.get(key);
     if (existing?.state === 'cached' && existing.processedPreviewUrl) {
-      // If engine is specified, require it to match
-      const reqEngine = options?.engine || 'ffmpeg'; // Default assumption if not provided
-      if (existing.engine === reqEngine) {
-        logCache('Using cached result', { sourceId: normalizedId });
-        return existing.processedPreviewUrl;
-      } else {
-        logCache('Cache engine mismatch, reprocessing', {
-          cached: existing.engine,
-          requested: reqEngine,
-        });
-      }
+      logCache('Using cached result', { key });
+      return existing.processedPreviewUrl;
     }
 
     // Check if already processing
-    const pending = this.pendingProcessing.get(normalizedId);
+    const pending = this.pendingProcessing.get(key);
     if (pending) {
-      logCache('Waiting for pending processing', { sourceId: normalizedId });
+      logCache('Waiting for pending processing', { key });
       return pending;
     }
 
     // Start new processing
-    const processingPromise = this.doProcessSource(
-      normalizedId,
-      originalUrl,
-      options,
-    );
-    this.pendingProcessing.set(normalizedId, processingPromise);
+    const processingPromise = this.doProcessSource(sourceId, originalUrl, {
+      ...options,
+      engine: targetEngine,
+    });
+    this.pendingProcessing.set(key, processingPromise);
 
     try {
       const result = await processingPromise;
       return result;
     } finally {
-      this.pendingProcessing.delete(normalizedId);
+      this.pendingProcessing.delete(key);
     }
   }
 
@@ -232,17 +250,21 @@ class NoiseReductionCacheImpl {
    * Internal: Actually process the audio.
    */
   private async doProcessSource(
-    normalizedId: string,
+    sourceId: string, // Expect non-normalized id if passed from processSource, but actually we prefer normalized usage in key
     originalUrl: string,
     options?: {
       engine?: 'ffmpeg' | 'deepfilter';
       onProgress?: (progress: NoiseReductionProgress) => void;
     },
   ): Promise<string> {
-    logCache('Starting processing', { sourceId: normalizedId });
+    const targetEngine = options?.engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const normalizedId = this.normalizeSourceId(sourceId);
+
+    logCache('Starting processing', { key });
 
     // Initialize cache entry
-    this.updateEntry(normalizedId, {
+    this.updateEntry(key, {
       sourceId: normalizedId,
       originalUrl,
       processedPath: null,
@@ -252,7 +274,7 @@ class NoiseReductionCacheImpl {
       error: null,
       refCount: 1,
       processedAt: null,
-      engine: options?.engine || 'ffmpeg',
+      engine: targetEngine,
     });
 
     try {
@@ -276,9 +298,9 @@ class NoiseReductionCacheImpl {
 
       // Set up progress listener
       const progressHandler = (progress: NoiseReductionProgress) => {
-        const currentEntry = this.cache.get(normalizedId);
+        const currentEntry = this.cache.get(key);
         if (currentEntry) {
-          this.updateEntry(normalizedId, {
+          this.updateEntry(key, {
             ...currentEntry,
             progress: progress.progress,
           });
@@ -329,9 +351,9 @@ class NoiseReductionCacheImpl {
         logCache('Preview URL created', { previewUrl });
 
         // Update cache entry
-        const successEntry = this.cache.get(normalizedId);
+        const successEntry = this.cache.get(key);
         if (successEntry) {
-          this.updateEntry(normalizedId, {
+          this.updateEntry(key, {
             ...successEntry,
             processedPath: outputPath,
             processedPreviewUrl: previewUrl,
@@ -339,7 +361,7 @@ class NoiseReductionCacheImpl {
             progress: 100,
             error: null,
             processedAt: Date.now(),
-            engine: options?.engine || 'ffmpeg',
+            engine: targetEngine,
           });
         }
 
@@ -351,13 +373,13 @@ class NoiseReductionCacheImpl {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
       logCache('Processing failed', {
-        sourceId: normalizedId,
+        key,
         error: errorMessage,
       });
 
-      const errorEntry = this.cache.get(normalizedId);
+      const errorEntry = this.cache.get(key);
       if (errorEntry) {
-        this.updateEntry(normalizedId, {
+        this.updateEntry(key, {
           ...errorEntry,
           state: 'error',
           error: errorMessage,
@@ -460,36 +482,45 @@ class NoiseReductionCacheImpl {
   // =========================================================================
 
   /**
-   * Subscribe to state changes for a source.
+   * Subscribe to state changes for a source + engine.
    * Returns unsubscribe function.
    */
-  subscribe(sourceId: string, callback: SubscriptionCallback): () => void {
-    const normalizedId = this.normalizeSourceId(sourceId);
+  subscribe(
+    sourceId: string,
+    callback: SubscriptionCallback,
+    engine?: 'ffmpeg' | 'deepfilter',
+  ): () => void {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
 
-    let subs = this.subscriptions.get(normalizedId);
+    let subs = this.subscriptions.get(key);
     if (!subs) {
       subs = new Set();
-      this.subscriptions.set(normalizedId, subs);
+      this.subscriptions.set(key, subs);
     }
 
     subs.add(callback);
 
     return () => {
-      const subs = this.subscriptions.get(normalizedId);
+      const subs = this.subscriptions.get(key);
       if (subs) {
         subs.delete(callback);
         if (subs.size === 0) {
-          this.subscriptions.delete(normalizedId);
+          this.subscriptions.delete(key);
         }
       }
     };
   }
 
+
+
   /**
-   * Notify subscribers of state change.
+   * Update cache entry and notify subscribers.
    */
-  private notifySubscribers(sourceId: string): void {
-    const subs = this.subscriptions.get(sourceId);
+  private updateEntry(key: string, entry: NoiseReductionCacheEntry): void {
+    this.cache.set(key, entry);
+    // Notify subscribers for this specific key
+    const subs = this.subscriptions.get(key);
     if (subs) {
       subs.forEach((callback) => {
         try {
@@ -501,14 +532,6 @@ class NoiseReductionCacheImpl {
     }
   }
 
-  /**
-   * Update cache entry and notify subscribers.
-   */
-  private updateEntry(sourceId: string, entry: NoiseReductionCacheEntry): void {
-    this.cache.set(sourceId, entry);
-    this.notifySubscribers(sourceId);
-  }
-
   // =========================================================================
   // REFERENCE COUNTING
   // =========================================================================
@@ -516,13 +539,14 @@ class NoiseReductionCacheImpl {
   /**
    * Increment reference count for a source.
    */
-  addRef(sourceId: string): void {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
+  addRef(sourceId: string, engine?: 'ffmpeg' | 'deepfilter'): void {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
     if (entry) {
       entry.refCount++;
       logCache('Ref added', {
-        sourceId: normalizedId,
+        key,
         refCount: entry.refCount,
       });
     }
@@ -532,13 +556,14 @@ class NoiseReductionCacheImpl {
    * Decrement reference count for a source.
    * Does not delete cache entry (kept for potential re-enable).
    */
-  releaseRef(sourceId: string): void {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
+  releaseRef(sourceId: string, engine?: 'ffmpeg' | 'deepfilter'): void {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
     if (entry && entry.refCount > 0) {
       entry.refCount--;
       logCache('Ref released', {
-        sourceId: normalizedId,
+        key,
         refCount: entry.refCount,
       });
     }
@@ -551,9 +576,13 @@ class NoiseReductionCacheImpl {
   /**
    * Clear a specific cache entry.
    */
-  async clearEntry(sourceId: string): Promise<void> {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
+  async clearEntry(
+    sourceId: string,
+    engine?: 'ffmpeg' | 'deepfilter',
+  ): Promise<void> {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
 
     if (entry) {
       // Revoke blob URL
@@ -568,9 +597,19 @@ class NoiseReductionCacheImpl {
         ]);
       }
 
-      this.cache.delete(normalizedId);
-      this.notifySubscribers(normalizedId);
-      logCache('Entry cleared', { sourceId: normalizedId });
+      this.cache.delete(key);
+      // Notify subscribers that it's gone
+      const subs = this.subscriptions.get(key);
+      if (subs) {
+        subs.forEach((cb) => {
+          try {
+            cb();
+          } catch (e) {
+            console.error(e);
+          }
+        });
+      }
+      logCache('Entry cleared', { key });
     }
   }
 
@@ -604,11 +643,12 @@ class NoiseReductionCacheImpl {
   /**
    * Reset error state to allow retry.
    */
-  resetError(sourceId: string): void {
-    const normalizedId = this.normalizeSourceId(sourceId);
-    const entry = this.cache.get(normalizedId);
+  resetError(sourceId: string, engine?: 'ffmpeg' | 'deepfilter'): void {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
     if (entry?.state === 'error') {
-      this.updateEntry(normalizedId, {
+      this.updateEntry(key, {
         ...entry,
         state: 'idle',
         error: null,

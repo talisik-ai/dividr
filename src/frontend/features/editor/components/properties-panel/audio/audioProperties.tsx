@@ -256,8 +256,36 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   const [pendingNoiseReduction, setPendingNoiseReduction] = useState(false);
   
   // State for engine selection modal
+  // State for engine selection modal
   const [showEngineModal, setShowEngineModal] = useState(false);
-  const selectedEngineRef = useRef<NoiseReductionEngine>('ffmpeg');
+  // Track active engine to subscribe to correct cache updates
+  const [activeEngine, setActiveEngine] = useState<NoiseReductionEngine>('ffmpeg');
+
+  // Initialize active engine preference on mount to show correct cache state
+  useEffect(() => {
+    const resolveEngine = async () => {
+      try {
+        const mem = await window.electronAPI.getSystemMemory();
+        // Default to ffmpeg on low mem
+        if (mem.total <= 8 * 1024 * 1024 * 1024) {
+          setActiveEngine('ffmpeg');
+          return;
+        }
+
+        // Check persistent storage
+        const stored = localStorage.getItem('dividr-noise-reduction-engine');
+        if (stored === 'deepfilter') {
+          setActiveEngine('deepfilter');
+        } else {
+          // Default or 'ffmpeg'
+          setActiveEngine('ffmpeg');
+        }
+      } catch (e) {
+        console.error('Failed to resolve engine preference', e);
+      }
+    };
+    resolveEngine();
+  }, []);
 
   // State for noise reduction processing
   const [nrCacheState, setNrCacheState] = useState<ProcessingState>('idle');
@@ -280,19 +308,17 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
 
     const updateState = () => {
-      setNrCacheState(NoiseReductionCache.getState(sourceId));
-      setNrProgress(NoiseReductionCache.getProgress(sourceId));
-      setNrError(NoiseReductionCache.getError(sourceId));
-      // Note: We don't filter by engine here because we want to see ANY activity on this source
-      // If we switch engines, the state will update accordingly when processing starts
+      setNrCacheState(NoiseReductionCache.getState(sourceId, activeEngine));
+      setNrProgress(NoiseReductionCache.getProgress(sourceId, activeEngine));
+      setNrError(NoiseReductionCache.getError(sourceId, activeEngine));
     };
 
     // Initialize state
     updateState();
 
-    // Subscribe to changes
-    return NoiseReductionCache.subscribe(sourceId, updateState);
-  }, [sourceUrl]);
+    // Subscribe to changes for this specific engine
+    return NoiseReductionCache.subscribe(sourceId, updateState, activeEngine);
+  }, [sourceUrl, activeEngine]);
 
   // Derived state for UI
   const isProcessing = nrCacheState === 'processing';
@@ -350,7 +376,7 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   // Helper: Proceed after engine is selected
   const proceedWithNoiseReduction = useCallback(
     async (engine: NoiseReductionEngine) => {
-      selectedEngineRef.current = engine;
+      setActiveEngine(engine);
 
       // Check Runtime only if using DeepFilter
       if (engine === 'deepfilter') {
@@ -449,10 +475,10 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   // Handle successful runtime download - enable noise reduction
   const handleRuntimeDownloadSuccess = useCallback(() => {
     if (pendingNoiseReduction) {
-      executeNoiseReduction(selectedEngineRef.current);
+      executeNoiseReduction(activeEngine);
       setPendingNoiseReduction(false);
     }
-  }, [pendingNoiseReduction, executeNoiseReduction]);
+  }, [pendingNoiseReduction, activeEngine, executeNoiseReduction]);
 
   // Handle reset to defaults (single action - creates undo entry)
   const handleReset = useCallback(() => {
