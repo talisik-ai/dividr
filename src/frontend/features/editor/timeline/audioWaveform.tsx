@@ -1052,22 +1052,10 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
     if (isLoading || isGeneratingNrWaveform) {
       return (
         <div
-          className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden"
+          className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden pointer-events-none"
           style={{ width, height }}
         >
-          {/* Animated gradient placeholder that suggests waveform shape */}
-          <div
-            className="absolute inset-0 bg-gradient-to-r from-gray-400/10 via-gray-300/20 to-gray-400/10 animate-pulse"
-            style={{
-              backgroundSize: '200% 100%',
-            }}
-          />
-          <div className="relative flex items-center gap-1 z-10">
-            <Loader2 className="w-3 h-3 animate-spin text-green-400" />
-            <span className="text-[10px] text-green-400/80">
-              {isGeneratingNrWaveform ? 'Processing...' : 'Loading...'}
-            </span>
-          </div>
+          {/* Silent loading state - no visual indicator */}
         </div>
       );
     }
@@ -1079,47 +1067,20 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       if (hasExistingWaveform) {
         return (
           <div
-            className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden"
+            className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden pointer-events-none"
             style={{ width, height }}
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-gray-400/10 via-gray-300/20 to-gray-400/10 animate-pulse" />
-            <div className="relative flex items-center gap-1 z-10">
-              <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
-              <span className="text-[10px] text-gray-400/80">Loading...</span>
-            </div>
+            {/* Silent loading state - no visual indicator */}
           </div>
         );
       }
 
       return (
         <div
-          className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden"
+          className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden pointer-events-none"
           style={{ width, height }}
         >
-          {/* Animated shimmer effect during generation */}
-          <div
-            className="absolute inset-0 overflow-hidden"
-            style={{
-              background:
-                'linear-gradient(90deg, transparent 0%, rgba(156, 163, 175, 0.1) 50%, transparent 100%)',
-              backgroundSize: '200% 100%',
-              animation: 'shimmer 1.5s infinite',
-            }}
-          />
-          <style>
-            {`
-              @keyframes shimmer {
-                0% { background-position: 200% 0; }
-                100% { background-position: -200% 0; }
-              }
-            `}
-          </style>
-          <div className="relative flex items-center gap-1 z-10">
-            <Loader2 className="w-3 h-3 animate-spin text-purple-400" />
-            <span className="text-[10px] text-purple-400/80">
-              Generating...
-            </span>
-          </div>
+          {/* Silent generation state - no visual indicator */}
         </div>
       );
     }

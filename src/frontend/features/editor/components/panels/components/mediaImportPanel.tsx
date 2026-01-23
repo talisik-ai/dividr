@@ -811,9 +811,9 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
           <ContextMenuTrigger asChild>
             <div className="flex flex-col space-y-2">
               <div
-                draggable={!file.isOnTimeline && !isBusy}
+                draggable={!file.isOnTimeline}
                 onDragStart={(e) => {
-                  if (!file.isOnTimeline && !isBusy) {
+                  if (!file.isOnTimeline) {
                     handleMediaDragStart(e, file.id);
                   } else {
                     e.preventDefault();
@@ -821,14 +821,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 }}
                 className={cn(
                   'group relative h-[98px] rounded-md transition-all duration-200 overflow-hidden',
-                  !file.isOnTimeline &&
-                    !isBusy &&
-                    'cursor-grab active:cursor-grabbing',
-                  (file.isOnTimeline || isBusy) && 'cursor-default',
-                  isBusy && 'pointer-events-none',
+                  !file.isOnTimeline && 'cursor-grab active:cursor-grabbing',
+                  file.isOnTimeline && 'cursor-default',
                 )}
                 onClick={async () => {
-                  if (!file.isOnTimeline && !isBusy) {
+                  if (!file.isOnTimeline) {
                     await handleAddToTimeline(file.id);
                   }
                 }}
@@ -849,10 +846,8 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                 }
               >
                 <MediaCover file={file} />
-                {/* Unified processing indicator - sprites, waveform, or transcoding */}
-                {(file.isGeneratingSprites ||
-                  file.isGeneratingWaveform ||
-                  file.isTranscoding) && (
+                {/* Unified processing indicator - only for transcoding */}
+                {file.isTranscoding && (
                   <div className="absolute bottom-0 p-2 left-0 right-0 h-8 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-end">
                     <Loader2 className="w-5 h-5 animate-spin text-white drop-shadow-lg" />
                   </div>
@@ -934,7 +929,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
               <span>Delete</span>
             </ContextMenuItem>
             <ContextMenuItem
-              disabled={file.isOnTimeline || isBusy}
+              disabled={file.isOnTimeline}
               onClick={() => handleAddToTimeline(file.id)}
             >
               <PlusCircle className="h-4 w-4" />

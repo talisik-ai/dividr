@@ -139,6 +139,20 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         ],
       );
 
+      const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
+      const isTranscoding = useMemo(() => {
+        const item = mediaLibrary.find(
+          (m) =>
+            m.source === track.source ||
+            (track.mediaId && m.id === track.mediaId),
+        );
+        return (
+          item?.transcoding?.status === 'processing' ||
+          item?.transcoding?.status === 'pending'
+        );
+      }, [mediaLibrary, track.source, track.mediaId]);
+
+
       // Hybrid tile generation - pixel-position based for correct zoom behavior
       // Key insight: iterate by PIXEL POSITION at native tile width intervals,
       // then pick the appropriate thumbnail for each position.
@@ -417,17 +431,19 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
           }}
         >
           {/* Status indicators */}
-          {state.isLoading && (
-            <div className="absolute top-0 left-0 flex items-center space-x-2 px-2 py-1 bg-gray-900/90 backdrop-blur-sm rounded-r border border-gray-700/50 z-10">
-              <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
-              <span className="text-blue-400 text-xs font-medium">
-                Generating sprites...
+          {/* Sprite generation loading indicator removed */}
+
+          {isTranscoding && !state.isLoading && (
+            <div className="absolute top-0 left-0 flex items-center space-x-2 px-2 py-1 bg-purple-900/90 backdrop-blur-sm rounded-r border border-purple-700/50 z-10 pointer-events-none">
+              <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
+              <span className="text-purple-400 text-xs font-medium">
+                Optimizing...
               </span>
             </div>
           )}
 
           {state.error && (
-            <div className="absolute top-0 left-0 flex items-center space-x-2 px-2 py-1 bg-red-900/90 backdrop-blur-sm rounded-r border border-red-700/50 z-10">
+            <div className="absolute top-0 left-0 flex items-center space-x-2 px-2 py-1 bg-red-900/90 backdrop-blur-sm rounded-r border border-red-700/50 z-10 pointer-events-none">
               <div className="w-2 h-2 rounded-full bg-red-400" />
               <span className="text-red-200 text-xs font-medium">
                 {state.error.includes('restart')
