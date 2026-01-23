@@ -559,6 +559,16 @@ const processImportedFile = async (
           `⚠️ Sprite sheet generation failed for ${fileInfo.name}:`,
           error,
         );
+        if (updateMediaLibraryFn) {
+           updateMediaLibraryFn(mediaId, {
+             spriteSheets: {
+               success: false,
+               spriteSheets: [],
+               cacheKey: 'failed',
+               generatedAt: Date.now()
+             }
+           });
+        }
       });
     }
 
@@ -682,6 +692,18 @@ const processImportedFile = async (
             `⚠️ Waveform generation retry handler failed for ${fileInfo.name}:`,
             error,
           );
+          if (updateMediaLibraryFn) {
+            updateMediaLibraryFn(mediaId, {
+              waveform: {
+                success: false,
+                peaks: [],
+                duration: 0,
+                sampleRate: 0,
+                cacheKey: 'failed',
+                generatedAt: Date.now()
+              }
+            });
+          }
         });
       }, 100); // Small delay to let audio extraction start
     }
@@ -696,6 +718,18 @@ const processImportedFile = async (
         `⚠️ Waveform generation failed for ${fileInfo.name}:`,
         error,
       );
+      if (updateMediaLibraryFn) {
+        updateMediaLibraryFn(mediaId, {
+          waveform: {
+            success: false,
+            peaks: [],
+            duration: 0,
+            sampleRate: 0,
+            cacheKey: 'failed',
+            generatedAt: Date.now()
+          }
+        });
+      }
     });
   }
 

@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { NoiseReductionCache } from '../preview/services/NoiseReductionCache';
+import { useMediaReadiness } from '../../editor/hooks/useMediaReadiness';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 
@@ -49,6 +50,8 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
 
     // Version counter to trigger waveformData re-evaluation after NR waveform generation
     const [nrWaveformVersion, setNrWaveformVersion] = useState(0);
+
+    const isMediaReady = useMediaReadiness(track.mediaId);
 
     // Calculate volume gain from dB for waveform visual scaling
     // This is a visual-only transformation - no re-analysis of audio data
@@ -1049,7 +1052,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       return null;
     }
 
-    if (isLoading || isGeneratingNrWaveform) {
+    if (isLoading || isGeneratingNrWaveform || !isMediaReady) {
       return (
         <div
           className="relative flex items-center justify-center bg-gray-100/10 border border-gray-300/20 rounded overflow-hidden pointer-events-none"

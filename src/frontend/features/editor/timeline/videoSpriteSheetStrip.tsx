@@ -4,6 +4,7 @@ import {
   default as VideoSpriteSheetGenerator,
 } from '@/backend/frontend_use/videoSpriteSheetGenerator';
 import { Loader2 } from 'lucide-react';
+import { useMediaReadiness } from '../../editor/hooks/useMediaReadiness';
 import React, {
   useCallback,
   useEffect,
@@ -138,6 +139,8 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
           frameWidth,
         ],
       );
+
+      const isMediaReady = useMediaReadiness(track.mediaId);
 
       const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
       const isTranscoding = useMemo(() => {
@@ -431,7 +434,12 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
           }}
         >
           {/* Status indicators */}
-          {/* Sprite generation loading indicator removed */}
+          {/* Show loading state if media is not ready (transcoding, generating sprites/waveform) */}
+          {!isMediaReady && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-800 z-20">
+              {/* Sprite generation loading indicator removed */}
+            </div>
+          )}
 
           {isTranscoding && !state.isLoading && (
             <div className="absolute top-0 left-0 flex items-center space-x-2 px-2 py-1 bg-purple-900/90 backdrop-blur-sm rounded-r border border-purple-700/50 z-10 pointer-events-none">
@@ -457,6 +465,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
           <div className="absolute inset-0 bg-gray-800" />
 
           {/* GPU-accelerated sprite container */}
+          {isMediaReady && (
           <div
             className="absolute inset-0"
             style={{
@@ -479,6 +488,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
               );
             })}
           </div>
+          )}
 
           {/* Track name overlay */}
           <div

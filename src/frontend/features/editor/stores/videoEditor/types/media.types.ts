@@ -122,4 +122,11 @@ export interface MediaLibraryItem {
     /** Timestamp when transcoding completed */
     completedAt?: number;
   };
+
+  /**
+   * Coordinated readiness state for UI rendering.
+   * - pending: Media is still processing (transcoding, sprites, waveform).
+   * - ready: Media is fully ready for timeline display without flickering.
+   */
+  readinessState?: 'pending' | 'ready';
 }
