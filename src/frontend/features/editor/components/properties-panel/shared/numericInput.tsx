@@ -294,7 +294,7 @@ const NumericInputComponent: React.FC<NumericInputProps> = ({
               <ChevronDown className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[60px]">
+          <DropdownMenuContent align="end" className="min-w-[90px] max-h-[250px]">
             {presets.map((preset) => (
               <DropdownMenuItem
                 key={preset}
