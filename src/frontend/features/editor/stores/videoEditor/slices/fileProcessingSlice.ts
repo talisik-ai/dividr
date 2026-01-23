@@ -453,6 +453,64 @@ const processImportedFile = async (
 
   const mediaId = addToLibraryFn(mediaLibraryItem);
 
+  // Check for 4K video (>2K width) requiring proxy for smooth playback
+  if (trackType === 'video' && videoDimensions.width > 2000) {
+    console.log(
+      `🎥 High-res content detected (${videoDimensions.width}x${videoDimensions.height}), starting proxy generation...`,
+    );
+
+    if (updateMediaLibraryFn) {
+      // Mark proxy status as processing
+      updateMediaLibraryFn(mediaId, {
+        proxy: {
+          status: 'processing',
+          originalPreviewUrl: previewUrl,
+        },
+      });
+
+      // Trigger background proxy generation
+      window.electronAPI
+        .generateProxy(fileInfo.path)
+        .then(async (result: { success: boolean; proxyPath?: string; error?: string }) => {
+          if (result.success && result.proxyPath) {
+            console.log('✅ Proxy generated successfully:', result.proxyPath);
+
+            // Create URL for the proxy file
+            const proxyUrlResult = await window.electronAPI.createPreviewUrl(
+              result.proxyPath,
+            );
+
+            if (proxyUrlResult.success) {
+              // Update media item to use proxy URL
+              updateMediaLibraryFn(mediaId, {
+                previewUrl: proxyUrlResult.url,
+                proxy: {
+                  status: 'ready',
+                  path: result.proxyPath,
+                  originalPreviewUrl: previewUrl,
+                },
+              });
+              console.log(
+                '✅ Switched previewUrl to proxy for:',
+                fileInfo.name,
+              );
+            }
+          } else {
+            console.warn('❌ Proxy generation failed:', result.error);
+            updateMediaLibraryFn(mediaId, {
+              proxy: { status: 'failed' },
+            });
+          }
+        })
+        .catch((err: any) => {
+          console.error('❌ Proxy generation error:', err);
+          updateMediaLibraryFn(mediaId, {
+            proxy: { status: 'failed' },
+          });
+        });
+    }
+  }
+
   // Check if file requires transcoding (AVI, WMV, etc.)
   if (trackType === 'video') {
     // Run transcoding check in background without blocking import

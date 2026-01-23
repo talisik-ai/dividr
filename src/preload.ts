@@ -128,6 +128,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // FFmpeg diagnostics
   getFFmpegStatus: () => ipcRenderer.invoke('ffmpeg:status'),
 
+  // Proxy generation
+  generateProxy: (inputPath: string) =>
+    ipcRenderer.invoke('generate-proxy', inputPath) as Promise<{
+      success: boolean;
+      proxyPath?: string;
+      error?: string;
+    }>,
+
   // Enhanced API with progress tracking
   runFfmpegWithProgress: (
     job: VideoEditJob,

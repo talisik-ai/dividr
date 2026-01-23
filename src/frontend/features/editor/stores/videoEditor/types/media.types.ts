@@ -71,6 +71,12 @@ export interface MediaLibraryItem {
     cacheKey: string;
     generatedAt?: number;
   };
+  proxy?: {
+    status: 'none' | 'processing' | 'ready' | 'failed';
+    path?: string;
+    originalPreviewUrl?: string;
+    jobId?: string;
+  };
   hasGeneratedKaraoke?: boolean;
   cachedKaraokeSubtitles?: {
     transcriptionResult: {
