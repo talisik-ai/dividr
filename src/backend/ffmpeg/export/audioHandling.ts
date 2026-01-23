@@ -184,7 +184,7 @@ export type GetVolumeDbCallback = (segment: ProcessedTimelineSegment) => number;
  * Handles trimming, positioning, padding, and mixing of audio streams
  * @param audioTimeline - Processed audio timeline with segments
  * @param categorizedInputs - Categorized input files
- * @param hasVideoInputs - Whether video inputs exist (skip audio if false)
+ * @param hasVideoInputs - Whether video or image inputs exist (both produce video output, skip audio if false)
  * @param totalVideoDuration - Total duration of the video in seconds
  * @param createAudioTrimFilters - Function to create audio trim filters
  * @param getVolumeDb - Optional callback to get volume adjustment in decibels per segment
@@ -203,7 +203,7 @@ export function processAudioTimeline(
 
   if (!hasVideoInputs) {
     console.log(
-      'ℹ️ Skipping audio processing - only image inputs detected (no video inputs)',
+      'ℹ️ Skipping audio processing - no video or image inputs detected',
     );
     return { audioFilters, audioConcatInputs };
   }

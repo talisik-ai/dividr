@@ -1533,8 +1533,8 @@ export function buildSeparateTimelineFilterComplex(
   }
 
   // Process audio timeline segments with support for overlapping
-  // Skip audio processing if there are only image inputs (no video inputs)
-  const hasVideoInputs = videoLayers.size > 0;
+  // Include audio if there are video inputs OR image inputs (both produce video output)
+  const hasVideoInputs = videoLayers.size > 0 || imageLayers.size > 0;
 
   const hasVideoContentForBase =
     sortedLayers.length > 0 || videoLayers.size > 0;
@@ -2065,8 +2065,8 @@ export function handleFilterComplex(
     // 2. Subtitles are applied after crop: [video_cropped] -> [video]
     // So we always map [video] as the final output
 
-    // Check if we have video inputs (not just images) to determine if we should map audio
-    const hasVideoInputs = videoLayers.size > 0;
+    // Check if we have video inputs OR image inputs (both produce video output) to determine if we should map audio
+    const hasVideoInputs = videoLayers.size > 0 || imageLayers.size > 0;
 
     // Add hardware upload filter for VAAPI if needed
     if (hwAccel?.type === 'vaapi') {
@@ -2078,7 +2078,7 @@ export function handleFilterComplex(
         cmd.args.push('-map', '[video_hw]', '-map', '[audio]');
       } else {
         cmd.args.push('-map', '[video_hw]');
-        console.log('ℹ️ Not mapping audio - only image inputs detected');
+        console.log('ℹ️ Not mapping audio - no video or image inputs detected');
       }
     } else {
       cmd.args.push('-filter_complex', filterComplex);
@@ -2086,7 +2086,7 @@ export function handleFilterComplex(
         cmd.args.push('-map', '[video]', '-map', '[audio]');
       } else {
         cmd.args.push('-map', '[video]');
-        console.log('ℹ️ Not mapping audio - only image inputs detected');
+        console.log('ℹ️ Not mapping audio - no video or image inputs detected');
       }
     }
   }
