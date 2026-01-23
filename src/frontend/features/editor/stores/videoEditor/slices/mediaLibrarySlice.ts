@@ -543,7 +543,11 @@ export const createMediaLibrarySlice: StateCreator<
       return true;
     }
 
-    const videoPath = mediaItem.tempFilePath || mediaItem.source;
+    // Prefer proxy for generation if available to avoid memory issues with 4K sources
+    const videoPath =
+      mediaItem.proxy?.status === 'ready' && mediaItem.proxy?.path
+        ? mediaItem.proxy.path
+        : mediaItem.tempFilePath || mediaItem.source;
 
     // Skip blob URLs (they won't work with FFmpeg)
     if (videoPath.startsWith('blob:')) {
@@ -637,7 +641,11 @@ export const createMediaLibrarySlice: StateCreator<
       return true;
     }
 
-    const videoPath = mediaItem.tempFilePath || mediaItem.source;
+    // Prefer proxy for generation if available to avoid memory issues with 4K sources
+    const videoPath =
+      mediaItem.proxy?.status === 'ready' && mediaItem.proxy?.path
+        ? mediaItem.proxy.path
+        : mediaItem.tempFilePath || mediaItem.source;
 
     // Skip blob URLs (they won't work with FFmpeg)
     if (videoPath.startsWith('blob:')) {

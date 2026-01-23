@@ -454,7 +454,9 @@ const processImportedFile = async (
   const mediaId = addToLibraryFn(mediaLibraryItem);
 
   // Check for 4K video (>2K width) requiring proxy for smooth playback
-  if (trackType === 'video' && videoDimensions.width > 2000) {
+  const needsProxy = trackType === 'video' && videoDimensions.width > 2000;
+
+  if (needsProxy) {
     console.log(
       `🎥 High-res content detected (${videoDimensions.width}x${videoDimensions.height}), starting proxy generation...`,
     );
@@ -494,6 +496,16 @@ const processImportedFile = async (
                 '✅ Switched previewUrl to proxy for:',
                 fileInfo.name,
               );
+
+              // Trigger deferred background jobs now that proxy is ready
+              if (generateSpriteFn) {
+                console.log(`🎬 Starting deferred sprite sheet generation for proxy: ${fileInfo.name}`);
+                generateSpriteFn(mediaId).catch(err => console.warn('Deferred sprite gen failed:', err));
+              }
+              if (generateThumbnailFn) {
+                console.log(`📸 Starting deferred thumbnail generation for proxy: ${fileInfo.name}`);
+                generateThumbnailFn(mediaId).catch(err => console.warn('Deferred thumbnail gen failed:', err));
+              }
             }
           } else {
             console.warn('❌ Proxy generation failed:', result.error);
@@ -610,6 +622,8 @@ const processImportedFile = async (
 
   // Generate sprite sheets and thumbnails for video files (async, don't wait)
   if (trackType === 'video') {
+    // Skip if we are generating a proxy - the proxy success handler will trigger these later
+    if (!needsProxy) {
     if (generateSpriteFn) {
       // Run sprite sheet generation in background without blocking import
       generateSpriteFn(mediaId).catch((error) => {
@@ -638,6 +652,7 @@ const processImportedFile = async (
           error,
         );
       });
+    }
     }
 
     // Extract audio from video file for independent audio track usage
