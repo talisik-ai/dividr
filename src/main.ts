@@ -2417,6 +2417,94 @@ ipcMain.handle('ffmpeg:cancel', async () => {
   return { success: false, message: 'No export running' };
 });
 
+// IPC Handler for generating proxy files for 4K video optimization
+ipcMain.handle('generate-proxy', async (event, inputPath: string) => {
+  console.log('🔄 generate-proxy called for:', inputPath);
+
+  if (!ffmpegPath) {
+    return { success: false, error: 'FFmpeg not available' };
+  }
+
+  try {
+    const proxiesDir = path.join(app.getPath('userData'), 'proxies');
+    if (!fs.existsSync(proxiesDir)) {
+      fs.mkdirSync(proxiesDir, { recursive: true });
+    }
+
+    // Generate a stable hash for the filename based on input path
+    const hash = crypto.createHash('md5').update(inputPath).digest('hex');
+    const outputPath = path.join(proxiesDir, `${hash}.mp4`);
+
+    // Check if proxy already exists
+    if (fs.existsSync(outputPath)) {
+      console.log('✅ Proxy already exists at:', outputPath);
+      // Verify it's valid (size > 0)
+      const stats = fs.statSync(outputPath);
+      if (stats.size > 0) {
+        return { success: true, proxyPath: outputPath };
+      }
+      // If invalid, delete and regenerate
+      fs.unlinkSync(outputPath);
+    }
+
+    console.log('🚀 Starting proxy generation to:', outputPath);
+
+    // Spawn FFmpeg to generate 720p proxy
+    // -vf scale=-2:720 ensures width is divisible by 2 and height is 720
+    // -preset ultrafast for speed
+    const args = [
+      '-i',
+      inputPath,
+      '-vf',
+      'scale=-2:720,format=yuv420p',
+      '-c:v',
+      'libx264',
+      '-profile:v',
+      'baseline',
+      '-level',
+      '3.0',
+      '-preset',
+      'ultrafast',
+      '-crf',
+      '24',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-movflags',
+      '+faststart',
+      '-y',
+      outputPath,
+    ];
+
+    return new Promise((resolve) => {
+      const ffmpeg = spawn(ffmpegPath!, args);
+
+      ffmpeg.stderr.on('data', (data) => {
+        // Optional: log progress if needed
+      });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          console.log('✅ Proxy generation complete:', outputPath);
+          resolve({ success: true, proxyPath: outputPath });
+        } else {
+          console.error('❌ Proxy generation failed with code:', code);
+          resolve({ success: false, error: `FFmpeg exited with code ${code}` });
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        console.error('❌ Proxy generation error:', err);
+        resolve({ success: false, error: err.message });
+      });
+    });
+  } catch (error) {
+    console.error('Failed to generate proxy:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Diagnostic handler to check FFmpeg status
 ipcMain.handle('ffmpeg:status', async () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires

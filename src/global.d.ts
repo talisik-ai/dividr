@@ -131,6 +131,14 @@ declare global {
         result?: { command: string; logs: string };
         error?: string;
       }>;
+
+      // Proxy generation
+      generateProxy: (inputPath: string) => Promise<{
+        success: boolean;
+        proxyPath?: string;
+        error?: string;
+      }>;
+
       getDuration: (filePath: string) => Promise<number>;
 
       // Video dimensions method

@@ -204,3 +204,20 @@ export async function runFfmpeg(
     throw new Error(result.error || 'FFmpeg execution failed');
   }
 }
+
+// Generate a proxy file for 4K editing optimization
+export async function generateProxy(
+  inputPath: string,
+): Promise<{ success: boolean; proxyPath: string }> {
+  if (!isElectron()) {
+    console.warn('FFmpeg operations require Electron main process');
+    throw new Error('FFmpeg operations require Electron main process');
+  }
+
+  try {
+    return await window.electronAPI.invoke('generate-proxy', inputPath);
+  } catch (error) {
+    console.error('Failed to generate proxy:', error);
+    throw error;
+  }
+}
