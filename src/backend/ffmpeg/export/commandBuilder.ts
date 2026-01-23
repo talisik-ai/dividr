@@ -128,6 +128,7 @@ function isGapInput(path: string): boolean {
 
 /**
  * Categorizes inputs into video and audio arrays with proper indexing
+ * IMPORTANT: Each segment is treated as a unique input to avoid RAM overflow
  * @param inputs - Array of video edit job inputs
  * @returns Categorized inputs with proper file indexing
  */
@@ -136,10 +137,8 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
   const audioInputs: Omit<InputCategory, 'isGap'>[] = [];
   let fileInputIndex = 0;
 
-  // Track which files we've already added
-  const addedFiles = new Set<string>();
-  // Track original file mappings for split segments
-  const filePathToIndex = new Map<string, number>();
+  // REMOVED: No longer tracking which files we've already added
+  // Each segment gets its own unique input index to avoid RAM overflow
 
   inputs.forEach((input, originalIndex) => {
     const path = getInputPath(input);
@@ -156,34 +155,20 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
       let audioFileIndex: number | undefined = undefined;
 
       if (!isGap) {
-        // For non-gap files, assign file index
-        if (!addedFiles.has(path)) {
-          fileIndex = fileInputIndex;
-          filePathToIndex.set(path, fileIndex);
-          addedFiles.add(path);
-          fileInputIndex++;
-        } else {
-          // Use the existing file index for this file
-          fileIndex = filePathToIndex.get(path) ?? -1;
-        }
+        // Always assign a new file index for each segment (even from the same file)
+        fileIndex = fileInputIndex;
+        fileInputIndex++;
+        console.log(
+          `📹 Video segment ${originalIndex}: assigned unique file index ${fileIndex}`,
+        );
 
-        // If this video has a separate audio file, register it
+        // If this video has a separate audio file, assign it a unique index too
         if (trackInfo.audioPath) {
-          if (!addedFiles.has(trackInfo.audioPath)) {
-            audioFileIndex = fileInputIndex;
-            filePathToIndex.set(trackInfo.audioPath, audioFileIndex);
-            addedFiles.add(trackInfo.audioPath);
-            fileInputIndex++;
-            console.log(
-              `🎵 Registered audio file for video input ${originalIndex}: audio file index ${audioFileIndex}`,
-            );
-          } else {
-            // Audio file was already added, get its index
-            audioFileIndex = filePathToIndex.get(trackInfo.audioPath);
-            console.log(
-              `🎵 Reusing existing audio file index ${audioFileIndex} for video input ${originalIndex}`,
-            );
-          }
+          audioFileIndex = fileInputIndex;
+          fileInputIndex++;
+          console.log(
+            `🎵 Audio for video segment ${originalIndex}: assigned unique file index ${audioFileIndex}`,
+          );
         }
       }
 
@@ -209,14 +194,12 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
       let fileIndex = -1;
 
       if (!isGap) {
-        if (!addedFiles.has(path)) {
-          fileIndex = fileInputIndex;
-          filePathToIndex.set(path, fileIndex);
-          addedFiles.add(path);
-          fileInputIndex++;
-        } else {
-          fileIndex = filePathToIndex.get(path) ?? -1;
-        }
+        // Always assign a new file index for each audio segment
+        fileIndex = fileInputIndex;
+        fileInputIndex++;
+        console.log(
+          `🎵 Audio segment ${originalIndex}: assigned unique file index ${fileIndex}`,
+        );
       }
 
       audioInputs.push({
@@ -245,6 +228,10 @@ function categorizeInputs(inputs: (string | TrackInfo)[]): CategorizedInputs {
       }
     }
   });
+
+  console.log(
+    `✅ Categorized ${videoInputs.length} video inputs and ${audioInputs.length} audio inputs (${fileInputIndex} total unique file inputs)`,
+  );
 
   return { videoInputs, audioInputs, fileInputIndex };
 }
@@ -465,13 +452,15 @@ function createSilentAudioFilters(
 
 /**
  * Adds file inputs to the command
+ * IMPORTANT: Each segment is added as a unique input (even if from the same file) to avoid RAM overflow
  * For video tracks with separate audio files, adds both the video and audio as inputs
  * Text tracks are excluded as they don't have file paths and are rendered via drawtext filters
  */
 function handleFileInputs(job: VideoEditJob, cmd: CommandParts): void {
-  const addedFiles = new Set<string>();
+  // REMOVED: No longer tracking which files we've already added
+  // Each segment gets its own -i input to avoid FFmpeg loading entire files into RAM
 
-  job.inputs.forEach((input) => {
+  job.inputs.forEach((input, index) => {
     const path = getInputPath(input);
     const trackInfo = getTrackInfo(input);
 
@@ -485,20 +474,20 @@ function handleFileInputs(job: VideoEditJob, cmd: CommandParts): void {
       return;
     }
 
-    // Add the main file (video or audio)
-    if (!addedFiles.has(path)) {
-      cmd.args.push('-i', escapePath(path));
-      addedFiles.add(path);
-      console.log(`📁 Added input file: ${path}`);
-    }
+    // Always add the main file (video or audio) as a unique input
+    cmd.args.push('-i', escapePath(path));
+    console.log(`📁 Added unique input ${index}: ${path}`);
 
     // If this is a video track with a separate audio file, add the audio file too
-    if (trackInfo.audioPath && !addedFiles.has(trackInfo.audioPath)) {
+    if (trackInfo.audioPath) {
       cmd.args.push('-i', escapePath(trackInfo.audioPath));
-      addedFiles.add(trackInfo.audioPath);
-      console.log(`🎵 Added separate audio input: ${trackInfo.audioPath}`);
+      console.log(`🎵 Added unique audio input ${index}: ${trackInfo.audioPath}`);
     }
   });
+
+  console.log(
+    `✅ Total unique inputs added: ${cmd.args.filter((arg) => arg === '-i').length}`,
+  );
 }
 
 /**
