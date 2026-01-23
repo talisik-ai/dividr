@@ -513,11 +513,15 @@ export function processLayerSegments(
           );
         }
 
+        // Always use direct input reference - FFmpeg handles sequential access efficiently
+        // Split filters would require buffering the entire stream, increasing RAM usage
+        const inputStreamRef = `[${fileIndex}:v]`;
+
         const context: VideoProcessingContext = {
           trackInfo: modifiedTrackInfo,
           originalIndex: 9000 + layerIndex * 1000 + segmentIndex,
           fileIndex,
-          inputStreamRef: `[${fileIndex}:v]`,
+          inputStreamRef,
         };
 
         const trimResult = createVideoTrimFilters(context);
@@ -796,6 +800,44 @@ export function buildSeparateTimelineFilterComplex(
   // Helper to get track info from input
   function getTrackInfo(input: string | TrackInfo): TrackInfo {
     return typeof input === 'string' ? { path: input } : input;
+  }
+
+  // ============================================
+  // RAM OPTIMIZATION: Analyze duplicate inputs for memory-efficient processing
+  // Note: We DON'T use split filters because they require buffering the entire stream
+  // Instead, we use direct input references and rely on filter_complex_threads=1
+  // to process sequentially, reducing parallel decode RAM usage
+  // ============================================
+
+  // Analyze duplicate input usage for logging
+  const videoInputUsageCount = new Map<number, number>();
+  for (const [, timeline] of videoLayers) {
+    for (const segment of timeline.segments) {
+      const fileIndex = categorizedInputs.videoInputs.find(
+        (vi) => vi.originalIndex === segment.originalIndex,
+      )?.fileIndex;
+      if (fileIndex !== undefined) {
+        videoInputUsageCount.set(
+          fileIndex,
+          (videoInputUsageCount.get(fileIndex) || 0) + 1,
+        );
+      }
+    }
+  }
+
+  // Log duplicate usage (but don't create split filters)
+  if (videoInputUsageCount.size > 0) {
+    const duplicateCount = Array.from(videoInputUsageCount.values()).filter(
+      (count) => count > 1,
+    ).length;
+    if (duplicateCount > 0) {
+      console.log(
+        `\n💾 INFO: Found ${duplicateCount} file(s) used multiple times in timeline`,
+      );
+      console.log(
+        `   Using direct input references for better memory efficiency (no split buffering)\n`,
+      );
+    }
   }
 
   // Determine target dimensions for processing
@@ -1169,18 +1211,20 @@ export function buildSeparateTimelineFilterComplex(
         const paddedLabel = `layer_${layerNum}_padded_start`;
 
         console.log(
-          `   ⏱️ Padding overlay layer ${layerNum} with ${overlayStartTime.toFixed(3)}s black frames at start ONLY (no end padding)`,
+          `   ⏱️ Delaying overlay layer ${layerNum} by ${overlayStartTime.toFixed(3)}s using PTS offset (RAM-efficient, no frame generation)`,
         );
 
-        // Use tpad to add black frames ONLY at the start (no end_duration parameter = no end padding)
+        // Use setpts to delay the video timeline instead of generating black frames
+        // This is RAM-efficient as it only shifts timestamps, not creates actual frames
+        // The overlay enable expression will handle when the video appears
         videoFilters.push(
-          `[${currentLabel}]tpad=start_duration=${overlayStartTime}:start_mode=add:color=black@0.0[${paddedLabel}]`,
+          `[${currentLabel}]setpts=PTS+${overlayStartTime}/TB[${paddedLabel}]`,
         );
 
-        // Update the layer label to use the padded version
+        // Update the layer label to use the delayed version
         layerLabels.set(layerNum, paddedLabel);
         console.log(
-          `   ✅ Padded overlay layer ${layerNum} -> [${paddedLabel}] (video content starts at ${overlayStartTime.toFixed(3)}s, no end padding)`,
+          `   ✅ Delayed overlay layer ${layerNum} -> [${paddedLabel}] (PTS offset: +${overlayStartTime.toFixed(3)}s, no frame generation)`,
         );
       }
     }
@@ -1395,6 +1439,7 @@ export function buildSeparateTimelineFilterComplex(
           {
             shortest: 0,
             enable: enableExpression,
+            eofAction: 'pass', // Pass through base stream when overlay ends (enables streaming)
           },
         );
         videoFilters.push(overlayFilter);
@@ -1503,7 +1548,10 @@ export function buildSeparateTimelineFilterComplex(
         overlayX,
         overlayY,
         hwAccel,
-        { enable: `between(t,${startTime},${endTime})` },
+        {
+          enable: `between(t,${startTime},${endTime})`,
+          eofAction: 'pass', // Pass through base stream when overlay ends (enables streaming)
+        },
       );
       videoFilters.push(overlayFilter);
       currentCompositeLabel = compositeLabel;

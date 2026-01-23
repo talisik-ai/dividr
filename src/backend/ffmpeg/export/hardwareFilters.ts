@@ -133,22 +133,26 @@ export function buildOverlayFilter(
   options?: {
     enable?: string;
     shortest?: number; // 0 = continue for longest input, 1 = stop at shortest input (default)
+    eofAction?: 'pass' | 'repeat' | 'endall'; // Action when overlay stream ends (pass = continue base stream, reduces RAM)
   },
 ): string {
   const enableParam = options?.enable ? `:enable='${options.enable}'` : '';
   const shortestParam =
     options?.shortest !== undefined ? `:shortest=${options.shortest}` : '';
+  const eofActionParam = options?.eofAction
+    ? `:eof_action=${options.eofAction}`
+    : '';
 
   if (supportsCUDAFilters(hwAccel)) {
     // GPU overlay - assumes both inputs are already on GPU
-    // Note: overlay_cuda might not support shortest parameter, use CPU fallback if needed
+    // Note: overlay_cuda might not support shortest/eof_action parameters, use CPU fallback if needed
     console.log(`🎮 Using CUDA hardware overlay (NVENC with CUDA filters)`);
-    return `${baseRef}${overlayRef}overlay_cuda=${x}:${y}${enableParam}${shortestParam}${outputRef}`;
+    return `${baseRef}${overlayRef}overlay_cuda=${x}:${y}${enableParam}${shortestParam}${eofActionParam}${outputRef}`;
   } else {
     // CPU overlay
     const hwType = hwAccel?.type || 'none';
     console.log(`💻 Using CPU overlay (hardware: ${hwType})`);
-    return `${baseRef}${overlayRef}overlay=${x}:${y}${enableParam}${shortestParam}${outputRef}`;
+    return `${baseRef}${overlayRef}overlay=${x}:${y}${enableParam}${shortestParam}${eofActionParam}${outputRef}`;
   }
 }
 
