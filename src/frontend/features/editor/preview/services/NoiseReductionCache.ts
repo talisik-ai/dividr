@@ -164,7 +164,10 @@ class NoiseReductionCacheImpl {
   async processSource(
     sourceId: string,
     originalUrl: string,
-    onProgress?: (progress: NoiseReductionProgress) => void,
+    options?: {
+      engine?: 'ffmpeg' | 'deepfilter';
+      onProgress?: (progress: NoiseReductionProgress) => void;
+    },
   ): Promise<string> {
     const normalizedId = this.normalizeSourceId(sourceId);
 
@@ -188,7 +191,7 @@ class NoiseReductionCacheImpl {
     const processingPromise = this.doProcessSource(
       normalizedId,
       originalUrl,
-      onProgress,
+      options,
     );
     this.pendingProcessing.set(normalizedId, processingPromise);
 
@@ -206,7 +209,10 @@ class NoiseReductionCacheImpl {
   private async doProcessSource(
     normalizedId: string,
     originalUrl: string,
-    onProgress?: (progress: NoiseReductionProgress) => void,
+    options?: {
+      engine?: 'ffmpeg' | 'deepfilter';
+      onProgress?: (progress: NoiseReductionProgress) => void;
+    },
   ): Promise<string> {
     logCache('Starting processing', { sourceId: normalizedId });
 
@@ -251,7 +257,7 @@ class NoiseReductionCacheImpl {
             progress: progress.progress,
           });
         }
-        onProgress?.(progress);
+        options?.onProgress?.(progress);
       };
 
       window.electronAPI.onMediaToolsProgress(progressHandler);
@@ -264,6 +270,7 @@ class NoiseReductionCacheImpl {
           {
             stationary: true,
             propDecrease: 0.8,
+            engine: options?.engine || 'ffmpeg',
           },
         );
 

@@ -23,6 +23,7 @@ import type {
   NoiseReductionResult,
   WhisperResult,
 } from './backend/media-tools/mediaToolsRunner';
+import { buildArnnDenCommand } from './backend/ffmpeg/alternativeDenoise';
 import {
   cancelCurrentOperation,
   cancelTranscription,
@@ -2543,6 +2544,7 @@ ipcMain.handle(
       stationary?: boolean;
       propDecrease?: number;
       nFft?: number;
+      engine?: 'ffmpeg' | 'deepfilter';
     },
   ) => {
     console.log('🔇 MAIN PROCESS: media-tools:noise-reduce handler called');
@@ -2550,23 +2552,143 @@ ipcMain.handle(
     console.log('   Output path:', outputPath);
     console.log('   Options:', options);
 
+    const engine = options?.engine || 'ffmpeg'; // Default to FFmpeg for safety/speed
+
     try {
-      await ensurePythonInitialized('ipc:media-tools:noise-reduce');
+      if (engine === 'deepfilter') {
+        // --- DeepFilterNet2 (Python) ---
+        await ensurePythonInitialized('ipc:media-tools:noise-reduce');
 
-      const result: NoiseReductionResult = await reduceNoise(
-        inputPath,
-        outputPath,
-        {
-          ...options,
-          onProgress: (progress: MediaToolsProgress) => {
-            // Send progress updates to renderer process
-            event.sender.send('media-tools:progress', progress);
+        const result: NoiseReductionResult = await reduceNoise(
+          inputPath,
+          outputPath,
+          {
+            ...options,
+            onProgress: (progress: MediaToolsProgress) => {
+              // Send progress updates to renderer process
+              event.sender.send('media-tools:progress', progress);
+            },
           },
-        },
-      );
+        );
 
-      console.log('✅ Noise reduction successful');
-      return { success: true, result };
+        console.log('✅ DeepFilter noise reduction successful');
+        return { success: true, result };
+      } else {
+        // --- FFmpeg (Native) ---
+        console.log('⚡ Using FFmpeg for noise reduction');
+
+        if (!ffmpegPath) {
+          throw new Error('FFmpeg binary not available');
+        }
+
+        // Build command
+        // Note: buildArnnDenCommand returns args for "ffmpeg -i input -af arnndn..."
+        const args = buildArnnDenCommand(inputPath, outputPath);
+        // We need to add -y to overwrite output if it exists (standard behavior)
+        args.unshift('-y');
+
+        console.log('   Command:', `ffmpeg ${args.join(' ')}`);
+
+        return new Promise((resolve) => {
+          const ffmpeg = spawn(ffmpegPath!, args);
+          let durationSec = 0;
+          let stderrLog = '';
+
+          // Send initial loading state
+          event.sender.send('media-tools:progress', {
+            stage: 'loading',
+            progress: 0,
+            message: 'Initializing FFmpeg...',
+          });
+
+          ffmpeg.stderr.on('data', (data) => {
+            const text = data.toString();
+            stderrLog += text;
+
+            // 1. Parse Duration: Duration: 00:00:10.50,
+            if (durationSec === 0) {
+              const durationMatch = text.match(
+                /Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})/,
+              );
+              if (durationMatch) {
+                const h = parseFloat(durationMatch[1]);
+                const m = parseFloat(durationMatch[2]);
+                const s = parseFloat(durationMatch[3]);
+                durationSec = h * 3600 + m * 60 + s;
+              }
+            }
+
+            // 2. Parse Time: time=00:00:05.20
+            if (durationSec > 0) {
+              const timeMatch = text.match(
+                /time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/,
+              );
+              if (timeMatch) {
+                const h = parseFloat(timeMatch[1]);
+                const m = parseFloat(timeMatch[2]);
+                const s = parseFloat(timeMatch[3]);
+                const timeSec = h * 3600 + m * 60 + s;
+                const percent = Math.min(
+                  99,
+                  Math.round((timeSec / durationSec) * 100),
+                );
+
+                event.sender.send('media-tools:progress', {
+                  stage: 'processing',
+                  progress: percent,
+                  message: `Filtering... ${percent}%`,
+                });
+              }
+            }
+          });
+
+          ffmpeg.on('close', (code) => {
+            if (code === 0) {
+              console.log('✅ FFmpeg noise reduction successful');
+              event.sender.send('media-tools:progress', {
+                stage: 'complete',
+                progress: 100,
+                message: 'Noise reduction complete!',
+              });
+              resolve({
+                success: true,
+                result: {
+                  success: true,
+                  outputPath,
+                  message: 'FFmpeg denoising complete',
+                },
+              });
+            } else {
+              console.error('❌ FFmpeg noise reduction failed. Code:', code);
+              // Check for common errors in stderr
+              let errorMsg = `FFmpeg exited with code ${code}`;
+              if (stderrLog.includes('Permission denied'))
+                errorMsg = 'Permission denied';
+              if (stderrLog.includes('No such file'))
+                errorMsg = 'File not found';
+              
+              // Include the last 5 lines of stderr for context
+              const stderrTail = stderrLog.split('\n').slice(-5).join('\n');
+              if (stderrTail.trim()) {
+                errorMsg += `\nStderr: ${stderrTail}`;
+              }
+
+              resolve({
+                success: false,
+                error: errorMsg,
+              });
+            }
+          });
+
+          ffmpeg.on('error', (err) => {
+            console.error('❌ FFmpeg spawn error:', err);
+            resolve({
+              success: false,
+              error: err.message,
+            });
+          });
+        });
+      }
     } catch (error) {
       console.error('❌ Noise reduction failed:', error);
       return {
@@ -2576,6 +2698,14 @@ ipcMain.handle(
     }
   },
 );
+
+// IPC Handler to get system memory info
+ipcMain.handle('get-system-memory', () => {
+  return {
+    total: os.totalmem(),
+    free: os.freemem(),
+  };
+});
 
 // IPC Handler to cancel media-tools operation
 ipcMain.handle('media-tools:cancel', async () => {

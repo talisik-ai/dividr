@@ -319,6 +319,11 @@ declare global {
         error?: string;
       }>;
 
+      getSystemMemory: () => Promise<{
+        total: number;
+        free: number;
+      }>;
+
       // ========================================================================
       // Media Tools API (Noise Reduction)
       // ========================================================================
@@ -336,6 +341,7 @@ declare global {
           stationary?: boolean;
           propDecrease?: number;
           nFft?: number;
+          engine?: 'ffmpeg' | 'deepfilter';
         },
       ) => Promise<{
         success: boolean;

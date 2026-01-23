@@ -1,5 +1,9 @@
 import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import {
+  NoiseReductionEngine,
+  NoiseReductionEngineModal,
+} from './NoiseReductionEngineModal';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogContent,
@@ -250,6 +254,10 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   // State for runtime download modal
   const [showRuntimeModal, setShowRuntimeModal] = useState(false);
   const [pendingNoiseReduction, setPendingNoiseReduction] = useState(false);
+  
+  // State for engine selection modal
+  const [showEngineModal, setShowEngineModal] = useState(false);
+  const selectedEngineRef = useRef<NoiseReductionEngine>('ffmpeg');
 
   // State for noise reduction processing
   const [nrCacheState, setNrCacheState] = useState<ProcessingState>('idle');
@@ -289,81 +297,121 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   const isCached = nrCacheState === 'cached';
   const hasError = nrCacheState === 'error';
 
-  // Handle noise reduction toggle (single action - creates undo entry)
-  const handleNoiseReductionToggle = useCallback(
-    async (enabled: boolean) => {
-      if (enabled) {
-        // Check runtime before enabling
+  // Helper: Execute the actual processing
+  const executeNoiseReduction = useCallback(
+    async (engine: NoiseReductionEngine) => {
+      if (!sourceUrl) {
+        console.error('No source URL available for noise reduction');
+        return;
+      }
+
+      const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
+
+      // Check if already cached - just enable the flag
+      if (NoiseReductionCache.hasCached(sourceId)) {
+        beginAudioUpdate();
+        updateAudioProperties({ noiseReductionEnabled: true });
+        endAudioUpdate();
+        return;
+      }
+
+      // Start processing
+      try {
+        await NoiseReductionCache.processSource(sourceId, sourceUrl, {
+          engine,
+        });
+
+        // Processing complete - enable the flag
+        beginAudioUpdate();
+        updateAudioProperties({ noiseReductionEnabled: true });
+        endAudioUpdate();
+      } catch (error) {
+        console.error('Noise reduction processing failed:', error);
+
+        // TEMPORARY: Show complete error details in modal for debugging
+        const errorMessage =
+          error instanceof Error
+            ? `${error.name}: ${error.message}\n\nStack:\n${
+                error.stack || 'No stack trace available'
+              }`
+            : typeof error === 'string'
+              ? error
+              : JSON.stringify(error, null, 2);
+
+        setErrorDetails(errorMessage);
+        setShowErrorModal(true);
+      }
+    },
+    [sourceUrl, beginAudioUpdate, updateAudioProperties, endAudioUpdate],
+  );
+
+  // Helper: Proceed after engine is selected
+  const proceedWithNoiseReduction = useCallback(
+    async (engine: NoiseReductionEngine) => {
+      selectedEngineRef.current = engine;
+
+      // Check Runtime only if using DeepFilter
+      if (engine === 'deepfilter') {
         try {
           const runtimeStatus = await window.electronAPI.runtimeStatus();
           if (!runtimeStatus.installed || runtimeStatus.needsUpdate) {
-            // Show download modal instead of enabling
+            // Show download modal
             setPendingNoiseReduction(true);
             setShowRuntimeModal(true);
             return;
           }
         } catch (error) {
           console.error('Failed to check runtime status:', error);
-
-          // TEMPORARY: Show complete error details in modal for debugging
-          const errorMessage =
+          // Show error but maybe try to continue? Or fail?
+          // For now fail safe to error modal
+           const errorMessage =
             error instanceof Error
-              ? `${error.name}: ${error.message}\n\nStack:\n${
-                  error.stack || 'No stack trace available'
-                }`
-              : typeof error === 'string'
-                ? error
-                : JSON.stringify(error, null, 2);
-
-          setErrorDetails(`Runtime Status Check Error:\n\n${errorMessage}`);
-          setShowErrorModal(true);
-
-          // Continue anyway - the actual noise reduction will fail with a clearer error
+              ? `${error.name}: ${error.message}`
+              : 'Unknown error';
+           setErrorDetails(`Runtime Status Check Error:\n\n${errorMessage}`);
+           setShowErrorModal(true);
+           return;
         }
+      }
 
-        // Check if we have a valid source URL
-        if (!sourceUrl) {
-          console.error('No source URL available for noise reduction');
-          return;
-        }
+      // If we got here, we are ready to process
+      executeNoiseReduction(engine);
+    },
+    [executeNoiseReduction],
+  );
 
-        const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
-
-        // Check if already cached - just enable the flag
-        if (NoiseReductionCache.hasCached(sourceId)) {
-          beginAudioUpdate();
-          updateAudioProperties({ noiseReductionEnabled: true });
-          endAudioUpdate();
-          return;
-        }
-
-        // Start processing
+  // Handle noise reduction toggle
+  const handleNoiseReductionToggle = useCallback(
+    async (enabled: boolean) => {
+      if (enabled) {
+        // 1. Determine Engine Strategy
+        let engine: NoiseReductionEngine = 'ffmpeg';
         try {
-          await NoiseReductionCache.processSource(sourceId, sourceUrl);
+          const mem = await window.electronAPI.getSystemMemory();
+          const isLowMem = mem.total <= 8 * 1024 * 1024 * 1024; // 8 GB
 
-          // Processing complete - enable the flag
-          beginAudioUpdate();
-          updateAudioProperties({ noiseReductionEnabled: true });
-          endAudioUpdate();
-        } catch (error) {
-          console.error('Noise reduction processing failed:', error);
-
-          // TEMPORARY: Show complete error details in modal for debugging
-          const errorMessage =
-            error instanceof Error
-              ? `${error.name}: ${error.message}\n\nStack:\n${
-                  error.stack || 'No stack trace available'
-                }`
-              : typeof error === 'string'
-                ? error
-                : JSON.stringify(error, null, 2);
-
-          setErrorDetails(errorMessage);
-          setShowErrorModal(true);
-
-          // Error is already stored in cache - UI will update via subscription
-          // Don't enable the flag on error
+          if (isLowMem) {
+            engine = 'ffmpeg';
+          } else {
+            // Check persistent storage
+            const stored = localStorage.getItem(
+              'dividr-noise-reduction-engine',
+            );
+            if (stored && (stored === 'ffmpeg' || stored === 'deepfilter')) {
+              engine = stored as NoiseReductionEngine;
+            } else {
+              // Ask user
+              setShowEngineModal(true);
+              return;
+            }
+          }
+        } catch (e) {
+          console.error('Failed to get system memory, defaulting to ffmpeg', e);
+          engine = 'ffmpeg';
         }
+
+        // Proceed
+        proceedWithNoiseReduction(engine);
       } else {
         // Disable noise reduction
         beginAudioUpdate();
@@ -371,7 +419,18 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
         endAudioUpdate();
       }
     },
-    [updateAudioProperties, beginAudioUpdate, endAudioUpdate, sourceUrl],
+    [beginAudioUpdate, endAudioUpdate, updateAudioProperties, proceedWithNoiseReduction],
+  );
+
+  // Handle Engine Modal Confirmation
+  const handleEngineConfirm = useCallback(
+    (engine: NoiseReductionEngine, remember: boolean) => {
+      if (remember) {
+        localStorage.setItem('dividr-noise-reduction-engine', engine);
+      }
+      proceedWithNoiseReduction(engine);
+    },
+    [proceedWithNoiseReduction],
   );
 
   // Handle retry after error
@@ -381,24 +440,17 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
     NoiseReductionCache.resetError(sourceId);
 
-    // Trigger processing again
+    // Reuse last selected engine or default
     handleNoiseReductionToggle(true);
   }, [sourceUrl, handleNoiseReductionToggle]);
 
   // Handle successful runtime download - enable noise reduction
   const handleRuntimeDownloadSuccess = useCallback(() => {
     if (pendingNoiseReduction) {
-      beginAudioUpdate();
-      updateAudioProperties({ noiseReductionEnabled: true });
-      endAudioUpdate();
+      executeNoiseReduction(selectedEngineRef.current);
       setPendingNoiseReduction(false);
     }
-  }, [
-    pendingNoiseReduction,
-    updateAudioProperties,
-    beginAudioUpdate,
-    endAudioUpdate,
-  ]);
+  }, [pendingNoiseReduction, executeNoiseReduction]);
 
   // Handle reset to defaults (single action - creates undo entry)
   const handleReset = useCallback(() => {
@@ -589,7 +641,14 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           setPendingNoiseReduction(false);
         }}
         onSuccess={handleRuntimeDownloadSuccess}
-        featureName="Noise Reduction"
+        featureName="DeepFilterNet Noise Reduction"
+      />
+
+       {/* Engine Selection Modal */}
+      <NoiseReductionEngineModal
+        isOpen={showEngineModal}
+        onOpenChange={setShowEngineModal}
+        onConfirm={handleEngineConfirm}
       />
 
       {/* TEMPORARY: Error Debug Modal */}

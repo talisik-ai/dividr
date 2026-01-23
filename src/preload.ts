@@ -242,6 +242,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       stationary?: boolean;
       propDecrease?: number;
       nFft?: number;
+      engine?: 'ffmpeg' | 'deepfilter';
     },
   ) =>
     ipcRenderer.invoke(
@@ -274,6 +275,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Check if media file has audio
   mediaHasAudio: (filePath: string) =>
     ipcRenderer.invoke('media:has-audio', filePath),
+
+  // Get system memory info
+  getSystemMemory: () =>
+    ipcRenderer.invoke('get-system-memory') as Promise<{
+      total: number;
+      free: number;
+    }>,
 
   // =========================================================================
   // Noise Reduction Cache APIs
