@@ -77,6 +77,19 @@ export interface MediaLibraryItem {
     originalPreviewUrl?: string;
     jobId?: string;
     progress?: number;
+    /** Encoder information from hybrid encoder selection */
+    encoder?: {
+      /** Encoder type used: nvenc, qsv, videotoolbox, amf, vaapi, or software */
+      type: string;
+      /** Human-readable encoder description */
+      description: string;
+      /** True if hardware encoder failed and fell back to software */
+      fallbackUsed?: boolean;
+      /** Original encoder type if fallback was used */
+      originalEncoder?: string;
+    };
+    /** Benchmark timing in milliseconds */
+    benchmarkMs?: number;
   };
   hasGeneratedKaraoke?: boolean;
   cachedKaraokeSubtitles?: {

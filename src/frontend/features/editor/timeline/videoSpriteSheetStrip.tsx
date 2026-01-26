@@ -143,17 +143,25 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
       const isMediaReady = useMediaReadiness(track.mediaId);
 
       const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
-      const isTranscoding = useMemo(() => {
-        const item = mediaLibrary.find(
+      const mediaItem = useMemo(() => {
+        return mediaLibrary.find(
           (m) =>
             m.source === track.source ||
             (track.mediaId && m.id === track.mediaId),
         );
-        return (
-          item?.transcoding?.status === 'processing' ||
-          item?.transcoding?.status === 'pending'
-        );
       }, [mediaLibrary, track.source, track.mediaId]);
+
+      const isTranscoding = useMemo(() => {
+        return (
+          mediaItem?.transcoding?.status === 'processing' ||
+          mediaItem?.transcoding?.status === 'pending'
+        );
+      }, [mediaItem]);
+
+      // Check if proxy generation is in progress (for 4K videos)
+      const isProxyProcessing = useMemo(() => {
+        return mediaItem?.proxy?.status === 'processing';
+      }, [mediaItem]);
 
       // Hybrid tile generation - pixel-position based for correct zoom behavior
       // Key insight: iterate by PIXEL POSITION at native tile width intervals,
@@ -440,7 +448,10 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
             </div>
           )}
 
-          {isTranscoding && !state.isLoading && (
+          {/* Proxy generation - no visual overlay, just defer sprite rendering */}
+          {/* Sprites will naturally not render until proxy is ready via isMediaReady check */}
+
+          {isTranscoding && !state.isLoading && !track.proxyBlocked && (
             <div className="absolute top-0 left-0 flex items-center space-x-2 px-2 py-1 bg-purple-900/90 backdrop-blur-sm rounded-r border border-purple-700/50 z-10 pointer-events-none">
               <Loader2 className="h-3 w-3 animate-spin text-purple-400" />
               <span className="text-purple-400 text-xs font-medium">
@@ -512,6 +523,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         prevProps.track.startFrame !== nextProps.track.startFrame ||
         prevProps.track.endFrame !== nextProps.track.endFrame ||
         prevProps.track.sourceStartTime !== nextProps.track.sourceStartTime ||
+        prevProps.track.mediaId !== nextProps.track.mediaId ||
         prevProps.frameWidth !== nextProps.frameWidth ||
         prevProps.height !== nextProps.height ||
         prevProps.width !== nextProps.width ||

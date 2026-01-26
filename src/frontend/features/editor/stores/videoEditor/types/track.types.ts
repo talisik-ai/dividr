@@ -321,4 +321,21 @@ export interface VideoTrack {
     width: number; // Width in pixels (actual rendered width)
     height: number; // Height in pixels (actual rendered height)
   };
+
+  // ==========================================================================
+  // Proxy Generation Blocking State
+  // ==========================================================================
+  /**
+   * Indicates the track is blocked due to 4K proxy generation in progress.
+   * When true, the track cannot be edited (no drag, trim, split, etc.)
+   * but is visually present on the timeline with an "optimizing" overlay.
+   * Other tracks and UI remain fully usable.
+   */
+  proxyBlocked?: boolean;
+
+  /**
+   * Message to display when track is proxy-blocked.
+   * Shown as an overlay on the track strip.
+   */
+  proxyBlockedMessage?: string;
 }

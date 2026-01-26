@@ -47,6 +47,16 @@ import {
 import { backgroundTaskQueue } from './backend/io/BackgroundTaskQueue';
 import { fileIOManager } from './backend/io/FileIOManager';
 
+// Import hardware capabilities service for hybrid proxy encoding
+import {
+  buildProxyFFmpegArgs,
+  buildVaapiProxyFFmpegArgs,
+  detectHardwareCapabilities,
+  getProxyEncoderConfig,
+  getSoftwareEncoderConfig,
+  type ProxyEncoderConfig,
+} from './backend/hardware/hardwareCapabilitiesService';
+
 // Backward compatible type alias
 type WhisperProgress = MediaToolsProgress;
 
@@ -2420,7 +2430,71 @@ ipcMain.handle('ffmpeg:cancel', async () => {
 // Keep track of active proxy generation promises to deduplicate requests
 const activeProxyGenerations = new Map<string, Promise<any>>();
 
+// Helper function to run FFmpeg proxy generation with a specific encoder config
+async function runProxyFFmpeg(
+  inputPath: string,
+  tempPath: string,
+  encoderConfig: ProxyEncoderConfig,
+  ffmpegBinaryPath: string,
+  eventSender: Electron.WebContents | null,
+): Promise<{
+  success: boolean;
+  code?: number;
+  stderr?: string;
+}> {
+  // Build FFmpeg args based on encoder type
+  let args: string[];
+  if (encoderConfig.type === 'vaapi') {
+    // VAAPI requires special filter chain with hardware upload
+    args = buildVaapiProxyFFmpegArgs(inputPath, tempPath);
+  } else {
+    args = buildProxyFFmpegArgs(inputPath, tempPath, encoderConfig);
+  }
+
+  console.log(
+    `🎬 FFmpeg proxy command (${encoderConfig.description}):`,
+    [ffmpegBinaryPath, ...args].join(' '),
+  );
+
+  return new Promise((resolve) => {
+    const ffmpeg = spawn(ffmpegBinaryPath, args);
+
+    let stderrOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      stderrOutput += chunk;
+
+      // Send progress updates to renderer
+      if (chunk.includes('time=') && eventSender) {
+        eventSender.send('proxy-progress', {
+          path: inputPath,
+          log: chunk,
+          encoder: encoderConfig.type,
+        });
+      }
+    });
+
+    ffmpeg.on('close', (code) => {
+      resolve({
+        success: code === 0,
+        code: code ?? undefined,
+        stderr: stderrOutput,
+      });
+    });
+
+    ffmpeg.on('error', (err) => {
+      console.error(`❌ FFmpeg spawn error (${encoderConfig.type}):`, err);
+      resolve({
+        success: false,
+        code: -1,
+        stderr: err.message,
+      });
+    });
+  });
+}
+
 // IPC Handler for generating proxy files for 4K video optimization
+// Uses hybrid encoder selection: GPU hardware encoder if available, CPU fallback otherwise
 ipcMain.handle('generate-proxy', async (event, inputPath: string) => {
   console.log('🔄 generate-proxy called for:', inputPath);
 
@@ -2470,132 +2544,129 @@ ipcMain.handle('generate-proxy', async (event, inputPath: string) => {
         }
       }
 
+      // Get optimal encoder configuration (hardware if available, software fallback)
+      const encoderConfig = await getProxyEncoderConfig(ffmpegPath);
+
       console.log('🚀 Starting proxy generation to:', outputPath);
+      console.log(`🎮 Using encoder: ${encoderConfig.description}`);
       const startTime = Date.now();
       const startTimeString = new Date(startTime).toLocaleTimeString();
       console.log(
         `⏱️ Proxy generation START: ${startTimeString} (${startTime})`,
       );
 
-      // Spawn FFmpeg to generate 480p proxy for maximum speed
-      // -vf scale=-2:480 reduces processing load significantly compared to 720p
-      // -preset ultrafast for speed
-      // -crf 28 for lower quality (sufficient for proxy)
-      // -threads 2 to prevent starving the Electron UI process
-      const args = [
-        '-i',
+      // Attempt proxy generation with selected encoder
+      let result = await runProxyFFmpeg(
         inputPath,
-        '-vf',
-        'scale=-2:480,format=yuv420p',
-        '-c:v',
-        'libx264',
-        '-preset',
-        'ultrafast',
-        '-crf',
-        '28',
-        '-threads',
-        '2',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '96k',
-        '-movflags',
-        '+faststart',
-        '-y',
-        '-f',
-        'mp4',
-        tempPath, // Write to temp file first!
-      ];
+        tempPath,
+        encoderConfig,
+        ffmpegPath,
+        event.sender,
+      );
 
-      return await new Promise((resolve) => {
-        const ffmpeg = spawn(ffmpegPath!, args);
+      let fallbackUsed = false;
+      let originalEncoder: string | undefined;
 
-        // Capture stderr to debug failures and parse progress
-        let stderrOutput = '';
-        ffmpeg.stderr.on('data', (data) => {
-          const chunk = data.toString();
-          stderrOutput += chunk;
+      // If hardware encoder failed, fallback to software encoding
+      if (!result.success && encoderConfig.type !== 'software') {
+        console.warn(
+          `⚠️ Hardware encoder ${encoderConfig.type} failed (code: ${result.code}), falling back to software encoding`,
+        );
+        console.warn(`   Error: ${result.stderr?.slice(-200)}`);
 
-          // Parse progress (time=00:00:00.00) if possible to update UI
-          if (chunk.includes('time=')) {
-            // We can emit an event here if we want real-time progress, but `handle` doesn't strictly stream.
-            // Instead, we use event.sender.send if available, or just log occasionally.
-            // Sending raw progress string to renderer for parsing might be easiest.
-            if (event.sender) {
-              event.sender.send('proxy-progress', {
-                path: inputPath,
-                log: chunk,
-              });
-            }
-          }
-        });
-
-        ffmpeg.on('close', async (code) => {
-          const endTime = Date.now();
-          const endTimeString = new Date(endTime).toLocaleTimeString();
-          const durationMs = endTime - startTime;
-
-          console.log(`⏱️ Proxy generation END: ${endTimeString} (${endTime})`);
-          console.log(`⏱️ Duration: ${durationMs}ms`);
-
-          if (code === 0) {
-            try {
-              // Wait a small amount of time to ensure file handles are released by OS/Antivirus
-              await new Promise((r) => setTimeout(r, 500));
-
-              // Atomic rename: temp -> final
-              if (fs.existsSync(tempPath)) {
-                fs.renameSync(tempPath, outputPath);
-                console.log(
-                  '✅ Proxy generation complete (renamed temp -> final):',
-                  outputPath,
-                );
-
-                resolve({
-                  success: true,
-                  proxyPath: outputPath,
-                  benchmark: {
-                    durationMs,
-                    startTime,
-                    endTime,
-                  },
-                });
-              } else {
-                console.error(
-                  '❌ Temp proxy file missing after successful FFmpeg exit',
-                );
-                resolve({ success: false, error: 'Temp proxy file missing' });
-              }
-            } catch (err) {
-              console.error('❌ Failed to rename temp proxy file:', err);
-              resolve({
-                success: false,
-                error: 'Failed to finalize proxy file',
-              });
-            }
-          } else {
-            console.error(`❌ Proxy generation failed with code: ${code}`);
-            console.error(`❌ FFmpeg stderr:`, stderrOutput);
-
-            // Cleanup temp file
-            if (fs.existsSync(tempPath)) {
-              fs.unlinkSync(tempPath);
-            }
-            resolve({
-              success: false,
-              error: `FFmpeg exited with code ${code}. Error: ${stderrOutput.slice(-200)}`, // Return tail of stderr
-            });
-          }
-        });
-
-        ffmpeg.on('error', (err) => {
-          console.error('❌ Proxy generation error:', err);
-          if (fs.existsSync(tempPath)) {
+        // Clean up any partial temp file from failed attempt
+        if (fs.existsSync(tempPath)) {
+          try {
             fs.unlinkSync(tempPath);
+          } catch (e) {
+            console.warn('⚠️ Could not cleanup temp file after failure:', e);
           }
-          resolve({ success: false, error: err.message });
-        });
-      });
+        }
+
+        // Retry with software encoder
+        const softwareConfig = getSoftwareEncoderConfig();
+        console.log(`🔄 Retrying with ${softwareConfig.description}...`);
+
+        result = await runProxyFFmpeg(
+          inputPath,
+          tempPath,
+          softwareConfig,
+          ffmpegPath,
+          event.sender,
+        );
+
+        fallbackUsed = true;
+        originalEncoder = encoderConfig.type;
+      }
+
+      const endTime = Date.now();
+      const endTimeString = new Date(endTime).toLocaleTimeString();
+      const durationMs = endTime - startTime;
+
+      console.log(`⏱️ Proxy generation END: ${endTimeString} (${endTime})`);
+      console.log(`⏱️ Duration: ${durationMs}ms`);
+
+      if (result.success) {
+        try {
+          // Wait a small amount of time to ensure file handles are released
+          await new Promise((r) => setTimeout(r, 500));
+
+          // Atomic rename: temp -> final
+          if (fs.existsSync(tempPath)) {
+            fs.renameSync(tempPath, outputPath);
+            console.log(
+              '✅ Proxy generation complete (renamed temp -> final):',
+              outputPath,
+            );
+
+            const finalEncoderType = fallbackUsed
+              ? 'software'
+              : encoderConfig.type;
+            const finalEncoderDesc = fallbackUsed
+              ? getSoftwareEncoderConfig().description
+              : encoderConfig.description;
+
+            return {
+              success: true,
+              proxyPath: outputPath,
+              encoder: {
+                type: finalEncoderType,
+                description: finalEncoderDesc,
+                fallbackUsed,
+                originalEncoder,
+              },
+              benchmark: {
+                durationMs,
+                startTime,
+                endTime,
+              },
+            };
+          } else {
+            console.error(
+              '❌ Temp proxy file missing after successful FFmpeg exit',
+            );
+            return { success: false, error: 'Temp proxy file missing' };
+          }
+        } catch (err) {
+          console.error('❌ Failed to rename temp proxy file:', err);
+          return {
+            success: false,
+            error: 'Failed to finalize proxy file',
+          };
+        }
+      } else {
+        console.error(`❌ Proxy generation failed with code: ${result.code}`);
+        console.error(`❌ FFmpeg stderr:`, result.stderr);
+
+        // Cleanup temp file
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+        return {
+          success: false,
+          error: `FFmpeg exited with code ${result.code}. Error: ${result.stderr?.slice(-200)}`,
+        };
+      }
     } catch (error) {
       console.error('Failed to generate proxy:', error);
       return { success: false, error: error.message };
@@ -2607,6 +2678,43 @@ ipcMain.handle('generate-proxy', async (event, inputPath: string) => {
 
   activeProxyGenerations.set(inputPath, generationPromise);
   return generationPromise;
+});
+
+// IPC Handler for getting hardware capabilities (for UI display and low-hardware modal)
+ipcMain.handle('get-hardware-capabilities', async () => {
+  if (!ffmpegPath) {
+    return {
+      success: false,
+      error: 'FFmpeg not available',
+    };
+  }
+
+  try {
+    const capabilities = await detectHardwareCapabilities(ffmpegPath);
+
+    return {
+      success: true,
+      capabilities: {
+        hasHardwareEncoder: capabilities.hasHardwareEncoder,
+        encoderType: capabilities.encoder.primary?.type || 'none',
+        encoderDescription:
+          capabilities.encoder.primary?.description ||
+          'Software encoding (CPU)',
+        cpuCores: capabilities.cpuCores,
+        totalRamGB: Math.round(
+          capabilities.totalRamBytes / (1024 * 1024 * 1024),
+        ),
+        freeRamGB: Math.round(capabilities.freeRamBytes / (1024 * 1024 * 1024)),
+        isLowHardware: capabilities.isLowHardware,
+      },
+    };
+  } catch (error) {
+    console.error('Failed to detect hardware capabilities:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 });
 
 // Diagnostic handler to check FFmpeg status

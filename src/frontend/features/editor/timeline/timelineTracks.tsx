@@ -128,6 +128,7 @@ const TrackItemWrapper: React.FC<{
   isResizing: 'left' | 'right' | false;
   isSplitModeActive: boolean;
   isDuplicationFeedback: boolean;
+  isProxyProcessing: boolean;
   children: React.ReactNode;
   onClick: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
@@ -141,6 +142,7 @@ const TrackItemWrapper: React.FC<{
     isResizing,
     isSplitModeActive,
     isDuplicationFeedback,
+    isProxyProcessing,
     children,
     onClick,
     onMouseDown,
@@ -176,7 +178,7 @@ const TrackItemWrapper: React.FC<{
     const getCursorClass = () => {
       if (isResizing) return 'cursor-trim';
       if (isSplitModeActive) return 'cursor-split';
-      if (track.locked) return 'cursor-not-allowed';
+      if (track.locked || isProxyProcessing) return 'cursor-not-allowed';
       if (isDragging) return 'cursor-grabbing';
       return 'cursor-grab';
     };
@@ -243,6 +245,18 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       (state) => state.playback.dragGhost,
     );
 
+    // Check if proxy generation is in progress for this track's media (for 4K videos)
+    const mediaLibrary = useVideoEditorStore((state) => state.mediaLibrary);
+    const isProxyProcessing = useMemo(() => {
+      if (track.type !== 'video') return false;
+      const mediaItem = mediaLibrary.find(
+        (m) =>
+          m.source === track.source ||
+          (track.mediaId && m.id === track.mediaId),
+      );
+      return mediaItem?.proxy?.status === 'processing';
+    }, [mediaLibrary, track.source, track.mediaId, track.type]);
+
     // Tool mode subscriptions for resetting text-edit mode on track interaction
     const previewInteractionMode = useVideoEditorStore(
       (state) => state.preview.interactionMode,
@@ -303,7 +317,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
     const handleMouseDown = useCallback(
       (e: React.MouseEvent) => {
-        if (track.locked || isSplitModeActive || e.button === 2) return;
+        if (track.locked || isProxyProcessing || isSplitModeActive || e.button === 2) return;
 
         // Reset text tool mode when interacting with tracks
         // This ensures the preview cursor mode doesn't stay stuck in text-edit mode
@@ -340,6 +354,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         track.id,
         track.type,
         isSplitModeActive,
+        isProxyProcessing,
         previewInteractionMode,
         setPreviewInteractionMode,
       ],
@@ -347,7 +362,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
     const handleResizeMouseDown = useCallback(
       (side: 'left' | 'right', e: React.MouseEvent) => {
-        if (isSplitModeActive) return;
+        if (isSplitModeActive || isProxyProcessing) return;
         e.stopPropagation();
         e.preventDefault();
 
@@ -371,6 +386,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
         track.startFrame,
         track.endFrame,
         isSplitModeActive,
+        isProxyProcessing,
         isSelected,
         onSelect,
       ],
@@ -813,6 +829,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
           isResizing={isResizing}
           isSplitModeActive={isSplitModeActive}
           isDuplicationFeedback={isDuplicationFeedback}
+          isProxyProcessing={isProxyProcessing}
           onClick={handleClick}
           onMouseDown={handleMouseDown}
         >
@@ -889,6 +906,7 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
       prevProps.track.volumeDb === nextProps.track.volumeDb &&
       prevProps.track.noiseReductionEnabled ===
         nextProps.track.noiseReductionEnabled &&
+      prevProps.track.mediaId === nextProps.track.mediaId &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.isSplitModeActive === nextProps.isSplitModeActive &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -1336,7 +1354,8 @@ const TrackRow: React.FC<TrackRowProps> = React.memo(
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
           track.previewUrl === nextTrack.previewUrl &&
-          track.trackRowIndex === nextTrack.trackRowIndex
+          track.trackRowIndex === nextTrack.trackRowIndex &&
+          track.mediaId === nextTrack.mediaId
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&
@@ -2089,7 +2108,8 @@ export const TimelineTracks: React.FC<TimelineTracksProps> = React.memo(
           track.isLinked === nextTrack.isLinked &&
           track.linkedTrackId === nextTrack.linkedTrackId &&
           track.previewUrl === nextTrack.previewUrl &&
-          track.trackRowIndex === nextTrack.trackRowIndex
+          track.trackRowIndex === nextTrack.trackRowIndex &&
+          track.mediaId === nextTrack.mediaId
         );
       }) &&
       prevProps.frameWidth === nextProps.frameWidth &&

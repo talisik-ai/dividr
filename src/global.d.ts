@@ -132,15 +132,36 @@ declare global {
         error?: string;
       }>;
 
-      // Proxy generation
+      // Proxy generation (with hybrid encoder support)
       generateProxy: (inputPath: string) => Promise<{
         success: boolean;
         proxyPath?: string;
         cached?: boolean;
+        encoder?: {
+          type: string;
+          description: string;
+          fallbackUsed: boolean;
+          originalEncoder?: string;
+        };
         benchmark?: {
           durationMs: number;
           startTime: number;
           endTime: number;
+        };
+        error?: string;
+      }>;
+
+      // Hardware capabilities detection
+      getHardwareCapabilities: () => Promise<{
+        success: boolean;
+        capabilities?: {
+          hasHardwareEncoder: boolean;
+          encoderType: string;
+          encoderDescription: string;
+          cpuCores: number;
+          totalRamGB: number;
+          freeRamGB: number;
+          isLowHardware: boolean;
         };
         error?: string;
       }>;

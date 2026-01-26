@@ -481,22 +481,40 @@ const processImportedFile = async (
         },
       });
 
-      // Trigger background proxy generation
+      // Trigger background proxy generation with hybrid encoder support
       window.electronAPI
         .generateProxy(fileInfo.path)
         .then(
           async (result: {
             success: boolean;
             proxyPath?: string;
-            error?: string;
+            cached?: boolean;
+            encoder?: {
+              type: string;
+              description: string;
+              fallbackUsed: boolean;
+              originalEncoder?: string;
+            };
             benchmark?: {
               durationMs: number;
               startTime: number;
               endTime: number;
             };
+            error?: string;
           }) => {
             if (result.success && result.proxyPath) {
               console.log('✅ Proxy generated successfully:', result.proxyPath);
+
+              // Log encoder information
+              if (result.encoder) {
+                console.log(`🎮 Encoder used: ${result.encoder.description}`);
+                if (result.encoder.fallbackUsed) {
+                  console.log(
+                    `⚠️ Hardware encoder ${result.encoder.originalEncoder} failed, used software fallback`,
+                  );
+                }
+              }
+
               if (result.benchmark) {
                 console.log(`⏱️ Proxy generation stats:`);
                 console.log(`   - Duration: ${result.benchmark.durationMs}ms`);
@@ -514,13 +532,15 @@ const processImportedFile = async (
               );
 
               if (proxyUrlResult.success) {
-                // Update media item to use proxy URL
+                // Update media item to use proxy URL with encoder info
                 updateMediaLibraryFn(mediaId, {
                   previewUrl: proxyUrlResult.url,
                   proxy: {
                     status: 'ready',
                     path: result.proxyPath,
                     originalPreviewUrl: previewUrl,
+                    encoder: result.encoder,
+                    benchmarkMs: result.benchmark?.durationMs,
                   },
                 });
                 console.log(
