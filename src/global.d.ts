@@ -136,6 +136,12 @@ declare global {
       generateProxy: (inputPath: string) => Promise<{
         success: boolean;
         proxyPath?: string;
+        cached?: boolean;
+        benchmark?: {
+          durationMs: number;
+          startTime: number;
+          endTime: number;
+        };
         error?: string;
       }>;
 

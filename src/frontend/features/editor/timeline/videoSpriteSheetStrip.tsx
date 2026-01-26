@@ -4,7 +4,6 @@ import {
   default as VideoSpriteSheetGenerator,
 } from '@/backend/frontend_use/videoSpriteSheetGenerator';
 import { Loader2 } from 'lucide-react';
-import { useMediaReadiness } from '../../editor/hooks/useMediaReadiness';
 import React, {
   useCallback,
   useEffect,
@@ -12,6 +11,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useMediaReadiness } from '../../editor/hooks/useMediaReadiness';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 
@@ -154,7 +154,6 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
           item?.transcoding?.status === 'pending'
         );
       }, [mediaLibrary, track.source, track.mediaId]);
-
 
       // Hybrid tile generation - pixel-position based for correct zoom behavior
       // Key insight: iterate by PIXEL POSITION at native tile width intervals,
@@ -466,28 +465,28 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
 
           {/* GPU-accelerated sprite container */}
           {isMediaReady && (
-          <div
-            className="absolute inset-0"
-            style={{
-              transform: 'translateZ(0)',
-              willChange: 'contents',
-            }}
-          >
-            {visibleTiles.map((tile) => {
-              const sheet = state.spriteSheets[tile.thumbnail.sheetIndex];
-              if (!sheet) return null;
+            <div
+              className="absolute inset-0"
+              style={{
+                transform: 'translateZ(0)',
+                willChange: 'contents',
+              }}
+            >
+              {visibleTiles.map((tile) => {
+                const sheet = state.spriteSheets[tile.thumbnail.sheetIndex];
+                if (!sheet) return null;
 
-              return (
-                <GPUAcceleratedSprite
-                  key={tile.id}
-                  tile={tile}
-                  spriteSheet={sheet}
-                  height={height}
-                  viewportOffset={viewportBounds.start}
-                />
-              );
-            })}
-          </div>
+                return (
+                  <GPUAcceleratedSprite
+                    key={tile.id}
+                    tile={tile}
+                    spriteSheet={sheet}
+                    height={height}
+                    viewportOffset={viewportBounds.start}
+                  />
+                );
+              })}
+            </div>
           )}
 
           {/* Track name overlay */}

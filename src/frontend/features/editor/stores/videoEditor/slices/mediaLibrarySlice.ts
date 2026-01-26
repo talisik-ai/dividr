@@ -543,6 +543,16 @@ export const createMediaLibrarySlice: StateCreator<
       return true;
     }
 
+    // Defer generation if proxy is currently processing
+    // This allows the proxy generation to finish first (preventing resource contention)
+    // The generation will be re-triggered when the proxy becomes 'ready'
+    if (mediaItem.proxy?.status === 'processing') {
+      console.log(
+        `⏳ Deferring sprite sheet generation for: ${mediaItem.name} (waiting for proxy)`,
+      );
+      return true;
+    }
+
     // Prefer proxy for generation if available to avoid memory issues with 4K sources
     const videoPath =
       mediaItem.proxy?.status === 'ready' && mediaItem.proxy?.path
@@ -638,6 +648,14 @@ export const createMediaLibrarySlice: StateCreator<
     // Skip if thumbnail already exists
     if (mediaItem.thumbnail) {
       console.log(`Thumbnail already exists for: ${mediaItem.name}`);
+      return true;
+    }
+
+    // Defer generation if proxy is currently processing
+    if (mediaItem.proxy?.status === 'processing') {
+      console.log(
+        `⏳ Deferring thumbnail generation for: ${mediaItem.name} (waiting for proxy)`,
+      );
       return true;
     }
 

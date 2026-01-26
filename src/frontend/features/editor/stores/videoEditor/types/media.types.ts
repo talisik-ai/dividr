@@ -76,6 +76,7 @@ export interface MediaLibraryItem {
     path?: string;
     originalPreviewUrl?: string;
     jobId?: string;
+    progress?: number;
   };
   hasGeneratedKaraoke?: boolean;
   cachedKaraokeSubtitles?: {

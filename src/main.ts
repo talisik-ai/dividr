@@ -18,12 +18,12 @@ import {
 import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
 
 // Import unified media-tools runner (transcription + noise reduction)
+import { buildArnnDenCommand } from './backend/ffmpeg/alternativeDenoise';
 import type {
   MediaToolsProgress,
   NoiseReductionResult,
   WhisperResult,
 } from './backend/media-tools/mediaToolsRunner';
-import { buildArnnDenCommand } from './backend/ffmpeg/alternativeDenoise';
 import {
   cancelCurrentOperation,
   cancelTranscription,
@@ -2417,92 +2417,196 @@ ipcMain.handle('ffmpeg:cancel', async () => {
   return { success: false, message: 'No export running' };
 });
 
+// Keep track of active proxy generation promises to deduplicate requests
+const activeProxyGenerations = new Map<string, Promise<any>>();
+
 // IPC Handler for generating proxy files for 4K video optimization
 ipcMain.handle('generate-proxy', async (event, inputPath: string) => {
   console.log('🔄 generate-proxy called for:', inputPath);
 
-  if (!ffmpegPath) {
-    return { success: false, error: 'FFmpeg not available' };
+  // Check if there is already an active generation for this file
+  if (activeProxyGenerations.has(inputPath)) {
+    console.log('🔄 Joining existing proxy generation for:', inputPath);
+    return activeProxyGenerations.get(inputPath);
   }
 
-  try {
-    const proxiesDir = path.join(app.getPath('userData'), 'proxies');
-    if (!fs.existsSync(proxiesDir)) {
-      fs.mkdirSync(proxiesDir, { recursive: true });
+  const generationPromise = (async () => {
+    if (!ffmpegPath) {
+      return { success: false, error: 'FFmpeg not available' };
     }
 
-    // Generate a stable hash for the filename based on input path
-    const hash = crypto.createHash('md5').update(inputPath).digest('hex');
-    const outputPath = path.join(proxiesDir, `${hash}.mp4`);
-
-    // Check if proxy already exists
-    if (fs.existsSync(outputPath)) {
-      console.log('✅ Proxy already exists at:', outputPath);
-      // Verify it's valid (size > 0)
-      const stats = fs.statSync(outputPath);
-      if (stats.size > 0) {
-        return { success: true, proxyPath: outputPath };
+    try {
+      const proxiesDir = path.join(app.getPath('userData'), 'proxies');
+      if (!fs.existsSync(proxiesDir)) {
+        fs.mkdirSync(proxiesDir, { recursive: true });
       }
-      // If invalid, delete and regenerate
-      fs.unlinkSync(outputPath);
-    }
 
-    console.log('🚀 Starting proxy generation to:', outputPath);
+      // Generate a stable hash for the filename based on input path
+      const hash = crypto.createHash('md5').update(inputPath).digest('hex');
+      const outputPath = path.join(proxiesDir, `${hash}.mp4`);
 
-    // Spawn FFmpeg to generate 720p proxy
-    // -vf scale=-2:720 ensures width is divisible by 2 and height is 720
-    // -preset ultrafast for speed
-    const args = [
-      '-i',
-      inputPath,
-      '-vf',
-      'scale=-2:720,format=yuv420p',
-      '-c:v',
-      'libx264',
-      '-profile:v',
-      'baseline',
-      '-level',
-      '3.0',
-      '-preset',
-      'ultrafast',
-      '-crf',
-      '24',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
-      '-movflags',
-      '+faststart',
-      '-y',
-      outputPath,
-    ];
-
-    return new Promise((resolve) => {
-      const ffmpeg = spawn(ffmpegPath!, args);
-
-      ffmpeg.stderr.on('data', (data) => {
-        // Optional: log progress if needed
-      });
-
-      ffmpeg.on('close', (code) => {
-        if (code === 0) {
-          console.log('✅ Proxy generation complete:', outputPath);
-          resolve({ success: true, proxyPath: outputPath });
-        } else {
-          console.error('❌ Proxy generation failed with code:', code);
-          resolve({ success: false, error: `FFmpeg exited with code ${code}` });
+      // Check if proxy already exists
+      if (fs.existsSync(outputPath)) {
+        console.log('✅ Proxy already exists at:', outputPath);
+        // Verify it's valid (size > 0)
+        const stats = fs.statSync(outputPath);
+        if (stats.size > 0) {
+          return { success: true, proxyPath: outputPath, cached: true };
         }
-      });
+        // If invalid, delete and regenerate
+        fs.unlinkSync(outputPath);
+      }
 
-      ffmpeg.on('error', (err) => {
-        console.error('❌ Proxy generation error:', err);
-        resolve({ success: false, error: err.message });
+      // Use a temporary file during generation to prevent incomplete reads
+      const tempPath = outputPath + '.tmp';
+      console.log(`📝 Writing to temp file: ${tempPath}`);
+
+      // Clean up any stale temp file
+      if (fs.existsSync(tempPath)) {
+        try {
+          fs.unlinkSync(tempPath);
+        } catch (e) {
+          console.warn('⚠️ Could not cleanup old temp proxy:', e);
+        }
+      }
+
+      console.log('🚀 Starting proxy generation to:', outputPath);
+      const startTime = Date.now();
+      const startTimeString = new Date(startTime).toLocaleTimeString();
+      console.log(
+        `⏱️ Proxy generation START: ${startTimeString} (${startTime})`,
+      );
+
+      // Spawn FFmpeg to generate 480p proxy for maximum speed
+      // -vf scale=-2:480 reduces processing load significantly compared to 720p
+      // -preset ultrafast for speed
+      // -crf 28 for lower quality (sufficient for proxy)
+      // -threads 2 to prevent starving the Electron UI process
+      const args = [
+        '-i',
+        inputPath,
+        '-vf',
+        'scale=-2:480,format=yuv420p',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-crf',
+        '28',
+        '-threads',
+        '2',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '96k',
+        '-movflags',
+        '+faststart',
+        '-y',
+        '-f',
+        'mp4',
+        tempPath, // Write to temp file first!
+      ];
+
+      return await new Promise((resolve) => {
+        const ffmpeg = spawn(ffmpegPath!, args);
+
+        // Capture stderr to debug failures and parse progress
+        let stderrOutput = '';
+        ffmpeg.stderr.on('data', (data) => {
+          const chunk = data.toString();
+          stderrOutput += chunk;
+
+          // Parse progress (time=00:00:00.00) if possible to update UI
+          if (chunk.includes('time=')) {
+            // We can emit an event here if we want real-time progress, but `handle` doesn't strictly stream.
+            // Instead, we use event.sender.send if available, or just log occasionally.
+            // Sending raw progress string to renderer for parsing might be easiest.
+            if (event.sender) {
+              event.sender.send('proxy-progress', {
+                path: inputPath,
+                log: chunk,
+              });
+            }
+          }
+        });
+
+        ffmpeg.on('close', async (code) => {
+          const endTime = Date.now();
+          const endTimeString = new Date(endTime).toLocaleTimeString();
+          const durationMs = endTime - startTime;
+
+          console.log(`⏱️ Proxy generation END: ${endTimeString} (${endTime})`);
+          console.log(`⏱️ Duration: ${durationMs}ms`);
+
+          if (code === 0) {
+            try {
+              // Wait a small amount of time to ensure file handles are released by OS/Antivirus
+              await new Promise((r) => setTimeout(r, 500));
+
+              // Atomic rename: temp -> final
+              if (fs.existsSync(tempPath)) {
+                fs.renameSync(tempPath, outputPath);
+                console.log(
+                  '✅ Proxy generation complete (renamed temp -> final):',
+                  outputPath,
+                );
+
+                resolve({
+                  success: true,
+                  proxyPath: outputPath,
+                  benchmark: {
+                    durationMs,
+                    startTime,
+                    endTime,
+                  },
+                });
+              } else {
+                console.error(
+                  '❌ Temp proxy file missing after successful FFmpeg exit',
+                );
+                resolve({ success: false, error: 'Temp proxy file missing' });
+              }
+            } catch (err) {
+              console.error('❌ Failed to rename temp proxy file:', err);
+              resolve({
+                success: false,
+                error: 'Failed to finalize proxy file',
+              });
+            }
+          } else {
+            console.error(`❌ Proxy generation failed with code: ${code}`);
+            console.error(`❌ FFmpeg stderr:`, stderrOutput);
+
+            // Cleanup temp file
+            if (fs.existsSync(tempPath)) {
+              fs.unlinkSync(tempPath);
+            }
+            resolve({
+              success: false,
+              error: `FFmpeg exited with code ${code}. Error: ${stderrOutput.slice(-200)}`, // Return tail of stderr
+            });
+          }
+        });
+
+        ffmpeg.on('error', (err) => {
+          console.error('❌ Proxy generation error:', err);
+          if (fs.existsSync(tempPath)) {
+            fs.unlinkSync(tempPath);
+          }
+          resolve({ success: false, error: err.message });
+        });
       });
-    });
-  } catch (error) {
-    console.error('Failed to generate proxy:', error);
-    return { success: false, error: error.message };
-  }
+    } catch (error) {
+      console.error('Failed to generate proxy:', error);
+      return { success: false, error: error.message };
+    } finally {
+      // Remove from active generations map when done
+      activeProxyGenerations.delete(inputPath);
+    }
+  })();
+
+  activeProxyGenerations.set(inputPath, generationPromise);
+  return generationPromise;
 });
 
 // Diagnostic handler to check FFmpeg status
@@ -2754,7 +2858,7 @@ ipcMain.handle(
                 errorMsg = 'Permission denied';
               if (stderrLog.includes('No such file'))
                 errorMsg = 'File not found';
-              
+
               // Include the last 5 lines of stderr for context
               const stderrTail = stderrLog.split('\n').slice(-5).join('\n');
               if (stderrTail.trim()) {
