@@ -335,7 +335,11 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         updateViewport();
       }, [width, zoomLevel]);
 
-      // Sprite sheet generation (unchanged from Version B)
+      // Sprite sheet generation - with job state coordination
+      const isGeneratingSpriteSheet = useVideoEditorStore(
+        (state) => state.isGeneratingSpriteSheet,
+      );
+
       const generateSpriteSheets = useCallback(async () => {
         if (!track.source || track.type !== 'video') return;
 
@@ -357,6 +361,37 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
             isLoading: false,
             error: null,
           });
+          return;
+        }
+
+        // CRITICAL: Defer generation if proxy is still processing
+        // This allows proxy generation to finish first (same as mediaLibrarySlice logic)
+        if (isProxyProcessing) {
+          console.log(
+            `⏳ [VideoSpriteSheetStrip] Deferring sprite sheet for: ${track.name} (waiting for proxy)`,
+          );
+          // Don't generate until proxy is ready
+          return;
+        }
+
+        // CRITICAL: Check job state from media library for idempotency
+        // This prevents regeneration when track is dropped on timeline during active generation
+        const currentMediaItem = mediaItem;
+        const jobState = currentMediaItem?.jobStates?.spriteSheet;
+
+        if (jobState === 'processing') {
+          console.log(
+            `⏳ [VideoSpriteSheetStrip] Sprite sheet job already processing for track: ${track.name} (skipping)`,
+          );
+          // Don't set loading state - let the media library handle it
+          return;
+        }
+
+        // Also check if already generating via store flag
+        if (track.mediaId && isGeneratingSpriteSheet(track.mediaId)) {
+          console.log(
+            `⏳ [VideoSpriteSheetStrip] Sprite sheet already generating via store for: ${track.name} (skipping)`,
+          );
           return;
         }
 
@@ -383,7 +418,7 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
           console.warn('Cache check failed:', err);
         }
 
-        // Generate if needed
+        // Generate if needed - but only if not already loading locally
         if (state.isLoading) return;
 
         setState((prev) => ({ ...prev, isLoading: true, error: null }));
@@ -418,10 +453,15 @@ export const VideoSpriteSheetStrip: React.FC<VideoSpriteSheetStripProps> =
         track.source,
         track.tempFilePath,
         track.type,
+        track.name,
+        track.mediaId,
         trackMetrics,
         displayFps,
         getSpriteSheetsBySource,
         state.isLoading,
+        mediaItem,
+        isGeneratingSpriteSheet,
+        isProxyProcessing,
       ]);
 
       useEffect(() => {

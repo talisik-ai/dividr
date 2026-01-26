@@ -149,4 +149,17 @@ export interface MediaLibraryItem {
    * - ready: Media is fully ready for timeline display without flickering.
    */
   readinessState?: 'pending' | 'ready';
+
+  /**
+   * Background job states for idempotent job coordination.
+   * Prevents regeneration loops when media is manipulated during active jobs.
+   */
+  jobStates?: {
+    /** Sprite sheet generation job state */
+    spriteSheet?: 'idle' | 'processing' | 'completed' | 'failed';
+    /** Waveform generation job state */
+    waveform?: 'idle' | 'processing' | 'completed' | 'failed';
+    /** Thumbnail generation job state */
+    thumbnail?: 'idle' | 'processing' | 'completed' | 'failed';
+  };
 }

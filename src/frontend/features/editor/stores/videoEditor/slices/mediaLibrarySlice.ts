@@ -407,7 +407,23 @@ export const createMediaLibrarySlice: StateCreator<
       return true;
     }
 
-    // Skip if already generating (check both store state and active job)
+    // CRITICAL: Check job state for idempotency
+    // Prevents regeneration loops when media is dragged to timeline during active jobs
+    const currentJobState = mediaItem.jobStates?.waveform;
+    if (currentJobState === 'processing') {
+      console.log(
+        `⏳ Waveform job already processing for: ${mediaItem.name} (idempotent skip)`,
+      );
+      return true;
+    }
+    if (currentJobState === 'completed') {
+      console.log(
+        `✅ Waveform job already completed for: ${mediaItem.name} (idempotent skip)`,
+      );
+      return true;
+    }
+
+    // Skip if already generating (legacy check - check both store state and active job)
     if (get().isGeneratingWaveform(mediaId)) {
       console.log(`Waveform already generating for: ${mediaItem.name}`);
       return true;
@@ -446,6 +462,23 @@ export const createMediaLibrarySlice: StateCreator<
       return true;
     }
 
+    // CRITICAL: Set job state to 'processing' SYNCHRONOUSLY before any async work
+    // This prevents race conditions when waveform strip mounts during import
+    get().setGeneratingWaveform(mediaId, true);
+    set((state: any) => ({
+      mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
+        item.id === mediaId
+          ? {
+              ...item,
+              jobStates: {
+                ...item.jobStates,
+                waveform: 'processing' as const,
+              },
+            }
+          : item,
+      ),
+    }));
+
     console.log(
       `🎵 Generating waveform for media library item: ${mediaItem.name}`,
     );
@@ -453,9 +486,6 @@ export const createMediaLibrarySlice: StateCreator<
     console.log(`⏱️ Duration: ${mediaItem.duration}s`);
 
     try {
-      // Mark as generating
-      get().setGeneratingWaveform(mediaId, true);
-
       // Use optimized parameters for fast generation
       // 50 peaks/sec provides good visual quality while being fast
       const result = await AudioWaveformGenerator.generateWaveform({
@@ -466,7 +496,7 @@ export const createMediaLibrarySlice: StateCreator<
       });
 
       if (result.success) {
-        // Update media library item with waveform data including LOD tiers
+        // Update media library item with waveform data including LOD tiers AND job state to 'completed'
         set((state: any) => ({
           mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
             item.id === mediaId
@@ -480,6 +510,10 @@ export const createMediaLibrarySlice: StateCreator<
                     cacheKey: result.cacheKey,
                     lodTiers: result.lodTiers, // Include LOD tiers for efficient zoom rendering
                     generatedAt: Date.now(),
+                  },
+                  jobStates: {
+                    ...item.jobStates,
+                    waveform: 'completed' as const,
                   },
                 }
               : item,
@@ -495,6 +529,20 @@ export const createMediaLibrarySlice: StateCreator<
         );
         return true;
       } else {
+        // Update job state to 'failed'
+        set((state: any) => ({
+          mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
+            item.id === mediaId
+              ? {
+                  ...item,
+                  jobStates: {
+                    ...item.jobStates,
+                    waveform: 'failed' as const,
+                  },
+                }
+              : item,
+          ),
+        }));
         console.error(
           `❌ Failed to generate waveform for ${mediaItem.name}:`,
           result.error,
@@ -502,6 +550,20 @@ export const createMediaLibrarySlice: StateCreator<
         return false;
       }
     } catch (error) {
+      // Update job state to 'failed'
+      set((state: any) => ({
+        mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
+          item.id === mediaId
+            ? {
+                ...item,
+                jobStates: {
+                  ...item.jobStates,
+                  waveform: 'failed' as const,
+                },
+              }
+            : item,
+        ),
+      }));
       console.error(
         `❌ Error generating waveform for ${mediaItem.name}:`,
         error,
@@ -537,7 +599,23 @@ export const createMediaLibrarySlice: StateCreator<
       return true;
     }
 
-    // Skip if already generating
+    // CRITICAL: Check job state for idempotency
+    // Prevents regeneration loops when media is dragged to timeline during active jobs
+    const currentJobState = mediaItem.jobStates?.spriteSheet;
+    if (currentJobState === 'processing') {
+      console.log(
+        `⏳ Sprite sheet job already processing for: ${mediaItem.name} (idempotent skip)`,
+      );
+      return true;
+    }
+    if (currentJobState === 'completed') {
+      console.log(
+        `✅ Sprite sheet job already completed for: ${mediaItem.name} (idempotent skip)`,
+      );
+      return true;
+    }
+
+    // Skip if already generating (legacy check)
     if (get().isGeneratingSpriteSheet(mediaId)) {
       console.log(`Sprite sheets already generating for: ${mediaItem.name}`);
       return true;
@@ -567,13 +645,28 @@ export const createMediaLibrarySlice: StateCreator<
       return false;
     }
 
-    try {
-      // Set generating state
-      get().setGeneratingSpriteSheet(mediaId, true);
-      console.log(
-        `🎬 Generating sprite sheets for media library item: ${mediaItem.name}`,
-      );
+    // CRITICAL: Set job state to 'processing' SYNCHRONOUSLY before any async work
+    // This prevents race conditions when VideoSpriteSheetStrip mounts during import
+    get().setGeneratingSpriteSheet(mediaId, true);
+    set((state: any) => ({
+      mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
+        item.id === mediaId
+          ? {
+              ...item,
+              jobStates: {
+                ...item.jobStates,
+                spriteSheet: 'processing' as const,
+              },
+            }
+          : item,
+      ),
+    }));
 
+    console.log(
+      `🎬 Generating sprite sheets for media library item: ${mediaItem.name}`,
+    );
+
+    try {
       const result = await VideoSpriteSheetGenerator.generateSpriteSheets({
         videoPath,
         duration: mediaItem.duration,
@@ -584,7 +677,7 @@ export const createMediaLibrarySlice: StateCreator<
       });
 
       if (result.success) {
-        // Update the media library item with sprite sheet data
+        // Update the media library item with sprite sheet data AND job state to 'completed'
         set((state: any) => ({
           mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
             item.id === mediaId
@@ -595,6 +688,10 @@ export const createMediaLibrarySlice: StateCreator<
                     spriteSheets: result.spriteSheets,
                     cacheKey: result.cacheKey,
                     generatedAt: Date.now(),
+                  },
+                  jobStates: {
+                    ...item.jobStates,
+                    spriteSheet: 'completed' as const,
                   },
                 }
               : item,
@@ -609,6 +706,20 @@ export const createMediaLibrarySlice: StateCreator<
         );
         return true;
       } else {
+        // Update job state to 'failed'
+        set((state: any) => ({
+          mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
+            item.id === mediaId
+              ? {
+                  ...item,
+                  jobStates: {
+                    ...item.jobStates,
+                    spriteSheet: 'failed' as const,
+                  },
+                }
+              : item,
+          ),
+        }));
         console.error(
           `❌ Failed to generate sprite sheets for ${mediaItem.name}:`,
           result.error,
@@ -616,6 +727,20 @@ export const createMediaLibrarySlice: StateCreator<
         return false;
       }
     } catch (error) {
+      // Update job state to 'failed'
+      set((state: any) => ({
+        mediaLibrary: state.mediaLibrary.map((item: MediaLibraryItem) =>
+          item.id === mediaId
+            ? {
+                ...item,
+                jobStates: {
+                  ...item.jobStates,
+                  spriteSheet: 'failed' as const,
+                },
+              }
+            : item,
+        ),
+      }));
       console.error(
         `❌ Error generating sprite sheets for ${mediaItem.name}:`,
         error,
