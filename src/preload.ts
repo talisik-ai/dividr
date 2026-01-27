@@ -317,10 +317,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // =========================================================================
 
   // Get a unique output path for noise reduction
-  noiseReductionGetOutputPath: (inputPath: string) =>
+  noiseReductionGetOutputPath: (inputPath: string, engine?: string) =>
     ipcRenderer.invoke(
       'noise-reduction:get-output-path',
       inputPath,
+      engine,
     ) as Promise<{
       success: boolean;
       outputPath?: string;

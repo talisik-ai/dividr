@@ -316,7 +316,11 @@ export interface TracksSlice {
    */
   updateTrackAudio: (
     trackId: string,
-    updates: { volumeDb?: number; noiseReductionEnabled?: boolean },
+    updates: {
+      volumeDb?: number;
+      noiseReductionEnabled?: boolean;
+      noiseReductionEngine?: 'ffmpeg' | 'deepfilter';
+    },
   ) => void;
 
   // ==========================================================================
@@ -2271,6 +2275,9 @@ export const createTracksSlice: StateCreator<
               }),
               ...(updates.noiseReductionEnabled !== undefined && {
                 noiseReductionEnabled: updates.noiseReductionEnabled,
+              }),
+              ...(updates.noiseReductionEngine !== undefined && {
+                noiseReductionEngine: updates.noiseReductionEngine,
               }),
             }
           : track,

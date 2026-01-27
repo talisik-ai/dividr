@@ -34,6 +34,7 @@ export interface NoiseReductionCacheEntry {
   refCount: number;
   processedAt: number | null;
   engine: 'ffmpeg' | 'deepfilter';
+  message: string | null;
 }
 
 type SubscriptionCallback = () => void;
@@ -48,6 +49,66 @@ function logCache(message: string, data?: unknown) {
   if (DEBUG_NOISE_REDUCTION_CACHE) {
     console.log(`[NoiseReductionCache] ${message}`, data || '');
   }
+}
+
+// =============================================================================
+// USER-FRIENDLY MESSAGE MAPPING
+// =============================================================================
+
+/**
+ * Maps internal progress messages to user-friendly display text.
+ * Hides technical details like chunk counts and internal stage names.
+ */
+function getUserFriendlyMessage(
+  rawMessage: string | null,
+  progress: number,
+): string {
+  if (!rawMessage) {
+    // Default messages based on progress
+    if (progress < 10) return 'Preparing audio...';
+    if (progress < 90) return 'Reducing background noise...';
+    return 'Finalizing...';
+  }
+
+  const lowerMessage = rawMessage.toLowerCase();
+
+  // Map common internal messages to user-friendly versions
+  if (
+    lowerMessage.includes('loading') ||
+    lowerMessage.includes('preparing') ||
+    lowerMessage.includes('initializing')
+  ) {
+    return 'Preparing audio...';
+  }
+
+  if (
+    lowerMessage.includes('chunk') ||
+    lowerMessage.includes('processing') ||
+    lowerMessage.includes('filtering')
+  ) {
+    return 'Reducing background noise...';
+  }
+
+  if (lowerMessage.includes('merging') || lowerMessage.includes('combining')) {
+    return 'Optimizing audio...';
+  }
+
+  if (
+    lowerMessage.includes('saving') ||
+    lowerMessage.includes('writing') ||
+    lowerMessage.includes('finalizing')
+  ) {
+    return 'Finalizing...';
+  }
+
+  if (lowerMessage.includes('complete') || lowerMessage.includes('done')) {
+    return 'Complete';
+  }
+
+  // For any unrecognized message, use a safe default based on progress
+  if (progress < 10) return 'Preparing audio...';
+  if (progress < 85) return 'Reducing background noise...';
+  return 'Finalizing...';
 }
 
 // =============================================================================
@@ -176,7 +237,38 @@ class NoiseReductionCacheImpl {
     const targetEngine = engine || 'ffmpeg';
     const key = this.getCacheKey(sourceId, targetEngine);
     const entry = this.cache.get(key);
+
     return entry?.error ?? null;
+  }
+
+  /**
+   * Get current progress message (raw internal message).
+   */
+  getMessage(
+    sourceId: string,
+    engine?: 'ffmpeg' | 'deepfilter',
+  ): string | null {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
+    return entry?.message ?? null;
+  }
+
+  /**
+   * Get user-friendly progress message for UI display.
+   * Maps internal technical messages to simple, reassuring text.
+   */
+  getDisplayMessage(
+    sourceId: string,
+    engine?: 'ffmpeg' | 'deepfilter',
+  ): string {
+    const targetEngine = engine || 'ffmpeg';
+    const key = this.getCacheKey(sourceId, targetEngine);
+    const entry = this.cache.get(key);
+
+    if (!entry) return 'Preparing...';
+
+    return getUserFriendlyMessage(entry.message, entry.progress);
   }
 
   /**
@@ -275,6 +367,7 @@ class NoiseReductionCacheImpl {
       refCount: 1,
       processedAt: null,
       engine: targetEngine,
+      message: null,
     });
 
     try {
@@ -288,7 +381,10 @@ class NoiseReductionCacheImpl {
 
       // Get output path from backend
       const outputPathResult =
-        await window.electronAPI.noiseReductionGetOutputPath(inputPath);
+        await window.electronAPI.noiseReductionGetOutputPath(
+          inputPath,
+          targetEngine,
+        );
       if (!outputPathResult.success || !outputPathResult.outputPath) {
         throw new Error(outputPathResult.error || 'Failed to get output path');
       }
@@ -303,6 +399,7 @@ class NoiseReductionCacheImpl {
           this.updateEntry(key, {
             ...currentEntry,
             progress: progress.progress,
+            message: progress.message || currentEntry.message,
           });
         }
         options?.onProgress?.(progress);
@@ -511,8 +608,6 @@ class NoiseReductionCacheImpl {
       }
     };
   }
-
-
 
   /**
    * Update cache entry and notify subscribers.

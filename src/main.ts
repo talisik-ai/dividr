@@ -3045,13 +3045,15 @@ const NOISE_REDUCTION_TEMP_DIR = path.join(
 );
 
 // IPC Handler to get a unique output path for noise reduction
+// IPC Handler to get a unique output path for noise reduction
 ipcMain.handle(
   'noise-reduction:get-output-path',
-  async (_event, inputPath: string) => {
+  async (_event, inputPath: string, engine?: string) => {
     console.log(
       '📁 MAIN PROCESS: noise-reduction:get-output-path handler called',
     );
     console.log('   Input path:', inputPath);
+    console.log('   Engine:', engine);
 
     try {
       // Ensure directory exists
@@ -3070,9 +3072,10 @@ ipcMain.handle(
         .digest('hex')
         .slice(0, 12);
       const timestamp = Date.now();
+      const engineTag = engine ? `_${engine}` : '';
       const outputPath = path.join(
         NOISE_REDUCTION_TEMP_DIR,
-        `nr_${hash}_${timestamp}.wav`,
+        `nr_${hash}${engineTag}_${timestamp}.wav`,
       );
 
       console.log('   Generated output path:', outputPath);

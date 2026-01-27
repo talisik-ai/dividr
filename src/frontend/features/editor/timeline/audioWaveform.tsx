@@ -71,18 +71,21 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
         return;
       }
 
+      // CRITICAL: Use the track's stored engine to get the correct cache state
+      const engine = track.noiseReductionEngine || 'ffmpeg';
+
       // Get initial state
-      const state = NoiseReductionCache.getState(track.source);
+      const state = NoiseReductionCache.getState(track.source, engine);
       setNrCacheState(state);
 
-      // Subscribe to changes
+      // Subscribe to changes for the specific engine
       const unsubscribe = NoiseReductionCache.subscribe(track.source, () => {
-        const newState = NoiseReductionCache.getState(track.source);
+        const newState = NoiseReductionCache.getState(track.source, engine);
         setNrCacheState(newState);
-      });
+      }, engine);
 
       return unsubscribe;
-    }, [track.type, track.source, track.noiseReductionEnabled]);
+    }, [track.type, track.source, track.noiseReductionEnabled, track.noiseReductionEngine]);
 
     const setCurrentFrame = useVideoEditorStore(
       (state) => state.setCurrentFrame,
@@ -122,9 +125,10 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
       ) {
         return null; // Use original source
       }
-      // Get processed URL from NoiseReductionCache
-      return NoiseReductionCache.getProcessedUrl(track.source);
-    }, [track.type, track.source, track.noiseReductionEnabled, nrCacheState]);
+      // CRITICAL: Use the track's stored engine to get the correct processed URL
+      const engine = track.noiseReductionEngine || 'ffmpeg';
+      return NoiseReductionCache.getProcessedUrl(track.source, engine);
+    }, [track.type, track.source, track.noiseReductionEnabled, track.noiseReductionEngine, nrCacheState]);
 
     // Get waveform data from the store
     const waveformData = useMemo(() => {

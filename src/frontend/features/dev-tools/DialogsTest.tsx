@@ -5,6 +5,7 @@ import { BatchDuplicateMediaDialog } from '@/frontend/features/editor/components
 import { FpsWarningDialog } from '@/frontend/features/editor/components/dialogs/fpsWarningDialog';
 import { KaraokeConfirmationDialog } from '@/frontend/features/editor/components/dialogs/karaokeConfirmationDialog';
 import ProxyWarningDialog from '@/frontend/features/editor/components/dialogs/proxyWarningDialog';
+import { NoiseReductionEngineModal } from '@/frontend/features/editor/components/properties-panel/audio/NoiseReductionEngineModal';
 import ThumbnailChangerDialog from '@/frontend/features/editor/components/thumbnailChangerDialog';
 import { DuplicateChoice } from '@/frontend/features/editor/stores/videoEditor/slices/mediaLibrarySlice';
 import {
@@ -27,6 +28,8 @@ export const DialogsTest = () => {
   const [navigationBlockerOpen, setNavigationBlockerOpen] = useState(false);
   const [renderProcessOpen, setRenderProcessOpen] = useState(false);
   const [renderState, setRenderState] = useState<RenderState>('rendering');
+  const [noiseReductionEngineOpen, setNoiseReductionEngineOpen] =
+    useState(false);
 
   // Mock Data
   const mockDuplicateItems = [
@@ -197,6 +200,12 @@ export const DialogsTest = () => {
               >
                 Thumbnail Changer
               </Button>
+              <Button
+                onClick={() => setNoiseReductionEngineOpen(true)}
+                variant="outline"
+              >
+                Noise Reduction Engine
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -356,6 +365,15 @@ export const DialogsTest = () => {
         onRetry={() => {
           setRenderState('rendering');
           toast.info('Retrying render...');
+        }}
+      />
+      <NoiseReductionEngineModal
+        isOpen={noiseReductionEngineOpen}
+        onOpenChange={setNoiseReductionEngineOpen}
+        onConfirm={(engine, remember) => {
+          toast.success(
+            `Selected Engine: ${engine}. Remember choice: ${remember}`,
+          );
         }}
       />
     </div>

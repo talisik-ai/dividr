@@ -47,6 +47,7 @@ interface AudioPropertiesProps {
 const DEFAULT_AUDIO_PROPERTIES = {
   volumeDb: DEFAULT_AUDIO_METADATA.volumeDb as number,
   noiseReductionEnabled: DEFAULT_AUDIO_METADATA.noiseReductionEnabled,
+  noiseReductionEngine: undefined as NoiseReductionEngine | undefined,
 };
 
 const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
@@ -98,6 +99,9 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     noiseReductionEnabled:
       selectedTrack.noiseReductionEnabled ??
       DEFAULT_AUDIO_PROPERTIES.noiseReductionEnabled,
+    noiseReductionEngine:
+      selectedTrack.noiseReductionEngine ??
+      DEFAULT_AUDIO_PROPERTIES.noiseReductionEngine,
   };
 
   // Format dB value for display
@@ -256,77 +260,94 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   const [pendingNoiseReduction, setPendingNoiseReduction] = useState(false);
 
   // State for engine selection modal
-  // State for engine selection modal
   const [showEngineModal, setShowEngineModal] = useState(false);
-  // Track active engine to subscribe to correct cache updates
-  const [activeEngine, setActiveEngine] =
-    useState<NoiseReductionEngine>('ffmpeg');
-
-  // Initialize active engine preference on mount to show correct cache state
-  useEffect(() => {
-    const resolveEngine = async () => {
-      try {
-        // Use centralized hardware capabilities detection
-        const hwResult = await window.electronAPI.getHardwareCapabilities();
-        const isLowHardware =
-          hwResult.success && hwResult.capabilities
-            ? hwResult.capabilities.isLowHardware ||
-              hwResult.capabilities.totalRamGB <= 8
-            : true; // Default to ffmpeg if detection fails
-
-        // Default to ffmpeg on low hardware
-        if (isLowHardware) {
-          setActiveEngine('ffmpeg');
-          return;
-        }
-
-        // Check persistent storage
-        const stored = localStorage.getItem('dividr-noise-reduction-engine');
-        if (stored === 'deepfilter') {
-          setActiveEngine('deepfilter');
-        } else {
-          // Default or 'ffmpeg'
-          setActiveEngine('ffmpeg');
-        }
-      } catch (e) {
-        console.error('Failed to resolve engine preference', e);
-      }
-    };
-    resolveEngine();
-  }, []);
-
-  // State for noise reduction processing
-  const [nrCacheState, setNrCacheState] = useState<ProcessingState>('idle');
-  const [nrProgress, setNrProgress] = useState(0);
-  const [nrError, setNrError] = useState<string | null>(null);
-
-  // Temporary state for error modal (for debugging)
-  const [showErrorModal, setShowErrorModal] = useState(false);
-  const [errorDetails, setErrorDetails] = useState<string>('');
 
   // Get source URL for the selected track
   const sourceUrl = useMemo(() => {
     return selectedTrack?.previewUrl || selectedTrack?.source || null;
   }, [selectedTrack?.previewUrl, selectedTrack?.source]);
 
+  // Determine which engine to use for cache lookups
+  // Priority: track's stored engine > detect from active processing > user preference
+  const effectiveEngine = useMemo((): NoiseReductionEngine => {
+    // 1. If track has a stored engine, always use it (most reliable)
+    if (currentAudioProperties.noiseReductionEngine) {
+      return currentAudioProperties.noiseReductionEngine;
+    }
+
+    // 2. Check if there's active processing for either engine
+    if (sourceUrl) {
+      const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
+      if (
+        NoiseReductionCache.getState(sourceId, 'deepfilter') === 'processing'
+      ) {
+        return 'deepfilter';
+      }
+      if (NoiseReductionCache.getState(sourceId, 'ffmpeg') === 'processing') {
+        return 'ffmpeg';
+      }
+    }
+
+    // 3. Fall back to user preference from localStorage
+    const stored = localStorage.getItem('dividr-noise-reduction-engine');
+    if (stored === 'deepfilter') {
+      return 'deepfilter';
+    }
+
+    return 'ffmpeg';
+  }, [currentAudioProperties.noiseReductionEngine, sourceUrl]);
+
+  // State for noise reduction processing - now derived from cache subscription
+  const [nrCacheState, setNrCacheState] = useState<ProcessingState>('idle');
+  const [nrProgress, setNrProgress] = useState(0);
+  const [nrDisplayMessage, setNrDisplayMessage] = useState<string>('');
+  const [nrError, setNrError] = useState<string | null>(null);
+
+  // Temporary state for error modal (for debugging)
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorDetails, setErrorDetails] = useState<string>('');
+
   // Subscribe to noise reduction cache state changes
+  // CRITICAL: Use effectiveEngine to ensure we always track the correct cache entry
   useEffect(() => {
-    if (!sourceUrl) return;
+    if (!sourceUrl) {
+      setNrCacheState('idle');
+      setNrProgress(0);
+      setNrDisplayMessage('');
+      setNrError(null);
+      return;
+    }
 
     const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
 
     const updateState = () => {
-      setNrCacheState(NoiseReductionCache.getState(sourceId, activeEngine));
-      setNrProgress(NoiseReductionCache.getProgress(sourceId, activeEngine));
-      setNrError(NoiseReductionCache.getError(sourceId, activeEngine));
+      const state = NoiseReductionCache.getState(sourceId, effectiveEngine);
+      const progress = NoiseReductionCache.getProgress(
+        sourceId,
+        effectiveEngine,
+      );
+      const displayMsg = NoiseReductionCache.getDisplayMessage(
+        sourceId,
+        effectiveEngine,
+      );
+      const error = NoiseReductionCache.getError(sourceId, effectiveEngine);
+
+      setNrCacheState(state);
+      setNrProgress(progress);
+      setNrDisplayMessage(displayMsg);
+      setNrError(error);
     };
 
-    // Initialize state
+    // Initialize state immediately on mount/change
     updateState();
 
     // Subscribe to changes for this specific engine
-    return NoiseReductionCache.subscribe(sourceId, updateState, activeEngine);
-  }, [sourceUrl, activeEngine]);
+    return NoiseReductionCache.subscribe(
+      sourceId,
+      updateState,
+      effectiveEngine,
+    );
+  }, [sourceUrl, effectiveEngine]);
 
   // Derived state for UI
   const isProcessing = nrCacheState === 'processing';
@@ -343,26 +364,43 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
 
       const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
 
-      // Check if already cached - just enable the flag
+      // Check if already cached - just enable the flag and store engine
       if (NoiseReductionCache.hasCached(sourceId, engine)) {
         beginAudioUpdate();
-        updateAudioProperties({ noiseReductionEnabled: true });
+        updateAudioProperties({
+          noiseReductionEnabled: true,
+          noiseReductionEngine: engine,
+        });
         endAudioUpdate();
         return;
       }
 
-      // Start processing
+      // CRITICAL: Store the engine on track BEFORE processing starts
+      // This ensures that if user navigates away, effectiveEngine can read it
+      // from the track and correctly subscribe to the right cache entry
+      beginAudioUpdate();
+      updateAudioProperties({
+        noiseReductionEnabled: true,
+        noiseReductionEngine: engine,
+      });
+      endAudioUpdate();
+
+      // Start processing (track already updated, so UI will show progress)
       try {
         await NoiseReductionCache.processSource(sourceId, sourceUrl, {
           engine,
         });
-
-        // Processing complete - enable the flag
-        beginAudioUpdate();
-        updateAudioProperties({ noiseReductionEnabled: true });
-        endAudioUpdate();
+        // Processing complete - track already has correct state
       } catch (error) {
         console.error('Noise reduction processing failed:', error);
+
+        // On error, disable the feature on the track
+        beginAudioUpdate();
+        updateAudioProperties({
+          noiseReductionEnabled: false,
+          noiseReductionEngine: undefined,
+        });
+        endAudioUpdate();
 
         // TEMPORARY: Show complete error details in modal for debugging
         const errorMessage =
@@ -381,10 +419,15 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     [sourceUrl, beginAudioUpdate, updateAudioProperties, endAudioUpdate],
   );
 
+  // Track the pending engine for runtime download flow
+  const [pendingEngine, setPendingEngine] =
+    useState<NoiseReductionEngine>('ffmpeg');
+
   // Helper: Proceed after engine is selected
   const proceedWithNoiseReduction = useCallback(
     async (engine: NoiseReductionEngine) => {
-      setActiveEngine(engine);
+      // Store the engine for use after runtime download if needed
+      setPendingEngine(engine);
 
       // Check Runtime only if using DeepFilter
       if (engine === 'deepfilter') {
@@ -398,8 +441,6 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           }
         } catch (error) {
           console.error('Failed to check runtime status:', error);
-          // Show error but maybe try to continue? Or fail?
-          // For now fail safe to error modal
           const errorMessage =
             error instanceof Error
               ? `${error.name}: ${error.message}`
@@ -456,9 +497,12 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
         // Proceed
         proceedWithNoiseReduction(engine);
       } else {
-        // Disable noise reduction
+        // Disable noise reduction - clear both the flag and engine
         beginAudioUpdate();
-        updateAudioProperties({ noiseReductionEnabled: false });
+        updateAudioProperties({
+          noiseReductionEnabled: false,
+          noiseReductionEngine: undefined,
+        });
         endAudioUpdate();
       }
     },
@@ -486,19 +530,29 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
     if (!sourceUrl) return;
 
     const sourceId = NoiseReductionCache.normalizeSourceId(sourceUrl);
-    NoiseReductionCache.resetError(sourceId);
+    // Reset error for the engine that failed
+    NoiseReductionCache.resetError(sourceId, effectiveEngine);
 
-    // Reuse last selected engine or default
-    handleNoiseReductionToggle(true);
-  }, [sourceUrl, handleNoiseReductionToggle]);
+    // Retry with the same engine that was used before
+    if (effectiveEngine) {
+      proceedWithNoiseReduction(effectiveEngine);
+    } else {
+      handleNoiseReductionToggle(true);
+    }
+  }, [
+    sourceUrl,
+    effectiveEngine,
+    proceedWithNoiseReduction,
+    handleNoiseReductionToggle,
+  ]);
 
   // Handle successful runtime download - enable noise reduction
   const handleRuntimeDownloadSuccess = useCallback(() => {
     if (pendingNoiseReduction) {
-      executeNoiseReduction(activeEngine);
+      executeNoiseReduction(pendingEngine);
       setPendingNoiseReduction(false);
     }
-  }, [pendingNoiseReduction, activeEngine, executeNoiseReduction]);
+  }, [pendingNoiseReduction, pendingEngine, executeNoiseReduction]);
 
   // Handle reset to defaults (single action - creates undo entry)
   const handleReset = useCallback(() => {
@@ -632,12 +686,12 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           />
         </div>
 
-        {/* Progress indicator */}
+        {/* Progress indicator - single, clean display */}
         {isProcessing && (
-          <div className="space-y-1">
-            <Progress value={nrProgress} className="h-1" />
+          <div className="space-y-2">
+            <Progress value={nrProgress} className="h-1.5" />
             <p className="text-xs text-muted-foreground">
-              Processing... {Math.round(nrProgress)}%
+              {nrDisplayMessage} {Math.round(nrProgress)}%
             </p>
           </div>
         )}
@@ -660,14 +714,12 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           </div>
         )}
 
-        {/* Status text */}
+        {/* Status text - simple states only */}
         {!isProcessing && !hasError && (
           <p className="text-xs text-muted-foreground">
             {currentAudioProperties.noiseReductionEnabled && isCached
-              ? 'Noise reduction is active'
-              : currentAudioProperties.noiseReductionEnabled
-                ? 'Noise reduction enabled (processing pending)'
-                : 'Enable to reduce background noise'}
+              ? 'Noise reduction applied'
+              : 'Reduce background noise from audio'}
           </p>
         )}
       </div>
