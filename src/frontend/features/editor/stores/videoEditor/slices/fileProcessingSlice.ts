@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { generateContentSignatureFromPath } from '@/frontend/utils/contentSignature';
 import { FileIntegrityValidator } from '@/frontend/utils/fileValidator';
+import { toast } from 'sonner';
 import { StateCreator } from 'zustand';
 import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
 import {
@@ -471,6 +472,39 @@ const processImportedFile = async (
     console.log(
       `🎥 High-res content detected (${videoDimensions.width}x${videoDimensions.height}), starting proxy generation...`,
     );
+
+    // Show informative toast with hardware capabilities
+    (async () => {
+      try {
+        const hwResult = await window.electronAPI.getHardwareCapabilities();
+        const encoderDesc =
+          hwResult.success && hwResult.capabilities?.hasHardwareEncoder
+            ? hwResult.capabilities.encoderDescription
+            : 'CPU';
+        const gpuEnabled =
+          hwResult.success && hwResult.capabilities?.hasHardwareEncoder;
+
+        toast.info(
+          `Optimizing high-res video (${videoDimensions.width}×${videoDimensions.height})`,
+          {
+            description: gpuEnabled
+              ? `Using ${encoderDesc} for faster processing. This may take a few minutes.`
+              : `Using CPU encoding. This may take several minutes for smooth editing.`,
+            duration: 5000,
+          },
+        );
+      } catch (e) {
+        // Fallback toast if hardware detection fails
+        toast.info(
+          `Optimizing high-res video (${videoDimensions.width}×${videoDimensions.height})`,
+          {
+            description:
+              'Generating preview proxy for smooth editing. This may take a few minutes.',
+            duration: 5000,
+          },
+        );
+      }
+    })();
 
     if (updateMediaLibraryFn) {
       // Mark proxy status as processing

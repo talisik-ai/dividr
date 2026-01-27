@@ -354,11 +354,6 @@ declare global {
         error?: string;
       }>;
 
-      getSystemMemory: () => Promise<{
-        total: number;
-        free: number;
-      }>;
-
       // ========================================================================
       // Media Tools API (Noise Reduction)
       // ========================================================================

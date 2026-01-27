@@ -9,7 +9,6 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { buildFfmpegCommand } from './backend/ffmpeg/export/commandBuilder';
 import {
   cancelCurrentFfmpeg,
   runFfmpeg,
@@ -18,7 +17,6 @@ import {
 import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
 
 // Import unified media-tools runner (transcription + noise reduction)
-import { buildArnnDenCommand } from './backend/ffmpeg/alternativeDenoise';
 import type {
   MediaToolsProgress,
   NoiseReductionResult,
@@ -44,7 +42,6 @@ import {
 } from './backend/runtime/runtimeDownloadManager';
 
 // Import file I/O manager for controlled concurrency
-import { backgroundTaskQueue } from './backend/io/BackgroundTaskQueue';
 import { fileIOManager } from './backend/io/FileIOManager';
 
 // Import hardware capabilities service for hybrid proxy encoding
@@ -56,6 +53,7 @@ import {
   getSoftwareEncoderConfig,
   type ProxyEncoderConfig,
 } from './backend/hardware/hardwareCapabilitiesService';
+import { backgroundTaskQueue } from './backend/io';
 
 // Backward compatible type alias
 type WhisperProgress = MediaToolsProgress;
@@ -2998,14 +2996,6 @@ ipcMain.handle(
     }
   },
 );
-
-// IPC Handler to get system memory info
-ipcMain.handle('get-system-memory', () => {
-  return {
-    total: os.totalmem(),
-    free: os.freemem(),
-  };
-});
 
 // IPC Handler to cancel media-tools operation
 ipcMain.handle('media-tools:cancel', async () => {

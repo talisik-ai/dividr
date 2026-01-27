@@ -10,7 +10,17 @@ import {
 } from '@/frontend/components/ui/alert-dialog';
 import { Badge } from '@/frontend/components/ui/badge';
 import { AlertTriangle, Clock, Zap } from 'lucide-react';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+
+interface HardwareInfo {
+  hasHardwareEncoder: boolean;
+  encoderType: string;
+  encoderDescription: string;
+  cpuCores: number;
+  totalRamGB: number;
+  freeRamGB: number;
+  isLowHardware: boolean;
+}
 
 interface ProxyWarningDialogProps {
   open: boolean;
@@ -41,6 +51,22 @@ export const ProxyWarningDialog: React.FC<ProxyWarningDialogProps> = ({
     : '4K+';
 
   const is4K = resolution ? resolution.width > 2000 : true;
+
+  // Fetch hardware capabilities when dialog opens
+  const [hardwareInfo, setHardwareInfo] = useState<HardwareInfo | null>(null);
+
+  useEffect(() => {
+    if (open && !hardwareInfo) {
+      window.electronAPI
+        .getHardwareCapabilities()
+        .then((result) => {
+          if (result.success && result.capabilities) {
+            setHardwareInfo(result.capabilities);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [open, hardwareInfo]);
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -81,12 +107,39 @@ export const ProxyWarningDialog: React.FC<ProxyWarningDialogProps> = ({
                   <p>
                     High-resolution video requires generating an optimized
                     preview copy (proxy). Even with GPU acceleration, this can
-                    take several minutes for longer clips. This is standard
-                    practice in professional editing software.
+                    take several minutes for longer clips
                   </p>
                 </div>
               </div>
             </div>
+
+            {/* {hardwareInfo && (
+              <div className="bg-muted/30 rounded-lg p-3 text-xs">
+                <p className="font-medium text-foreground mb-2 flex items-center gap-1.5">
+                  <Cpu className="h-3.5 w-3.5" />
+                  Your System
+                </p>
+                <div className="grid grid-cols-[1fr_auto] gap-2 text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Zap className="h-3 w-3 text-green-500" />
+                    <span>
+                      {hardwareInfo.hasHardwareEncoder
+                        ? hardwareInfo.encoderDescription
+                        : 'CPU Encoding'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <HardDrive className="h-3 w-3" />
+                    <span>{hardwareInfo.totalRamGB}GB RAM</span>
+                  </div>
+                </div>
+                {hardwareInfo.hasHardwareEncoder && (
+                  <p className="mt-1.5 text-green-600 dark:text-green-400">
+                    ✓ GPU acceleration enabled
+                  </p>
+                )}
+              </div>
+            )} */}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="flex-col sm:flex-row gap-2">

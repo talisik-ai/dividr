@@ -266,9 +266,16 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   useEffect(() => {
     const resolveEngine = async () => {
       try {
-        const mem = await window.electronAPI.getSystemMemory();
-        // Default to ffmpeg on low mem
-        if (mem.total <= 8 * 1024 * 1024 * 1024) {
+        // Use centralized hardware capabilities detection
+        const hwResult = await window.electronAPI.getHardwareCapabilities();
+        const isLowHardware =
+          hwResult.success && hwResult.capabilities
+            ? hwResult.capabilities.isLowHardware ||
+              hwResult.capabilities.totalRamGB <= 8
+            : true; // Default to ffmpeg if detection fails
+
+        // Default to ffmpeg on low hardware
+        if (isLowHardware) {
           setActiveEngine('ffmpeg');
           return;
         }
@@ -413,14 +420,17 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   const handleNoiseReductionToggle = useCallback(
     async (enabled: boolean) => {
       if (enabled) {
-        // 1. Determine Engine Strategy
+        // 1. Determine Engine Strategy using centralized hardware detection
         let engine: NoiseReductionEngine = 'ffmpeg';
         try {
-          const mem = await window.electronAPI.getSystemMemory();
-          const isLowMem = mem.total <= 8 * 1024 * 1024 * 1024; // 8 GB
-          // const isLowMem = true;
+          const hwResult = await window.electronAPI.getHardwareCapabilities();
+          const isLowHardware =
+            hwResult.success && hwResult.capabilities
+              ? hwResult.capabilities.isLowHardware ||
+                hwResult.capabilities.totalRamGB <= 8
+              : true; // Default to ffmpeg if detection fails
 
-          if (isLowMem) {
+          if (isLowHardware) {
             engine = 'ffmpeg';
           } else {
             // Check persistent storage
@@ -436,7 +446,10 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
             }
           }
         } catch (e) {
-          console.error('Failed to get system memory, defaulting to ffmpeg', e);
+          console.error(
+            'Failed to get hardware capabilities, defaulting to ffmpeg',
+            e,
+          );
           engine = 'ffmpeg';
         }
 
