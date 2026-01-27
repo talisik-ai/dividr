@@ -81,7 +81,11 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
   onSubtitleTextUpdate?: (trackId: string, newText: string) => void;
   onImageTransformUpdate: (trackId: string, transform: any) => void;
   onImageSelect: (trackId: string) => void;
-  onTextTransformUpdate: (trackId: string, transform: any, options?: { skipRecord?: boolean }) => void;
+  onTextTransformUpdate: (
+    trackId: string,
+    transform: any,
+    options?: { skipRecord?: boolean },
+  ) => void;
   onTextSelect: (trackId: string) => void;
   onTextUpdate: (trackId: string, newText: string) => void;
   pendingEditTextId?: string | null;
@@ -1015,7 +1019,11 @@ function renderTextTrack(
   panY: number,
   interactionMode: InteractionMode | undefined,
   isTextEditMode: boolean,
-  onTransformUpdate: (id: string, t: any, options?: { skipRecord?: boolean }) => void,
+  onTransformUpdate: (
+    id: string,
+    t: any,
+    options?: { skipRecord?: boolean },
+  ) => void,
   onSelect: (id: string) => void,
   onTextUpdate: (id: string, text: string) => void,
   onRotationStateChange: (r: boolean) => void,

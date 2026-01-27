@@ -227,10 +227,13 @@ export function RuntimeDownloadModal({
                       </p>
                       <ul className="space-y-0.5 text-xs text-muted-foreground">
                         <li>
-                          • Fixed compatibility issues on machines without Python
+                          • Fixed compatibility issues on machines without
+                          Python
                         </li>
                         <li>• Complete bundling of all native dependencies</li>
-                        <li>• Resolved missing module errors for noise reduction</li>
+                        <li>
+                          • Resolved missing module errors for noise reduction
+                        </li>
                       </ul>
                     </div>
                   )}

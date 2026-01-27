@@ -317,7 +317,13 @@ export const TrackItem: React.FC<TrackItemProps> = React.memo(
 
     const handleMouseDown = useCallback(
       (e: React.MouseEvent) => {
-        if (track.locked || isProxyProcessing || isSplitModeActive || e.button === 2) return;
+        if (
+          track.locked ||
+          isProxyProcessing ||
+          isSplitModeActive ||
+          e.button === 2
+        )
+          return;
 
         // Reset text tool mode when interacting with tracks
         // This ensures the preview cursor mode doesn't stay stuck in text-edit mode

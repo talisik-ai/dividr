@@ -1,9 +1,5 @@
 import { RuntimeDownloadModal } from '@/frontend/components/custom/RuntimeDownloadModal';
 import {
-  NoiseReductionEngine,
-  NoiseReductionEngineModal,
-} from './NoiseReductionEngineModal';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogContent,
@@ -37,6 +33,10 @@ import {
 } from '../../../preview/services/NoiseReductionCache';
 import { useVideoEditorStore } from '../../../stores/videoEditor/index';
 import { DEFAULT_AUDIO_METADATA } from '../../../stores/videoEditor/types/track.types';
+import {
+  NoiseReductionEngine,
+  NoiseReductionEngineModal,
+} from './NoiseReductionEngineModal';
 
 interface AudioPropertiesProps {
   selectedTrackIds: string[];
@@ -254,12 +254,13 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
   // State for runtime download modal
   const [showRuntimeModal, setShowRuntimeModal] = useState(false);
   const [pendingNoiseReduction, setPendingNoiseReduction] = useState(false);
-  
+
   // State for engine selection modal
   // State for engine selection modal
   const [showEngineModal, setShowEngineModal] = useState(false);
   // Track active engine to subscribe to correct cache updates
-  const [activeEngine, setActiveEngine] = useState<NoiseReductionEngine>('ffmpeg');
+  const [activeEngine, setActiveEngine] =
+    useState<NoiseReductionEngine>('ffmpeg');
 
   // Initialize active engine preference on mount to show correct cache state
   useEffect(() => {
@@ -392,13 +393,13 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
           console.error('Failed to check runtime status:', error);
           // Show error but maybe try to continue? Or fail?
           // For now fail safe to error modal
-           const errorMessage =
+          const errorMessage =
             error instanceof Error
               ? `${error.name}: ${error.message}`
               : 'Unknown error';
-           setErrorDetails(`Runtime Status Check Error:\n\n${errorMessage}`);
-           setShowErrorModal(true);
-           return;
+          setErrorDetails(`Runtime Status Check Error:\n\n${errorMessage}`);
+          setShowErrorModal(true);
+          return;
         }
       }
 
@@ -417,6 +418,7 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
         try {
           const mem = await window.electronAPI.getSystemMemory();
           const isLowMem = mem.total <= 8 * 1024 * 1024 * 1024; // 8 GB
+          // const isLowMem = true;
 
           if (isLowMem) {
             engine = 'ffmpeg';
@@ -447,7 +449,12 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
         endAudioUpdate();
       }
     },
-    [beginAudioUpdate, endAudioUpdate, updateAudioProperties, proceedWithNoiseReduction],
+    [
+      beginAudioUpdate,
+      endAudioUpdate,
+      updateAudioProperties,
+      proceedWithNoiseReduction,
+    ],
   );
 
   // Handle Engine Modal Confirmation
@@ -672,7 +679,7 @@ const AudioPropertiesComponent: React.FC<AudioPropertiesProps> = ({
         featureName="DeepFilterNet Noise Reduction"
       />
 
-       {/* Engine Selection Modal */}
+      {/* Engine Selection Modal */}
       <NoiseReductionEngineModal
         isOpen={showEngineModal}
         onOpenChange={setShowEngineModal}
