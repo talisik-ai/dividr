@@ -296,6 +296,46 @@ export const createMediaLibrarySlice: StateCreator<
       }
     }
 
+    // When proxy becomes ready, update all timeline tracks that use this media
+    // This ensures tracks switch to proxy URL automatically without reload
+    if (updates.proxy?.status === 'ready' && updates.previewUrl) {
+      const state = get() as any;
+      const mediaItem = state.mediaLibrary.find(
+        (item: MediaLibraryItem) => item.id === mediaId,
+      );
+
+      if (mediaItem?.type === 'video') {
+        console.log(
+          `🔄 Proxy ready for video: ${mediaItem.name}, updating timeline tracks with proxy URL`,
+        );
+
+        // Find all video tracks that reference this media (by mediaId or source)
+        const affectedTracks = state.tracks?.filter(
+          (track: any) =>
+            track.type === 'video' &&
+            (track.mediaId === mediaId || track.source === mediaItem.source),
+        );
+
+        // Update each affected track with the proxy URL and remove proxy blocked state
+        affectedTracks?.forEach((videoTrack: any) => {
+          console.log(
+            `📹 Updating video track ${videoTrack.id} with proxy URL`,
+          );
+          state.updateTrack?.(videoTrack.id, {
+            previewUrl: updates.previewUrl,
+            proxyBlocked: false,
+            proxyBlockedMessage: undefined,
+          });
+        });
+
+        if (affectedTracks?.length > 0) {
+          console.log(
+            `✅ Updated ${affectedTracks.length} timeline track(s) with proxy URL for: ${mediaItem.name}`,
+          );
+        }
+      }
+    }
+
     const state = get() as any;
     state.markUnsavedChanges?.();
   },
