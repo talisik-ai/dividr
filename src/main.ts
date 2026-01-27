@@ -45,6 +45,8 @@ import {
 import { fileIOManager } from './backend/io/FileIOManager';
 
 // Import hardware capabilities service for hybrid proxy encoding
+import { buildArnnDenCommand } from './backend/ffmpeg/alternativeDenoise';
+import { buildFfmpegCommand } from './backend/ffmpeg/export/commandBuilder';
 import {
   buildProxyFFmpegArgs,
   buildVaapiProxyFFmpegArgs,

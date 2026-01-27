@@ -9,7 +9,7 @@ import {
   AlertDialogTitle,
 } from '@/frontend/components/ui/alert-dialog';
 import { Badge } from '@/frontend/components/ui/badge';
-import { AlertTriangle, Clock, Zap } from 'lucide-react';
+import { Clock, Zap } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 interface HardwareInfo {
@@ -73,14 +73,13 @@ export const ProxyWarningDialog: React.FC<ProxyWarningDialogProps> = ({
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-yellow-500" />
             High-Resolution Media
           </AlertDialogTitle>
           <AlertDialogDescription className="space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-foreground">"{mediaName}"</span>
               {is4K && (
-                <Badge variant="secondary" className="text-xs">
+                <Badge className="py-0 !text-[10px] px-1 !h-fit">
                   {resolutionLabel}
                 </Badge>
               )}
