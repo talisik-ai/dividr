@@ -1,5 +1,4 @@
 import AudioWaveformGenerator from '@/backend/frontend_use/audioWaveformGenerator';
-import { Loader2 } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -7,8 +6,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { NoiseReductionCache } from '../preview/services/NoiseReductionCache';
 import { useMediaReadiness } from '../../editor/hooks/useMediaReadiness';
+import { NoiseReductionCache } from '../preview/services/NoiseReductionCache';
 import { useVideoEditorStore, VideoTrack } from '../stores/videoEditor/index';
 import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
 

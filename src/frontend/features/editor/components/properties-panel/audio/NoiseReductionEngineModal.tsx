@@ -26,9 +26,8 @@ export function NoiseReductionEngineModal({
   onOpenChange,
   onConfirm,
 }: NoiseReductionEngineModalProps) {
-  const [selectedEngine, setSelectedEngine] = useState<NoiseReductionEngine>(
-    'ffmpeg',
-  );
+  const [selectedEngine, setSelectedEngine] =
+    useState<NoiseReductionEngine>('ffmpeg');
   const [rememberChoice, setRememberChoice] = useState(false);
 
   const handleConfirm = () => {
@@ -56,7 +55,9 @@ export function NoiseReductionEngineModal({
             <Zap className="mt-1 h-5 w-5 text-yellow-500" />
             <div className="flex-1 space-y-1">
               <div className="flex items-center space-x-2">
-                <p className="font-medium text-base leading-none">Standard (FFmpeg)</p>
+                <p className="font-medium text-base leading-none">
+                  Standard (FFmpeg)
+                </p>
                 <Badge variant="secondary" className="text-[10px] h-5">
                   Recommended
                 </Badge>

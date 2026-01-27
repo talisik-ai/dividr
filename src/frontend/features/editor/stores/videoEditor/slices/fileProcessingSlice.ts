@@ -248,6 +248,17 @@ interface ProcessImportResult {
 }
 
 // Shared helper function to process imported files
+// Listen for proxy progress events
+if (typeof window !== 'undefined' && window.electronAPI) {
+  window.electronAPI.on(
+    'proxy-progress',
+    (event: any, data: { path: string; log: string }) => {
+      // TODO: Dispatch update to media store if we want to show exact percentage
+      // For now just log to verify progress
+      console.log(`[Proxy Progress] ${data.log.trim()}`);
+    },
+  );
+}
 const processImportedFile = async (
   fileInfo: any,
   addToLibraryFn: (item: Omit<MediaLibraryItem, 'id'>) => string,
@@ -470,50 +481,116 @@ const processImportedFile = async (
         },
       });
 
-      // Trigger background proxy generation
+      // Trigger background proxy generation with hybrid encoder support
       window.electronAPI
         .generateProxy(fileInfo.path)
-        .then(async (result: { success: boolean; proxyPath?: string; error?: string }) => {
-          if (result.success && result.proxyPath) {
-            console.log('✅ Proxy generated successfully:', result.proxyPath);
+        .then(
+          async (result: {
+            success: boolean;
+            proxyPath?: string;
+            cached?: boolean;
+            encoder?: {
+              type: string;
+              description: string;
+              fallbackUsed: boolean;
+              originalEncoder?: string;
+            };
+            benchmark?: {
+              durationMs: number;
+              startTime: number;
+              endTime: number;
+            };
+            error?: string;
+          }) => {
+            if (result.success && result.proxyPath) {
+              console.log('✅ Proxy generated successfully:', result.proxyPath);
 
-            // Create URL for the proxy file
-            const proxyUrlResult = await window.electronAPI.createPreviewUrl(
-              result.proxyPath,
-            );
+              // Log encoder information
+              if (result.encoder) {
+                console.log(`🎮 Encoder used: ${result.encoder.description}`);
+                if (result.encoder.fallbackUsed) {
+                  console.log(
+                    `⚠️ Hardware encoder ${result.encoder.originalEncoder} failed, used software fallback`,
+                  );
+                }
+              }
 
-            if (proxyUrlResult.success) {
-              // Update media item to use proxy URL
-              updateMediaLibraryFn(mediaId, {
-                previewUrl: proxyUrlResult.url,
-                proxy: {
-                  status: 'ready',
-                  path: result.proxyPath,
-                  originalPreviewUrl: previewUrl,
-                },
-              });
-              console.log(
-                '✅ Switched previewUrl to proxy for:',
-                fileInfo.name,
+              if (result.benchmark) {
+                console.log(`⏱️ Proxy generation stats:`);
+                console.log(`   - Duration: ${result.benchmark.durationMs}ms`);
+                console.log(
+                  `   - Start: ${new Date(result.benchmark.startTime).toLocaleTimeString()}`,
+                );
+                console.log(
+                  `   - End: ${new Date(result.benchmark.endTime).toLocaleTimeString()}`,
+                );
+              }
+
+              // Create URL for the proxy file
+              const proxyUrlResult = await window.electronAPI.createPreviewUrl(
+                result.proxyPath,
               );
 
-              // Trigger deferred background jobs now that proxy is ready
+              if (proxyUrlResult.success) {
+                // Update media item to use proxy URL with encoder info
+                updateMediaLibraryFn(mediaId, {
+                  previewUrl: proxyUrlResult.url,
+                  proxy: {
+                    status: 'ready',
+                    path: result.proxyPath,
+                    originalPreviewUrl: previewUrl,
+                    encoder: result.encoder,
+                    benchmarkMs: result.benchmark?.durationMs,
+                  },
+                });
+                console.log(
+                  '✅ Switched previewUrl to proxy for:',
+                  fileInfo.name,
+                );
+
+                // Trigger deferred background jobs now that proxy is ready
+                if (generateSpriteFn) {
+                  console.log(
+                    `🎬 Starting deferred sprite sheet generation for proxy: ${fileInfo.name}`,
+                  );
+                  generateSpriteFn(mediaId).catch((err) =>
+                    console.warn('Deferred sprite gen failed:', err),
+                  );
+                }
+                if (generateThumbnailFn) {
+                  console.log(
+                    `📸 Starting deferred thumbnail generation for proxy: ${fileInfo.name}`,
+                  );
+                  generateThumbnailFn(mediaId).catch((err) =>
+                    console.warn('Deferred thumbnail gen failed:', err),
+                  );
+                }
+              }
+            } else {
+              console.warn('❌ Proxy generation failed:', result.error);
+              updateMediaLibraryFn(mediaId, {
+                proxy: { status: 'failed' },
+              });
+
+              // Fallback: If proxy fails, try generating sprites/thumbnails from original source
+              // This ensures we at least have visual metadata even if performance isn't optimized
+              console.log(
+                `⚠️ Proxy failed, falling back to source for sprites/thumbnails: ${fileInfo.name}`,
+              );
+
               if (generateSpriteFn) {
-                console.log(`🎬 Starting deferred sprite sheet generation for proxy: ${fileInfo.name}`);
-                generateSpriteFn(mediaId).catch(err => console.warn('Deferred sprite gen failed:', err));
+                generateSpriteFn(mediaId).catch((err) =>
+                  console.warn('Fallback sprite gen failed:', err),
+                );
               }
               if (generateThumbnailFn) {
-                console.log(`📸 Starting deferred thumbnail generation for proxy: ${fileInfo.name}`);
-                generateThumbnailFn(mediaId).catch(err => console.warn('Deferred thumbnail gen failed:', err));
+                generateThumbnailFn(mediaId).catch((err) =>
+                  console.warn('Fallback thumbnail gen failed:', err),
+                );
               }
             }
-          } else {
-            console.warn('❌ Proxy generation failed:', result.error);
-            updateMediaLibraryFn(mediaId, {
-              proxy: { status: 'failed' },
-            });
-          }
-        })
+          },
+        )
         .catch((err: any) => {
           console.error('❌ Proxy generation error:', err);
           updateMediaLibraryFn(mediaId, {
@@ -624,35 +701,35 @@ const processImportedFile = async (
   if (trackType === 'video') {
     // Skip if we are generating a proxy - the proxy success handler will trigger these later
     if (!needsProxy) {
-    if (generateSpriteFn) {
-      // Run sprite sheet generation in background without blocking import
-      generateSpriteFn(mediaId).catch((error) => {
-        console.warn(
-          `⚠️ Sprite sheet generation failed for ${fileInfo.name}:`,
-          error,
-        );
-        if (updateMediaLibraryFn) {
-           updateMediaLibraryFn(mediaId, {
-             spriteSheets: {
-               success: false,
-               spriteSheets: [],
-               cacheKey: 'failed',
-               generatedAt: Date.now()
-             }
-           });
-        }
-      });
-    }
+      if (generateSpriteFn) {
+        // Run sprite sheet generation in background without blocking import
+        generateSpriteFn(mediaId).catch((error) => {
+          console.warn(
+            `⚠️ Sprite sheet generation failed for ${fileInfo.name}:`,
+            error,
+          );
+          if (updateMediaLibraryFn) {
+            updateMediaLibraryFn(mediaId, {
+              spriteSheets: {
+                success: false,
+                spriteSheets: [],
+                cacheKey: 'failed',
+                generatedAt: Date.now(),
+              },
+            });
+          }
+        });
+      }
 
-    if (generateThumbnailFn) {
-      // Run thumbnail generation in background without blocking import
-      generateThumbnailFn(mediaId).catch((error) => {
-        console.warn(
-          `⚠️ Thumbnail generation failed for ${fileInfo.name}:`,
-          error,
-        );
-      });
-    }
+      if (generateThumbnailFn) {
+        // Run thumbnail generation in background without blocking import
+        generateThumbnailFn(mediaId).catch((error) => {
+          console.warn(
+            `⚠️ Thumbnail generation failed for ${fileInfo.name}:`,
+            error,
+          );
+        });
+      }
     }
 
     // Extract audio from video file for independent audio track usage
@@ -773,8 +850,8 @@ const processImportedFile = async (
                 duration: 0,
                 sampleRate: 0,
                 cacheKey: 'failed',
-                generatedAt: Date.now()
-              }
+                generatedAt: Date.now(),
+              },
             });
           }
         });
@@ -799,8 +876,8 @@ const processImportedFile = async (
             duration: 0,
             sampleRate: 0,
             cacheKey: 'failed',
-            generatedAt: Date.now()
-          }
+            generatedAt: Date.now(),
+          },
         });
       }
     });

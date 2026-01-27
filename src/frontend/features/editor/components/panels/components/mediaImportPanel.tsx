@@ -51,6 +51,8 @@ import { isSubtitleFile } from '../../../stores/videoEditor/utils/subtitleParser
 import { getNextAvailableRowIndex } from '../../../timeline/utils/dynamicTrackRows';
 import { DuplicateMediaDialog } from '../../dialogs/batchDuplicateMediaDialog';
 import { KaraokeConfirmationDialog } from '../../dialogs/karaokeConfirmationDialog';
+import { ProxyWarningDialog } from '../../dialogs/proxyWarningDialog';
+
 interface MediaItem {
   id: string;
   name: string;
@@ -70,6 +72,11 @@ interface MediaItem {
   transcodingProgress?: number;
   transcodingFailed?: boolean;
   transcodingError?: string;
+  // Proxy generation status for 4K+ videos
+  isProxyProcessing?: boolean;
+  isProxyReady?: boolean;
+  proxyFailed?: boolean;
+  resolution?: { width: number; height: number };
 }
 
 const getTabLabel = (tabType: string, count: number) => {
@@ -386,9 +393,45 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     [mediaLibrary],
   );
 
+  // Proxy warning dialog state for 4K+ videos
+  const [proxyWarning, setProxyWarning] = useState<{
+    show: boolean;
+    mediaId: string | null;
+    mediaName: string;
+    resolution?: { width: number; height: number };
+  }>({
+    show: false,
+    mediaId: null,
+    mediaName: '',
+    resolution: undefined,
+  });
+
   const handleAddToTimeline = useCallback(
-    async (fileId: string) => {
+    async (fileId: string, bypassProxyCheck = false) => {
       const mediaItem = mediaLibrary.find((item) => item.id === fileId);
+
+      // Check if this is a 4K+ video with proxy still processing
+      // ALWAYS show warning for processing proxy, even on high-end hardware
+      if (
+        !bypassProxyCheck &&
+        mediaItem?.type === 'video' &&
+        mediaItem.proxy?.status === 'processing'
+      ) {
+        setProxyWarning({
+          show: true,
+          mediaId: fileId,
+          mediaName: mediaItem.name,
+          resolution:
+            mediaItem.metadata?.width && mediaItem.metadata?.height
+              ? {
+                  width: mediaItem.metadata.width,
+                  height: mediaItem.metadata.height,
+                }
+              : undefined,
+        });
+        return;
+      }
+
       const isSubtitleDrop =
         mediaItem?.type === 'subtitle' ||
         (mediaItem?.name ? isSubtitleFile(mediaItem.name) : false);
@@ -419,6 +462,29 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
     },
     [addTrackFromMediaLibrary, mediaLibrary, tracks],
   );
+
+  const handleProxyWarningClose = useCallback(() => {
+    setProxyWarning({
+      show: false,
+      mediaId: null,
+      mediaName: '',
+      resolution: undefined,
+    });
+  }, []);
+
+  const handleProxyUseAnyway = useCallback(async () => {
+    if (proxyWarning.mediaId) {
+      // Add to timeline anyway, bypassing proxy check
+      await handleAddToTimeline(proxyWarning.mediaId, true);
+    }
+    handleProxyWarningClose();
+  }, [proxyWarning.mediaId, handleAddToTimeline, handleProxyWarningClose]);
+
+  const handleProxyWaitForOptimization = useCallback(() => {
+    // Just close the dialog - user chose to wait
+    handleProxyWarningClose();
+    toast.info('Asset will be available once optimization completes');
+  }, [handleProxyWarningClose]);
 
   const generateKaraokeSubtitles = useVideoEditorStore(
     (state) => state.generateKaraokeSubtitles,
@@ -834,20 +900,22 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
                     ? `Converting to MP4... ${Math.round(file.transcodingProgress || 0)}%`
                     : file.transcodingFailed
                       ? `Conversion failed: ${file.transcodingError || 'Unknown error'}`
-                      : file.isGeneratingSprites
-                        ? 'Generating sprite sheets...'
-                        : file.isGeneratingWaveform
-                          ? 'Generating waveform...'
-                          : file.isGeneratingSubtitles
-                            ? 'Generating subtitles...'
-                            : file.isOnTimeline
-                              ? 'Already on timeline'
-                              : 'Click or drag to add to timeline (starts at frame 0)'
+                      : file.isProxyProcessing
+                        ? 'Generating optimized preview for smooth editing...'
+                        : file.isGeneratingSprites
+                          ? 'Generating sprite sheets...'
+                          : file.isGeneratingWaveform
+                            ? 'Generating waveform...'
+                            : file.isGeneratingSubtitles
+                              ? 'Generating subtitles...'
+                              : file.isOnTimeline
+                                ? 'Already on timeline'
+                                : 'Click or drag to add to timeline (starts at frame 0)'
                 }
               >
                 <MediaCover file={file} />
                 {/* Unified processing indicator - only for transcoding */}
-                {file.isTranscoding && (
+                {(file.isTranscoding || file.isProxyProcessing) && (
                   <div className="absolute bottom-0 p-2 left-0 right-0 h-8 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-end">
                     <Loader2 className="w-5 h-5 animate-spin text-white drop-shadow-lg" />
                   </div>
@@ -1029,6 +1097,11 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         item.transcoding?.status === 'processing';
       const transcodingFailed = item.transcoding?.status === 'failed';
 
+      // Check proxy status (for 4K+ videos)
+      const isProxyProcessing = item.proxy?.status === 'processing';
+      const isProxyReady = item.proxy?.status === 'ready';
+      const proxyFailed = item.proxy?.status === 'failed';
+
       return {
         id: item.id,
         name: item.name,
@@ -1051,6 +1124,14 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         transcodingProgress: item.transcoding?.progress ?? 0,
         transcodingFailed,
         transcodingError: item.transcoding?.error,
+        // Proxy status for 4K+ videos
+        isProxyProcessing,
+        isProxyReady,
+        proxyFailed,
+        resolution:
+          item.metadata?.width && item.metadata?.height
+            ? { width: item.metadata.width, height: item.metadata.height }
+            : undefined,
       };
     });
   }, [
@@ -1272,6 +1353,18 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
         }}
         onSuccess={handleRuntimeDownloadSuccess}
         featureName="Karaoke Subtitle Generation"
+      />
+
+      {/* 4K Proxy Warning Dialog */}
+      <ProxyWarningDialog
+        open={proxyWarning.show}
+        onOpenChange={(open) => {
+          if (!open) handleProxyWarningClose();
+        }}
+        mediaName={proxyWarning.mediaName}
+        resolution={proxyWarning.resolution}
+        onUseAnyway={handleProxyUseAnyway}
+        onWaitForOptimization={handleProxyWaitForOptimization}
       />
     </>
   );
