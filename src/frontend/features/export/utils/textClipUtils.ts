@@ -4,6 +4,7 @@
  */
 import { TextClipData } from '@/backend/ffmpeg/schema/ffmpegConfig';
 import { VideoTrack } from '../../editor/stores/videoEditor/index';
+import { applyTextWrapping } from './textWrapUtils';
 
 /**
  * Extract text clip data from text tracks for FFmpeg rendering
@@ -58,9 +59,23 @@ export function extractTextClips(
     // We just pass the font family name here
     const fontFile = style.fontFamily; // Backend will resolve to actual path
 
+    // Process text through textWrapUtils (single source of truth for line breaks)
+    // - Normalizes CRLF/CR to LF
+    // - Applies auto-wrapping if width constraint exists (user resized the text box)
+    const wrappedContent = applyTextWrapping(
+      track.textContent || '',
+      transform.width,
+      style.fontSize,
+      style.fontFamily,
+      style.isBold ? '700' : style.fontWeight,
+      style.isItalic ? 'italic' : style.fontStyle,
+      style.letterSpacing,
+      transform.scale,
+    );
+
     return {
       id: track.id,
-      content: track.textContent || '',
+      content: wrappedContent,
       type: track.textType || 'body',
       startFrame: track.startFrame,
       endFrame: track.endFrame,
