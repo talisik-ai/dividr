@@ -67,12 +67,13 @@ export interface ProxyEncoderConfig {
 
 /**
  * Encoder-specific FFmpeg arguments optimized for 480p proxy generation.
- * All configs target consistent visual quality suitable for timeline preview.
+ * All configs prioritize MAXIMUM ENCODING SPEED for fastest proxy generation.
  *
- * Quality targets:
+ * Optimization targets:
  * - Resolution: 480p (scale=-2:480)
- * - Bitrate: ~1-2 Mbps effective
- * - Speed: Prioritize encoding speed over file size
+ * - Speed: FASTEST encoding possible (all quality/compression optimizations disabled)
+ * - Quality: Acceptable for timeline preview (higher QP values, minimal processing)
+ * - File size: Not a priority (speed is everything)
  */
 const PROXY_ENCODER_CONFIGS: Record<ProxyEncoderType, ProxyEncoderConfig> = {
   nvenc: {
@@ -82,15 +83,19 @@ const PROXY_ENCODER_CONFIGS: Record<ProxyEncoderType, ProxyEncoderConfig> = {
       '-c:v',
       'h264_nvenc',
       '-preset',
-      'p4', // Fast preset (p1=fastest, p7=slowest)
+      'p1', // Fastest preset (p1=fastest, p7=slowest)
       '-tune',
-      'hq', // High quality tuning
+      'ull', // Ultra-low latency (fastest encoding)
       '-rc',
       'constqp', // Constant QP mode for consistent quality
       '-qp',
-      '30', // Quality parameter (lower = better quality, larger file)
+      '32', // Higher QP = faster encode (30->32)
       '-spatial-aq',
-      '1', // Adaptive quantization for better visual quality
+      '0', // Disable AQ for speed
+      '-temporal-aq',
+      '0', // Disable temporal AQ for speed
+      '-b_ref_mode',
+      '0', // Disable B-frame reference for speed
     ],
     description: 'NVIDIA NVENC (GPU)',
   },
@@ -102,11 +107,15 @@ const PROXY_ENCODER_CONFIGS: Record<ProxyEncoderType, ProxyEncoderConfig> = {
       '-c:v',
       'h264_qsv',
       '-preset',
-      'fast', // Fast preset
+      'ultrafast', // Fastest preset available
       '-global_quality',
-      '30', // ICQ mode quality (1-51, lower = better)
+      '32', // Higher = faster encode (30->32)
       '-look_ahead',
       '0', // Disable lookahead for speed
+      '-look_ahead_depth',
+      '0', // Disable lookahead depth
+      '-async_depth',
+      '1', // Minimize async queue depth for speed
     ],
     description: 'Intel Quick Sync (GPU)',
   },
@@ -117,12 +126,14 @@ const PROXY_ENCODER_CONFIGS: Record<ProxyEncoderType, ProxyEncoderConfig> = {
     args: [
       '-c:v',
       'h264_videotoolbox',
-      '-q:v',
-      '60', // Quality 0-100 (higher = better)
+      '-b:v',
+      '1500k', // Use bitrate mode for faster encoding than quality mode
       '-realtime',
-      '0', // Non-realtime for better quality
+      '1', // Realtime mode for maximum speed
       '-allow_sw',
       '0', // Don't fall back to software
+      '-prio_speed',
+      '1', // Prioritize speed over quality
     ],
     description: 'Apple VideoToolbox (GPU)',
   },
@@ -138,9 +149,11 @@ const PROXY_ENCODER_CONFIGS: Record<ProxyEncoderType, ProxyEncoderConfig> = {
       '-rc',
       'cqp', // Constant QP mode
       '-qp_i',
-      '28', // I-frame QP
+      '32', // Higher I-frame QP for speed (28->32)
       '-qp_p',
-      '30', // P-frame QP
+      '34', // Higher P-frame QP for speed (30->34)
+      '-preanalysis',
+      '0', // Disable pre-analysis for speed
     ],
     description: 'AMD AMF (GPU)',
   },
@@ -152,9 +165,11 @@ const PROXY_ENCODER_CONFIGS: Record<ProxyEncoderType, ProxyEncoderConfig> = {
       '-c:v',
       'h264_vaapi',
       '-qp',
-      '30', // Quality parameter
+      '32', // Higher QP for faster encode (30->32)
       '-compression_level',
-      '2', // Lower = faster
+      '1', // Lowest compression level for maximum speed (2->1)
+      '-quality',
+      '1', // Speed quality mode
     ],
     description: 'VAAPI (Linux GPU)',
   },
@@ -167,10 +182,14 @@ const PROXY_ENCODER_CONFIGS: Record<ProxyEncoderType, ProxyEncoderConfig> = {
       'libx264',
       '-preset',
       'ultrafast', // Fastest preset
+      '-tune',
+      'fastdecode', // Optimize for fast decoding (also speeds up encoding)
       '-crf',
-      '28', // Constant Rate Factor (18-28 typical, higher = smaller)
+      '30', // Higher CRF = smaller file, faster encode (28->30 for speed)
       '-threads',
-      '2', // Limit threads to not starve UI
+      '0', // Use all available threads (0 = auto-detect optimal)
+      '-x264-params',
+      'ref=1:bframes=0:me=dia:subme=0:rc-lookahead=0:trellis=0:weightp=0:8x8dct=0', // Aggressive speed optimizations
     ],
     description: 'Software (CPU)',
   },
@@ -344,9 +363,9 @@ export function buildProxyFFmpegArgs(
   const args: string[] = [
     '-i',
     inputPath,
-    // Video filter: scale to 480p, ensure yuv420p for compatibility
+    // Video filter: scale to 480p with fast bilinear interpolation, ensure yuv420p for compatibility
     '-vf',
-    'scale=-2:480,format=yuv420p',
+    'scale=-2:480:flags=fast_bilinear,format=yuv420p',
     // Encoder-specific video args
     ...encoderConfig.args,
     // Audio settings (consistent across all encoders)
@@ -383,11 +402,11 @@ export function buildVaapiProxyFFmpegArgs(
     '-i',
     inputPath,
     '-vf',
-    'scale=-2:480,format=nv12,hwupload',
+    'scale=-2:480:flags=fast_bilinear,format=nv12,hwupload',
     '-c:v',
     'h264_vaapi',
     '-qp',
-    '30',
+    '32',
     '-c:a',
     'aac',
     '-b:a',

@@ -220,11 +220,8 @@ function convertColorToFFmpeg(color: string): string {
  * Escapes text for FFmpeg drawtext filter
  */
 function escapeTextForDrawtext(text: string): string {
-  return text
-    .replace(/\\/g, '\\\\')
-    .replace(/:/g, '\\:')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, '\\n');
+  return text.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
+  // Note: \n is intentionally NOT escaped so FFmpeg can interpret it as a line break
 }
 
 /**
@@ -339,9 +336,14 @@ export function generateDrawtextFilter(
     params.push(`font=${fontPath}`);
   }
 
-  params.push(
-    `fontsize=${mergedStyle.fontSize ? parseInt(mergedStyle.fontSize) : 40}`,
-  );
+  // Apply scaling factor to font size
+  const baseFontSize = mergedStyle.fontSize
+    ? parseInt(mergedStyle.fontSize)
+    : 40;
+  const scale = segment.position?.scale || 1;
+  const scaledFontSize = Math.round(baseFontSize * scale);
+
+  params.push(`fontsize=${scaledFontSize}`);
 
   // Font color
   const fontColor = convertColorToFFmpeg(mergedStyle.color || '#FFFFFF');
