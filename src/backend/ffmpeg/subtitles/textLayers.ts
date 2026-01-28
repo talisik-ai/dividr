@@ -220,8 +220,10 @@ function convertColorToFFmpeg(color: string): string {
  * Escapes text for FFmpeg drawtext filter
  */
 function escapeTextForDrawtext(text: string): string {
-  return text.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
-  // Note: \n is intentionally NOT escaped so FFmpeg can interpret it as a line break
+  return text
+    .replace(/\\/g, '\\\\') // Escape backslashes first
+    .replace(/:/g, '\\:') // Escape colons (FFmpeg parameter separator)
+    .replace(/'/g, "\\'"); // Escape single quotes
 }
 
 /**
