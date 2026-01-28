@@ -174,7 +174,13 @@ export const useProjectStore = create<ProjectStore>()(
           lastSavedAt: new Date().toISOString(),
         });
 
+        // CRITICAL: Reset VideoEditorStore before loading new project data
+        // This prevents stale state from previous projects from persisting
+        // and ensures clean state rehydration (similar to createNewProject)
         const videoEditorStore = useVideoEditorStore.getState();
+        videoEditorStore.reset();
+
+        // Now load the project data into the clean state
         await videoEditorStore.loadProjectData(id);
 
         // Refresh project list to update lastOpenedAt

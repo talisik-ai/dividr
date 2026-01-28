@@ -108,7 +108,12 @@ export const SubtitleTransformBoundary: React.FC<
   const dragDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Delay before starting drag to allow double-click
   const lastClickTimeRef = useRef<number>(0); // Track last click time for double-click detection
   const transformDragStartedRef = useRef(false); // Track if we've started transform drag for playback pause
-  const hasUserDefinedWidthRef = useRef(false); // Track if user has explicitly set width via handles
+  // Track if user has explicitly set width via handles
+  // CRITICAL: Initialize to true if track already has a saved width > 0
+  // This preserves user-defined dimensions when reopening a project
+  const hasUserDefinedWidthRef = useRef(
+    (track.subtitleTransform?.width ?? 0) > 0,
+  );
   const prevRenderScaleRef = useRef(effectiveRenderScale); // Track renderScale changes
 
   const [isDragging, setIsDragging] = useState(false);
