@@ -508,11 +508,13 @@ function convertTracksToFFmpegInputs(
     // Resolve the audio source path - use noise-reduced version if available
     let resolvedPath = track.source;
     if (track.type === 'audio' && track.noiseReductionEnabled) {
-      const processedPath = NoiseReductionCache.getProcessedPath(track.source);
+      // CRITICAL: Use the track's stored engine to retrieve the correct cached audio
+      const engine = track.noiseReductionEngine || 'ffmpeg';
+      const processedPath = NoiseReductionCache.getProcessedPath(track.source, engine);
       if (processedPath) {
         resolvedPath = processedPath;
         console.log(
-          `🔇 Using noise-reduced audio for "${track.name}": ${processedPath}`,
+          `🔇 Using noise-reduced audio (${engine}) for "${track.name}": ${processedPath}`,
         );
       } else {
         console.warn(

@@ -9,7 +9,6 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { buildFfmpegCommand } from './backend/ffmpeg/export/commandBuilder';
 import {
   cancelCurrentFfmpeg,
   runFfmpeg,
@@ -18,7 +17,6 @@ import {
 import { VideoEditJob } from './backend/ffmpeg/schema/ffmpegConfig';
 
 // Import unified media-tools runner (transcription + noise reduction)
-import { buildArnnDenCommand } from './backend/ffmpeg/alternativeDenoise';
 import type {
   MediaToolsProgress,
   NoiseReductionResult,
@@ -44,10 +42,11 @@ import {
 } from './backend/runtime/runtimeDownloadManager';
 
 // Import file I/O manager for controlled concurrency
-import { backgroundTaskQueue } from './backend/io/BackgroundTaskQueue';
 import { fileIOManager } from './backend/io/FileIOManager';
 
 // Import hardware capabilities service for hybrid proxy encoding
+import { buildArnnDenCommand } from './backend/ffmpeg/alternativeDenoise';
+import { buildFfmpegCommand } from './backend/ffmpeg/export/commandBuilder';
 import {
   buildProxyFFmpegArgs,
   buildVaapiProxyFFmpegArgs,
@@ -56,6 +55,7 @@ import {
   getSoftwareEncoderConfig,
   type ProxyEncoderConfig,
 } from './backend/hardware/hardwareCapabilitiesService';
+import { backgroundTaskQueue } from './backend/io';
 
 // Backward compatible type alias
 type WhisperProgress = MediaToolsProgress;
@@ -2999,14 +2999,6 @@ ipcMain.handle(
   },
 );
 
-// IPC Handler to get system memory info
-ipcMain.handle('get-system-memory', () => {
-  return {
-    total: os.totalmem(),
-    free: os.freemem(),
-  };
-});
-
 // IPC Handler to cancel media-tools operation
 ipcMain.handle('media-tools:cancel', async () => {
   console.log('🛑 MAIN PROCESS: media-tools:cancel handler called');
@@ -3053,13 +3045,15 @@ const NOISE_REDUCTION_TEMP_DIR = path.join(
 );
 
 // IPC Handler to get a unique output path for noise reduction
+// IPC Handler to get a unique output path for noise reduction
 ipcMain.handle(
   'noise-reduction:get-output-path',
-  async (_event, inputPath: string) => {
+  async (_event, inputPath: string, engine?: string) => {
     console.log(
       '📁 MAIN PROCESS: noise-reduction:get-output-path handler called',
     );
     console.log('   Input path:', inputPath);
+    console.log('   Engine:', engine);
 
     try {
       // Ensure directory exists
@@ -3078,9 +3072,10 @@ ipcMain.handle(
         .digest('hex')
         .slice(0, 12);
       const timestamp = Date.now();
+      const engineTag = engine ? `_${engine}` : '';
       const outputPath = path.join(
         NOISE_REDUCTION_TEMP_DIR,
-        `nr_${hash}_${timestamp}.wav`,
+        `nr_${hash}${engineTag}_${timestamp}.wav`,
       );
 
       console.log('   Generated output path:', outputPath);

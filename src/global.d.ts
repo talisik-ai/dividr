@@ -354,11 +354,6 @@ declare global {
         error?: string;
       }>;
 
-      getSystemMemory: () => Promise<{
-        total: number;
-        free: number;
-      }>;
-
       // ========================================================================
       // Media Tools API (Noise Reduction)
       // ========================================================================
@@ -428,8 +423,12 @@ declare global {
       /**
        * Get a unique output path for noise reduction
        * @param inputPath - Path to input audio file
+       * @param engine - Engine used for noise reduction (optional)
        */
-      noiseReductionGetOutputPath: (inputPath: string) => Promise<{
+      noiseReductionGetOutputPath: (
+        inputPath: string,
+        engine?: string,
+      ) => Promise<{
         success: boolean;
         outputPath?: string;
         error?: string;

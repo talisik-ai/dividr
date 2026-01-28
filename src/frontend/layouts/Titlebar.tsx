@@ -10,6 +10,12 @@ import LogoDark from '@/frontend/assets/logo/Logo-Dark.svg';
 import LogoLight from '@/frontend/assets/logo/Logo-Light.svg';
 import { ModeToggle } from '@/frontend/components/custom/ModeToggle';
 import { Button, buttonVariants } from '@/frontend/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/frontend/components/ui/dropdown-menu';
 import { useProjectStore } from '@/frontend/features/projects/store/projectStore';
 import { useTheme } from '@/frontend/providers/ThemeProvider';
 import { cn } from '@/frontend/utils/utils';
@@ -150,11 +156,21 @@ const TitleBar: React.FC<TitleBarProps> = ({ className }) => {
             <div className="flex items-center gap-7">
               {/* Test Tools - Only show in development */}
               {process.env.NODE_ENV === 'development' && (
-                <Link to="/dev-tools">
-                  <Button variant="ghost" size="sm" title="Test Tools">
-                    Test Tools
-                  </Button>
-                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-1">
+                      Dev Tools
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem asChild>
+                      <Link to="/dev-tools">Media Tools</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/dialogs-test">Dialogs Showcase</Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               <ModeToggle />
             </div>

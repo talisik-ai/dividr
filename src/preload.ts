@@ -312,22 +312,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mediaHasAudio: (filePath: string) =>
     ipcRenderer.invoke('media:has-audio', filePath),
 
-  // Get system memory info
-  getSystemMemory: () =>
-    ipcRenderer.invoke('get-system-memory') as Promise<{
-      total: number;
-      free: number;
-    }>,
-
   // =========================================================================
   // Noise Reduction Cache APIs
   // =========================================================================
 
   // Get a unique output path for noise reduction
-  noiseReductionGetOutputPath: (inputPath: string) =>
+  noiseReductionGetOutputPath: (inputPath: string, engine?: string) =>
     ipcRenderer.invoke(
       'noise-reduction:get-output-path',
       inputPath,
+      engine,
     ) as Promise<{
       success: boolean;
       outputPath?: string;

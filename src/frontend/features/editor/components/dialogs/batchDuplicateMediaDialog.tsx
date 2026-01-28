@@ -12,7 +12,7 @@ import { buttonVariants } from '@/frontend/components/ui/button';
 import { Checkbox } from '@/frontend/components/ui/checkbox';
 import { ScrollArea } from '@/frontend/components/ui/scroll-area';
 import { cn } from '@/frontend/utils/utils';
-import { Copy, FileCheck } from 'lucide-react';
+import { FileCheck } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   DuplicateChoice,
@@ -112,7 +112,6 @@ export const DuplicateMediaDialog: React.FC<DuplicateMediaDialogProps> = ({
       >
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <Copy className="h-5 w-5 text-amber-500" />
             {isSingleDuplicate
               ? 'Duplicate Detected'
               : `${duplicates.length} Duplicates Detected`}

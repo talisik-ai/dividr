@@ -1,5 +1,6 @@
 import argparse
 import os
+import json
 from typing import Union
 
 import torch
@@ -97,24 +98,29 @@ def run(input_path: str, output_path: str) -> None:
         output_path: Path to output audio file
     """
     # Step 1: Model Initialization
+    print(f"PROGRESS|{json.dumps({'stage': 'loading', 'progress': 0, 'message': 'Initializing model...'})}", flush=True)
     model, df_state, _ = init_df(default_model='DeepFilterNet2')
     
     # Step 2: Audio Loading with explicit resampling to 48kHz
+    print(f"PROGRESS|{json.dumps({'stage': 'loading', 'progress': 0, 'message': 'Loading audio...'})}", flush=True)
     target_sample_rate = 48000
     audio, _ = load_audio(input_path, sr=target_sample_rate)
     
     # Step 3: Calculate chunk size (3 minutes = 180 seconds)
     sample_rate = target_sample_rate
-    chunk_duration_seconds = 180  # 3 minutes
+    chunk_duration_seconds = 10  # 10 seconds for granular progress
     chunk_size_samples = int(chunk_duration_seconds * sample_rate)
     
     # Get audio dimensions: [C, T]
     num_channels, total_samples = audio.shape
     
     # Step 4: Process audio in chunks if it exceeds chunk size
+    # Calculate progress
     if total_samples <= chunk_size_samples:
         # Audio is short enough, process directly
+        print(f"PROGRESS|{json.dumps({'stage': 'processing', 'progress': 0, 'message': 'Processing audio...'})}", flush=True)
         enhanced = enhance(model, df_state, audio)
+        print(f"PROGRESS|{json.dumps({'stage': 'processing', 'progress': 100, 'message': 'Processing complete'})}", flush=True)
     else:
         # Process in chunks
         enhanced_chunks = []
@@ -124,16 +130,23 @@ def run(input_path: str, output_path: str) -> None:
             start_idx = i * chunk_size_samples
             end_idx = min(start_idx + chunk_size_samples, total_samples)
             
+            # Calculate progress
+            percent = int((i / num_chunks) * 100)
+            print(f"PROGRESS|{json.dumps({'stage': 'processing', 'progress': percent, 'message': f'Processing chunk {i+1}/{num_chunks}'})}", flush=True)
+
             # Extract chunk: [C, T]
+            # Slicing tensor references memory, cheap
             audio_chunk = audio[:, start_idx:end_idx]
             
             # Process chunk with DeepFilterNet
+            # Clone to ensure contiguous memory if needed? enhance usually handles it
             enhanced_chunk = enhance(model, df_state, audio_chunk)
             
             enhanced_chunks.append(enhanced_chunk)
         
         # Concatenate all processed chunks along time dimension (dim=1)
         enhanced = torch.cat(enhanced_chunks, dim=1)
+        print(f"PROGRESS|{json.dumps({'stage': 'processing', 'progress': 100, 'message': 'Merging chunks...'})}", flush=True)
     
     # Step 5: Normalize audio to prevent clipping and distortion
     max_val = torch.abs(enhanced).max()

@@ -38,6 +38,13 @@
 export type VolumeDb = number | '-inf';
 
 /**
+ * Noise reduction engine types.
+ * - 'ffmpeg': Built-in FFmpeg noise reduction (always available)
+ * - 'deepfilter': DeepFilterNet2 AI-based noise reduction (requires runtime)
+ */
+export type NoiseReductionEngine = 'ffmpeg' | 'deepfilter';
+
+/**
  * AudioMetadata - Audio processing settings for a clip.
  *
  * This interface represents the user's INTENT for audio processing.
@@ -62,6 +69,12 @@ export interface AudioMetadata {
    * When true, signals intent to apply noise reduction during export.
    */
   noiseReductionEnabled: boolean;
+
+  /**
+   * The noise reduction engine to use.
+   * Only relevant when noiseReductionEnabled is true.
+   */
+  noiseReductionEngine?: NoiseReductionEngine;
 }
 
 /**
@@ -71,6 +84,7 @@ export interface AudioMetadata {
 export const DEFAULT_AUDIO_METADATA: AudioMetadata = {
   volumeDb: 0,
   noiseReductionEnabled: false,
+  noiseReductionEngine: undefined,
 };
 
 /**
@@ -93,12 +107,14 @@ export interface MediaToolsAudioPayload {
 export const getAudioMetadata = (track: {
   volumeDb?: number;
   noiseReductionEnabled?: boolean;
+  noiseReductionEngine?: NoiseReductionEngine;
 }): AudioMetadata => {
   return {
     volumeDb: track.volumeDb ?? DEFAULT_AUDIO_METADATA.volumeDb,
     noiseReductionEnabled:
       track.noiseReductionEnabled ??
       DEFAULT_AUDIO_METADATA.noiseReductionEnabled,
+    noiseReductionEngine: track.noiseReductionEngine,
   };
 };
 
@@ -244,6 +260,14 @@ export interface VideoTrack {
    * @see AudioMetadata
    */
   noiseReductionEnabled?: boolean;
+  /**
+   * The noise reduction engine used for this track.
+   * Required when noiseReductionEnabled is true to retrieve the correct cached audio.
+   * - 'ffmpeg': Built-in FFmpeg noise reduction
+   * - 'deepfilter': DeepFilterNet2 AI-based noise reduction
+   * @see NoiseReductionEngine
+   */
+  noiseReductionEngine?: NoiseReductionEngine;
   // ==========================================================================
   visible: boolean;
   locked: boolean;

@@ -1185,7 +1185,7 @@ export const MediaImportPanel: React.FC<CustomPanelProps> = ({ className }) => {
   return (
     <>
       <BasePanel
-        title="Your uploads"
+        title="Media Sources"
         description="Import and manage media files"
         className={className}
       >
