@@ -9,6 +9,7 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../../editor/stores/videoEditor/index';
+import { applyTextWrapping } from './textWrapUtils';
 
 interface SubtitleGenerationResult {
   subtitleContent: string;
@@ -139,10 +140,28 @@ export function generateSubtitleContent(
             );
           }
 
-          // Preserve true line breaks; only normalize CRLF to \n
-          const cleanText = (track.subtitleText || '')
-            .replace(/\r\n/g, '\n')
-            .replace(/\r/g, '\n');
+          // Process text through textWrapUtils (single source of truth for line breaks)
+          // - Normalizes CRLF/CR to LF
+          // - Applies auto-wrapping if width constraint exists (user resized the subtitle box)
+          const subtitleWidth = track.subtitleTransform?.width || 0;
+          const fontSize = trackStyle?.fontSize || 40; // Default 40px at 720p
+          const fontFamily = trackStyle?.fontFamily || 'Inter';
+          const fontWeight = trackStyle?.isBold ? '700' : '400';
+          const fontStyle = trackStyle?.isItalic ? 'italic' : 'normal';
+          const letterSpacing = trackStyle?.letterSpacing || 0;
+          const scale = track.subtitleTransform?.scale || 1;
+
+          // applyTextWrapping handles both normalization and width-based wrapping
+          const cleanText = applyTextWrapping(
+            track.subtitleText || '',
+            subtitleWidth,
+            fontSize,
+            fontFamily,
+            fontWeight,
+            fontStyle,
+            letterSpacing,
+            scale,
+          );
 
           // Extract transform/position data from subtitleTransform or fall back to global position
           // Convert coordinates from [-1,1] (frontend) to [0,1] (ASS generator)

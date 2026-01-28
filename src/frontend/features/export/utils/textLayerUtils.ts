@@ -9,6 +9,7 @@ import {
   useVideoEditorStore,
   VideoTrack,
 } from '../../editor/stores/videoEditor/index';
+import { applyTextWrapping } from './textWrapUtils';
 
 interface TextLayerGenerationResult {
   textSegments: TextSegment[];
@@ -110,15 +111,39 @@ export function generateTextLayerSegments(
               }
             : undefined;
 
-          // Clean up text
-          const cleanText = (track.textContent || '')
-            .replace(/\n\s*$/, '')
-            .trim();
+          // Process text through textWrapUtils (single source of truth for line breaks)
+          // - Normalizes CRLF/CR to LF
+          // - Applies auto-wrapping if width constraint exists (user resized the text box)
+          const trackWidth = track.textTransform?.width || 0;
+          const fontSize = track.textStyle?.fontSize || 40; // Default 40px at 720p
+          const fontFamily = track.textStyle?.fontFamily || 'Inter';
+          const fontWeight = track.textStyle?.isBold ? '700' : '400';
+          const fontStyle = track.textStyle?.isItalic ? 'italic' : 'normal';
+          const letterSpacing = track.textStyle?.letterSpacing || 0;
+          const scale = track.textTransform?.scale || 1;
+
+          // applyTextWrapping handles both normalization and width-based wrapping
+          const cleanText = applyTextWrapping(
+            track.textContent || '',
+            trackWidth,
+            fontSize,
+            fontFamily,
+            fontWeight,
+            fontStyle,
+            letterSpacing,
+            scale,
+          );
 
           // Use trackRowIndex to determine layer (higher row index = higher layer)
           // Fallback to layerIndex or old layer field for backward compatibility
           // This matches how video/image tracks determine their layer
           const layer = track.trackRowIndex ?? 0;
+
+          // Debug: show the final text being sent to export (with visible line breaks)
+          const debugCleanText = cleanText.replace(/\n/g, '\\n');
+          console.log(
+            `📤 [TextLayers] Export text for track ${index + 1}: "${debugCleanText}"`,
+          );
 
           return {
             startTime,

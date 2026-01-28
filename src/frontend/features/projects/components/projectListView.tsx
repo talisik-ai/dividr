@@ -79,6 +79,7 @@ export const ProjectListView = ({
     projects.length > 0 && selectedProjects.size === projects.length;
   const someSelected =
     selectedProjects.size > 0 && selectedProjects.size < projects.length;
+  const isMultiSelectMode = selectedProjects.size > 1;
 
   return (
     <div className="rounded-lg">
@@ -101,7 +102,7 @@ export const ProjectListView = ({
               />
             </TableHead>
             <TableHead>Title</TableHead>
-            <TableHead className="w-28">Media Size</TableHead>
+            <TableHead className="w-40">Media Size</TableHead>
             <TableHead className="w-32">Duration</TableHead>
             <TableHead className="w-48">Last Opened</TableHead>
             <TableHead className="w-16"></TableHead>
@@ -124,8 +125,8 @@ export const ProjectListView = ({
                 );
               }}
               onDoubleClick={(e) => {
-                // Don't trigger open if we're currently editing this project
-                if (editingId === project.id) {
+                // Don't trigger open if we're in multi-select mode or editing
+                if (editingId === project.id || isMultiSelectMode) {
                   e.preventDefault();
                   return;
                 }
@@ -238,15 +239,19 @@ export const ProjectListView = ({
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1">
+                  {/* Disable action buttons in multi-select mode */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-6 p-0"
+                    className={`h-6 w-6 p-0 ${isMultiSelectMode ? 'opacity-30' : ''}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onOpen(project.id);
+                      if (!isMultiSelectMode) {
+                        onOpen(project.id);
+                      }
                     }}
                     title="Open project"
+                    disabled={isMultiSelectMode}
                   >
                     <Play className="h-3 w-3" />
                   </Button>
@@ -262,6 +267,7 @@ export const ProjectListView = ({
                       onExport={onExport}
                       onDelete={onDelete}
                       variant="visible"
+                      disabled={isMultiSelectMode}
                     />
                   </div>
                 </div>

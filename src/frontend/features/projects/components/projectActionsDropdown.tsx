@@ -17,6 +17,7 @@ interface ProjectActionsDropdownProps {
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
   variant?: 'hover' | 'visible';
+  disabled?: boolean;
   className?: string;
 }
 
@@ -29,6 +30,7 @@ export const ProjectActionsDropdown = ({
   onExport,
   onDelete,
   variant = 'hover',
+  disabled = false,
   className = '',
 }: ProjectActionsDropdownProps) => {
   const handleRename = () => {
@@ -56,13 +58,21 @@ export const ProjectActionsDropdown = ({
 
   const buttonClassName =
     variant === 'hover'
-      ? `h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ${className}`
-      : `h-6 w-6 p-0 ${className}`;
+      ? `h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity ${disabled ? 'opacity-30 pointer-events-none' : ''} ${className}`
+      : `h-6 w-6 p-0 ${disabled ? 'opacity-30 pointer-events-none' : ''} ${className}`;
 
   return (
-    <DropdownMenu open={isOpen} onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className={buttonClassName}>
+    <DropdownMenu
+      open={disabled ? false : isOpen}
+      onOpenChange={disabled ? undefined : onOpenChange}
+    >
+      <DropdownMenuTrigger asChild disabled={disabled}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={buttonClassName}
+          disabled={disabled}
+        >
           <MoreVertical className="h-3 w-3" />
         </Button>
       </DropdownMenuTrigger>
