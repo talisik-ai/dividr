@@ -17,9 +17,10 @@ import { useTheme } from '@/frontend/providers/ThemeProvider';
 import { startupManager } from '@/frontend/utils/startupManager';
 import { ProjectSummary } from '@/shared/types/project.types';
 import { Loader2, Plus, Search, Upload } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { BulkActionsBar } from './components/bulkActionsBar';
 import { Header } from './components/header';
 import { LayoutTabContent } from './components/layoutTabContent';
 import { ProjectCard } from './components/projectCard';
@@ -63,6 +64,9 @@ const Projects = () => {
     projectId: string | null;
     projectName: string;
   }>({ show: false, projectId: null, projectName: '' });
+
+  // Bulk delete confirmation state
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   // Get current view mode from layout store
   const { viewMode, isGridView } = useLayout();
@@ -216,6 +220,116 @@ const Projects = () => {
     }
   };
 
+  // Bulk action handlers
+  const handleClearSelection = () => {
+    setSelectedProjects(new Set());
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedProjects.size === 0) return;
+    setBulkDeleteConfirm(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    const projectIds = Array.from(selectedProjects);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const id of projectIds) {
+      try {
+        await deleteProject(id);
+        successCount++;
+      } catch (error) {
+        failCount++;
+      }
+    }
+
+    if (failCount === 0) {
+      toast.success(
+        `Successfully deleted ${successCount} project${successCount > 1 ? 's' : ''}`,
+      );
+    } else {
+      toast.error(
+        `Deleted ${successCount} project(s), failed to delete ${failCount}`,
+      );
+    }
+
+    setSelectedProjects(new Set());
+    setBulkDeleteConfirm(false);
+  };
+
+  const handleBulkExport = async () => {
+    if (selectedProjects.size === 0) return;
+
+    const projectIds = Array.from(selectedProjects);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const id of projectIds) {
+      try {
+        await exportProject(id);
+        successCount++;
+      } catch (error) {
+        failCount++;
+      }
+    }
+
+    if (failCount === 0) {
+      toast.success(
+        `Successfully exported ${successCount} project${successCount > 1 ? 's' : ''}`,
+      );
+    } else {
+      toast.error(
+        `Exported ${successCount} project(s), failed to export ${failCount}`,
+      );
+    }
+  };
+
+  // Keyboard shortcuts for selection
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      // Only handle shortcuts when not in an input field
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      // Ctrl/Cmd + A: Select all
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        if (projects.length > 0) {
+          setSelectedProjects(new Set(projects.map((p) => p.id)));
+        }
+      }
+
+      // Escape: Clear selection
+      if (e.key === 'Escape' && selectedProjects.size > 0) {
+        e.preventDefault();
+        setSelectedProjects(new Set());
+      }
+
+      // Delete/Backspace: Trigger bulk delete when items are selected
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        selectedProjects.size > 0
+      ) {
+        e.preventDefault();
+        handleBulkDelete();
+      }
+    },
+    [projects, selectedProjects],
+  );
+
+  // Register keyboard shortcuts
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
   // Show loading state during initialization
   if (!isInitialized && isLoading) {
     return (
@@ -284,9 +398,19 @@ const Projects = () => {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 p-6 lg:p-12">
-      <div className="flex justify-between mb-6 gap-4">
+      <div className="flex justify-between items-center mb-6 gap-4">
         <Header numberOfProjects={projects.length} />
-        <LayoutTabContent />
+        <div className="flex items-center gap-4">
+          {/* Bulk Actions Bar - inline with view selectors */}
+          <BulkActionsBar
+            selectedCount={selectedProjects.size}
+            totalCount={projects.length}
+            onClearSelection={handleClearSelection}
+            onBulkDelete={handleBulkDelete}
+            onBulkExport={handleBulkExport}
+          />
+          <LayoutTabContent />
+        </div>
       </div>
 
       <ScrollArea className="flex-1 min-h-0 overflow-y-auto -mx-16 px-16">
@@ -318,8 +442,6 @@ const Projects = () => {
             {isGridView && (
               <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                 All Projects
-                {/* {selectedProjects.size > 0 &&
-                `(${selectedProjects.size} selected)`} */}
               </h2>
             )}
 
@@ -341,6 +463,8 @@ const Projects = () => {
           ) : isGridView ? (
             <ProjectCardView
               projects={projects}
+              selectedProjects={selectedProjects}
+              onProjectSelect={handleProjectSelect}
               onOpen={handleOpenProject}
               onRename={handleRenameProject}
               onDuplicate={handleDuplicateProject}
@@ -386,6 +510,38 @@ const Projects = () => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete Project
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteConfirm} onOpenChange={setBulkDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedProjects.size} Project
+              {selectedProjects.size > 1 ? 's' : ''}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedProjects.size > 5 ? (
+                <span className="text-destructive font-medium">
+                  Warning: You are about to delete a large number of
+                  projects.{' '}
+                </span>
+              ) : null}
+              This action cannot be undone. All selected projects and their data
+              will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete {selectedProjects.size} Project
+              {selectedProjects.size > 1 ? 's' : ''}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
