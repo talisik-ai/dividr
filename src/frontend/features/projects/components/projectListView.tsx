@@ -102,7 +102,7 @@ export const ProjectListView = ({
               />
             </TableHead>
             <TableHead>Title</TableHead>
-            <TableHead className="w-28">Media Size</TableHead>
+            <TableHead className="w-40">Media Size</TableHead>
             <TableHead className="w-32">Duration</TableHead>
             <TableHead className="w-48">Last Opened</TableHead>
             <TableHead className="w-16"></TableHead>
