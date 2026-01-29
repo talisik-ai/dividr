@@ -76,7 +76,7 @@ export function getTextStyleForTextClip(track: VideoTrack): TextStyleResult {
     textDecoration: style.isUnderline ? 'underline' : 'none',
     textShadow: shadowEffects.join(', '),
     letterSpacing: `${style.letterSpacing || 0}px`,
-    lineHeight: style.lineSpacing || 1.2,
+    lineHeight: style.lineHeight || 1.2,
     opacity: (style.opacity || 100) / 100,
     hasGlow: style.hasGlow || false,
     // Glow uses text color for the glow effect (matching FFmpeg behavior)

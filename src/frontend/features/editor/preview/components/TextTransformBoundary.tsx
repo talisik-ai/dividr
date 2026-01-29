@@ -112,7 +112,9 @@ export const TextTransformBoundary: React.FC<TextTransformBoundaryProps> = ({
   const [isRotating, setIsRotating] = useState(false);
   // Track if user has explicitly set a width via left/right handles
   // This prevents auto-size from overwriting user-defined width
-  const hasUserDefinedWidthRef = useRef(false);
+  // CRITICAL: Initialize to true if track already has a saved width > 0
+  // This preserves user-defined dimensions when reopening a project
+  const hasUserDefinedWidthRef = useRef((track.textTransform?.width ?? 0) > 0);
   // Track current width during drag for immediate visual feedback
   // This bypasses ResizeObserver delay for responsive boundary updates
   const [currentDragWidth, setCurrentDragWidth] = useState<number | null>(null);

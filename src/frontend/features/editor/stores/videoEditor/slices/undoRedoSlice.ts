@@ -39,7 +39,7 @@ export interface UndoableState {
       backgroundColor: string;
       hasShadow: boolean;
       letterSpacing: number;
-      lineSpacing: number;
+      lineHeight: number;
       hasGlow: boolean;
       opacity: number;
     };

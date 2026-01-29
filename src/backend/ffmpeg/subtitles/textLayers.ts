@@ -103,7 +103,7 @@ function convertTrackStyleToTextStyle(
       trackStyle.letterSpacing !== undefined
         ? `${trackStyle.letterSpacing}px`
         : undefined,
-    lineHeight: trackStyle.lineSpacing,
+    lineHeight: trackStyle.lineHeight,
     textAlign: trackStyle.textAlign,
   };
 }

@@ -69,7 +69,7 @@ const DEFAULT_GLOBAL_CONTROLS = {
   backgroundColor: 'rgba(0, 0, 0, 0.0)',
   hasShadow: false,
   letterSpacing: 0,
-  lineSpacing: 1.2,
+  lineHeight: 1.2,
   hasGlow: false,
   opacity: 100,
 };
@@ -191,9 +191,8 @@ export const createTextStyleSlice: StateCreator<
                 letterSpacing:
                   track.subtitleStyle?.letterSpacing ??
                   globalControls.letterSpacing,
-                lineSpacing:
-                  track.subtitleStyle?.lineSpacing ??
-                  globalControls.lineSpacing,
+                lineHeight:
+                  track.subtitleStyle?.lineHeight ?? globalControls.lineHeight,
                 hasGlow: track.subtitleStyle?.hasGlow ?? globalControls.hasGlow,
                 opacity: track.subtitleStyle?.opacity ?? globalControls.opacity,
               };
@@ -292,7 +291,7 @@ export const createTextStyleSlice: StateCreator<
       textDecoration: mergedControls.isUnderline ? 'underline' : 'none',
       textShadow: shadowEffects.join(', '),
       letterSpacing: `${mergedControls.letterSpacing}px`,
-      lineHeight: mergedControls.lineSpacing,
+      lineHeight: mergedControls.lineHeight,
       opacity: mergedControls.opacity / 100,
       hasGlow: mergedControls.hasGlow,
       strokeColor: mergedControls.strokeColor,
@@ -379,10 +378,10 @@ export const createTextStyleSlice: StateCreator<
       return applyStyleUpdate(state, 'letterSpacing', spacing);
     }),
 
-  setLineSpacing: (spacing: number) =>
+  setLineHeight: (lineHeight: number) =>
     set((state: any) => {
       state.markUnsavedChanges?.();
-      return applyStyleUpdate(state, 'lineSpacing', spacing);
+      return applyStyleUpdate(state, 'lineHeight', lineHeight);
     }),
 
   toggleGlow: () =>
@@ -482,7 +481,7 @@ export const createTextStyleSlice: StateCreator<
             backgroundColor: globalControls.backgroundColor,
             hasShadow: globalControls.hasShadow,
             letterSpacing: globalControls.letterSpacing,
-            lineSpacing: globalControls.lineSpacing,
+            lineHeight: globalControls.lineHeight,
             hasGlow: globalControls.hasGlow,
             opacity: globalControls.opacity,
           };

@@ -113,10 +113,42 @@ export const createProjectSlice: StateCreator<
         }),
       );
 
+      // CRITICAL: Use complete state replacement for tracks and mediaLibrary
+      // to ensure all saved data (including transforms) is restored correctly.
+      // Deep clone the data to prevent any reference issues.
+      const loadedTracks = JSON.parse(JSON.stringify(tracksWithPreviewUrls));
+      const loadedMediaLibrary = JSON.parse(
+        JSON.stringify((videoEditor as any).mediaLibrary || []),
+      );
+
+      // Log what we're loading for debugging data persistence issues
+      console.log(
+        `📂 Loading project "${project.metadata.title}": ${loadedTracks.length} tracks, ${loadedMediaLibrary.length} media items`,
+      );
+
+      // Log transform data for text/subtitle tracks to help debug transform persistence
+      loadedTracks.forEach((track: any) => {
+        if (track.type === 'text' && track.textTransform) {
+          console.log(
+            `  📝 Text track "${track.name}" transform:`,
+            track.textTransform,
+          );
+        }
+        if (track.type === 'subtitle' && track.subtitleTransform) {
+          console.log(
+            `  📝 Subtitle track "${track.name}" transform:`,
+            track.subtitleTransform,
+          );
+        }
+      });
+
       set((state: any) => ({
         ...state,
-        tracks: tracksWithPreviewUrls,
-        mediaLibrary: (videoEditor as any).mediaLibrary || [], // Support for legacy projects
+        // CRITICAL: Complete replacement of tracks and mediaLibrary
+        // This ensures all track properties including textTransform and subtitleTransform
+        // are fully restored from the saved project data
+        tracks: loadedTracks,
+        mediaLibrary: loadedMediaLibrary,
         timeline: { ...state.timeline, ...videoEditor.timeline },
         playback: {
           ...state.playback,
@@ -132,12 +164,34 @@ export const createProjectSlice: StateCreator<
         preview: { ...state.preview, ...videoEditor.preview },
         // Load textStyle from project data if available, otherwise keep current defaults
         // This provides backward compatibility for projects created before textStyle was saved
+        // Use proper deep merge to ensure nested objects (globalControls, globalSubtitlePosition)
+        // are fully restored from saved data
         textStyle: videoEditor.textStyle
-          ? { ...state.textStyle, ...videoEditor.textStyle }
+          ? {
+              ...state.textStyle,
+              ...videoEditor.textStyle,
+              // Deep merge globalControls to preserve all saved styling
+              globalControls: {
+                ...state.textStyle.globalControls,
+                ...(videoEditor.textStyle.globalControls || {}),
+              },
+              // Deep merge globalSubtitlePosition to preserve all saved position/transform data
+              globalSubtitlePosition: {
+                ...state.textStyle.globalSubtitlePosition,
+                ...(videoEditor.textStyle.globalSubtitlePosition || {}),
+              },
+            }
           : state.textStyle,
         currentProjectId: projectId,
         hasUnsavedChanges: false,
         lastSavedAt: new Date().toISOString(),
+        // CRITICAL: Clear undo/redo history when loading a new project
+        // This prevents stale history entries from previous projects affecting the new one
+        undoStack: [],
+        redoStack: [],
+        isGrouping: false,
+        groupStartState: null,
+        groupActionName: null,
       }));
 
       console.log(`✅ Loaded project data for: ${project.metadata.title}`);
@@ -165,24 +219,54 @@ export const createProjectSlice: StateCreator<
         throw new Error('Current project not found');
       }
 
+      // SAFETY VALIDATION: Prevent saving empty timeline over populated one
+      // This protects against data loss from race conditions or corrupted state
+      const existingTrackCount = currentProject.videoEditor.tracks?.length || 0;
+      const newTrackCount = state.tracks?.length || 0;
+
+      if (existingTrackCount > 0 && newTrackCount === 0) {
+        console.warn(
+          `⚠️ SAFETY BLOCK: Attempted to save empty timeline (0 tracks) over populated one (${existingTrackCount} tracks). ` +
+            `This may indicate a data loss condition. Save operation aborted.`,
+        );
+        set({ isSaving: false });
+        // Don't throw - this is a safety check, not an error
+        // The user's data in IndexedDB is preserved
+        return;
+      }
+
+      // Deep clone tracks to ensure all nested properties (transforms, styles) are saved
+      const tracksToSave = JSON.parse(JSON.stringify(state.tracks || []));
+      const mediaLibraryToSave = JSON.parse(
+        JSON.stringify(state.mediaLibrary || []),
+      );
+      const textStyleToSave = state.textStyle
+        ? JSON.parse(JSON.stringify(state.textStyle))
+        : undefined;
+
+      // Log what we're saving for debugging data persistence issues
+      console.log(
+        `💾 Saving project "${currentProject.metadata.title}": ${tracksToSave.length} tracks, ${mediaLibraryToSave.length} media items`,
+      );
+
       // Update the project with current video editor state
       const updatedProject = {
         ...currentProject,
         videoEditor: {
-          tracks: state.tracks,
-          mediaLibrary: state.mediaLibrary,
+          tracks: tracksToSave,
+          mediaLibrary: mediaLibraryToSave,
           timeline: state.timeline,
           playback: state.playback,
           preview: state.preview,
-          textStyle: state.textStyle, // Save text styles per project
+          textStyle: textStyleToSave, // Save text styles per project
         },
         metadata: {
           ...currentProject.metadata,
           updatedAt: new Date().toISOString(),
           // Update duration based on tracks
           duration:
-            state.tracks.length > 0
-              ? Math.max(...state.tracks.map((t: any) => t.endFrame)) /
+            tracksToSave.length > 0
+              ? Math.max(...tracksToSave.map((t: any) => t.endFrame)) /
                 state.timeline.fps
               : 0,
         },

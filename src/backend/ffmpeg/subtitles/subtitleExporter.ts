@@ -172,9 +172,9 @@ function convertTrackStyleToTextStyle(
     result.letterSpacing = `${trackStyle.letterSpacing}px`;
   }
 
-  // Line Spacing
-  if (trackStyle.lineSpacing !== undefined && trackStyle.lineSpacing !== null) {
-    result.lineHeight = trackStyle.lineSpacing;
+  // Line Height
+  if (trackStyle.lineHeight !== undefined && trackStyle.lineHeight !== null) {
+    result.lineHeight = trackStyle.lineHeight;
   }
 
   // Text Alignment
@@ -215,7 +215,7 @@ function convertSubtitleStyleToTextStyle(
     letterSpacing: subtitleStyle.letterSpacing
       ? `${subtitleStyle.letterSpacing}px`
       : undefined,
-    lineHeight: subtitleStyle.lineSpacing,
+    lineHeight: subtitleStyle.lineHeight,
     textAlign: subtitleStyle.textAlign,
   };
 }
