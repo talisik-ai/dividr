@@ -415,6 +415,11 @@ export function generateDrawtextFilter(
     params.push(`boxborderw=5`);
   }
 
+  // Line spacing for multi-line text
+  if (mergedStyle.lineHeight !== undefined && mergedStyle.lineHeight !== 0) {
+    params.push(`line_spacing=${Math.round(mergedStyle.lineHeight)}`);
+  }
+
   // Enable expression for time-based visibility
   params.push(
     `enable='between(t,${segment.startTime.toFixed(3)},${segment.endTime.toFixed(3)})'`,
