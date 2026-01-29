@@ -68,7 +68,7 @@ const DEFAULT_TEXT_STYLE: {
   backgroundColor: string;
   hasShadow: boolean;
   letterSpacing: number;
-  lineSpacing: number;
+  lineHeight: number;
   hasGlow: boolean;
   opacity: number;
 } = {
@@ -86,7 +86,7 @@ const DEFAULT_TEXT_STYLE: {
   backgroundColor: 'transparent',
   hasShadow: false,
   letterSpacing: 0,
-  lineSpacing: 1.2,
+  lineHeight: 1.2,
   hasGlow: false,
   opacity: 100,
 };
@@ -205,7 +205,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
       currentStyle.backgroundColor !== DEFAULT_TEXT_STYLE.backgroundColor ||
       currentStyle.hasShadow !== DEFAULT_TEXT_STYLE.hasShadow ||
       currentStyle.letterSpacing !== DEFAULT_TEXT_STYLE.letterSpacing ||
-      currentStyle.lineSpacing !== DEFAULT_TEXT_STYLE.lineSpacing ||
+      currentStyle.lineHeight !== DEFAULT_TEXT_STYLE.lineHeight ||
       currentStyle.hasGlow !== DEFAULT_TEXT_STYLE.hasGlow ||
       currentStyle.opacity !== DEFAULT_TEXT_STYLE.opacity
     );
@@ -548,13 +548,13 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
                   <Select
                     value={
                       currentStyle.letterSpacing === 0 &&
-                      currentStyle.lineSpacing === 1.2
+                      currentStyle.lineHeight === 1.2
                         ? 'normal'
                         : currentStyle.letterSpacing === -1 &&
-                            currentStyle.lineSpacing === 1
+                            currentStyle.lineHeight === 1
                           ? 'tight'
                           : currentStyle.letterSpacing === 1 &&
-                              currentStyle.lineSpacing === 1.5
+                              currentStyle.lineHeight === 1.5
                             ? 'loose'
                             : 'custom'
                     }
@@ -562,17 +562,17 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
                       if (value === 'normal') {
                         updateTextStyle({
                           letterSpacing: 0,
-                          lineSpacing: 1.2,
+                          lineHeight: 1.2,
                         });
                       } else if (value === 'tight') {
                         updateTextStyle({
                           letterSpacing: -1,
-                          lineSpacing: 1,
+                          lineHeight: 1,
                         });
                       } else if (value === 'loose') {
                         updateTextStyle({
                           letterSpacing: 1,
-                          lineSpacing: 1.5,
+                          lineHeight: 1.5,
                         });
                       }
                     }}
@@ -586,16 +586,16 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
                       <div className="relative flex items-center">
                         <ListChevronsUpDown className="size-5 scale-x-[-1]" />
                         {(currentStyle.letterSpacing !== 0 ||
-                          currentStyle.lineSpacing !== 1.2) && (
+                          currentStyle.lineHeight !== 1.2) && (
                           <Badge
                             variant="secondary"
                             className="absolute -right-3 -top-1 h-3 px-1 text-[8px]"
                           >
                             {currentStyle.letterSpacing === -1 &&
-                            currentStyle.lineSpacing === 1
+                            currentStyle.lineHeight === 1
                               ? 'T'
                               : currentStyle.letterSpacing === 1 &&
-                                  currentStyle.lineSpacing === 1.5
+                                  currentStyle.lineHeight === 1.5
                                 ? 'L'
                                 : 'C'}
                           </Badge>
@@ -611,7 +611,7 @@ const TextPropertiesComponent: React.FC<TextPropertiesProps> = ({
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Letter/line spacing</p>
+                <p>Line height</p>
               </TooltipContent>
             </Tooltip>
           </div>

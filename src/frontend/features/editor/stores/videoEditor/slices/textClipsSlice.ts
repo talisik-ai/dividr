@@ -45,7 +45,7 @@ const DEFAULT_TEXT_STYLE = {
   backgroundColor: 'transparent',
   hasShadow: false,
   letterSpacing: 0,
-  lineSpacing: 1.2,
+  lineHeight: 1.2,
   hasGlow: false,
   opacity: 100,
 };

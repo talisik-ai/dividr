@@ -111,7 +111,7 @@ export interface TextClipStyle {
   backgroundColor?: string;
   hasShadow?: boolean;
   letterSpacing?: number;
-  lineSpacing?: number;
+  lineHeight?: number;
   hasGlow?: boolean;
   opacity?: number;
 }

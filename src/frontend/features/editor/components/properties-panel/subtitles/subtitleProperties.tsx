@@ -96,7 +96,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
   const setLetterSpacing = useVideoEditorStore(
     (state) => state.setLetterSpacing,
   );
-  const setLineSpacing = useVideoEditorStore((state) => state.setLineSpacing);
+  const setLineHeight = useVideoEditorStore((state) => state.setLineHeight);
   const resetTextStyles = useVideoEditorStore((state) => state.resetTextStyles);
   const addRecentColor = useVideoEditorStore((state) => state.addRecentColor);
   const snapshotStylesToSelectedTracks = useVideoEditorStore(
@@ -131,7 +131,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       backgroundColor: 'rgba(0, 0, 0, 0)',
       hasShadow: false,
       letterSpacing: 0,
-      lineSpacing: 1.2,
+      lineHeight: 1.2,
       hasGlow: false,
       opacity: 100,
     };
@@ -150,7 +150,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
       current.backgroundColor !== defaults.backgroundColor ||
       current.hasShadow !== defaults.hasShadow ||
       current.letterSpacing !== defaults.letterSpacing ||
-      current.lineSpacing !== defaults.lineSpacing ||
+      current.lineHeight !== defaults.lineHeight ||
       current.hasGlow !== defaults.hasGlow ||
       current.opacity !== defaults.opacity ||
       textStyle.activeStyle !== 'default'
@@ -567,26 +567,26 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                     <Select
                       value={
                         activeSubtitleStyle.letterSpacing === 0 &&
-                        activeSubtitleStyle.lineSpacing === 1.2
+                        activeSubtitleStyle.lineHeight === 1.2
                           ? 'normal'
                           : activeSubtitleStyle.letterSpacing === -1 &&
-                              activeSubtitleStyle.lineSpacing === 1
+                              activeSubtitleStyle.lineHeight === 1
                             ? 'tight'
                             : activeSubtitleStyle.letterSpacing === 1 &&
-                                activeSubtitleStyle.lineSpacing === 1.5
+                                activeSubtitleStyle.lineHeight === 1.5
                               ? 'loose'
                               : 'custom'
                       }
                       onValueChange={(value) => {
                         if (value === 'normal') {
                           setLetterSpacing(0);
-                          setLineSpacing(1.2);
+                          setLineHeight(1.2);
                         } else if (value === 'tight') {
                           setLetterSpacing(-1);
-                          setLineSpacing(1);
+                          setLineHeight(1);
                         } else if (value === 'loose') {
                           setLetterSpacing(1);
-                          setLineSpacing(1.5);
+                          setLineHeight(1.5);
                         }
                       }}
                     >
@@ -599,16 +599,16 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                         <div className="relative flex items-center">
                           <ListChevronsUpDown className="size-5 scale-x-[-1]" />
                           {(activeSubtitleStyle.letterSpacing !== 0 ||
-                            activeSubtitleStyle.lineSpacing !== 1.2) && (
+                            activeSubtitleStyle.lineHeight !== 1.2) && (
                             <Badge
                               variant="secondary"
                               className="absolute -right-3 -top-1 h-3 px-1 text-[8px]"
                             >
                               {activeSubtitleStyle.letterSpacing === -1 &&
-                              activeSubtitleStyle.lineSpacing === 1
+                              activeSubtitleStyle.lineHeight === 1
                                 ? 'T'
                                 : activeSubtitleStyle.letterSpacing === 1 &&
-                                    activeSubtitleStyle.lineSpacing === 1.5
+                                    activeSubtitleStyle.lineHeight === 1.5
                                   ? 'L'
                                   : 'C'}
                             </Badge>
@@ -624,7 +624,7 @@ const SubtitlePropertiesComponent: React.FC<SubtitlePropertiesProps> = ({
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Letter/line spacing</p>
+                  <p>Line height</p>
                 </TooltipContent>
               </Tooltip>
             </div>

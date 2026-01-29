@@ -97,7 +97,7 @@ export function generateTextLayerSegments(
               track.textStyle?.letterSpacing !== undefined
                 ? `${track.textStyle.letterSpacing}px`
                 : undefined,
-            lineHeight: track.textStyle?.lineSpacing,
+            lineHeight: track.textStyle?.lineHeight,
             textAlign: track.textStyle?.textAlign,
           };
 

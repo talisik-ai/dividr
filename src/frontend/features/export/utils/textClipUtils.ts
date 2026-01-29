@@ -37,7 +37,7 @@ export function extractTextClips(
       backgroundColor: track.textStyle?.backgroundColor || 'rgba(0, 0, 0, 0.0)',
       hasShadow: track.textStyle?.hasShadow || false,
       letterSpacing: track.textStyle?.letterSpacing || 0,
-      lineSpacing: track.textStyle?.lineSpacing || 1.2,
+      lineHeight: track.textStyle?.lineHeight || 1.2,
       hasGlow: track.textStyle?.hasGlow || false,
       opacity: track.textStyle?.opacity || 100,
     };

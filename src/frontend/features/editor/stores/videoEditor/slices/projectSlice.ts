@@ -249,22 +249,6 @@ export const createProjectSlice: StateCreator<
         `💾 Saving project "${currentProject.metadata.title}": ${tracksToSave.length} tracks, ${mediaLibraryToSave.length} media items`,
       );
 
-      // Log transform data for text/subtitle tracks
-      tracksToSave.forEach((track: any) => {
-        if (track.type === 'text' && track.textTransform) {
-          console.log(
-            `  📝 Saving text track "${track.name}" transform:`,
-            track.textTransform,
-          );
-        }
-        if (track.type === 'subtitle' && track.subtitleTransform) {
-          console.log(
-            `  📝 Saving subtitle track "${track.name}" transform:`,
-            track.subtitleTransform,
-          );
-        }
-      });
-
       // Update the project with current video editor state
       const updatedProject = {
         ...currentProject,
