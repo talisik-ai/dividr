@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dividr — Welcome Tour</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --bg-2: #12121a;
+        --bg-3: #1a1a24;
+        --surface: rgba(255, 255, 255, 0.04);
+        --surface-hi: rgba(255, 255, 255, 0.07);
+        --border: rgba(255, 255, 255, 0.08);
+        --border-hi: rgba(255, 255, 255, 0.14);
+        --text: #f5f5f7;
+        --muted: #9a9aa8;
+        --dim: #6b6b7a;
+        --accent: #a78bfa;
+        --accent-2: #60a5fa;
+        --accent-3: #f472b6;
+        --video: #60a5fa;
+        --text-clip: #a78bfa;
+        --audio: #34d399;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        font-weight: 400;
+        -webkit-font-smoothing: antialiased;
+        letter-spacing: -0.01em;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(ellipse 80% 60% at 20% 0%, rgba(167, 139, 250, 0.14), transparent 60%),
+          radial-gradient(ellipse 70% 50% at 100% 100%, rgba(96, 165, 250, 0.1), transparent 60%);
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .deck {
+        position: relative;
+        z-index: 1;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .slide {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 6vh 8vw;
+        opacity: 0;
+        transform: translateY(24px);
+        transition: opacity 0.5s ease, transform 0.5s ease;
+        pointer-events: none;
+      }
+
+      .slide.active {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+
+      .step-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.625rem;
+        font-size: 0.72rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        margin-bottom: 1.25rem;
+        padding: 0.35rem 0.875rem 0.35rem 0.5rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        width: fit-content;
+      }
+
+      .step-chip .num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        border-radius: 50%;
+        color: white;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.7rem;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        font-size: clamp(2rem, 4.5vw, 3.75rem);
+        font-weight: 700;
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        margin-bottom: 1.25rem;
+        max-width: 22ch;
+      }
+
+      h1 .grad {
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 60%, var(--accent-3) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .lede {
+        font-size: clamp(1rem, 1.4vw, 1.2rem);
+        font-weight: 400;
+        color: var(--muted);
+        line-height: 1.55;
+        max-width: 54ch;
+        margin-bottom: 2rem;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1.1fr;
+        gap: 3.5rem;
+        align-items: center;
+      }
+
+      @media (max-width: 980px) {
+        .two-col {
+          grid-template-columns: 1fr;
+          gap: 2rem;
+        }
+      }
+
+      .tips {
+        list-style: none;
+        display: grid;
+        gap: 0.875rem;
+        max-width: 46ch;
+      }
+
+      .tips li {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        font-size: clamp(0.9rem, 1.1vw, 1rem);
+        line-height: 1.55;
+        color: #dadae4;
+      }
+
+      .tips li .check {
+        flex: none;
+        width: 18px;
+        height: 18px;
+        margin-top: 0.15rem;
+        border-radius: 50%;
+        background: rgba(52, 211, 153, 0.15);
+        border: 1px solid rgba(52, 211, 153, 0.4);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #34d399;
+        font-size: 0.7rem;
+        font-weight: 700;
+      }
+
+      /* --- App mockup --- */
+      .app-mock {
+        background: var(--bg-2);
+        border: 1px solid var(--border-hi);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.02);
+        aspect-ratio: 16 / 10;
+        display: grid;
+        grid-template-rows: 32px 1fr 140px;
+      }
+
+      .app-mock .titlebar {
+        display: flex;
+        align-items: center;
+        padding: 0 0.75rem;
+        gap: 0.375rem;
+        background: var(--bg-3);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .app-mock .titlebar .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #3a3a48;
+      }
+
+      .app-mock .titlebar .dot:nth-child(1) { background: #ef4444aa; }
+      .app-mock .titlebar .dot:nth-child(2) { background: #f59e0baa; }
+      .app-mock .titlebar .dot:nth-child(3) { background: #10b981aa; }
+
+      .app-mock .titlebar .title {
+        margin-left: auto;
+        margin-right: auto;
+        font-size: 0.7rem;
+        color: var(--dim);
+      }
+
+      .app-mock .main {
+        display: grid;
+        grid-template-columns: 140px 1fr 160px;
+      }
+
+      .app-mock .library,
+      .app-mock .inspector {
+        padding: 0.6rem;
+        background: var(--bg-2);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+
+      .app-mock .inspector {
+        border-right: none;
+        border-left: 1px solid var(--border);
+      }
+
+      .app-mock .section-label {
+        font-size: 0.6rem;
+        color: var(--dim);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        margin-bottom: 0.25rem;
+      }
+
+      .thumb {
+        height: 34px;
+        border-radius: 4px;
+        background: linear-gradient(135deg, #2a2a38, #1a1a24);
+        border: 1px solid var(--border);
+      }
+
+      .thumb.v { background: linear-gradient(135deg, rgba(96, 165, 250, 0.3), rgba(96, 165, 250, 0.08)); }
+      .thumb.a { background: linear-gradient(135deg, rgba(52, 211, 153, 0.25), rgba(52, 211, 153, 0.05)); }
+      .thumb.t { background: linear-gradient(135deg, rgba(167, 139, 250, 0.25), rgba(167, 139, 250, 0.05)); }
+
+      .app-mock .stage {
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .app-mock .stage::before {
+        content: "";
+        position: absolute;
+        inset: 8%;
+        background:
+          radial-gradient(ellipse at 30% 30%, rgba(167, 139, 250, 0.35), transparent 50%),
+          radial-gradient(ellipse at 70% 60%, rgba(96, 165, 250, 0.35), transparent 50%),
+          linear-gradient(135deg, #1a1a24, #0a0a0f);
+        border-radius: 4px;
+      }
+
+      .app-mock .stage .play {
+        position: relative;
+        z-index: 2;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+      }
+
+      .app-mock .timeline {
+        background: var(--bg-3);
+        border-top: 1px solid var(--border);
+        padding: 0.5rem 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+      }
+
+      .app-mock .ruler {
+        height: 14px;
+        background: repeating-linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.06) 0 1px,
+          transparent 1px 40px
+        );
+        border-bottom: 1px solid var(--border);
+      }
+
+      .track {
+        height: 18px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 3px;
+        position: relative;
+        display: flex;
+        gap: 4px;
+        padding: 2px;
+      }
+
+      .clip {
+        border-radius: 3px;
+        height: 100%;
+      }
+
+      .clip.v { background: linear-gradient(90deg, rgba(96, 165, 250, 0.7), rgba(96, 165, 250, 0.35)); }
+      .clip.t { background: linear-gradient(90deg, rgba(167, 139, 250, 0.7), rgba(167, 139, 250, 0.35)); }
+      .clip.a { background: linear-gradient(90deg, rgba(52, 211, 153, 0.7), rgba(52, 211, 153, 0.35)); }
+
+      /* --- Labels overlay --- */
+      .labeled {
+        position: relative;
+      }
+
+      .label-pin {
+        position: absolute;
+        padding: 0.25rem 0.6rem;
+        background: var(--bg-3);
+        border: 1px solid var(--border-hi);
+        border-radius: 6px;
+        font-size: 0.72rem;
+        color: var(--text);
+        white-space: nowrap;
+        z-index: 3;
+      }
+
+      .label-pin::before {
+        content: "";
+        position: absolute;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 10px var(--accent);
+      }
+
+      .label-pin.l-library { top: 22%; left: -8px; transform: translateX(-100%); }
+      .label-pin.l-library::before { right: -9px; top: 50%; transform: translateY(-50%); }
+
+      .label-pin.l-stage { top: 10%; right: 50%; transform: translate(50%, 0); }
+      .label-pin.l-stage::before { left: 50%; bottom: -9px; transform: translateX(-50%); }
+
+      .label-pin.l-inspector { top: 35%; right: -8px; transform: translateX(100%); }
+      .label-pin.l-inspector::before { left: -9px; top: 50%; transform: translateY(-50%); }
+
+      .label-pin.l-timeline { bottom: 10%; left: 50%; transform: translate(-50%, 50%); }
+      .label-pin.l-timeline::before { top: -9px; left: 50%; transform: translateX(-50%); }
+
+      /* --- Translate list (plain language) --- */
+      .translate {
+        display: grid;
+        grid-template-columns: auto auto 1fr;
+        gap: 0.6rem 1.25rem;
+        align-items: center;
+        max-width: 520px;
+        margin-top: 1rem;
+        font-size: 0.95rem;
+      }
+
+      .translate .from {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.8rem;
+        color: var(--muted);
+        padding: 0.3rem 0.65rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .translate .arrow { color: var(--accent); }
+      .translate .to { font-weight: 500; color: var(--text); }
+
+      /* --- Prompt demo --- */
+      .prompt-demo {
+        background: var(--bg-2);
+        border: 1px solid var(--border-hi);
+        border-radius: 14px;
+        padding: 1.25rem 1.5rem;
+        max-width: 540px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.9rem;
+        margin-top: 1.25rem;
+      }
+
+      .prompt-demo .cue { color: var(--accent); margin-right: 0.5rem; }
+      .prompt-demo .out { color: var(--muted); }
+      .prompt-demo .line + .line { margin-top: 0.55rem; }
+      .prompt-demo .caret {
+        display: inline-block;
+        width: 8px;
+        height: 14px;
+        background: var(--accent);
+        vertical-align: middle;
+        animation: blink 1s infinite;
+        margin-left: 2px;
+      }
+      @keyframes blink { 50% { opacity: 0; } }
+
+      /* --- Story layers viz --- */
+      .story-viz {
+        background: var(--bg-2);
+        border: 1px solid var(--border-hi);
+        border-radius: 14px;
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.625rem;
+      }
+
+      .story-viz .row {
+        display: grid;
+        grid-template-columns: 110px 1fr;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .story-viz .row-label {
+        font-size: 0.75rem;
+        color: var(--muted);
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .story-viz .row-label .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+      }
+
+      .story-viz .row-bar {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 6px;
+        height: 28px;
+        display: flex;
+        gap: 4px;
+        padding: 3px;
+      }
+
+      .story-viz .row-bar .blk {
+        height: 100%;
+        border-radius: 3px;
+      }
+
+      /* --- Snap animation --- */
+      .snap-demo {
+        background: var(--bg-2);
+        border: 1px solid var(--border-hi);
+        border-radius: 14px;
+        padding: 2rem 1.5rem;
+        position: relative;
+        min-height: 200px;
+      }
+
+      .snap-demo .guide {
+        position: absolute;
+        top: 1rem;
+        bottom: 1rem;
+        left: 50%;
+        width: 1px;
+        background: repeating-linear-gradient(
+          to bottom,
+          var(--accent) 0 4px,
+          transparent 4px 8px
+        );
+        opacity: 0.7;
+      }
+
+      .snap-demo .block {
+        position: absolute;
+        height: 56px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        padding: 0 0.75rem;
+        font-size: 0.8rem;
+        font-weight: 500;
+        border: 1px solid var(--border-hi);
+      }
+
+      .snap-demo .block.a {
+        top: 2rem;
+        left: 1.5rem;
+        right: calc(50% + 4px);
+        background: linear-gradient(90deg, rgba(96, 165, 250, 0.5), rgba(96, 165, 250, 0.2));
+      }
+
+      .snap-demo .block.b {
+        bottom: 2rem;
+        left: calc(50% + 4px);
+        right: 1.5rem;
+        background: linear-gradient(90deg, rgba(167, 139, 250, 0.5), rgba(167, 139, 250, 0.2));
+      }
+
+      .snap-demo .note {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 0.72rem;
+        color: var(--accent);
+        background: var(--bg-3);
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        border: 1px solid var(--border-hi);
+        white-space: nowrap;
+      }
+
+      /* --- Hero / close --- */
+      .hero-center {
+        align-items: center;
+        text-align: center;
+      }
+
+      .hero-center h1,
+      .hero-center .lede {
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .logo-hero {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 1.5rem;
+        filter: drop-shadow(0 0 40px rgba(167, 139, 250, 0.35));
+      }
+
+      /* --- Brand + nav + hint --- */
+      .brand {
+        position: fixed;
+        top: 1.5rem;
+        left: 2rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        z-index: 10;
+        font-weight: 700;
+        font-size: 0.95rem;
+        letter-spacing: -0.02em;
+      }
+
+      .brand svg {
+        width: 24px;
+        height: 24px;
+      }
+
+      .hint {
+        position: fixed;
+        top: 1.5rem;
+        right: 2rem;
+        font-size: 0.72rem;
+        color: var(--muted);
+        z-index: 10;
+      }
+
+      .hint kbd {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.7rem;
+        padding: 2px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        margin: 0 2px;
+      }
+
+      .progress {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 2px;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+        transition: width 0.4s ease;
+        z-index: 10;
+      }
+
+      .nav {
+        position: fixed;
+        bottom: 1.5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.45rem 0.5rem 0.45rem 1rem;
+        background: rgba(18, 18, 26, 0.8);
+        backdrop-filter: blur(14px);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        z-index: 10;
+        font-size: 0.8rem;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .nav button {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        border: none;
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+
+      .nav button:hover { background: rgba(167, 139, 250, 0.2); }
+      .nav button:disabled { opacity: 0.35; cursor: not-allowed; }
+      .nav .counter { min-width: 48px; text-align: center; }
+
+      .callout {
+        margin-top: 1.25rem;
+        padding: 0.875rem 1.1rem;
+        background: rgba(167, 139, 250, 0.08);
+        border-left: 2px solid var(--accent);
+        border-radius: 0 8px 8px 0;
+        font-size: 0.9rem;
+        color: #dadae4;
+        max-width: 52ch;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="brand">
+      <svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12.9473 66.5986C20.1086 68.3757 30.6168 71.9913 36.2461 78.7031C40.4137 83.6725 43.1566 91.8302 44.9053 99.1963H12.9473V66.5986ZM57.333 81.9023C66.3232 70.1276 88.1167 65.9844 116.001 67.2188C114.524 91.9342 95.5845 99.1963 54.208 99.1963H51.2627C52.826 93.3798 54.8665 87.0048 57.333 81.9023ZM45.1895 29.8037C43.4589 37.4751 40.6467 46.2775 36.2461 51.5244C30.6168 58.236 20.1085 61.8491 12.9473 63.626V29.8037H45.1895ZM54.208 29.8037C93.7555 29.8037 114.349 36.0813 115.991 60.6709C95.454 64.3939 66.4203 63.9815 57.0205 46.6836V46.793C54.1882 41.7884 52.1028 35.487 50.625 29.8037H54.208Z" fill="url(#brandGrad)"/>
+        <defs>
+          <linearGradient id="brandGrad" x1="12" y1="20" x2="116" y2="108">
+            <stop offset="0" stop-color="#a78bfa"/>
+            <stop offset="0.6" stop-color="#60a5fa"/>
+            <stop offset="1" stop-color="#f472b6"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      Dividr
+    </div>
+    <div class="hint"><kbd>←</kbd><kbd>→</kbd> to move · <kbd>F</kbd> fullscreen</div>
+    <div class="progress" id="progress"></div>
+
+    <div class="deck" id="deck">
+      <!-- 1. Welcome -->
+      <section class="slide hero-center active">
+        <svg class="logo-hero" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12.9473 66.5986C20.1086 68.3757 30.6168 71.9913 36.2461 78.7031C40.4137 83.6725 43.1566 91.8302 44.9053 99.1963H12.9473V66.5986ZM57.333 81.9023C66.3232 70.1276 88.1167 65.9844 116.001 67.2188C114.524 91.9342 95.5845 99.1963 54.208 99.1963H51.2627C52.826 93.3798 54.8665 87.0048 57.333 81.9023ZM45.1895 29.8037C43.4589 37.4751 40.6467 46.2775 36.2461 51.5244C30.6168 58.236 20.1085 61.8491 12.9473 63.626V29.8037H45.1895ZM54.208 29.8037C93.7555 29.8037 114.349 36.0813 115.991 60.6709C95.454 64.3939 66.4203 63.9815 57.0205 46.6836V46.793C54.1882 41.7884 52.1028 35.487 50.625 29.8037H54.208Z" fill="url(#heroGrad)"/>
+          <defs>
+            <linearGradient id="heroGrad" x1="12" y1="20" x2="116" y2="108">
+              <stop offset="0" stop-color="#a78bfa"/>
+              <stop offset="0.6" stop-color="#60a5fa"/>
+              <stop offset="1" stop-color="#f472b6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <h1>Welcome to <span class="grad">Dividr</span>.</h1>
+        <p class="lede">
+          A friendly space for turning your clips into stories. No tutorials,
+          no menus to memorize — just a short tour so you feel at home.
+        </p>
+        <p style="font-size: 0.85rem; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase;">
+          Take the tour →
+        </p>
+      </section>
+
+      <!-- 2. Your Workspace -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">1</span> Your workspace</div>
+        <h1>Here's what you'll see.</h1>
+        <p class="lede">Four simple areas. That's the whole app.</p>
+        <div class="two-col">
+          <div class="labeled">
+            <div class="app-mock">
+              <div class="titlebar">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                <span class="title">My First Video</span>
+              </div>
+              <div class="main">
+                <div class="library">
+                  <div class="section-label">Library</div>
+                  <div class="thumb v"></div>
+                  <div class="thumb v"></div>
+                  <div class="thumb a"></div>
+                  <div class="thumb t"></div>
+                </div>
+                <div class="stage">
+                  <div class="play">▶</div>
+                </div>
+                <div class="inspector">
+                  <div class="section-label">Details</div>
+                  <div class="thumb"></div>
+                  <div class="thumb"></div>
+                  <div class="thumb"></div>
+                </div>
+              </div>
+              <div class="timeline">
+                <div class="ruler"></div>
+                <div class="track"><div class="clip v" style="width: 45%"></div><div class="clip v" style="width: 30%"></div></div>
+                <div class="track"><div class="clip t" style="width: 20%; margin-left: 10%"></div></div>
+                <div class="track"><div class="clip a" style="width: 80%"></div></div>
+              </div>
+            </div>
+          </div>
+          <ul class="tips">
+            <li><span class="check">1</span><div><strong>Your library</strong> — where your videos, music, and images live.</div></li>
+            <li><span class="check">2</span><div><strong>The stage</strong> — see your story come to life, exactly as it will play.</div></li>
+            <li><span class="check">3</span><div><strong>Story layers</strong> — rows where you arrange everything in order.</div></li>
+            <li><span class="check">4</span><div><strong>Details</strong> — fine-tune the piece you've selected.</div></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 3. Step: Bring in your media -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">2</span> First step</div>
+        <h1>Bring in your <span class="grad">videos</span>.</h1>
+        <p class="lede">
+          Drag files from your computer straight into Dividr. Or click the
+          plus button in your library. That's it — they're ready to use.
+        </p>
+        <ul class="tips">
+          <li><span class="check">✓</span><div>Any video, photo, or audio file works</div></li>
+          <li><span class="check">✓</span><div>Add as many as you want — Dividr stays fast</div></li>
+          <li><span class="check">✓</span><div>Everything stays on your computer, nothing is uploaded</div></li>
+        </ul>
+      </section>
+
+      <!-- 4. Step: Story layers -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">3</span> Arrange your story</div>
+        <h1>Think in <span class="grad">story layers</span>.</h1>
+        <p class="lede">
+          Your story is made of rows, stacked on top of each other. Each row
+          adds something — a clip, some text, a sound.
+        </p>
+        <div class="two-col">
+          <div class="story-viz">
+            <div class="row">
+              <div class="row-label"><span class="swatch" style="background: var(--text-clip)"></span>Titles</div>
+              <div class="row-bar"><div class="blk" style="background: rgba(167, 139, 250, 0.55); width: 28%; margin-left: 6%"></div></div>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="swatch" style="background: var(--video)"></span>Main video</div>
+              <div class="row-bar"><div class="blk" style="background: rgba(96, 165, 250, 0.55); width: 45%"></div><div class="blk" style="background: rgba(96, 165, 250, 0.55); width: 35%"></div></div>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="swatch" style="background: var(--video)"></span>B-roll</div>
+              <div class="row-bar"><div class="blk" style="background: rgba(96, 165, 250, 0.35); width: 25%; margin-left: 20%"></div></div>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="swatch" style="background: var(--audio)"></span>Music</div>
+              <div class="row-bar"><div class="blk" style="background: rgba(52, 211, 153, 0.45); width: 85%"></div></div>
+            </div>
+          </div>
+          <div>
+            <p class="lede" style="margin-bottom: 1rem">
+              What's higher up shows on top. What's on the bottom plays
+              underneath. It's that simple.
+            </p>
+            <div class="translate">
+              <div class="from">timeline</div><div class="arrow">→</div><div class="to">story layers</div>
+              <div class="from">tracks</div><div class="arrow">→</div><div class="to">rows of content</div>
+              <div class="from">z-order</div><div class="arrow">→</div><div class="to">what shows on top</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Step: Move, trim, align -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">4</span> Make it feel right</div>
+        <h1>Just drag. It <span class="grad">clicks into place</span>.</h1>
+        <p class="lede">
+          Grab a clip and move it. When it nears another piece, Dividr gently
+          snaps it to line up — no ruler, no measuring.
+        </p>
+        <div class="two-col">
+          <div class="snap-demo">
+            <div class="block a">Your first clip</div>
+            <div class="guide"></div>
+            <div class="note">snaps here</div>
+            <div class="block b">Your next clip</div>
+          </div>
+          <ul class="tips">
+            <li><span class="check">✓</span><div><strong>Drag</strong> anywhere, anytime</div></li>
+            <li><span class="check">✓</span><div><strong>Trim</strong> by pulling either edge of a clip</div></li>
+            <li><span class="check">✓</span><div><strong>Select many</strong> and move them as one group</div></li>
+            <li><span class="check">✓</span><div><strong>Undo</strong> any change without fear</div></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 6. Step: Text & subtitles -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">5</span> Add your voice</div>
+        <h1>Words that stick with your story.</h1>
+        <p class="lede">
+          Add titles, captions, or subtitles in seconds. They live on their
+          own layer — change them without touching anything else.
+        </p>
+        <ul class="tips">
+          <li><span class="check">✓</span><div>Click anywhere on the stage to add text</div></li>
+          <li><span class="check">✓</span><div>Pick a style — bold, subtle, or in-between</div></li>
+          <li><span class="check">✓</span><div>Move it, resize it, change the timing — it's always editable</div></li>
+        </ul>
+      </section>
+
+      <!-- 7. Step: Music & voice -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">6</span> Give it feeling</div>
+        <h1>Layer in <span class="grad">music & voice</span>.</h1>
+        <p class="lede">
+          Drop in a song, add your voiceover, balance the volume. You'll see
+          the sound as a shape — so you know exactly where the beats land.
+        </p>
+        <ul class="tips">
+          <li><span class="check">✓</span><div>Multiple audio layers at once — music, voice, effects</div></li>
+          <li><span class="check">✓</span><div>See the waveform so you can edit with your eyes</div></li>
+          <li><span class="check">✓</span><div>Adjust volume per clip, or for the whole row</div></li>
+        </ul>
+      </section>
+
+      <!-- 8. Step: Noise reduction -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">7</span> Clean it up</div>
+        <h1>Silence the <span class="grad">background noise</span>.</h1>
+        <p class="lede">
+          Traffic, wind, a humming fan, a room with too much echo — Dividr can
+          take them out in one click. Your voice stays clear. Everything else
+          gets quiet.
+        </p>
+        <ul class="tips">
+          <li><span class="check">✓</span><div>Works on any audio or video clip</div></li>
+          <li><span class="check">✓</span><div>No sliders to tweak — just turn it on</div></li>
+          <li><span class="check">✓</span><div>Great for phone recordings, webcam audio, outdoor shots</div></li>
+        </ul>
+      </section>
+
+      <!-- 9. Step: Transcription -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">8</span> Let it speak</div>
+        <h1>Turn speech into <span class="grad">subtitles</span>, automatically.</h1>
+        <p class="lede">
+          Dividr listens to your clip and writes the captions for you — in
+          your language. Every single word is timed to the exact moment it's
+          spoken.
+        </p>
+        <div class="two-col">
+          <div class="story-viz" style="padding: 1.25rem">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 1.8;">
+              <div><span style="color: var(--dim); margin-right: 0.6rem;">00:02</span><span style="background: rgba(167, 139, 250, 0.25); padding: 1px 5px; border-radius: 3px;">Welcome</span> <span style="color: var(--muted);">to</span> <span style="color: var(--muted);">our</span> <span style="color: var(--muted);">story</span></div>
+              <div><span style="color: var(--dim); margin-right: 0.6rem;">00:04</span><span style="color: var(--muted);">Let</span> <span style="background: rgba(96, 165, 250, 0.25); padding: 1px 5px; border-radius: 3px;">me</span> <span style="color: var(--muted);">show</span> <span style="color: var(--muted);">you</span></div>
+              <div style="color: var(--dim); font-size: 0.75rem; margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.6rem;">
+                🌐 English · Filipino · Spanish · Japanese · +40 more
+              </div>
+            </div>
+          </div>
+          <ul class="tips">
+            <li><span class="check">✓</span><div><strong>Word-by-word timing</strong> — every word lines up with when it's spoken</div></li>
+            <li><span class="check">✓</span><div><strong>Many languages</strong> supported out of the box</div></li>
+            <li><span class="check">✓</span><div>Edit any word afterward — typos, names, slang</div></li>
+            <li><span class="check">✓</span><div>Great for reels, tutorials, interviews</div></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- 10. Step: Save & share -->
+      <section class="slide">
+        <div class="step-chip"><span class="num">9</span> Last step</div>
+        <h1>Save it. Share it.</h1>
+        <p class="lede">
+          When you're happy, click export. Dividr turns your story into a
+          finished video file, ready to post anywhere.
+        </p>
+        <ul class="tips">
+          <li><span class="check">✓</span><div>Pick a quality — Dividr handles the rest</div></li>
+          <li><span class="check">✓</span><div>Your project is saved automatically as you work</div></li>
+          <li><span class="check">✓</span><div>Come back later — everything will be exactly where you left it</div></li>
+        </ul>
+      </section>
+
+      <!-- 9. You're ready -->
+      <section class="slide hero-center">
+        <div class="step-chip" style="margin-left: auto; margin-right: auto"><span class="num">✓</span> You're ready</div>
+        <h1>That's the whole app.</h1>
+        <p class="lede">
+          Bring your media in. Arrange it on story layers. Add text and sound.
+          Export. You now know everything you need to start creating.
+        </p>
+      </section>
+
+      <!-- 12. The Hook -->
+      <section class="slide">
+        <div class="step-chip" style="background: rgba(167, 139, 250, 0.12); border-color: rgba(167, 139, 250, 0.35); color: var(--accent)">
+          <span class="num">★</span> One more thing
+        </div>
+        <h1>Want a feature that<br />doesn't exist yet? <span class="grad">Build it.</span></h1>
+        <p class="lede">
+          Dividr is <strong style="color: var(--text)">fully open source</strong> — and you
+          don't need to be a programmer to change it. With today's AI coding
+          assistants, describing what you want is often enough to make it real.
+        </p>
+        <div class="prompt-demo">
+          <div class="line"><span class="cue">you ▸</span>add a button that exports just the audio<span class="caret"></span></div>
+          <div class="line"><span class="out">claude ✓ added it — check your export menu</span></div>
+          <div class="line"><span class="cue">you ▸</span>make subtitles pop up word-by-word, karaoke style</div>
+          <div class="line"><span class="out">claude ✓ done — try it on any text layer</span></div>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--dim); margin-top: 0.9rem; max-width: 52ch;">
+          This is called <em style="color: var(--accent); font-style: normal;">vibe coding</em> — describing the software you want and letting an AI build it with you.
+        </p>
+      </section>
+
+      <!-- 13. The future -->
+      <section class="slide">
+        <div class="step-chip">What happens next</div>
+        <h1>The roadmap? <span class="grad">Yours.</span></h1>
+        <p class="lede">
+          Dividr is a sandbox. Nobody owns where it goes next. Every weird idea,
+          every missing button, every "what if it could…" — you get to answer it.
+        </p>
+        <ul class="tips">
+          <li><span class="check">✦</span><div>Try a strange idea just to see what happens</div></li>
+          <li><span class="check">✦</span><div>Make your own version for the way <em>you</em> edit</div></li>
+          <li><span class="check">✦</span><div>Share your features with friends who use Dividr</div></li>
+          <li><span class="check">✦</span><div>Learn how software really works — by shaping the tool in your hands</div></li>
+        </ul>
+        <div class="callout">
+          Dividr isn't meant to be finished. It's meant to be a playground — a place to experiment with vibe coding, without needing permission from anyone.
+        </div>
+      </section>
+
+      <!-- 12. Closing -->
+      <section class="slide hero-center">
+        <svg class="logo-hero" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12.9473 66.5986C20.1086 68.3757 30.6168 71.9913 36.2461 78.7031C40.4137 83.6725 43.1566 91.8302 44.9053 99.1963H12.9473V66.5986ZM57.333 81.9023C66.3232 70.1276 88.1167 65.9844 116.001 67.2188C114.524 91.9342 95.5845 99.1963 54.208 99.1963H51.2627C52.826 93.3798 54.8665 87.0048 57.333 81.9023ZM45.1895 29.8037C43.4589 37.4751 40.6467 46.2775 36.2461 51.5244C30.6168 58.236 20.1085 61.8491 12.9473 63.626V29.8037H45.1895ZM54.208 29.8037C93.7555 29.8037 114.349 36.0813 115.991 60.6709C95.454 64.3939 66.4203 63.9815 57.0205 46.6836V46.793C54.1882 41.7884 52.1028 35.487 50.625 29.8037H54.208Z" fill="url(#closeGrad)"/>
+          <defs>
+            <linearGradient id="closeGrad" x1="12" y1="20" x2="116" y2="108">
+              <stop offset="0" stop-color="#a78bfa"/>
+              <stop offset="0.6" stop-color="#60a5fa"/>
+              <stop offset="1" stop-color="#f472b6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <h1>Now go <span class="grad">make it yours</span>.</h1>
+        <p class="lede">
+          Start by editing. Then start imagining. Dividr is waiting for whatever
+          you decide it should become.
+        </p>
+      </section>
+    </div>
+
+    <nav class="nav">
+      <button id="prev" aria-label="Previous slide">‹</button>
+      <span class="counter" id="counter">1 / 14</span>
+      <button id="next" aria-label="Next slide">›</button>
+    </nav>
+
+    <script>
+      const slides = document.querySelectorAll(".slide");
+      const total = slides.length;
+      const counter = document.getElementById("counter");
+      const progress = document.getElementById("progress");
+      const prevBtn = document.getElementById("prev");
+      const nextBtn = document.getElementById("next");
+      let i = 0;
+
+      function render() {
+        slides.forEach((s, idx) => s.classList.toggle("active", idx === i));
+        counter.textContent = `${i + 1} / ${total}`;
+        progress.style.width = `${((i + 1) / total) * 100}%`;
+        prevBtn.disabled = i === 0;
+        nextBtn.disabled = i === total - 1;
+        history.replaceState(null, "", `#${i + 1}`);
+      }
+
+      function go(n) {
+        i = Math.max(0, Math.min(total - 1, n));
+        render();
+      }
+
+      prevBtn.addEventListener("click", () => go(i - 1));
+      nextBtn.addEventListener("click", () => go(i + 1));
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") go(i + 1);
+        else if (e.key === "ArrowLeft" || e.key === "PageUp") go(i - 1);
+        else if (e.key === "Home") go(0);
+        else if (e.key === "End") go(total - 1);
+        else if (e.key.toLowerCase() === "f") {
+          if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+          else document.exitFullscreen();
+        }
+      });
+
+      const startHash = parseInt(location.hash.replace("#", ""), 10);
+      if (!isNaN(startHash)) go(startHash - 1);
+      else render();
+    </script>
+  </body>
+</html>

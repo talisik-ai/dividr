@@ -4,11 +4,13 @@ This guide explains how to build the unified `dividr-tools` binary using PyInsta
 
 ## Prerequisites
 
-1. **Install Python 3.9+** (3.12+ recommended)
+1. **Install Python 3.12** (3.9+ works; 3.13 may force source builds for `ctranslate2`)
 
    ```bash
    # Windows - use Python Launcher
    py -3.12 --version
+   # macOS/Linux
+   python3.12 --version
    ```
 
 2. **Install dependencies:**

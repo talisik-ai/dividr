@@ -1,6 +1,8 @@
 # Python Dependencies for Dividr Transcription
+# Recommended Python: 3.12 (3.13 wheels for ctranslate2 may lag and force a source build)
 # Install with: pip install -r requirements.txt
-# py -3.13 -m pip install -r requirements.txt
+#   Windows:        py -3.12 -m pip install -r requirements.txt
+#   macOS/Linux:    python3.12 -m pip install -r requirements.txt
 
 # Faster-Whisper - Optimized Whisper implementation
 faster-whisper>=1.0.0

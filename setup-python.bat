@@ -12,8 +12,9 @@ where python >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
     echo ❌ Python is not installed or not in PATH!
     echo.
-    echo Please install Python 3.9 or higher from:
-    echo   https://www.python.org/downloads/
+    echo Please install Python 3.12 from:
+    echo   https://www.python.org/downloads/release/python-3120/
+    echo (3.9+ works; 3.13 may force a source build for ctranslate2.)
     echo.
     echo ⚠️  Make sure to check "Add Python to PATH" during installation!
     pause

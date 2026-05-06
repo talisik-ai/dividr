@@ -203,27 +203,18 @@ const detectPythonEnvironment = (): {
 
   // Priority 1: Check for local venv in project (development mode)
   if (!app.isPackaged) {
-    const venvPython = isWindows
-      ? path.join(
-          process.cwd(),
-          'src',
-          'backend',
-          'python',
-          'venv',
-          'Scripts',
-          'python.exe',
-        )
-      : path.join(
-          process.cwd(),
-          'src',
-          'backend',
-          'python',
-          'venv',
-          'bin',
-          'python',
-        );
+    const venvBin = isWindows
+      ? ['Scripts', 'python.exe']
+      : ['bin', 'python'];
+    const venvCandidates = [
+      path.join(process.cwd(), '.venv', ...venvBin),
+      path.join(process.cwd(), 'venv', ...venvBin),
+      path.join(process.cwd(), 'src', 'backend', 'python', 'venv', ...venvBin),
+      path.join(process.cwd(), 'src', 'backend', 'python', '.venv', ...venvBin),
+    ];
 
-    if (fs.existsSync(venvPython)) {
+    for (const venvPython of venvCandidates) {
+      if (!fs.existsSync(venvPython)) continue;
       try {
         const result = execSync(`"${venvPython}" --version`, {
           encoding: 'utf8',
@@ -248,7 +239,7 @@ const detectPythonEnvironment = (): {
         }
       } catch {
         console.warn(
-          '[MediaToolsRunner] Local venv Python found but failed version check',
+          `[MediaToolsRunner] venv Python at ${venvPython} failed version check`,
         );
       }
     }
