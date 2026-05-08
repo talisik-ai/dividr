@@ -103,6 +103,9 @@ export interface UnifiedOverlayRendererProps extends OverlayRenderProps {
 
 type InteractionMode = 'select' | 'pan' | 'text-edit';
 
+const hasRenderableVideoSource = (track: VideoTrack): boolean =>
+  Boolean(track.previewUrl?.trim() || track.source?.trim());
+
 export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   videoRef,
   activeVideoTrack,
@@ -275,6 +278,22 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
     [allTracks, currentFrame],
   );
 
+  const videoTracksToRender = useMemo(
+    () =>
+      sortedVisualTracks.filter(
+        (track) => track.type === 'video' && hasRenderableVideoSource(track),
+      ),
+    [sortedVisualTracks],
+  );
+
+  const frameDrivenVideoTrackLists = useMemo(() => {
+    const trackLists = new Map<string, VideoTrack[]>();
+    videoTracksToRender.forEach((track) => {
+      trackLists.set(track.id, [track]);
+    });
+    return trackLists;
+  }, [videoTracksToRender]);
+
   const activeSubtitles = useMemo(
     () =>
       sortedVisualTracks.filter((t) => t.type === 'subtitle' && t.subtitleText),
@@ -328,12 +347,6 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
   );
 
   const videoRenderInfos = useMemo(() => {
-    const videoTracksToRender = activeVideoTracks?.length
-      ? activeVideoTracks
-      : activeVideoTrack
-        ? [activeVideoTrack]
-        : [];
-
     const isMultiLayerMode = videoTracksToRender.length > 1;
 
     return videoTracksToRender.map((track, index) => {
@@ -381,8 +394,7 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
       };
     });
   }, [
-    activeVideoTracks,
-    activeVideoTrack,
+    videoTracksToRender,
     baseVideoWidth,
     baseVideoHeight,
     renderScale,
@@ -662,111 +674,115 @@ export const UnifiedOverlayRenderer: React.FC<UnifiedOverlayRendererProps> = ({
         onMaxWidthMeasured={handleMaxContainerWidthMeasured}
       />
       {/* VIDEO LAYERS */}
-      {USE_FRAME_DRIVEN_PLAYBACK ? (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            width: actualWidth,
-            height: actualHeight,
-            left: `calc(50% + ${panX}px)`,
-            top: `calc(50% + ${panY}px)`,
-            transform: 'translate(-50%, -50%)',
-            overflow: 'visible',
-            zIndex: 1,
-          }}
-        >
-          <FrameDrivenCompositor
-            ref={compositorRef}
-            tracks={allTracks}
-            currentFrame={currentFrame}
-            fps={fps}
-            isPlaying={isPlaying}
-            playbackRate={playbackRate}
-            width={actualWidth}
-            height={actualHeight}
-            baseVideoWidth={baseVideoWidth}
-            baseVideoHeight={baseVideoHeight}
-          />
-        </div>
-      ) : (
-        videoRenderInfos.map((info, index) => (
-          <div
-            key={info.stableKey}
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              width: actualWidth,
-              height: actualHeight,
-              left: `calc(50% + ${panX}px)`,
-              top: `calc(50% + ${panY}px)`,
-              transform: 'translate(-50%, -50%)',
-              overflow: 'visible',
-              zIndex: info.zIndex,
-            }}
-          >
-            <VideoTransformBoundary
-              track={info.track}
-              isSelected={info.isSelected}
-              previewScale={coordinateSystem.baseScale}
-              videoWidth={baseVideoWidth}
-              videoHeight={baseVideoHeight}
-              renderScale={renderScale}
-              interactionMode={interactionMode}
-              onTransformUpdate={onVideoTransformUpdate}
-              onSelect={onVideoSelect}
-              onRotationStateChange={onRotationStateChange}
-              onDragStateChange={onDragStateChange}
-              clipContent={true}
-              clipWidth={actualWidth}
-              clipHeight={actualHeight}
+      {USE_FRAME_DRIVEN_PLAYBACK
+        ? videoRenderInfos.map((info) => (
+            <div
+              key={info.stableKey}
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                width: actualWidth,
+                height: actualHeight,
+                left: `calc(50% + ${panX}px)`,
+                top: `calc(50% + ${panY}px)`,
+                transform: 'translate(-50%, -50%)',
+                overflow: 'visible',
+                zIndex: info.zIndex,
+              }}
             >
-              <div
-                className="relative"
-                style={{
-                  width: `${info.videoWidth}px`,
-                  height: `${info.videoHeight}px`,
-                  visibility: info.isHidden ? 'hidden' : 'visible',
-                  pointerEvents:
-                    info.isHidden ||
-                    interactionMode === 'pan' ||
-                    interactionMode === 'text-edit'
-                      ? 'none'
-                      : 'auto',
-                }}
+              <FrameDrivenCompositor
+                ref={info.isTopmostLayer ? compositorRef : undefined}
+                tracks={
+                  frameDrivenVideoTrackLists.get(info.track.id) ?? [info.track]
+                }
+                currentFrame={currentFrame}
+                fps={fps}
+                isPlaying={isPlaying}
+                playbackRate={playbackRate}
+                width={actualWidth}
+                height={actualHeight}
+                baseVideoWidth={baseVideoWidth}
+                baseVideoHeight={baseVideoHeight}
+                transparent={true}
+              />
+            </div>
+          ))
+        : videoRenderInfos.map((info, index) => (
+            <div
+              key={info.stableKey}
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                width: actualWidth,
+                height: actualHeight,
+                left: `calc(50% + ${panX}px)`,
+                top: `calc(50% + ${panY}px)`,
+                transform: 'translate(-50%, -50%)',
+                overflow: 'visible',
+                zIndex: info.zIndex,
+              }}
+            >
+              <VideoTransformBoundary
+                track={info.track}
+                isSelected={info.isSelected}
+                previewScale={coordinateSystem.baseScale}
+                videoWidth={baseVideoWidth}
+                videoHeight={baseVideoHeight}
+                renderScale={renderScale}
+                interactionMode={interactionMode}
+                onTransformUpdate={onVideoTransformUpdate}
+                onSelect={onVideoSelect}
+                onRotationStateChange={onRotationStateChange}
+                onDragStateChange={onDragStateChange}
+                clipContent={true}
+                clipWidth={actualWidth}
+                clipHeight={actualHeight}
               >
-                <DualBufferVideo
-                  ref={(ref) => {
-                    if (index === 0 && ref) {
-                      (
-                        dualBufferRef as React.MutableRefObject<DualBufferVideoRef | null>
-                      ).current = ref;
-                    }
-                    registerDualBufferRef(info.track.id, ref);
+                <div
+                  className="relative"
+                  style={{
+                    width: `${info.videoWidth}px`,
+                    height: `${info.videoHeight}px`,
+                    visibility: info.isHidden ? 'hidden' : 'visible',
+                    pointerEvents:
+                      info.isHidden ||
+                      interactionMode === 'pan' ||
+                      interactionMode === 'text-edit'
+                        ? 'none'
+                        : 'auto',
                   }}
-                  activeTrack={info.track}
-                  allTracks={allTracks}
-                  currentFrame={currentFrame}
-                  fps={fps}
-                  isPlaying={isPlaying && !isAnyTrackStalled}
-                  isMuted={isMuted}
-                  volume={volume}
-                  playbackRate={playbackRate}
-                  onLoadedMetadata={
-                    index === 0 ? onVideoLoadedMetadata : undefined
-                  }
-                  onActiveVideoChange={
-                    index === 0 ? handleActiveVideoChange : undefined
-                  }
-                  onFrameUpdate={index === 0 ? handleFrameUpdate : undefined}
-                  width={info.videoWidth}
-                  height={info.videoHeight}
-                  objectFit="contain"
-                  handleAudio={shouldVideoHandleAudio(index)}
-                />
-              </div>
-            </VideoTransformBoundary>
-          </div>
-        ))
-      )}
+                >
+                  <DualBufferVideo
+                    ref={(ref) => {
+                      if (index === 0 && ref) {
+                        (
+                          dualBufferRef as React.MutableRefObject<DualBufferVideoRef | null>
+                        ).current = ref;
+                      }
+                      registerDualBufferRef(info.track.id, ref);
+                    }}
+                    activeTrack={info.track}
+                    allTracks={allTracks}
+                    currentFrame={currentFrame}
+                    fps={fps}
+                    isPlaying={isPlaying && !isAnyTrackStalled}
+                    isMuted={isMuted}
+                    volume={volume}
+                    playbackRate={playbackRate}
+                    onLoadedMetadata={
+                      index === 0 ? onVideoLoadedMetadata : undefined
+                    }
+                    onActiveVideoChange={
+                      index === 0 ? handleActiveVideoChange : undefined
+                    }
+                    onFrameUpdate={index === 0 ? handleFrameUpdate : undefined}
+                    width={info.videoWidth}
+                    height={info.videoHeight}
+                    objectFit="contain"
+                    handleAudio={shouldVideoHandleAudio(index)}
+                  />
+                </div>
+              </VideoTransformBoundary>
+            </div>
+          ))}
 
       {(activeIndependentAudioTracks?.length || independentAudioTrack) && (
         <MultiAudioPlayer
@@ -810,7 +826,10 @@ function renderCaptionWords(
       : (() => {
           const isHighlight = wordCount++ === highlightWordIndex;
           return (
-            <span key={i} style={{ color: isHighlight ? highlightColor : fillColor }}>
+            <span
+              key={i}
+              style={{ color: isHighlight ? highlightColor : fillColor }}
+            >
               {token}
             </span>
           );

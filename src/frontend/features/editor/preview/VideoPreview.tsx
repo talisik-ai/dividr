@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaSquarePlus } from 'react-icons/fa6';
 import { useVideoEditorStore } from '../stores/videoEditor/index';
 import { getDisplayFps } from '../stores/videoEditor/types/timeline.types';
+import { getActiveTracksAtFrame as getPreviewActiveTracksAtFrame } from './utils/trackUtils';
 
 // Custom debounce and throttle utilities to avoid external dependencies
 const debounce = <T extends (...args: unknown[]) => unknown>(
@@ -96,14 +97,11 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
   // Helper function to get active subtitle tracks at current frame
   const getActiveSubtitleTracks = useCallback(() => {
     const currentFrame = timeline.currentFrame;
-    const activeSubtitles = tracks.filter(
-      (track) =>
-        track.type === 'subtitle' &&
-        track.visible &&
-        currentFrame >= track.startFrame &&
-        currentFrame < track.endFrame && // Use < for exclusive end (standard interval logic)
-        track.subtitleText,
-    );
+    const activeSubtitles = getPreviewActiveTracksAtFrame(
+      tracks,
+      currentFrame,
+      'subtitle',
+    ).filter((track) => track.subtitleText);
 
     // Debug logging for subtitle timing verification
     if (activeSubtitles.length > 0) {
@@ -439,27 +437,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ className }) => {
 
   const getActiveTracksAtFrame = useCallback(
     (frame: number) => {
-      const activeTracks = tracks.filter(
-        (track) =>
-          track.visible && frame >= track.startFrame && frame < track.endFrame,
+      const sortedTracks = getPreviewActiveTracksAtFrame(tracks, frame).filter(
+        (track) => track.type !== 'audio',
       );
-
-      // Sort by trackRowIndex (lower index = renders behind, higher index = renders in front)
-      // This ensures correct layering based on timeline row order
-      const sortedTracks = activeTracks.sort((a, b) => {
-        // First sort by track type (base layer order)
-        const typeOrderA = ['audio', 'video', 'image', 'subtitle', 'text'].indexOf(a.type);
-        const typeOrderB = ['audio', 'video', 'image', 'subtitle', 'text'].indexOf(b.type);
-        
-        if (typeOrderA !== typeOrderB) {
-          return typeOrderA - typeOrderB;
-        }
-        
-        // Then sort by trackRowIndex within the same type
-        const rowIndexA = a.trackRowIndex ?? 0;
-        const rowIndexB = b.trackRowIndex ?? 0;
-        return rowIndexA - rowIndexB; // Ascending order: lower row = behind
-      });
 
       // Debug logging for active tracks
       sortedTracks.forEach((track) => {

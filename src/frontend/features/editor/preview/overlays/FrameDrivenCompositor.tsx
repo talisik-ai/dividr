@@ -45,6 +45,7 @@ export interface FrameDrivenCompositorProps {
   height: number;
   baseVideoWidth: number;
   baseVideoHeight: number;
+  transparent?: boolean;
   onFrameRendered?: (frame: number) => void;
   className?: string;
 }
@@ -76,6 +77,7 @@ export const FrameDrivenCompositor = forwardRef<
       height,
       baseVideoWidth,
       baseVideoHeight,
+      transparent = false,
       onFrameRendered,
       className,
     },
@@ -108,14 +110,27 @@ export const FrameDrivenCompositor = forwardRef<
       canvas.width = width;
       canvas.height = height;
       ctxRef.current = canvas.getContext('2d', {
-        alpha: false,
+        alpha: transparent,
         desynchronized: true,
       });
 
       return () => {
         ctxRef.current = null;
       };
-    }, [width, height]);
+    }, [width, height, transparent]);
+
+    const clearCanvas = useCallback(
+      (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+        if (transparent) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          return;
+        }
+
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      },
+      [transparent],
+    );
 
     // Video element management
     const getOrCreateVideoForClip = useCallback(
@@ -323,8 +338,7 @@ export const FrameDrivenCompositor = forwardRef<
         const hasClips = hasVisibleClipsAtFrame(frameNumber, tracks);
 
         if (!hasClips) {
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          clearCanvas(ctx, canvas);
           lastCanvasStateRef.current = null;
           return true;
         }
@@ -374,8 +388,7 @@ export const FrameDrivenCompositor = forwardRef<
         });
 
         // Clear and composite
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        clearCanvas(ctx, canvas);
 
         let renderedAny = false;
         for (const request of requests) {
@@ -418,6 +431,7 @@ export const FrameDrivenCompositor = forwardRef<
         fps,
         isPlaying,
         playbackRate,
+        clearCanvas,
         drawVideoFrame,
         getOrCreateVideoForClip,
       ],
@@ -504,7 +518,25 @@ export const FrameDrivenCompositor = forwardRef<
           const y = transform?.y ?? 0;
           const scale = transform?.scale ?? 1;
           const rotation = transform?.rotation ?? 0;
-          return `${t.id}:${x},${y},${scale},${rotation},${t.filter ?? ''}`;
+          const width = transform?.width ?? t.width ?? baseVideoWidth;
+          const height = transform?.height ?? t.height ?? baseVideoHeight;
+          return [
+            t.id,
+            t.previewUrl ?? t.source ?? '',
+            t.startFrame,
+            t.endFrame,
+            t.sourceStartTime ?? 0,
+            t.trackRowIndex ?? 0,
+            t.layer ?? 0,
+            x,
+            y,
+            scale,
+            rotation,
+            width,
+            height,
+            t.textStyle?.opacity ?? 100,
+            t.filter ?? '',
+          ].join(':');
         })
         .join('|');
 
@@ -514,7 +546,7 @@ export const FrameDrivenCompositor = forwardRef<
         // This ensures rotation changes from Properties Panel are reflected immediately
         compositeFrame(currentFrame, false);
       }
-    }, [tracks, currentFrame, compositeFrame]);
+    }, [tracks, currentFrame, compositeFrame, baseVideoWidth, baseVideoHeight]);
 
     // Playback render loop
     useEffect(() => {
@@ -564,7 +596,7 @@ export const FrameDrivenCompositor = forwardRef<
           width: '100%',
           height: '100%',
           display: 'block',
-          backgroundColor: '#000000',
+          backgroundColor: transparent ? 'transparent' : '#000000',
           pointerEvents: 'none', // Ensure canvas doesn't capture clicks
         }}
         aria-label="Video preview canvas"
