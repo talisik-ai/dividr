@@ -1,4 +1,4 @@
-import { VideoTrack } from '../../stores/videoEditor/index';
+import type { VideoTrack } from '../../stores/videoEditor/index';
 
 /**
  * Utility functions for track management
@@ -31,6 +31,46 @@ const VISUAL_TYPES: VideoTrack['type'][] = [
   'subtitle',
 ];
 
+const VISUAL_Z_INDEX_BASE = 1000;
+const AUDIO_Z_INDEX_MAX = 99;
+const STACK_ORDER_SCALE = 1000000;
+const LAYER_ORDER_MAX = 999;
+
+const getFiniteNumber = (value: number | undefined, fallback = 0): number =>
+  Number.isFinite(value) ? (value as number) : fallback;
+
+const getTimelineRowIndex = (track: VideoTrack): number =>
+  getFiniteNumber(track.trackRowIndex);
+
+const getLayerOffset = (track: VideoTrack): number => {
+  const layer = Math.round(getFiniteNumber(track.layer));
+  return Math.max(0, Math.min(LAYER_ORDER_MAX, layer));
+};
+
+/**
+ * Get timeline stack order from the same coordinates used by the timeline.
+ *
+ * Higher trackRowIndex values are higher visual rows in the timeline and render
+ * in front. The optional layer value is only a tie-breaker within the same row.
+ */
+export function getTimelineStackOrder(track: VideoTrack): number {
+  const rowIndex = getTimelineRowIndex(track);
+  return Math.round(rowIndex * STACK_ORDER_SCALE) + getLayerOffset(track);
+}
+
+/**
+ * Compare tracks in preview render order: back to front.
+ */
+export function compareTracksByTimelineStack(
+  a: VideoTrack,
+  b: VideoTrack,
+): number {
+  const rowDelta = getTimelineRowIndex(a) - getTimelineRowIndex(b);
+  if (rowDelta !== 0) return rowDelta;
+
+  return getLayerOffset(a) - getLayerOffset(b);
+}
+
 /**
  * Get z-index based on timeline track row positioning WITH unified cross-type layering
  *
@@ -50,18 +90,18 @@ export function getTrackZIndex(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   allTracks?: VideoTrack[],
 ): number {
-  const rowIndex = track.trackRowIndex ?? 0;
+  const stackOrder = getTimelineStackOrder(track);
 
   // Audio tracks: Base z-index 0-99 (non-visual, doesn't affect preview stacking)
   if (AUDIO_TYPES.includes(track.type)) {
-    return Math.max(0, Math.min(99, rowIndex * 10)); // 0, 10, 20... capped at 99
+    return Math.max(0, Math.min(AUDIO_Z_INDEX_MAX, stackOrder));
   }
 
   // Visual tracks: Unified z-index space starting at 1000
   // Higher row index = higher z-index = renders on top
   // Base of 1000 ensures all visual tracks are above audio
-  // Multiply by 10 to allow room for fractional indices during drag operations
-  return 1000 + Math.round(rowIndex * 10);
+  // The stack-order scale leaves room for layer tie-breaks without type priority.
+  return VISUAL_Z_INDEX_BASE + stackOrder;
 }
 
 /**
@@ -76,13 +116,7 @@ export function getTrackZIndex(
  * @returns Sorted array of tracks (back to front render order)
  */
 export function getSortedRenderableTracks(tracks: VideoTrack[]): VideoTrack[] {
-  return [...tracks].sort((a, b) => {
-    const zIndexA = getTrackZIndex(a);
-    const zIndexB = getTrackZIndex(b);
-
-    // Sort ascending: lower z-index first (renders behind)
-    return zIndexA - zIndexB;
-  });
+  return [...tracks].sort(compareTracksByTimelineStack);
 }
 
 /**
@@ -107,11 +141,7 @@ export function getVisualTracksForRendering(
   );
 
   // Sort by z-index (ascending: lower z-index = renders behind)
-  return activeVisualTracks.sort((a, b) => {
-    const zIndexA = getTrackZIndex(a);
-    const zIndexB = getTrackZIndex(b);
-    return zIndexA - zIndexB;
-  });
+  return activeVisualTracks.sort(compareTracksByTimelineStack);
 }
 
 /**
@@ -202,11 +232,7 @@ export function getActiveTracksAtFrame(
   );
 
   // Sort by z-index (lower z-index = renders behind, higher z-index = renders in front)
-  return activeTracks.sort((a, b) => {
-    const zIndexA = getTrackZIndex(a);
-    const zIndexB = getTrackZIndex(b);
-    return zIndexA - zIndexB; // Ascending order
-  });
+  return activeTracks.sort(compareTracksByTimelineStack);
 }
 
 /**

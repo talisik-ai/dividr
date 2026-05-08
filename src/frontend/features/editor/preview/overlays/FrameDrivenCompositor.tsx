@@ -15,7 +15,7 @@ import {
   useMemo,
   useRef,
 } from 'react';
-import { VideoTrack } from '../../stores/videoEditor/index';
+import type { VideoTrack } from '../../stores/videoEditor/index';
 import {
   buildMediaStreamKey,
   FrameRequest,
@@ -49,6 +49,7 @@ export interface FrameDrivenCompositorProps {
   baseVideoHeight: number;
   onFrameRendered?: (frame: number) => void;
   className?: string;
+  transparent?: boolean;
 }
 
 const SEEK_TOLERANCE_SCRUBBING = 0.05;
@@ -80,6 +81,7 @@ export const FrameDrivenCompositor = forwardRef<
       baseVideoHeight,
       onFrameRendered,
       className,
+      transparent = false,
     },
     ref,
   ) => {
@@ -110,14 +112,27 @@ export const FrameDrivenCompositor = forwardRef<
       canvas.width = width;
       canvas.height = height;
       ctxRef.current = canvas.getContext('2d', {
-        alpha: false,
+        alpha: transparent,
         desynchronized: true,
       });
 
       return () => {
         ctxRef.current = null;
       };
-    }, [width, height]);
+    }, [width, height, transparent]);
+
+    const clearCanvas = useCallback(
+      (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+        if (transparent) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          return;
+        }
+
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      },
+      [transparent],
+    );
 
     // Video element management
     const getOrCreateVideoForStream = useCallback(
@@ -329,8 +344,7 @@ export const FrameDrivenCompositor = forwardRef<
         const hasClips = hasVisibleClipsAtFrame(frameNumber, tracks);
 
         if (!hasClips) {
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          clearCanvas(ctx, canvas);
           lastCanvasStateRef.current = null;
           return true;
         }
@@ -380,8 +394,7 @@ export const FrameDrivenCompositor = forwardRef<
         });
 
         // Clear and composite
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        clearCanvas(ctx, canvas);
 
         let renderedAny = false;
         for (const request of requests) {
@@ -426,6 +439,7 @@ export const FrameDrivenCompositor = forwardRef<
         playbackRate,
         drawVideoFrame,
         getOrCreateVideoForStream,
+        clearCanvas,
       ],
     );
 
@@ -514,7 +528,11 @@ export const FrameDrivenCompositor = forwardRef<
           const height = transform?.height ?? t.height ?? baseVideoHeight;
           const opacity = t.textStyle?.opacity ?? 100;
           const visible = t.visible ? 1 : 0;
-          return `${t.id}:${visible}:${x},${y},${scale},${rotation},${width},${height},${opacity}`;
+          const source = t.previewUrl ?? t.source ?? '';
+          const sourceStart = t.sourceStartTime ?? 0;
+          const rowIndex = t.trackRowIndex ?? 0;
+          const layer = t.layer ?? 0;
+          return `${t.id}:${visible}:${source}:${sourceStart}:${rowIndex}:${layer}:${x},${y},${scale},${rotation},${width},${height},${opacity}`;
         })
         .join('|');
 
@@ -582,7 +600,7 @@ export const FrameDrivenCompositor = forwardRef<
           width: '100%',
           height: '100%',
           display: 'block',
-          backgroundColor: '#000000',
+          backgroundColor: transparent ? 'transparent' : '#000000',
           pointerEvents: 'none', // Ensure canvas doesn't capture clicks
         }}
         aria-label="Video preview canvas"

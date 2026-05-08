@@ -5,7 +5,8 @@
  * source positions. Core formula: sourceFrame = timelineFrame - startFrame + inFrame
  */
 
-import { VideoTrack } from '../../stores/videoEditor/index';
+import type { VideoTrack } from '../../stores/videoEditor/index';
+import { compareTracksByTimelineStack } from '../utils/trackUtils';
 
 /**
  * Convert decibels to linear gain.
@@ -76,7 +77,11 @@ export const normalizeSourceId = (url: string | undefined | null): string => {
   if (!url) return '';
   try {
     if (url.startsWith('blob:')) return url;
-    const parsed = new URL(url, window.location.origin);
+    const origin =
+      typeof window !== 'undefined'
+        ? window.location.origin
+        : 'http://localhost';
+    const parsed = new URL(url, origin);
     return decodeURIComponent(parsed.pathname);
   } catch {
     return url;
@@ -212,12 +217,9 @@ export const resolveFrameRequests = (
     });
   }
 
-  // Sort by z-order: trackRowIndex (lower = behind), then layer
+  // Sort by timeline stack order: lower rows behind, higher rows in front.
   requests.sort((a, b) => {
-    if (a.trackRowIndex !== b.trackRowIndex) {
-      return a.trackRowIndex - b.trackRowIndex;
-    }
-    return a.layer - b.layer;
+    return compareTracksByTimelineStack(a.track, b.track);
   });
 
   return requests;
