@@ -193,29 +193,24 @@ const detectPythonEnvironment = (): {
 } | null => {
   const isWindows = process.platform === 'win32';
 
-  // Priority 1: Check for local venv in project (development mode)
+  // Priority 1: Check for local virtual environments in development mode
   if (!app.isPackaged) {
-    const venvPython = isWindows
-      ? path.join(
-          process.cwd(),
-          'src',
-          'backend',
-          'python',
-          'venv',
-          'Scripts',
-          'python.exe',
-        )
-      : path.join(
-          process.cwd(),
-          'src',
-          'backend',
-          'python',
-          'venv',
-          'bin',
-          'python',
-        );
+    const venvRoots = [
+      path.join(process.cwd(), 'src', 'backend', 'python', 'venv'),
+      path.join(process.cwd(), 'src', 'backend', 'python', '.venv'),
+      path.join(process.cwd(), 'venv'),
+      path.join(process.cwd(), '.venv'),
+    ];
 
-    if (fs.existsSync(venvPython)) {
+    for (const venvRoot of venvRoots) {
+      const venvPython = isWindows
+        ? path.join(venvRoot, 'Scripts', 'python.exe')
+        : path.join(venvRoot, 'bin', 'python');
+
+      if (!fs.existsSync(venvPython)) {
+        continue;
+      }
+
       try {
         const result = execSync(`"${venvPython}" --version`, {
           encoding: 'utf8',
@@ -239,7 +234,9 @@ const detectPythonEnvironment = (): {
           }
         }
       } catch {
-        console.warn('⚠️ Local venv Python found but failed version check');
+        console.warn(
+          `⚠️ Local venv Python found at ${venvPython} but failed version check`,
+        );
       }
     }
   }
@@ -398,7 +395,7 @@ const verifyPythonDependencies = async (): Promise<void> => {
 
   if (missing.length === dependencies.length) {
     throw new Error(
-      `Required packages not installed: ${missing.join(', ')}\nRun: pip install faster-whisper deepfilternet`,
+      `Required packages not installed: ${missing.join(', ')}\nInstall requirements.txt into a local venv (recommended: src/backend/python/venv) or run the project setup script.`,
     );
   }
 };

@@ -18,15 +18,17 @@ This guide explains how to build the unified `dividr-tools` binary using PyInsta
    pip install pyinstaller
    ```
 
-   Or use a virtual environment:
+   Or use the same virtual environment path the desktop app discovers in development:
 
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate  # Windows
-   # source .venv/bin/activate  # macOS/Linux
+   ```powershell
+   py -3.11 -m venv src/backend/python/venv
+   .\src\backend\python\venv\Scripts\activate  # Windows
+   # source src/backend/python/venv/bin/activate  # macOS/Linux
    pip install -r requirements.txt
    pip install pyinstaller
    ```
+
+   The desktop app automatically looks for a development virtual environment at `src/backend/python/venv`.
 
 ## Building the Binary
 

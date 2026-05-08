@@ -7,8 +7,8 @@ A powerful video editing application built with Electron and FFmpeg.
 Before setting up the project, ensure you have the following installed:
 
 - **Node.js** (v18 or higher)
-- **yarn** or **yarn**
-- **Python** (v3.8 or higher, recommended: Python 3.13)
+- **Yarn** (classic `1.x`)
+- **Python** (`3.11` to `3.13`, stable releases only)
 - **Git**
 
 ## Getting Started
@@ -17,7 +17,7 @@ Before setting up the project, ensure you have the following installed:
 
 ```bash
 git clone <repository-url>
-cd dividr-ui
+cd dividr
 ```
 
 ### 2. Install Node.js Dependencies
@@ -26,28 +26,39 @@ cd dividr-ui
 yarn install
 ```
 
-### 3. Set Up Python Transcription Environment
+### 3. Set Up the Local Python Runtime
 
-The application uses `faster-whisper` for audio transcription. Follow these steps to set up the Python environment:
+The application uses `faster-whisper` for transcription and `DeepFilterNet` for noise reduction. In development mode, it prioritizes a project-local virtual environment at `src/backend/python/venv`.
 
 #### For Development Mode
 
-1. **Install Python dependencies:**
+1. **Create the local Python environment and install dependencies:**
 
-   ```bash
-   pip install -r requirements.txt
+   Windows:
+
+   ```powershell
+   .\setup-python.bat
    ```
 
-   Or if you have multiple Python versions:
+   macOS / Linux:
 
    ```bash
-   py -3.13 -m pip install -r requirements.txt
+   chmod +x setup-python.sh
+   ./setup-python.sh
    ```
 
-2. **Verify installation:**
+2. **Verify the local runtime:**
+
+   Windows:
+
+   ```powershell
+   .\src\backend\python\venv\Scripts\python.exe src\backend\python\scripts\transcribe.py --help
+   ```
+
+   macOS / Linux:
 
    ```bash
-   python src/backend/python/scripts/transcribe.py --help
+   ./src/backend/python/venv/bin/python src/backend/python/scripts/transcribe.py --help
    ```
 
    You should see the help message for the transcription script.
@@ -142,16 +153,32 @@ If you encounter issues with transcription:
 1. **Check Python installation:**
 
    ```bash
-   python --version
+   py -0p
    ```
 
 2. **Verify faster-whisper is installed:**
 
+   Windows:
+
+   ```powershell
+   .\src\backend\python\venv\Scripts\python.exe -m pip show faster-whisper
+   ```
+
+   macOS / Linux:
+
    ```bash
-   pip list | grep faster-whisper
+   ./src/backend/python/venv/bin/python -m pip show faster-whisper
    ```
 
 3. **Test the transcription script manually:**
+   Windows:
+
+   ```powershell
+   .\src\backend\python\venv\Scripts\python.exe src\backend\python\scripts\transcribe.py --help
+   ```
+
+   macOS / Linux:
+
    ```bash
-   python src/backend/python/scripts/transcribe.py --help
+   ./src/backend/python/venv/bin/python src/backend/python/scripts/transcribe.py --help
    ```
